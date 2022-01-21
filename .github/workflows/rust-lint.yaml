@@ -1,0 +1,66 @@
+name: lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        build: [ ubuntu-stable, ubuntu-beta, ubuntu-nightly ]
+
+        include:
+          - build: ubuntu-stable
+            rust: stable
+
+          - build: ubuntu-beta
+            rust: beta
+
+          - build: ubuntu-nightly
+            rust: nightly
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setting up rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: clippy
+
+      - name: Checking if it builds without errors (default feature)
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets --manifest-path Cargo.toml -- -D warnings
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setting up rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt
+
+      - name: Checking if code is formatted
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
