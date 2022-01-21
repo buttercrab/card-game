@@ -36,25 +36,9 @@ jobs:
             os: macos-latest
             rust: stable
 
-          - build: macos-beta
-            os: macos-latest
-            rust: beta
-
-          - build: macos-nightly
-            os: macos-latest
-            rust: nightly
-
           - build: windows-stable
             os: windows-latest
             rust: stable
-
-          - build: windows-beta
-            os: windows-latest
-            rust: beta
-
-          - build: windows-nightly
-            os: windows-latest
-            rust: nightly
 
     steps:
       - uses: actions/checkout@v2
