@@ -15,9 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        build: [ ubuntu-stable, ubuntu-beta, ubuntu-nightly,
-                 macos-stable, macos-beta, macos-nightly,
-                 windows-stable, windows-beta, windows-nightly ]
+        build: [ ubuntu-stable, ubuntu-beta, ubuntu-nightly, macos-stable, windows-stable ]
 
         include:
           - build: ubuntu-stable
