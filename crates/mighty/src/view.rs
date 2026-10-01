@@ -1,7 +1,7 @@
 use crate::card::{Card, Suit};
 use crate::rules::{Contract, Rules};
 use crate::state::{FriendCall, Phase, State};
-use crate::trick::Played;
+use crate::trick::{Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,8 @@ pub enum PhaseView {
         lead: Option<Suit>,
         plays: Vec<Played>,
         called_joker: Option<Card>,
-        last_trick: Option<(Vec<Played>, Seat)>,
+        /// Completed tricks, oldest first. All of it was played face up.
+        tricks: Vec<Trick>,
         /// Only the declarer sees these.
         discards: Option<Vec<Card>>,
     },
@@ -57,7 +58,7 @@ pub enum PhaseView {
         friend: Option<Seat>,
         team_points: u8,
         payoffs: Vec<i64>,
-        last_trick: Option<(Vec<Played>, Seat)>,
+        tricks: Vec<Trick>,
     },
 }
 
@@ -91,7 +92,7 @@ impl View {
                 lead: p.lead,
                 plays: p.plays.clone(),
                 called_joker: p.called_joker,
-                last_trick: p.last_trick.clone(),
+                tricks: p.tricks.clone(),
                 discards: own_discards(p.declarer, &p.discards),
             },
             Phase::Done(d) => PhaseView::Done {
@@ -101,7 +102,7 @@ impl View {
                 friend: d.friend,
                 team_points: d.team_points,
                 payoffs: d.payoffs.clone(),
-                last_trick: d.last_trick.clone(),
+                tricks: d.tricks.clone(),
             },
         };
         View {

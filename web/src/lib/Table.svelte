@@ -5,7 +5,7 @@
   import ExchangePanel from './ExchangePanel.svelte';
   import { contractLabel, friendCallLabel, isPoint, sameCard, SUIT_SYMBOL } from './cards';
   import type { RoomClient } from './client.svelte';
-  import type { Action, Card, Played, PlayAction } from './types';
+  import type { Action, Card, PlayAction, Trick } from './types';
 
   let { client }: { client: RoomClient } = $props();
 
@@ -100,8 +100,8 @@
 
   // The server clears a trick the moment its last card lands. Keep the
   // finished trick on the table briefly so everyone sees how it ended.
-  const finished = $derived(play?.last_trick ?? done?.last_trick ?? null);
-  let held = $state<[Played[], number] | null>(null);
+  const finished = $derived((play?.tricks ?? done?.tricks)?.at(-1) ?? null);
+  let held = $state<Trick | null>(null);
   let seen: string | null | undefined;
   let holdTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
@@ -157,14 +157,14 @@
 
     {#if held}
       <div class="trick" aria-label="Finished trick">
-        {#each held[0] as p (p.seat)}
+        {#each held.plays as p (p.seat)}
           <figure>
             <CardFace card={p.card} powerless={!p.powered} />
-            <figcaption class:won={p.seat === held[1]}>{p.seat === me ? 'You' : seatName(p.seat)}</figcaption>
+            <figcaption class:won={p.seat === held.winner}>{p.seat === me ? 'You' : seatName(p.seat)}</figcaption>
           </figure>
         {/each}
       </div>
-      <p class="felt-note">{held[1] === me ? 'You win' : `${seatName(held[1])} wins`} the trick</p>
+      <p class="felt-note">{held.winner === me ? 'You win' : `${seatName(held.winner)} wins`} the trick</p>
     {:else if play}
       <div class="trick" aria-label="Current trick">
         {#each play.plays as p (p.seat)}

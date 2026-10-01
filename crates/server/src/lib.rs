@@ -56,7 +56,8 @@ impl AppState {
             }
         };
         let (tx, rx) = mpsc::unbounded_channel();
-        tokio::spawn(Room::<G>::new(id.clone(), settings, self.bot_delay).run(rx));
+        let room = Room::<G>::new(id.clone(), settings, self.bot_delay);
+        tokio::spawn(room.run(tx.downgrade(), rx));
         rooms.insert(id.clone(), tx);
         id
     }

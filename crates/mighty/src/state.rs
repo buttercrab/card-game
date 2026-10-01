@@ -1,6 +1,6 @@
 use crate::card::{Card, Suit};
 use crate::rules::{CardPolicy, Contract, InvalidRules, Rules};
-use crate::trick::{self, Played, TrickContext};
+use crate::trick::{self, Played, Trick, TrickContext};
 use engine::{Seat, Turn};
 use rand::RngCore;
 use rand::seq::SliceRandom;
@@ -112,7 +112,8 @@ pub(crate) struct Play {
     pub plays: Vec<Played>,
     /// The joker called this trick, if the call has effect.
     pub called_joker: Option<Card>,
-    pub last_trick: Option<(Vec<Played>, Seat)>,
+    /// Completed tricks, oldest first.
+    pub tricks: Vec<Trick>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,8 +125,7 @@ pub(crate) struct Done {
     pub friend: Option<Seat>,
     pub team_points: u8,
     pub payoffs: Vec<i64>,
-    /// The final trick, so tables can show it before the result.
-    pub last_trick: Option<(Vec<Played>, Seat)>,
+    pub tricks: Vec<Trick>,
 }
 
 impl State {
@@ -391,7 +391,8 @@ impl State {
         self.callable_joker(p, card).is_some()
     }
 
-    fn step(&mut self, seat: Seat, action: Action) {
+    /// Applies an action already known to be legal.
+    pub(crate) fn step(&mut self, seat: Seat, action: Action) {
         let phase = std::mem::replace(&mut self.phase, Phase::Dealing);
         self.phase = match (phase, action) {
             (Phase::Bidding(_), Action::Misdeal) => {
@@ -475,7 +476,7 @@ impl State {
                     lead: None,
                     plays: Vec::new(),
                     called_joker: None,
-                    last_trick: None,
+                    tricks: Vec::new(),
                 });
             }
             other => unreachable!("{other:?} during exchange"),
@@ -500,11 +501,12 @@ impl State {
             return Phase::Play(p);
         }
 
+        let lead = p.lead.expect("a finished trick has a lead suit");
         let ctx = TrickContext {
             trump: p.contract.trump,
             mighty: self.rules.mighty(p.contract.trump),
             deck: self.rules.deck,
-            lead: p.lead.expect("a finished trick has a lead suit"),
+            lead,
         };
         let winner = p.plays[trick::winner(&ctx, &p.plays)].seat;
         self.taken[winner].extend(p.plays.iter().map(|pl| pl.card));
@@ -517,7 +519,8 @@ impl State {
         if reveals && winner != p.declarer && p.friend.is_none() {
             p.friend = Some(winner);
         }
-        p.last_trick = Some((std::mem::take(&mut p.plays), winner));
+        let plays = std::mem::take(&mut p.plays);
+        p.tricks.push(Trick { plays, lead, winner });
         p.trick_no += 1;
         p.leader = winner;
         p.lead = None;
@@ -572,7 +575,7 @@ impl State {
             friend: p.friend,
             team_points,
             payoffs,
-            last_trick: p.last_trick,
+            tricks: p.tricks,
         }
     }
 

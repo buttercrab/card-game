@@ -3,13 +3,15 @@
 
 use engine::{Bot, Game};
 use mighty::Mighty;
-use mighty::bot::SimpleBot;
 use mighty::rules::Preset;
+use mighty::search::SearchBot;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 pub trait SessionGame:
-    Game<State: Send, Action: Serialize + DeserializeOwned + Send, View: Serialize> + Send + 'static
+    Game<State: Send, Action: Serialize + DeserializeOwned + Send + 'static, View: Serialize + Send + 'static>
+    + Send
+    + 'static
 {
     type Settings: Clone + Serialize + Send + 'static;
 
@@ -51,6 +53,6 @@ impl SessionGame for Mighty {
     }
 
     fn bot() -> Box<dyn Bot<Mighty> + Send> {
-        Box::new(SimpleBot)
+        Box::new(SearchBot::default())
     }
 }

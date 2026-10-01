@@ -12,6 +12,14 @@ pub struct Played {
     pub powered: bool,
 }
 
+/// A completed trick. Every card in it was played face up.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Trick {
+    pub plays: Vec<Played>,
+    pub lead: Suit,
+    pub winner: Seat,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrickContext {
     pub trump: Option<Suit>,

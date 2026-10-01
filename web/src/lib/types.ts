@@ -30,6 +30,12 @@ export interface Played {
   powered: boolean;
 }
 
+export interface Trick {
+  plays: Played[];
+  lead: Suit;
+  winner: number;
+}
+
 export type Turn = 'Chance' | 'Over' | { Seat: number };
 
 export interface Rules {
@@ -73,7 +79,8 @@ export type PhaseView =
         lead: Suit | null;
         plays: Played[];
         called_joker: Card | null;
-        last_trick: [Played[], number] | null;
+        /** Completed tricks, oldest first. */
+        tricks: Trick[];
         discards: Card[] | null;
       };
     }
@@ -85,7 +92,7 @@ export type PhaseView =
         friend: number | null;
         team_points: number;
         payoffs: number[];
-        last_trick: [Played[], number] | null;
+        tricks: Trick[];
       };
     };
 

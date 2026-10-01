@@ -9,7 +9,7 @@ before anyone plays it.
 | Part | What it is |
 | --- | --- |
 | [`engine`](crates/engine) | The `Game` trait every game implements, plus the `Bot` trait |
-| [`mighty`](crates/mighty) | Mighty rules, nine regional presets and a simple bot; see [RULES.md](crates/mighty/RULES.md) |
+| [`mighty`](crates/mighty) | Mighty rules, nine regional presets, and bots: a simple one and a search bot that plays at the table; see [RULES.md](crates/mighty/RULES.md) |
 | [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
 | [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats |
 | [`web`](web) | The table in the browser (Svelte 5 + Vite) |
@@ -40,6 +40,7 @@ forwards `/api` to the server.
 cargo test --workspace
 cargo run --release -p sim -- --games 2000            # every preset
 cargo run --release -p sim -- --preset gshs --bots random
+cargo run --release -p sim -- --games 2500 --bots search   # search bot vs simple bots
 (cd web && npm run check)
 ```
 

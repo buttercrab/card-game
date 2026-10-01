@@ -4,6 +4,7 @@
 pub mod bot;
 pub mod card;
 pub mod rules;
+pub mod search;
 mod state;
 pub mod trick;
 mod view;

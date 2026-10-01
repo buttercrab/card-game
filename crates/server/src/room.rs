@@ -1,22 +1,38 @@
 //! One table. A room runs as its own task and handles one command at a time,
-//! so its state needs no locks.
+//! so its state needs no locks. Bots think on a blocking thread and send
+//! their move back as a command.
 
 use crate::session::SessionGame;
-use engine::{Bot, Turn, Viewer};
+use engine::{Turn, Viewer};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::any::Any;
 use std::collections::HashMap;
-use std::time::Duration;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::time::{Duration, Instant};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, WeakUnboundedSender};
 
 pub type ConnId = u64;
 
 pub enum Command {
-    Connect { conn: ConnId, tx: UnboundedSender<String> },
-    Disconnect { conn: ConnId },
-    Message { conn: ConnId, msg: ClientMsg },
+    Connect {
+        conn: ConnId,
+        tx: UnboundedSender<String>,
+    },
+    Disconnect {
+        conn: ConnId,
+    },
+    Message {
+        conn: ConnId,
+        msg: ClientMsg,
+    },
+    /// A bot's chosen action (a boxed `G::Action`), for game `version`.
+    BotMove {
+        version: u64,
+        seat: usize,
+        action: Box<dyn Any + Send>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -46,10 +62,11 @@ pub enum ClientMsg {
     },
 }
 
-enum Occupant<G: SessionGame> {
+/// Bots keep no state between moves, so a seat only records that one sits there.
+enum Occupant {
     Empty,
     Human { name: String, token: String },
-    Bot(Box<dyn Bot<G> + Send>),
+    Bot,
 }
 
 struct Conn {
@@ -60,7 +77,7 @@ struct Conn {
 pub struct Room<G: SessionGame> {
     id: String,
     settings: G::Settings,
-    seats: Vec<Occupant<G>>,
+    seats: Vec<Occupant>,
     conns: HashMap<ConnId, Conn>,
     /// The current hand, or the last one once it is over.
     game: Option<G::State>,
@@ -68,6 +85,11 @@ pub struct Room<G: SessionGame> {
     scores: Vec<i64>,
     rng: StdRng,
     bot_delay: Duration,
+    /// Bumped whenever the hand changes, so a bot's stale move is dropped.
+    version: u64,
+    thinking: bool,
+    /// Weak so the room still ends when every other sender is gone.
+    me: Option<WeakUnboundedSender<Command>>,
 }
 
 impl<G: SessionGame> Room<G> {
@@ -83,19 +105,18 @@ impl<G: SessionGame> Room<G> {
             scores: vec![0; n],
             rng: StdRng::from_os_rng(),
             bot_delay,
+            version: 0,
+            thinking: false,
+            me: None,
         }
     }
 
-    pub async fn run(mut self, mut rx: UnboundedReceiver<Command>) {
-        loop {
-            let bot_turn = self.bot_to_act().is_some();
-            tokio::select! {
-                cmd = rx.recv() => match cmd {
-                    Some(cmd) => self.handle(cmd),
-                    None => break,
-                },
-                () = tokio::time::sleep(self.bot_delay), if bot_turn => self.bot_step(),
-            }
+    /// `me` must send to `rx`; bots use it to report their moves.
+    pub async fn run(mut self, me: WeakUnboundedSender<Command>, mut rx: UnboundedReceiver<Command>) {
+        self.me = Some(me);
+        while let Some(cmd) = rx.recv().await {
+            self.handle(cmd);
+            self.think();
         }
     }
 
@@ -113,6 +134,12 @@ impl<G: SessionGame> Room<G> {
                     return;
                 }
             }
+            Command::BotMove { version, seat, action } => {
+                self.thinking = false;
+                if !self.bot_move(version, seat, action) {
+                    return;
+                }
+            }
         }
         self.broadcast();
     }
@@ -123,11 +150,7 @@ impl<G: SessionGame> Room<G> {
             ClientMsg::Join { name, token, seat } => self.join(conn, name, token, seat),
             ClientMsg::Leave => {
                 let seat = my_seat.ok_or("you are not seated")?;
-                self.seats[seat] = if self.in_hand() {
-                    Occupant::Bot(G::bot())
-                } else {
-                    Occupant::Empty
-                };
+                self.seats[seat] = if self.in_hand() { Occupant::Bot } else { Occupant::Empty };
                 self.detach(seat);
                 Ok(())
             }
@@ -136,12 +159,12 @@ impl<G: SessionGame> Room<G> {
                 let free = match self.seats.get(seat).ok_or("no such seat")? {
                     Occupant::Empty => true,
                     Occupant::Human { .. } => !self.connected(seat),
-                    Occupant::Bot(_) => false,
+                    Occupant::Bot => false,
                 };
                 if !free {
                     return Err("that seat is taken".into());
                 }
-                self.seats[seat] = Occupant::Bot(G::bot());
+                self.seats[seat] = Occupant::Bot;
                 Ok(())
             }
             ClientMsg::RemoveBot { seat } => {
@@ -150,7 +173,7 @@ impl<G: SessionGame> Room<G> {
                     return Err("bots stay until the hand is over".into());
                 }
                 match self.seats.get(seat) {
-                    Some(Occupant::Bot(_)) => {
+                    Some(Occupant::Bot) => {
                         self.seats[seat] = Occupant::Empty;
                         Ok(())
                     }
@@ -238,29 +261,63 @@ impl<G: SessionGame> Room<G> {
 
     fn bot_to_act(&self) -> Option<usize> {
         match self.game.as_ref().map(G::turn) {
-            Some(Turn::Seat(s)) if matches!(self.seats[s], Occupant::Bot(_)) => Some(s),
+            Some(Turn::Seat(s)) if matches!(self.seats[s], Occupant::Bot) => Some(s),
             _ => None,
         }
     }
 
-    fn bot_step(&mut self) {
-        let Some(seat) = self.bot_to_act() else { return };
-        let (Some(game), Occupant::Bot(bot)) = (self.game.as_mut(), &mut self.seats[seat]) else {
+    /// Starts a bot thinking if one is to act. Its move arrives as
+    /// [`Command::BotMove`] no sooner than the bot delay.
+    fn think(&mut self) {
+        if self.thinking {
+            return;
+        }
+        let me = self.me.as_ref().and_then(WeakUnboundedSender::upgrade);
+        let (Some(seat), Some(game), Some(tx)) = (self.bot_to_act(), self.game.as_ref(), me) else {
             return;
         };
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game);
-        let action = bot.act(&view, &legal, &mut self.rng);
-        if let Err(e) = G::apply(game, action) {
+        let (seed, version, delay) = (self.rng.random::<u64>(), self.version, self.bot_delay);
+        self.thinking = true;
+        tokio::spawn(async move {
+            let started = Instant::now();
+            let choice =
+                tokio::task::spawn_blocking(move || G::bot().act(&view, &legal, &mut StdRng::seed_from_u64(seed)))
+                    .await;
+            // Thinking time counts toward the delay that lets people follow along.
+            tokio::time::sleep(delay.saturating_sub(started.elapsed())).await;
+            let action: Box<dyn Any + Send> = match choice {
+                Ok(action) => Box::new(action),
+                Err(e) => {
+                    tracing::error!("bot failed: {e}");
+                    Box::new(())
+                }
+            };
+            let _ = tx.send(Command::BotMove { version, seat, action });
+        });
+    }
+
+    /// Applies a bot's move if the hand has not moved on. Returns whether it did.
+    fn bot_move(&mut self, version: u64, seat: usize, action: Box<dyn Any + Send>) -> bool {
+        if version != self.version || self.bot_to_act() != Some(seat) {
+            return false;
+        }
+        let Ok(action) = action.downcast::<G::Action>() else {
+            return false;
+        };
+        let Some(game) = self.game.as_mut() else { return false };
+        if let Err(e) = G::apply(game, *action) {
             tracing::error!(room = %self.id, seat, "bot chose an illegal action: {e}");
-            return;
+            return false;
         }
         self.advance();
-        self.broadcast();
+        true
     }
 
     /// Plays chance actions and books the score when the hand ends.
     fn advance(&mut self) {
+        self.version += 1;
         let Some(game) = self.game.as_mut() else { return };
         while G::turn(game) == Turn::Chance {
             let deal = G::sample_chance(game, &mut self.rng);
@@ -286,7 +343,7 @@ impl<G: SessionGame> Room<G> {
                 Occupant::Human { name, .. } => {
                     json!({ "kind": "human", "name": name, "connected": self.connected(i) })
                 }
-                Occupant::Bot(_) => json!({ "kind": "bot", "name": format!("Bot {}", i + 1) }),
+                Occupant::Bot => json!({ "kind": "bot", "name": format!("Bot {}", i + 1) }),
             })
             .collect();
         json!({
