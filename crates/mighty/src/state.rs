@@ -124,6 +124,8 @@ pub(crate) struct Done {
     pub friend: Option<Seat>,
     pub team_points: u8,
     pub payoffs: Vec<i64>,
+    /// The final trick, so tables can show it before the result.
+    pub last_trick: Option<(Vec<Played>, Seat)>,
 }
 
 impl State {
@@ -570,6 +572,7 @@ impl State {
             friend: p.friend,
             team_points,
             payoffs,
+            last_trick: p.last_trick,
         }
     }
 

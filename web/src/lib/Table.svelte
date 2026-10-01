@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import BidPanel from './BidPanel.svelte';
   import CardFace from './CardFace.svelte';
   import ExchangePanel from './ExchangePanel.svelte';
   import { contractLabel, friendCallLabel, isPoint, sameCard, SUIT_SYMBOL } from './cards';
   import type { RoomClient } from './client.svelte';
-  import type { Action, Card, PlayAction } from './types';
+  import type { Action, Card, Played, PlayAction } from './types';
 
   let { client }: { client: RoomClient } = $props();
 
@@ -63,6 +63,7 @@
 
   function act(action: Action) {
     variants = null;
+    held = null;
     client.act(action);
   }
 
@@ -96,9 +97,24 @@
   }
 
   const points = (seat: number) => view.points_taken[seat]?.filter(isPoint).length ?? 0;
-  const lastTrick = $derived(play?.last_trick ?? null);
-  const myDiscards = $derived(exchange?.discards ?? play?.discards ?? []);
-  let showLast = $state(false);
+
+  // The server clears a trick the moment its last card lands. Keep the
+  // finished trick on the table briefly so everyone sees how it ended.
+  const finished = $derived(play?.last_trick ?? done?.last_trick ?? null);
+  let held = $state<[Played[], number] | null>(null);
+  let seen: string | null | undefined;
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const key = finished && JSON.stringify(finished);
+    // Nothing to replay on first load, such as after a reload mid-hand.
+    if (seen !== undefined && key && key !== seen) {
+      held = finished;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => (held = null), 1600);
+    }
+    seen = key;
+  });
+  onDestroy(() => clearTimeout(holdTimer));
 </script>
 
 <section class="table">
@@ -132,11 +148,24 @@
         {#if call}
           <span>Friend: {friend !== null ? seatName(friend) : friendCallLabel(call, seatName)}</span>
         {/if}
-        {#if play}<span>Trick {play.trick_no + 1}/{view.rules.hand_size}</span>{/if}
+        {#if play}
+          <!-- While a finished trick is held, trick_no already points at the next one. -->
+          <span>Trick {play.trick_no + (held ? 0 : 1)}/{view.rules.hand_size}</span>
+        {/if}
       {/if}
     </div>
 
-    {#if play}
+    {#if held}
+      <div class="trick" aria-label="Finished trick">
+        {#each held[0] as p (p.seat)}
+          <figure>
+            <CardFace card={p.card} powerless={!p.powered} />
+            <figcaption class:won={p.seat === held[1]}>{p.seat === me ? 'You' : seatName(p.seat)}</figcaption>
+          </figure>
+        {/each}
+      </div>
+      <p class="felt-note">{held[1] === me ? 'You win' : `${seatName(held[1])} wins`} the trick</p>
+    {:else if play}
       <div class="trick" aria-label="Current trick">
         {#each play.plays as p (p.seat)}
           <figure>
@@ -152,22 +181,7 @@
           <span>Joker led as {SUIT_SYMBOL[play.lead]}</span>
         {/if}
         {#if play.called_joker}<span class="alert">Joker killed — it must come out</span>{/if}
-        {#if lastTrick}
-          <button class="link" onclick={() => (showLast = !showLast)}>
-            {showLast ? 'Hide' : 'Show'} last trick
-          </button>
-        {/if}
       </div>
-      {#if showLast && lastTrick}
-        <div class="last">
-          {#each lastTrick[0] as p (p.seat)}
-            <figure>
-              <CardFace card={p.card} small powerless={!p.powered} />
-              <figcaption class:won={p.seat === lastTrick[1]}>{p.seat === me ? 'You' : seatName(p.seat)}</figcaption>
-            </figure>
-          {/each}
-        </div>
-      {/if}
     {:else if exchange}
       <p class="felt-note">
         {exchange.declarer === me ? 'You won the bid. Take a look at the kitty.' : `${seatName(exchange.declarer)} is taking the kitty…`}
@@ -180,7 +194,7 @@
           {seatName(done.declarer)}{done.friend !== null ? ` and ${seatName(done.friend)}` : ''} took
           <strong>{done.team_points}</strong> of {done.contract.count} needed.
         </p>
-        <ol class="payoffs">
+        <ol class="payoffs" aria-label="This hand">
           {#each done.payoffs as pay, s (s)}
             <li>
               <span>{s === me ? 'You' : seatName(s)}</span>
@@ -230,27 +244,23 @@
         <strong>You</strong>
         {#if role(me)}<span class="role" class:friend={role(me) === 'Friend'}>{role(me)}</span>{/if}
         {#if points(me) > 0}<span>★ {points(me)}</span>{/if}
-        {#if myDiscards.length > 0}
-          <span class="muted put-back">
-            Put back:
-            {#each myDiscards as d, i (i)}<CardFace card={d} small />{/each}
-          </span>
-        {/if}
       </div>
-      <div class="hand" aria-label="Your hand">
-        {#each view.hand as card (JSON.stringify(card))}
-          {#if choosingCards}
-            <CardFace
-              {card}
-              dim={!playable(card)}
-              selected={selected.some((c) => sameCard(c, card))}
-              onclick={() => clickCard(card)}
-            />
-          {:else}
-            <CardFace {card} />
-          {/if}
-        {/each}
-      </div>
+      {#if view.hand.length > 0}
+        <div class="hand" aria-label="Your hand">
+          {#each view.hand as card (JSON.stringify(card))}
+            {#if choosingCards}
+              <CardFace
+                {card}
+                dim={!playable(card)}
+                selected={selected.some((c) => sameCard(c, card))}
+                onclick={() => clickCard(card)}
+              />
+            {:else}
+              <CardFace {card} />
+            {/if}
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
 </section>
@@ -339,20 +349,13 @@
     font-size: 16px;
   }
 
-  .trick,
-  .last {
+  .trick {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 10px;
     min-height: 106px;
     align-items: center;
-  }
-
-  .last {
-    min-height: 0;
-    padding-top: 8px;
-    border-top: 1px dashed color-mix(in srgb, var(--felt-text) 30%, transparent);
   }
 
   figure {
@@ -397,16 +400,6 @@
     font-weight: 600;
   }
 
-  .link {
-    min-height: 0;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--felt-text);
-    text-decoration: underline;
-    font-size: 13px;
-  }
-
   .result {
     text-align: center;
   }
@@ -446,6 +439,10 @@
     align-items: center;
   }
 
+  .controls:empty {
+    display: none;
+  }
+
   .prompt {
     margin: 0;
     text-align: center;
@@ -473,12 +470,6 @@
     gap: 6px 10px;
     font-size: 14px;
     margin-bottom: 10px;
-  }
-
-  .put-back {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
   }
 
   .hand {

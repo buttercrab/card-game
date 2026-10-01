@@ -57,6 +57,7 @@ pub enum PhaseView {
         friend: Option<Seat>,
         team_points: u8,
         payoffs: Vec<i64>,
+        last_trick: Option<(Vec<Played>, Seat)>,
     },
 }
 
@@ -100,6 +101,7 @@ impl View {
                 friend: d.friend,
                 team_points: d.team_points,
                 payoffs: d.payoffs.clone(),
+                last_trick: d.last_trick.clone(),
             },
         };
         View {

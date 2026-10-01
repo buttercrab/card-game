@@ -85,6 +85,7 @@ export type PhaseView =
         friend: number | null;
         team_points: number;
         payoffs: number[];
+        last_trick: [Played[], number] | null;
       };
     };
 

@@ -82,6 +82,11 @@
         {#if seated && !full}
           <p class="muted hint">Fill every seat with a friend or a bot to deal.</p>
         {/if}
+        {#if room.hands_played > 0}
+          <p class="muted hint totals">
+            Running totals after {room.hands_played} hand{room.hands_played === 1 ? '' : 's'}
+          </p>
+        {/if}
 
         <ol class="seats">
           {#each room.seats as s, i (i)}
@@ -98,7 +103,7 @@
                 {/if}
               </span>
               {#if room.hands_played > 0}
-                <span class="score" class:neg={room.scores[i] < 0}>{room.scores[i] > 0 ? '+' : ''}{room.scores[i]}</span>
+                <span class="score" class:neg={room.scores[i] < 0} title="Total over all hands">{room.scores[i] > 0 ? '+' : ''}{room.scores[i]}</span>
               {/if}
               <span class="seat-actions">
                 {#if s.kind === 'empty' && !seated && name.trim()}
