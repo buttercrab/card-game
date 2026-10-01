@@ -362,6 +362,7 @@ impl Preset {
                     card_values: vec![(Card::new(Suit::Spade, ACE), -2)],
                     threshold: 1,
                 };
+                r.bidding.min = 14;
                 r.joker_call
                     .calls
                     .push((Card::new(Suit::Heart, 3), Card::new(Suit::Diamond, 3)));

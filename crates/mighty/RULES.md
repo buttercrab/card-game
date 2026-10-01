@@ -72,13 +72,13 @@ rewritten.
 ## Confirmed for 경기과고 (`gshs`), our default
 
 - Bidding goes in turn and every bid must be higher than the last.
-- The minimum bid is 13. web-mighty's preset said 14.
+- The minimum bid is 14.
+- Each joker killer kills only the joker of its own colour: ♣3 the black
+  joker, ♥3 the red one.
 - Point cards in the declarer's discards count for the declarer's side.
 
 ## Still open
 
-- **Joker killers with two jokers:** the code assumes ♣3 kills the black
-  joker and ♥3 the red one. Does each 3 kill only its own colour?
 - **Mighty defense:** is it really "the joker's holder may play the mighty
   instead"?
 - **Scoring:** the formula above follows web-mighty. Many groups instead
