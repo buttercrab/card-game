@@ -81,7 +81,7 @@ rewritten.
 
 ## Still open
 
-- **Scoring:** the formula above follows web-mighty. Many groups instead
-  use the bid above the minimum plus the points over the bid.
+- **Scoring:** web-mighty's formula above, kept for now. Many groups
+  instead use the bid above the minimum plus the points over the bid.
 - **Bids above 20:** 대구과고 and 연세대 allow bids up to 23, which can never
   be made under this scoring.
