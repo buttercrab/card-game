@@ -76,11 +76,11 @@ rewritten.
 - Each joker killer kills only the joker of its own colour: ♣3 the black
   joker, ♥3 the red one.
 - Point cards in the declarer's discards count for the declarer's side.
+- Mighty defense: when the joker is killed, its holder may play the mighty
+  instead.
 
 ## Still open
 
-- **Mighty defense:** is it really "the joker's holder may play the mighty
-  instead"?
 - **Scoring:** the formula above follows web-mighty. Many groups instead
   use the bid above the minimum plus the points over the bid.
 - **Bids above 20:** 대구과고 and 연세대 allow bids up to 23, which can never
