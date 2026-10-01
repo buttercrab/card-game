@@ -6,11 +6,13 @@ before anyone plays it.
 
 ## Layout
 
-| Crate | What it is |
+| Part | What it is |
 | --- | --- |
 | [`engine`](crates/engine) | The `Game` trait every game implements, plus the `Bot` trait |
 | [`mighty`](crates/mighty) | Mighty rules, nine regional presets and a simple bot; see [RULES.md](crates/mighty/RULES.md) |
 | [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
+| [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats |
+| [`web`](web) | The table in the browser (Svelte 5 + Vite) |
 
 A game is a deterministic state machine:
 - `legal_actions` is the only source of truth for what is allowed.
@@ -18,12 +20,27 @@ A game is a deterministic state machine:
 - Shuffling is a server-drawn chance action, so any game replays exactly
   from its log.
 
-## Run
+## Play
+
+```sh
+(cd web && npm install && npm run build)
+cargo run --release -p server        # http://127.0.0.1:3030
+```
+
+Create a table, share its link, and add bots to any empty seats. Pass
+`--addr 0.0.0.0:3030` so friends on your network can join. Rooms live in
+memory, so restarting the server closes them.
+
+For frontend work, run `npm run dev` in `web/` while the server runs. Vite
+forwards `/api` to the server.
+
+## Test
 
 ```sh
 cargo test --workspace
 cargo run --release -p sim -- --games 2000            # every preset
 cargo run --release -p sim -- --preset gshs --bots random
+(cd web && npm run check)
 ```
 
 After every step the simulator checks that:
@@ -36,8 +53,8 @@ After every step the simulator checks that:
 
 ## Roadmap
 
-1. **Engine core, Mighty, simulator** (this)
-2. Playable with friends: rooms, table UI, bots in empty seats
+1. Engine core, Mighty, simulator
+2. **Playable with friends**: rooms, table UI, bots in empty seats (this)
 3. Poker, to prove the engine is general
 4. AI-written house rules, gated by the simulator
 5. Public

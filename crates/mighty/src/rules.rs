@@ -271,6 +271,7 @@ impl Rules {
 
 /// House rules collected in web-mighty, named after the groups that play them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Preset {
     /// 기본 5마
     Default,

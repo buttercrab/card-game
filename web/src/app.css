@@ -1,0 +1,135 @@
+:root {
+  --bg: #f4f2ec;
+  --surface: #ffffff;
+  --surface-2: #ebe8df;
+  --text: #1d2433;
+  --muted: #5b6475;
+  --border: #d6d1c4;
+  --accent: #1f6f4f;
+  --accent-text: #ffffff;
+  --accent-soft: #dcefe5;
+  --danger: #b3261e;
+  --felt: #2d6a4f;
+  --felt-edge: #24563f;
+  --felt-text: #eef6f1;
+  --felt-muted: #b9d4c6;
+  --card-face: #fffdf8;
+  --card-ink: #1d2433;
+  --card-red: #c62828;
+  --card-border: #cfc8b8;
+  --highlight: #f2b705;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 2px 8px rgb(0 0 0 / 0.06);
+  --radius: 10px;
+  --font: system-ui, -apple-system, 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #111418;
+    --surface: #1a1f26;
+    --surface-2: #232a33;
+    --text: #e7e9ee;
+    --muted: #9aa3b2;
+    --border: #2e3642;
+    --accent: #3fa877;
+    --accent-text: #08130d;
+    --accent-soft: #1d3a2c;
+    --danger: #ef6b62;
+    --felt: #18402f;
+    --felt-edge: #123224;
+    --felt-text: #e6f2eb;
+    --felt-muted: #9cbcab;
+    --card-border: #8f8a7e;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 8px rgb(0 0 0 / 0.3);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #111418;
+  --surface: #1a1f26;
+  --surface-2: #232a33;
+  --text: #e7e9ee;
+  --muted: #9aa3b2;
+  --border: #2e3642;
+  --accent: #3fa877;
+  --accent-text: #08130d;
+  --accent-soft: #1d3a2c;
+  --danger: #ef6b62;
+  --felt: #18402f;
+  --felt-edge: #123224;
+  --felt-text: #e6f2eb;
+  --felt-muted: #9cbcab;
+  --card-border: #8f8a7e;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 8px rgb(0 0 0 / 0.3);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 8px 14px;
+  min-height: 40px;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+button.ghost {
+  background: transparent;
+}
+
+input,
+select {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--highlight);
+  outline-offset: 2px;
+}
+
+.muted {
+  color: var(--muted);
+}
