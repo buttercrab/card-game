@@ -1,0 +1,161 @@
+use crate::card::{Card, Color, DeckKind, Suit};
+use engine::Seat;
+use serde::{Deserialize, Serialize};
+
+/// A card on the table. `powered` is false when a rule stripped its special
+/// power: a powerless mighty or trump counts as a plain card of its suit,
+/// and a powerless joker cannot win.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Played {
+    pub seat: Seat,
+    pub card: Card,
+    pub powered: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrickContext {
+    pub trump: Option<Suit>,
+    pub mighty: Card,
+    pub deck: DeckKind,
+    /// The suit others must follow: the led card's suit, or the suit
+    /// declared when a joker is led.
+    pub lead: Suit,
+}
+
+/// Index into `plays` of the card currently winning the trick.
+pub fn winner(ctx: &TrickContext, plays: &[Played]) -> usize {
+    let find = |pred: &dyn Fn(&Played) -> bool| plays.iter().position(pred);
+
+    if let Some(i) = find(&|p| p.powered && p.card == ctx.mighty) {
+        return i;
+    }
+
+    let (main_joker, sub_joker) = match (ctx.deck, ctx.trump) {
+        (DeckKind::OneJoker, _) => (Some(Card::Joker(Color::Black)), None),
+        (DeckKind::TwoJokers, Some(trump)) => (
+            Some(Card::Joker(trump.color())),
+            // The other joker beats the led suit only when it is not the trump colour.
+            (ctx.lead.color() != trump.color()).then(|| Card::Joker(other(trump.color()))),
+        ),
+        (DeckKind::TwoJokers, None) => (Some(Card::Joker(ctx.lead.color())), None),
+    };
+    if let Some(i) = main_joker.and_then(|j| find(&|p| p.powered && p.card == j)) {
+        return i;
+    }
+    let trumps = plays.iter().enumerate().filter(|(_, p)| p.powered && is_trump(ctx, p));
+    if let Some((i, _)) = trumps.max_by_key(|(_, p)| p.card.rank()) {
+        return i;
+    }
+    if let Some(i) = sub_joker.and_then(|j| find(&|p| p.powered && p.card == j)) {
+        return i;
+    }
+    // Everything with power is gone; powerless trumps and mighty count as plain cards.
+    plays
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.card.suit() == Some(ctx.lead))
+        .max_by_key(|(_, p)| p.card.rank())
+        .map_or(0, |(i, _)| i)
+}
+
+fn is_trump(ctx: &TrickContext, p: &Played) -> bool {
+    p.card != ctx.mighty && p.card.suit().is_some() && p.card.suit() == ctx.trump
+}
+
+fn other(color: Color) -> Color {
+    match color {
+        Color::Black => Color::Red,
+        Color::Red => Color::Black,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::card::ACE;
+
+    fn ctx(deck: DeckKind, trump: Option<Suit>, lead: Suit) -> TrickContext {
+        let mighty = if trump == Some(Suit::Spade) {
+            Card::new(Suit::Diamond, ACE)
+        } else {
+            Card::new(Suit::Spade, ACE)
+        };
+        TrickContext {
+            trump,
+            mighty,
+            deck,
+            lead,
+        }
+    }
+
+    fn plays(cards: &[(Card, bool)]) -> Vec<Played> {
+        cards
+            .iter()
+            .enumerate()
+            .map(|(seat, &(card, powered))| Played { seat, card, powered })
+            .collect()
+    }
+
+    const BJ: Card = Card::Joker(Color::Black);
+    const RJ: Card = Card::Joker(Color::Red);
+    const SA: Card = Card::new(Suit::Spade, ACE);
+
+    #[test]
+    fn mighty_beats_joker_beats_trump_beats_lead() {
+        let c = ctx(DeckKind::OneJoker, Some(Suit::Heart), Suit::Club);
+        let h2 = Card::new(Suit::Heart, 2);
+        let ck = Card::new(Suit::Club, 13);
+        assert_eq!(winner(&c, &plays(&[(ck, true), (h2, true), (BJ, true), (SA, true)])), 3);
+        assert_eq!(winner(&c, &plays(&[(ck, true), (h2, true), (BJ, true)])), 2);
+        assert_eq!(winner(&c, &plays(&[(ck, true), (h2, true)])), 1);
+        assert_eq!(winner(&c, &plays(&[(Card::new(Suit::Club, 5), true), (ck, true)])), 1);
+    }
+
+    #[test]
+    fn off_suit_cards_never_win() {
+        let c = ctx(DeckKind::OneJoker, Some(Suit::Heart), Suit::Club);
+        let p = plays(&[(Card::new(Suit::Club, 2), true), (Card::new(Suit::Diamond, ACE), true)]);
+        assert_eq!(winner(&c, &p), 0);
+    }
+
+    #[test]
+    fn powerless_cards() {
+        let c = ctx(DeckKind::OneJoker, Some(Suit::Heart), Suit::Spade);
+        // A powerless joker loses to anything on suit.
+        assert_eq!(winner(&c, &plays(&[(Card::new(Suit::Spade, 2), true), (BJ, false)])), 0);
+        // A powerless mighty is still the ace of spades.
+        let p = plays(&[(Card::new(Suit::Spade, 13), true), (SA, false)]);
+        assert_eq!(winner(&c, &p), 1);
+    }
+
+    #[test]
+    fn two_jokers_with_trump() {
+        // Hearts trump: the red joker is the main joker.
+        let c = ctx(DeckKind::TwoJokers, Some(Suit::Heart), Suit::Club);
+        let h2 = Card::new(Suit::Heart, 2);
+        assert_eq!(winner(&c, &plays(&[(BJ, true), (RJ, true), (h2, true)])), 1);
+        // Trump beats the other joker...
+        assert_eq!(winner(&c, &plays(&[(BJ, true), (h2, true)])), 1);
+        // ...which still beats the led suit when the lead is not trump colour.
+        assert_eq!(winner(&c, &plays(&[(Card::new(Suit::Club, ACE), true), (BJ, true)])), 1);
+        let red_lead = ctx(DeckKind::TwoJokers, Some(Suit::Heart), Suit::Diamond);
+        let p = plays(&[(Card::new(Suit::Diamond, 2), true), (BJ, true)]);
+        assert_eq!(winner(&red_lead, &p), 0);
+    }
+
+    #[test]
+    fn two_jokers_no_trump_follow_lead_colour() {
+        let c = ctx(DeckKind::TwoJokers, None, Suit::Diamond);
+        assert_eq!(
+            winner(
+                &c,
+                &plays(&[(Card::new(Suit::Diamond, 2), true), (BJ, true), (RJ, true)])
+            ),
+            2
+        );
+        assert_eq!(
+            winner(&c, &plays(&[(Card::new(Suit::Diamond, 2), true), (BJ, true)])),
+            0
+        );
+    }
+}

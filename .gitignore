@@ -1,11 +1,9 @@
 /target
 
 # Mac files
-
 .DS_Store
 
 # IDE files
-
 .idea/
 .vscode
 .vs

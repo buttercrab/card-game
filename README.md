@@ -1,29 +1,43 @@
 # Card Game
 
-General online trump card game platform that users can define their own rules and play with others.
+A platform for card games with house rules, starting with Mighty (마이티).
+Rules are data: each group's variant is a preset, checked by a simulator
+before anyone plays it.
 
-## Simple Roadmap
+## Layout
 
-front-end: [Svelte](https://svelte.dev/) + [astro](https://astro.build/) + [tailwindcss](https://tailwindcss.com/)
+| Crate | What it is |
+| --- | --- |
+| [`engine`](crates/engine) | The `Game` trait every game implements, plus the `Bot` trait |
+| [`mighty`](crates/mighty) | Mighty rules, nine regional presets and a simple bot; see [RULES.md](crates/mighty/RULES.md) |
+| [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
 
-back-end: [warp](https://github.com/seanmonstar/warp) + [deno core (V8)](https://crates.io/crates/deno_core) +
-postgresql + redis
+A game is a deterministic state machine:
+- `legal_actions` is the only source of truth for what is allowed.
+- `view` gives each seat only what it may see.
+- Shuffling is a server-drawn chance action, so any game replays exactly
+  from its log.
 
-Users will write their rules in js, which would be executed in sandbox space in server.
+## Run
 
-### Diagram
-
-In one game, it would be like below
-
+```sh
+cargo test --workspace
+cargo run --release -p sim -- --games 2000            # every preset
+cargo run --release -p sim -- --preset gshs --bots random
 ```
-┌──────Server──────┐
-│                  │
-│        ┌──────┐  │           ┌─ Client1
-│ ┌──┐   │ Rule │  │ Websocket │
-│ │DB╞═══╡  JS  ├──│───────────┼─ Client2
-│ └──┘   └──────┘  │           │
-│       V8 sandbox │           └─ Client3
-│                  │
-└──────────────────┘
-```
-               
+
+After every step the simulator checks that:
+- the seat to act always has a legal move
+- no card is created or lost
+- payoffs sum to zero
+- views don't change when hidden cards are reshuffled
+- every game ends
+- replaying the log reproduces the final state
+
+## Roadmap
+
+1. **Engine core, Mighty, simulator** (this)
+2. Playable with friends: rooms, table UI, bots in empty seats
+3. Poker, to prove the engine is general
+4. AI-written house rules, gated by the simulator
+5. Public

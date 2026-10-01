@@ -1,0 +1,119 @@
+use crate::card::{Card, Suit};
+use crate::rules::{Contract, Rules};
+use crate::state::{FriendCall, Phase, State};
+use crate::trick::Played;
+use engine::{Seat, Viewer};
+use serde::{Deserialize, Serialize};
+
+/// Everything one viewer may know. Other hands, the kitty and (for anyone
+/// but the declarer) the discards are never included.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct View {
+    pub viewer: Viewer,
+    pub rules: Rules,
+    pub first_bidder: Seat,
+    /// Empty for spectators.
+    pub hand: Vec<Card>,
+    pub hand_sizes: Vec<usize>,
+    /// Point cards each seat has won; they lie face up.
+    pub points_taken: Vec<Vec<Card>>,
+    pub phase: PhaseView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PhaseView {
+    Dealing,
+    Bidding {
+        to_act: Seat,
+        best: Option<(Seat, Contract)>,
+        passed: Vec<bool>,
+    },
+    Exchange {
+        declarer: Seat,
+        contract: Contract,
+        trump_changed: bool,
+        /// Only the declarer sees these.
+        discards: Option<Vec<Card>>,
+    },
+    Play {
+        declarer: Seat,
+        contract: Contract,
+        call: FriendCall,
+        /// Set once the friend is publicly known.
+        friend: Option<Seat>,
+        trick_no: usize,
+        leader: Seat,
+        lead: Option<Suit>,
+        plays: Vec<Played>,
+        called_joker: Option<Card>,
+        last_trick: Option<(Vec<Played>, Seat)>,
+        /// Only the declarer sees these.
+        discards: Option<Vec<Card>>,
+    },
+    Done {
+        declarer: Seat,
+        contract: Contract,
+        call: FriendCall,
+        friend: Option<Seat>,
+        team_points: u8,
+        payoffs: Vec<i64>,
+    },
+}
+
+impl View {
+    pub(crate) fn new(state: &State, viewer: Viewer) -> View {
+        let me = match viewer {
+            Viewer::Seat(s) => Some(s),
+            Viewer::Spectator => None,
+        };
+        let own_discards = |declarer: Seat, discards: &[Card]| (me == Some(declarer)).then(|| discards.to_vec());
+        let phase = match &state.phase {
+            Phase::Dealing => PhaseView::Dealing,
+            Phase::Bidding(b) => PhaseView::Bidding {
+                to_act: b.to_act,
+                best: b.best,
+                passed: b.passed.clone(),
+            },
+            Phase::Exchange(e) => PhaseView::Exchange {
+                declarer: e.declarer,
+                contract: e.contract,
+                trump_changed: e.trump_changed,
+                discards: own_discards(e.declarer, &e.discards),
+            },
+            Phase::Play(p) => PhaseView::Play {
+                declarer: p.declarer,
+                contract: p.contract,
+                call: p.call,
+                friend: p.friend,
+                trick_no: p.trick_no,
+                leader: p.leader,
+                lead: p.lead,
+                plays: p.plays.clone(),
+                called_joker: p.called_joker,
+                last_trick: p.last_trick.clone(),
+                discards: own_discards(p.declarer, &p.discards),
+            },
+            Phase::Done(d) => PhaseView::Done {
+                declarer: d.declarer,
+                contract: d.contract,
+                call: d.call,
+                friend: d.friend,
+                team_points: d.team_points,
+                payoffs: d.payoffs.clone(),
+            },
+        };
+        View {
+            viewer,
+            rules: state.rules.clone(),
+            first_bidder: state.first_bidder,
+            hand: me.map(|s| state.hands[s].clone()).unwrap_or_default(),
+            hand_sizes: state.hands.iter().map(Vec::len).collect(),
+            points_taken: state
+                .taken
+                .iter()
+                .map(|t| t.iter().copied().filter(|c| c.is_point()).collect())
+                .collect(),
+            phase,
+        }
+    }
+}
