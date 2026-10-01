@@ -59,7 +59,7 @@ export interface Rules {
 
 export type PhaseView =
   | 'Dealing'
-  | { Bidding: { to_act: number; best: [number, Contract] | null; passed: boolean[] } }
+  | { Bidding: { to_act: number; best: [number, Contract] | null; passed: boolean[]; has_bid: boolean[] } }
   | {
       Exchange: {
         declarer: number;

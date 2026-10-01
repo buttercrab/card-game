@@ -27,6 +27,8 @@ pub enum PhaseView {
         to_act: Seat,
         best: Option<(Seat, Contract)>,
         passed: Vec<bool>,
+        /// Who has bid at least once; they may no longer call a misdeal.
+        has_bid: Vec<bool>,
     },
     Exchange {
         declarer: Seat,
@@ -75,6 +77,7 @@ impl View {
                 to_act: b.to_act,
                 best: b.best,
                 passed: b.passed.clone(),
+                has_bid: b.has_bid.clone(),
             },
             Phase::Exchange(e) => PhaseView::Exchange {
                 declarer: e.declarer,

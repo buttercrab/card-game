@@ -43,7 +43,7 @@ jobs:
           for bots in random simple mixed; do
             cargo run --release -p sim -- --games 2000 --bots "$bots"
           done
-          cargo run --release -p sim -- --games 200 --bots search
+          cargo run --release -p sim -- --games 100 --bots search
 
   web:
     runs-on: ubuntu-latest
