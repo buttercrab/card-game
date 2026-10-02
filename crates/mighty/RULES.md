@@ -87,6 +87,8 @@ rewritten.
 - Point cards in the declarer's discards count for the declarer's side.
 - Mighty defense: when the joker is killed, its holder may play the mighty
   instead.
+- The mighty and both jokers may be played at any time, even while
+  holding the led suit, whatever the joker's colour.
 - Jokers have no power on the first and last trick.
 - A joker killer calls the joker only when it is led.
 - A led joker names a suit of its colour, or its colour; whoever holds a
