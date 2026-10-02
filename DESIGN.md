@@ -324,7 +324,7 @@ Sound supplies the tactile feel that flat visuals lack. On by default at 70% vol
 | Bid | a bid or pass is made | soft click |
 | Result | hand ends | win and lose variants, under 1.5s |
 
-Sources: Kenney Casino Audio and Interface Sounds, BMacZero playing-card sounds (all CC0). Total budget 200KB.
+The first pass synthesises every cue with Web Audio (`web/src/lib/sound.ts`): filtered noise for paper sounds, a major pentatonic scale for notes. Nothing to download or license. Recorded CC0 packs (Kenney Casino Audio and Interface Sounds, BMacZero playing-card sounds) can replace individual cues later within a 200KB budget.
 
 ## Do's and Don'ts
 

@@ -11,6 +11,7 @@
   import type { RoomClient } from './client.svelte';
   import { flyFrom, flyTo, pop, wait } from './motion';
   import { settings } from './settings.svelte';
+  import { sound } from './sound';
   import type { Action, Card as CardT, PhaseView, Played, PlayAction, StateMsg, Trick } from './types';
 
   let { client }: { client: RoomClient } = $props();
@@ -184,6 +185,7 @@
         const next = queue.shift()!;
         const k = pace();
         // Too far behind or not being watched: catch up at once.
+        cues(shown, next);
         if (k === 0 || document.hidden || queue.length > 3) {
           for (const a of felt?.getAnimations({ subtree: true }) ?? []) a.finish();
           resolving = null;
@@ -230,9 +232,38 @@
     await Promise.all(
       fresh.map((p, i) => {
         const origin = from[i];
-        return origin ? flyFrom(slotCard(p.seat), origin, (p.seat === me ? 220 : 320) * k, i * 60 * k) : undefined;
+        const duration = (p.seat === me ? 220 : 320) * k;
+        sound.card((i * 60 * k + duration * 0.8) / 1000);
+        return origin ? flyFrom(slotCard(p.seat), origin, duration, i * 60 * k) : undefined;
       }),
     );
+  }
+
+  /** Sounds that mark a change of state rather than a movement. */
+  function cues(prev: StateMsg, next: StateMsg) {
+    const was = prev.view.phase;
+    const now = next.view.phase;
+    const turnOf = (m: StateMsg) => (typeof m.turn === 'object' ? m.turn.Seat : null);
+    if (me !== null && turnOf(next) === me && turnOf(prev) !== me) sound.turn();
+    if (typeof was === 'object' && 'Bidding' in was && typeof now === 'object' && 'Bidding' in now) {
+      const moved = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best) ||
+        was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length;
+      if (moved) sound.bid();
+    }
+    if (typeof now === 'object' && 'Done' in now && !(typeof was === 'object' && 'Done' in was)) {
+      const d = now.Done;
+      const declarerWon = d.team_points >= d.contract.count;
+      const mine = me === null || me === d.declarer || me === d.friend;
+      sound.result(mine ? declarerWon : !declarerWon);
+    }
+    // With motion off, cards still make their sound as they land.
+    if (pace() === 0 || prefersReducedMotion.current) {
+      const a = roundOf(was);
+      const b = roundOf(now);
+      if (a && b && b.tricks.length === a.tricks.length) {
+        b.plays.slice(a.plays.length).forEach((_, i) => sound.card(i * 0.06));
+      }
+    }
   }
 
   async function transition(prev: StateMsg, next: StateMsg, k: number) {
@@ -267,6 +298,7 @@
       await pop(slotCard(trick.winner), reduced ? 0 : 360 * k);
       await wait((reduced ? 700 : 250) * k);
       const to = anchor(trick.winner);
+      sound.sweep(trick.plays.filter((p) => isPoint(p.card)).length);
       if (!reduced && to) {
         await Promise.all(trick.plays.map((p, i) => flyTo(slotCard(p.seat), to, 400 * k, i * 40 * k)));
       }
@@ -283,6 +315,7 @@
     }
     if (before.friend === null && after.friend !== null && after.friend !== undefined) {
       revealed = after.friend;
+      sound.friend();
       await wait(700 * k);
       revealed = null;
     }
