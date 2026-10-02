@@ -23,7 +23,9 @@ rewritten.
 4. **Play.** The declarer leads the first trick and the winner of each trick
    leads the next.
    - You must follow the led suit if you can. The mighty and jokers may
-     always be played and never oblige you to follow.
+     always be played. Jokers never oblige you to follow, but the mighty is
+     still a card of its suit: when that suit is led and the mighty is the
+     only one you hold, you must play it.
    - Leading a joker names the suit to follow. With two jokers, the suit
      must match the joker's colour. With `joker_lead.by_color` it may name
      its colour instead, and a card of either suit of that colour follows.
@@ -89,6 +91,8 @@ rewritten.
   instead.
 - The mighty and both jokers may be played at any time, even while
   holding the led suit, whatever the joker's colour.
+- The mighty counts as its own suit: if that suit is led and the mighty is
+  your only card of it, you must play the mighty.
 - Jokers have no power on the first and last trick.
 - A joker killer calls the joker only when it is led, and the called
   joker has no power.

@@ -172,6 +172,17 @@ fn must_follow_suit_but_mighty_and_joker_are_free() {
 }
 
 #[test]
+fn the_mighty_still_counts_as_its_own_suit() {
+    // Spades are led and the only spade in hand is the mighty (♠A): it must follow.
+    let declarer = "S2 D3 D4 D5 D6 D7 D8 D9 C3 C4";
+    let hand = "SA D2 H2 H3 H4 C8 C9 C10 CJ CQ";
+    let mut state = start(Rules::default(), &[declarer, hand], KITTY);
+    to_play(&mut state, FriendCall::FirstTrick);
+    lead(&mut state, "S2");
+    assert_eq!(legal_cards(&state), sorted("SA"));
+}
+
+#[test]
 fn trump_is_held_back_on_the_first_trick() {
     let hand = "SA BJ H2 H3 S2 S3 S4 S5 S6 S7";
     let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);

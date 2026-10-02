@@ -347,7 +347,9 @@ impl State {
             // The mighty and jokers may always be played and never oblige following.
             let lead = p.lead.expect("a trick in progress has a lead");
             let free = |c: &Card| *c == mighty || c.is_joker();
-            let follows = hand.iter().any(|c| !free(c) && lead.follows(*c));
+            // The mighty still belongs to its suit: when that suit is led
+            // and the mighty is all of it in hand, the mighty must follow.
+            let follows = hand.iter().any(|c| !c.is_joker() && lead.follows(*c));
             let candidates: Vec<Card> = hand
                 .iter()
                 .copied()
