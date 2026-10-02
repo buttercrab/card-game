@@ -124,49 +124,90 @@ select {
   color: inherit;
 }
 
+/* Buttons are flat objects with a hard lip (DESIGN.md, Elevation & Depth).
+   Pressing moves the button down onto its lip. */
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 12px;
+  background: var(--card);
+  color: #1c1915;
+  box-shadow: 0 3px 0 var(--card-edge);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
   cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 8px 14px;
-  min-height: 40px;
+  transition:
+    transform var(--dur-quick) var(--ease-standard),
+    box-shadow var(--dur-quick) var(--ease-standard),
+    background-color var(--dur-quick) var(--ease-standard);
+  -webkit-tap-highlight-color: transparent;
 }
 
-button:hover:not(:disabled) {
-  border-color: var(--muted);
+button:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 transparent;
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.5;
+  opacity: 0.4;
+  box-shadow: none;
 }
 
 button.primary {
   background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
+  color: var(--on-accent);
+  box-shadow: 0 3px 0 var(--accent-deep);
 }
 
 button.ghost {
   background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+button.chip {
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 15px;
+  flex: none;
+}
+
+button.chip[aria-checked='true'],
+button.chip[aria-pressed='true'] {
+  background: #1c1915;
+  color: #fbf8f2;
+  box-shadow: 0 3px 0 #000;
 }
 
 input,
 select {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 8px 12px;
-  min-height: 40px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: #1c1915;
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-height: 44px;
 }
 
 :focus-visible {
-  outline: 2px solid var(--highlight);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--ink-muted);
+}
+
+/* Two-colour deck: diamonds red and clubs black everywhere suits appear. */
+:root[data-four-color='false'] {
+  --suit-diamond: var(--suit-heart);
+  --suit-club: var(--suit-spade);
 }

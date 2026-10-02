@@ -480,6 +480,18 @@
   button.card:hover {
     border-color: var(--card-edge);
   }
+  /* Cards do not take the button press; they lift instead. */
+  button.card:active:not(:disabled) {
+    transform: none;
+    box-shadow: var(--shadow-card);
+  }
+  button.card.raised:active:not(:disabled) {
+    transform: translateY(-12px);
+    box-shadow: var(--shadow-raised);
+  }
+  button.card:disabled {
+    box-shadow: var(--shadow-card);
+  }
   button.card:disabled {
     cursor: default;
   }

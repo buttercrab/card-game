@@ -15,8 +15,9 @@ export function rankLabel(rank: number): string {
   return RANK[rank] ?? String(rank);
 }
 
+/** Short form for running text: ♠A, ♥10, 흑조커. */
 export function cardLabel(card: Card): string {
-  if ('Joker' in card) return card.Joker === 'Red' ? 'Red joker' : 'Black joker';
+  if ('Joker' in card) return card.Joker === 'Red' ? '홍조커' : '흑조커';
   const [suit, rank] = card.Normal;
   return `${SUIT_SYMBOL[suit]}${rankLabel(rank)}`;
 }
@@ -26,19 +27,20 @@ export function sameCard(a: Card, b: Card): boolean {
 }
 
 export function trumpLabel(trump: Suit | null): string {
-  return trump ? SUIT_SYMBOL[trump] : 'No trump';
+  return trump ? SUIT_SYMBOL[trump] : '노기루다';
 }
 
 export function contractLabel(c: Contract): string {
   return `${trumpLabel(c.trump)} ${c.count}`;
 }
 
-export function friendCallLabel(call: FriendCall, name: (seat: number) => string): string {
-  if (call === 'FirstTrick') return 'First trick winner';
-  if (call === 'LastTrick') return 'Last trick winner';
-  if (call === 'Alone') return 'Playing alone';
+export function friendCallLabel(call: FriendCall, name: (seat: number) => string, twoJokers = true): string {
+  if (call === 'FirstTrick') return '초구';
+  if (call === 'LastTrick') return '마지막 트릭';
+  if (call === 'Alone') return '노프렌드';
   if ('Seat' in call) return name(call.Seat);
-  return `Holder of ${cardLabel(call.Card)}`;
+  if (!twoJokers && 'Joker' in call.Card) return '조커';
+  return cardLabel(call.Card);
 }
 
 export function phaseName(phase: PhaseView): string {

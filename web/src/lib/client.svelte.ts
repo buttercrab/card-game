@@ -16,6 +16,23 @@ function load<T>(key: string): T | null {
   }
 }
 
+// The server answers in English; players see Korean.
+const ERRORS: [RegExp, string][] = [
+  [/not your turn/, '아직 내 차례가 아니에요'],
+  [/not seated/, '먼저 자리에 앉아야 해요'],
+  [/only seated players/, '자리에 앉은 사람만 할 수 있어요'],
+  [/seat is taken/, '이미 누가 앉은 자리예요'],
+  [/bots stay/, '판이 끝날 때까지 봇을 뺄 수 없어요'],
+  [/already in progress/, '이미 판이 진행 중이에요'],
+  [/every seat needs/, '빈 자리를 먼저 채워 주세요'],
+  [/pick a name/, '이름을 적어 주세요'],
+  [/illegal action/, '지금은 그렇게 할 수 없어요'],
+];
+
+function translate(message: string): string {
+  return ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? '요청을 처리하지 못했어요';
+}
+
 function store(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -102,7 +119,7 @@ export class RoomClient {
         break;
       }
       case 'error':
-        this.error = msg.message;
+        this.error = translate(msg.message);
         clearTimeout(this.#errorTimer);
         this.#errorTimer = setTimeout(() => (this.error = null), 4000);
         break;

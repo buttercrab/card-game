@@ -1,17 +1,8 @@
 <script lang="ts">
-  let { onopen }: { onopen: (id: string) => void } = $props();
+  import Card from './Card.svelte';
+  import { PRESETS } from './presets';
 
-  const PRESETS: { id: string; label: string }[] = [
-    { id: 'gshs', label: '경기과고 · two jokers' },
-    { id: 'default', label: '기본 5마' },
-    { id: 'ddshs', label: '대구동신과고' },
-    { id: 'dshs', label: '대구과고' },
-    { id: 'kmla', label: '민사고' },
-    { id: 'gsa', label: '광주과고' },
-    { id: 'skku', label: '성균관대' },
-    { id: 'sshs', label: '서울과고' },
-    { id: 'yonsei', label: '연세대' },
-  ];
+  let { onopen }: { onopen: (id: string) => void } = $props();
 
   let preset = $state('gshs');
   let code = $state('');
@@ -27,10 +18,10 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preset }),
       });
-      if (!res.ok) throw new Error(`server said ${res.status}`);
+      if (!res.ok) throw new Error(String(res.status));
       onopen((await res.json()).id);
-    } catch (e) {
-      error = `Could not create a room: ${e instanceof Error ? e.message : e}`;
+    } catch {
+      error = '테이블을 만들지 못했어요. 잠시 뒤에 다시 해 보세요.';
     } finally {
       busy = false;
     }
@@ -45,102 +36,102 @@
 
 <main>
   <header>
-    <div class="mark" aria-hidden="true">♠</div>
-    <h1>Mighty</h1>
-    <p class="muted">마이티 with your house rules. Make a table, share the link, fill empty seats with bots.</p>
+    <div class="mark" aria-hidden="true">
+      <Card card={{ Joker: 'Black' }} size="mini" seal="joker" />
+      <Card card={{ Normal: ['Spade', 14] }} size="hand" seal="mighty" />
+      <Card size="mini" />
+    </div>
+    <h1>마이티</h1>
+    <p class="muted">우리 규칙으로 하는 마이티. 테이블을 만들고 링크를 보내세요. 빈 자리는 봇이 채워요.</p>
   </header>
 
   <section class="panel">
-    <h2>New table</h2>
-    <label>
-      <span>House rules</span>
-      <select bind:value={preset}>
-        {#each PRESETS as p (p.id)}
-          <option value={p.id}>{p.label}</option>
-        {/each}
-      </select>
-    </label>
-    <button class="primary" onclick={create} disabled={busy}>{busy ? 'Creating…' : 'Create table'}</button>
-    {#if error}<p class="error">{error}</p>{/if}
+    <h2>새 테이블</h2>
+    <div class="presets" role="radiogroup" aria-label="규칙">
+      {#each PRESETS as p (p.id)}
+        <button class="chip" role="radio" aria-checked={preset === p.id} onclick={() => (preset = p.id)}>
+          {p.name}{#if p.note}<span class="note">{p.note}</span>{/if}
+        </button>
+      {/each}
+    </div>
+    <button class="primary" onclick={create} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</button>
+    {#if error}<p class="error" role="alert">{error}</p>{/if}
   </section>
 
   <section class="panel">
-    <h2>Join a table</h2>
+    <h2>테이블 들어가기</h2>
     <form onsubmit={join}>
-      <input bind:value={code} placeholder="Room code or link" aria-label="Room code or link" />
-      <button type="submit" disabled={!code.trim()}>Join</button>
+      <input bind:value={code} placeholder="테이블 코드나 링크" aria-label="테이블 코드나 링크" />
+      <button type="submit" disabled={!code.trim()}>들어가기</button>
     </form>
   </section>
 </main>
 
 <style>
   main {
-    max-width: 440px;
+    max-width: 460px;
     margin: 0 auto;
-    padding: 48px 16px;
+    padding: 40px 16px;
     display: grid;
-    gap: 20px;
+    gap: 16px;
   }
-
   header {
     text-align: center;
   }
-
   .mark {
-    width: 56px;
-    height: 72px;
-    margin: 0 auto 12px;
-    display: grid;
-    place-items: center;
-    font-size: 34px;
-    background: var(--card-face);
-    color: var(--card-ink);
-    border: 1px solid var(--card-border);
-    border-radius: 10px;
-    box-shadow: var(--shadow);
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    margin-bottom: 16px;
   }
-
+  .mark > :global(.card:first-child) {
+    transform: rotate(-10deg) translate(10px, 4px);
+  }
+  .mark > :global(.card:last-child) {
+    transform: rotate(10deg) translate(-10px, 4px);
+  }
+  .mark > :global(.card:nth-child(2)) {
+    z-index: 1;
+  }
   h1 {
     margin: 0;
-    font-size: 32px;
-    letter-spacing: -0.02em;
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 800;
   }
-
   header p {
     margin: 8px 0 0;
   }
-
   .panel {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
     display: grid;
     gap: 12px;
+    padding: 20px;
+    border-radius: 16px;
+    background: var(--panel);
   }
-
   h2 {
     margin: 0;
     font-size: 17px;
   }
-
-  label {
-    display: grid;
-    gap: 6px;
-    font-size: 14px;
-    color: var(--muted);
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 6px;
   }
-
+  .note {
+    margin-left: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.7;
+  }
   form {
     display: flex;
     gap: 8px;
   }
-
   form input {
     flex: 1;
     min-width: 0;
   }
-
   .error {
     margin: 0;
     color: var(--danger);

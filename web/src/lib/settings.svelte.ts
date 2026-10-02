@@ -1,12 +1,20 @@
 // Per-player preferences, kept in this browser only.
 
+export type Speed = 'normal' | 'fast' | 'off';
+
 interface Settings {
   /** ♦ blue and ♣ green instead of red and black. */
   fourColor: boolean;
+  /** Play a card with one tap instead of raise-then-play. */
+  singleTap: boolean;
+  sound: boolean;
+  /** 0 to 1. */
+  volume: number;
+  speed: Speed;
 }
 
 const KEY = 'mighty.settings';
-const DEFAULTS: Settings = { fourColor: true };
+const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, volume: 0.7, speed: 'normal' };
 
 function load(): Settings {
   try {
@@ -19,6 +27,9 @@ function load(): Settings {
 export const settings: Settings = $state(load());
 
 $effect.root(() => {
+  $effect(() => {
+    document.documentElement.dataset.fourColor = String(settings.fourColor);
+  });
   $effect(() => {
     const json = JSON.stringify(settings);
     try {

@@ -1,13 +1,17 @@
 <script lang="ts">
-  import { friendCallLabel, SUITS, trumpLabel } from './cards';
-  import type { Action, Card, Contract, FriendCall, Rules, Suit } from './types';
+  // The declarer's strip during the exchange: put cards back, maybe change
+  // trump, then name the friend.
+  import Card from './Card.svelte';
+  import { cardLabel, friendCallLabel, mightyCard, sameCard, sealOf, SUITS, trumpLabel } from './cards';
+  import type { Action, Card as CardT, Contract, FriendCall, Rules, Suit } from './types';
 
   let {
     legal,
     contract,
     rules,
     toDiscard,
-    selected,
+    chosen,
+    hand,
     seatName,
     onact,
     ondiscard,
@@ -16,44 +20,59 @@
     contract: Contract;
     rules: Rules;
     toDiscard: number;
-    selected: number;
+    chosen: number;
+    /** Calling a card you hold is allowed but rarely meant, so it is not offered first. */
+    hand: CardT[];
     seatName: (seat: number) => string;
     onact: (a: Action) => void;
     ondiscard: () => void;
   } = $props();
 
+  const twoJokers = $derived(rules.deck === 'TwoJokers');
   const trumpChanges = $derived(
     legal.flatMap((a) => (typeof a === 'object' && 'ChangeTrump' in a ? [a.ChangeTrump] : [])),
   );
   const calls = $derived(legal.flatMap((a) => (typeof a === 'object' && 'CallFriend' in a ? [a.CallFriend] : [])));
+  const mighty = $derived(mightyCard(contract.trump));
 
-  const mighty: Card = $derived(
-    contract.trump === 'Spade' ? { Normal: ['Diamond', 14] } : { Normal: ['Spade', 14] },
+  function sameCall(a: FriendCall, b: FriendCall): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  /** The calls people make most: the mighty, the jokers, the top trump, the first trick, nobody. */
+  const shortcuts = $derived.by(() => {
+    const out: { call: FriendCall; label: string }[] = [];
+    const add = (call: FriendCall, label: string) => {
+      const mine = typeof call === 'object' && 'Card' in call && hand.some((h) => sameCard(h, call.Card));
+      if (!mine && calls.some((c) => sameCall(c, call)) && !out.some((o) => sameCall(o.call, call))) out.push({ call, label });
+    };
+    add({ Card: mighty }, '마이티');
+    add({ Card: { Joker: 'Black' } }, twoJokers ? '흑조커' : '조커');
+    add({ Card: { Joker: 'Red' } }, '홍조커');
+    if (contract.trump) add({ Card: { Normal: [contract.trump, 14] } }, `기루다 A`);
+    if (contract.trump) add({ Card: { Normal: [contract.trump, 13] } }, `기루다 K`);
+    add('FirstTrick', '초구');
+    add('Alone', '노프렌드');
+    return out;
+  });
+
+  const cardCalls: CardT[] = $derived(
+    calls
+      .flatMap((c) => (typeof c === 'object' && 'Card' in c ? [c.Card] : []))
+      .filter((card) => !hand.some((h) => sameCard(h, card)))
+      .sort((a, b) => order(a) - order(b)),
   );
+  const otherCalls = $derived(calls.filter((c) => typeof c === 'string' || 'Seat' in c));
 
-  /** Most useful calls first: the mighty, jokers, top trumps, then the rest. */
-  function rank(call: FriendCall): number {
-    if (typeof call === 'string') return 1000 + ['FirstTrick', 'LastTrick', 'Alone'].indexOf(call);
-    if ('Seat' in call) return 900 + call.Seat;
-    const card = call.Card;
-    if (JSON.stringify(card) === JSON.stringify(mighty)) return 0;
-    if ('Joker' in card) return 1;
-    const [suit, r] = card.Normal;
-    const trumpFirst = suit === contract.trump ? 0 : 1;
-    return 10 + trumpFirst * 100 + SUITS.indexOf(suit) * 20 + (14 - r);
+  function order(card: CardT): number {
+    if ('Joker' in card) return card.Joker === 'Black' ? 0 : 1;
+    const [suit, rank] = card.Normal;
+    return 10 + SUITS.indexOf(suit) * 20 + (14 - rank);
   }
 
-  const sortedCalls = $derived([...calls].sort((a, b) => rank(a) - rank(b)));
-  let choice = $state(0);
-  const call = $derived(sortedCalls[Math.min(choice, sortedCalls.length - 1)]);
-
-  function label(c: FriendCall): string {
-    const base = friendCallLabel(c, seatName);
-    if (typeof c === 'object' && 'Card' in c && JSON.stringify(c.Card) === JSON.stringify(mighty)) {
-      return `${base} (mighty)`;
-    }
-    return base;
-  }
+  let call = $state<FriendCall | null>(null);
+  let picking = $state(false);
+  const chosenCall = $derived(call && calls.some((c) => sameCall(c, call!)) ? call : (shortcuts[0]?.call ?? calls[0] ?? null));
 
   function changedCount(t: Suit | null): number {
     const bonus = (x: Suit | null) => (x === null ? rules.bidding.no_trump_bonus : 0);
@@ -61,66 +80,129 @@
   }
 </script>
 
-<div class="panel">
-  {#if calls.length > 0}
-    <p>Who is your friend?</p>
-    <div class="row">
-      <select bind:value={choice} aria-label="Friend">
-        {#each sortedCalls as c, i (i)}
-          <option value={i}>{label(c)}</option>
-        {/each}
-      </select>
-      <button class="primary" onclick={() => call && onact({ CallFriend: call })}>Call friend</button>
+{#if calls.length > 0}
+  <div class="panel">
+    <div class="chips" role="radiogroup" aria-label="프렌드">
+      {#each shortcuts as s (JSON.stringify(s.call))}
+        <button
+          class="chip"
+          role="radio"
+          aria-checked={chosenCall !== null && sameCall(chosenCall, s.call)}
+          onclick={() => {
+            call = s.call;
+            picking = false;
+          }}>{s.label}</button
+        >
+      {/each}
+      <button class="chip" aria-pressed={picking} onclick={() => (picking = !picking)}>다른 카드…</button>
     </div>
-  {:else}
-    <p>
-      Pick {toDiscard} card{toDiscard === 1 ? '' : 's'} to put back
-      <span class="muted">({selected}/{toDiscard} chosen)</span>
-    </p>
-    <div class="row">
-      <button class="primary" disabled={selected !== toDiscard} onclick={ondiscard}>Put back</button>
+    {#if picking}
+      <div class="picker">
+        <div class="grid">
+          {#each cardCalls as card (JSON.stringify(card))}
+            <Card
+              {card}
+              size="mini"
+              {twoJokers}
+              seal={sealOf(card, rules, contract.trump)}
+              raised={chosenCall !== null && sameCall(chosenCall, { Card: card })}
+              onclick={() => (call = { Card: card })}
+            />
+          {/each}
+        </div>
+        {#if otherCalls.length > 0}
+          <div class="chips">
+            {#each otherCalls as c (JSON.stringify(c))}
+              <button class="chip" role="radio" aria-checked={chosenCall !== null && sameCall(chosenCall, c)} onclick={() => (call = c)}>
+                {friendCallLabel(c, seatName, twoJokers)}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
+    <div class="actions">
+      <button class="primary" disabled={!chosenCall} onclick={() => chosenCall && onact({ CallFriend: chosenCall })}>
+        {#if chosenCall && typeof chosenCall === 'object' && 'Card' in chosenCall && sameCard(chosenCall.Card, mighty)}
+          프렌드 마이티 <span class="sub">({cardLabel(mighty)})</span>
+        {:else}
+          프렌드 {chosenCall ? friendCallLabel(chosenCall, seatName, twoJokers) : ''}
+        {/if}
+      </button>
+    </div>
+  </div>
+{:else}
+  <div class="panel">
+    <div class="discard">
+      <span class="count"><strong>{chosen}</strong>/{toDiscard}</span>
+      <span class="muted">버릴 카드를 고르세요</span>
+      <button class="primary" disabled={chosen !== toDiscard} onclick={ondiscard}>버리기</button>
     </div>
     {#if trumpChanges.length > 0}
-      <div class="row change">
-        <span class="muted">Change trump:</span>
+      <div class="chips change">
+        <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
-          <button onclick={() => onact({ ChangeTrump: t })}>{trumpLabel(t)} {changedCount(t)}</button>
+          <button class="chip" onclick={() => onact({ ChangeTrump: t })}>{trumpLabel(t)} {changedCount(t)}</button>
         {/each}
       </div>
     {/if}
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
   .panel {
     display: grid;
-    justify-items: center;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
-    text-align: center;
   }
-
-  p {
-    margin: 0;
+  .chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 2px 2px 4px;
+    scrollbar-width: none;
   }
-
-  .row {
+  .picker {
+    display: grid;
+    gap: 8px;
+    max-height: 40vh;
+    overflow-y: auto;
+    padding: 12px 2px 2px;
+  }
+  .grid {
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
+    gap: 6px;
+  }
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .actions .primary {
+    flex: 1;
+    max-width: 280px;
+  }
+  .sub {
+    font-weight: 400;
+    opacity: 0.8;
+  }
+  .discard {
+    display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
-
-  select {
-    max-width: 100%;
-  }
-
-  .change {
+  .discard .muted {
+    flex: 1;
     font-size: 14px;
   }
-
-  .change button {
-    min-height: 34px;
-    padding: 4px 10px;
+  .count {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+  }
+  .change .muted {
+    flex: none;
+    font-size: 13px;
   }
 </style>
