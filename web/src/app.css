@@ -1,68 +1,104 @@
-:root {
-  --bg: #f4f2ec;
-  --surface: #ffffff;
-  --surface-2: #ebe8df;
-  --text: #1d2433;
-  --muted: #5b6475;
-  --border: #d6d1c4;
-  --accent: #1f6f4f;
-  --accent-text: #ffffff;
-  --accent-soft: #dcefe5;
+/* Tokens from DESIGN.md. The legacy names at the end of each block keep
+   older components working until they are restyled. */
+:root,
+[data-theme='light'] {
+  --table: #efebe3;
+  --panel: #e6e1d6;
+  --line: #d6cfc1;
+  --ink: #1c1915;
+  --ink-muted: #645d53;
+  --card: #fbf8f2;
+  --card-edge: #d9d1c2;
+  --card-back: #2a2622;
+  --accent: #8e2f6b;
+  --accent-deep: #6b2251;
+  --on-accent: #ffffff;
+  --suit-spade: #1c1915;
+  --suit-heart: #b8342a;
+  --suit-diamond: #1e4a7c;
+  --suit-club: #007a4d;
+  --team-declarer: #e69f00;
+  --team-defense: #3b4a6b;
+  --on-team-defense: #ffffff;
+  --seal: #c23b22;
   --danger: #b3261e;
-  --felt: #2d6a4f;
-  --felt-edge: #24563f;
-  --felt-text: #eef6f1;
-  --felt-muted: #b9d4c6;
-  --card-face: #fffdf8;
-  --card-ink: #1d2433;
-  --card-red: #c62828;
-  --card-border: #cfc8b8;
-  --highlight: #f2b705;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 2px 8px rgb(0 0 0 / 0.06);
-  --radius: 10px;
-  --font: system-ui, -apple-system, 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  --shadow-card: 0 2px 0 rgb(28 25 21 / 0.1);
+  --shadow-raised: 0 6px 0 rgb(28 25 21 / 0.07);
+
+  --dur-quick: 120ms;
+  --dur-move: 220ms;
+  --dur-travel: 320ms;
+  --dur-sweep: 400ms;
+  --dur-reveal: 600ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-settle: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --font: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif;
+  --font-display: 'Wanted Sans Variable', 'Pretendard Variable', 'Apple SD Gothic Neo', sans-serif;
+
+  --bg: var(--table);
+  --surface: var(--panel);
+  --surface-2: var(--panel);
+  --text: var(--ink);
+  --muted: var(--ink-muted);
+  --border: var(--line);
+  --accent-text: var(--on-accent);
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--table));
+  --felt: var(--panel);
+  --felt-edge: var(--line);
+  --felt-text: var(--ink);
+  --felt-muted: var(--ink-muted);
+  --card-face: var(--card);
+  --card-ink: var(--ink);
+  --card-red: var(--suit-heart);
+  --card-border: var(--card-edge);
+  --highlight: var(--accent);
+  --shadow: var(--shadow-card);
+  --radius: 12px;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #111418;
-    --surface: #1a1f26;
-    --surface-2: #232a33;
-    --text: #e7e9ee;
-    --muted: #9aa3b2;
-    --border: #2e3642;
-    --accent: #3fa877;
-    --accent-text: #08130d;
-    --accent-soft: #1d3a2c;
+    --table: #17191c;
+    --panel: #202327;
+    --line: #2f343a;
+    --ink: #ece7dd;
+    --ink-muted: #9a958b;
+    --card: #ece6da;
+    --card-edge: #cfc8ba;
+    --card-back: #2a2622;
+    --accent: #d27bb0;
+    --accent-deep: #a2558a;
+    --on-accent: #17191c;
+    --team-defense: #8fa3c9;
+    --on-team-defense: #17191c;
     --danger: #ef6b62;
-    --felt: #18402f;
-    --felt-edge: #123224;
-    --felt-text: #e6f2eb;
-    --felt-muted: #9cbcab;
-    --card-border: #8f8a7e;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 8px rgb(0 0 0 / 0.3);
+    --shadow-card: 0 2px 0 rgb(0 0 0 / 0.35);
+    --shadow-raised: 0 6px 0 rgb(0 0 0 / 0.3);
+    --card-ink: #1c1915;
     color-scheme: dark;
   }
 }
 
-:root[data-theme='dark'] {
-  --bg: #111418;
-  --surface: #1a1f26;
-  --surface-2: #232a33;
-  --text: #e7e9ee;
-  --muted: #9aa3b2;
-  --border: #2e3642;
-  --accent: #3fa877;
-  --accent-text: #08130d;
-  --accent-soft: #1d3a2c;
+[data-theme='dark'] {
+  --table: #17191c;
+  --panel: #202327;
+  --line: #2f343a;
+  --ink: #ece7dd;
+  --ink-muted: #9a958b;
+  --card: #ece6da;
+  --card-edge: #cfc8ba;
+  --card-back: #2a2622;
+  --accent: #d27bb0;
+  --accent-deep: #a2558a;
+  --on-accent: #17191c;
+  --team-defense: #8fa3c9;
+  --on-team-defense: #17191c;
   --danger: #ef6b62;
-  --felt: #18402f;
-  --felt-edge: #123224;
-  --felt-text: #e6f2eb;
-  --felt-muted: #9cbcab;
-  --card-border: #8f8a7e;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 2px 8px rgb(0 0 0 / 0.3);
+  --shadow-card: 0 2px 0 rgb(0 0 0 / 0.35);
+  --shadow-raised: 0 6px 0 rgb(0 0 0 / 0.3);
+  --card-ink: #1c1915;
   color-scheme: dark;
 }
 
@@ -73,6 +109,7 @@
 html,
 body {
   margin: 0;
+  word-break: keep-all;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);

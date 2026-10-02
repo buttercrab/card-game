@@ -232,7 +232,7 @@ Flat. There are no blurred drop shadows. Depth comes from four devices only, and
 
 ### Shadow Vocabulary
 - **Card at rest** (`box-shadow: 0 2px 0 rgb(28 25 21 / 0.10)`; dark `0 2px 0 rgb(0 0 0 / 0.35)`): every card face and back.
-- **Card raised** (`transform: translateY(-12px)`, `box-shadow: 0 8px 0 rgb(28 25 21 / 0.08)`): the first tap of tap-twice; hover on desktop lifts -6px.
+- **Card raised** (`transform: translateY(-12px)`, `box-shadow: 0 6px 0 rgb(28 25 21 / 0.07)`): the first tap of tap-twice; hover on desktop lifts -6px.
 - **Button lip** (`box-shadow: 0 3px 0 var(--accent-deep)`; secondary `0 3px 0 var(--line)`): pressed state `transform: translateY(3px); box-shadow: none`.
 - **Turn ring** (`outline: 3px solid var(--accent); outline-offset: 3px`): your seat and tray on your turn.
 

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import BidPanel from './BidPanel.svelte';
-  import CardFace from './CardFace.svelte';
+  import Card from './Card.svelte';
   import ExchangePanel from './ExchangePanel.svelte';
-  import { contractLabel, friendCallLabel, isPoint, sameCard, SUIT_SYMBOL } from './cards';
+  import { contractLabel, friendCallLabel, isPoint, sameCard, sealOf, SUIT_SYMBOL } from './cards';
   import type { RoomClient } from './client.svelte';
-  import type { Action, Card, PlayAction, Trick } from './types';
+  import type { Action, Card as CardT, PlayAction, Trick } from './types';
 
   let { client }: { client: RoomClient } = $props();
 
@@ -22,6 +22,13 @@
   const exchange = $derived(typeof phase === 'object' && 'Exchange' in phase ? phase.Exchange : null);
   const play = $derived(typeof phase === 'object' && 'Play' in phase ? phase.Play : null);
   const done = $derived(typeof phase === 'object' && 'Done' in phase ? phase.Done : null);
+  // Seals mark the mighty and joker-call cards once the trump is known.
+  const contract = $derived((exchange ?? play ?? done)?.contract ?? null);
+  const twoJokers = $derived(view.rules.deck === 'TwoJokers');
+  function seal(card: CardT) {
+    if (contract) return sealOf(card, view.rules, contract.trump);
+    return 'Joker' in card ? 'joker' : null;
+  }
   const stage = $derived(exchange ?? play ?? done);
   const declarer = $derived(stage?.declarer ?? null);
   const friend = $derived(play?.friend ?? done?.friend ?? null);
@@ -44,7 +51,7 @@
   const discardable = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Discard' in a ? [a.Discard] : [])));
   const choosingCards = $derived(myTurn && (plays.length > 0 || discardable.length > 0));
 
-  let selected = $state<Card[]>([]);
+  let selected = $state<CardT[]>([]);
   let variants = $state<PlayAction[] | null>(null);
 
   // Forget choices that no longer apply once the server moves on.
@@ -57,7 +64,7 @@
     });
   });
 
-  function playable(card: Card): boolean {
+  function playable(card: CardT): boolean {
     return discardable.some((d) => sameCard(d, card)) || plays.some((p) => sameCard(p.card, card));
   }
 
@@ -67,7 +74,7 @@
     client.act(action);
   }
 
-  function clickCard(card: Card) {
+  function clickCard(card: CardT) {
     if (discardable.length > 0) {
       const i = selected.findIndex((c) => sameCard(c, card));
       if (i >= 0) selected = selected.filter((_, j) => j !== i);
@@ -159,7 +166,7 @@
       <div class="trick" aria-label="Finished trick">
         {#each held.plays as p (p.seat)}
           <figure>
-            <CardFace card={p.card} powerless={!p.powered} />
+            <Card card={p.card} size="trick" seal={seal(p.card)} {twoJokers} powerless={!p.powered} />
             <figcaption class:won={p.seat === held.winner}>{p.seat === me ? 'You' : seatName(p.seat)}</figcaption>
           </figure>
         {/each}
@@ -169,7 +176,7 @@
       <div class="trick" aria-label="Current trick">
         {#each play.plays as p (p.seat)}
           <figure>
-            <CardFace card={p.card} powerless={!p.powered} />
+            <Card card={p.card} size="trick" seal={seal(p.card)} {twoJokers} powerless={!p.powered} />
             <figcaption>{p.seat === me ? 'You' : seatName(p.seat)}</figcaption>
           </figure>
         {:else}
@@ -249,14 +256,16 @@
         <div class="hand" aria-label="Your hand">
           {#each view.hand as card (JSON.stringify(card))}
             {#if choosingCards}
-              <CardFace
+              <Card
                 {card}
-                dim={!playable(card)}
-                selected={selected.some((c) => sameCard(c, card))}
+                seal={seal(card)}
+                {twoJokers}
+                unplayable={!playable(card)}
+                raised={selected.some((c) => sameCard(c, card))}
                 onclick={() => clickCard(card)}
               />
             {:else}
-              <CardFace {card} />
+              <Card {card} seal={seal(card)} {twoJokers} />
             {/if}
           {/each}
         </div>
