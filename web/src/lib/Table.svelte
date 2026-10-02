@@ -7,7 +7,7 @@
   import Hand from './Hand.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
   import SuitIcon from './SuitIcon.svelte';
-  import { contractLabel, friendCallLabel, isPoint, mightyCard, sameCard, sealOf, SUIT_SYMBOL } from './cards';
+  import { cardLabel, contractLabel, friendCallLabel, isPoint, mightyCard, sameCard, sealOf, SUIT_SYMBOL } from './cards';
   import type { RoomClient } from './client.svelte';
   import { flyFrom, flyTo, pop, wait } from './motion';
   import { settings } from './settings.svelte';
@@ -366,6 +366,18 @@
   const onTable = $derived(resolving ? resolving.plays : (play?.plays ?? []));
   const trickKey = $derived(resolving ? `r${resolving.key}` : `p${play?.tricks.length ?? 0}`);
   const trickNo = $derived(resolving ? resolving.key : play ? play.trick_no + 1 : 0);
+  /** Why the trick looks the way it does: a joker lead, or a card without its power. */
+  const trickNotes = $derived.by(() => {
+    const notes: string[] = [];
+    const lead = play?.lead;
+    if (lead && play && play.plays[0] && 'Joker' in play.plays[0].card) notes.push(`조커 선 ${SUIT_SYMBOL[lead]}`);
+    for (const p of onTable) {
+      if (p.powered) continue;
+      const when = trickNo === 1 ? '첫 트릭이라 ' : trickNo === view.rules.hand_size ? '마지막 트릭이라 ' : '';
+      notes.push(`${when}${cardLabel(p.card)} 효력 없음`);
+    }
+    return notes;
+  });
   let review = $state(false);
   const lastTrick = $derived(play?.tricks.at(-1) ?? null);
 
@@ -461,8 +473,8 @@
       <p class="note">{turn === me ? '내가 선' : `${seatName(play.leader)} 선`}</p>
     {:else if play?.called_joker}
       <p class="note below alert">조커콜 · 조커를 내야 해요</p>
-    {:else if play && play.lead && play.plays[0] && 'Joker' in play.plays[0].card}
-      <p class="note below">조커 선 · {SUIT_SYMBOL[play.lead]}</p>
+    {:else if trickNotes.length > 0}
+      <p class="note below">{trickNotes.join(' · ')}</p>
     {/if}
 
     {#if review && lastTrick}
