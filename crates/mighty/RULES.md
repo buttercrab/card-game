@@ -90,7 +90,8 @@ rewritten.
 - The mighty and both jokers may be played at any time, even while
   holding the led suit, whatever the joker's colour.
 - Jokers have no power on the first and last trick.
-- A joker killer calls the joker only when it is led.
+- A joker killer calls the joker only when it is led, and the called
+  joker has no power.
 - A led joker names a suit of its colour, or its colour; whoever holds a
   card of what it named must play one.
 - A joker led without power counts as played last: the next card sets the
