@@ -16,6 +16,8 @@ pub struct Rules {
     pub friend: FriendRules,
     pub policy: CardPolicies,
     pub joker_call: JokerCall,
+    #[serde(default)]
+    pub joker_lead: JokerLead,
 }
 
 /// A player may ask for a redeal when their hand is weak.
@@ -111,6 +113,17 @@ pub struct JokerCall {
     pub called_joker_has_power: bool,
 }
 
+/// How a led joker sets the trick.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct JokerLead {
+    /// The joker may name its colour instead of a suit; either suit of that
+    /// colour then follows.
+    pub by_color: bool,
+    /// A joker led without power counts as played last, so the next card
+    /// sets the suit that wins.
+    pub powerless_passes: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Contract {
     /// `None` is no-trump.
@@ -158,6 +171,7 @@ impl Default for Rules {
                 mighty_defense: true,
                 called_joker_has_power: false,
             },
+            joker_lead: JokerLead::default(),
         }
     }
 }
@@ -367,6 +381,10 @@ impl Preset {
                 r.joker_call
                     .calls
                     .push((Card::new(Suit::Heart, 3), Card::new(Suit::Diamond, 3)));
+                r.joker_lead = JokerLead {
+                    by_color: true,
+                    powerless_passes: true,
+                };
             }
             Preset::Skku => {
                 r.bidding.min = 12;

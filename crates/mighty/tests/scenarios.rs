@@ -3,7 +3,7 @@
 use engine::{Game, Turn, Viewer};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, Preset, Rules};
-use mighty::{Action, FriendCall, Mighty, Options, PhaseView, State};
+use mighty::{Action, FriendCall, Lead, Mighty, Options, PhaseView, State};
 
 /// Parses cards such as `"SA D10 HK C3 BJ"`.
 fn cards(s: &str) -> Vec<Card> {
@@ -80,7 +80,7 @@ fn lead(state: &mut State, card: &str) {
         state,
         Action::Play {
             card,
-            joker_suit: None,
+            joker_lead: None,
             call_joker: false,
         },
     );
@@ -192,11 +192,41 @@ fn trump_led_on_the_first_trick_must_still_be_followed() {
         &mut state,
         Action::Play {
             card: Card::Joker(Color::Black),
-            joker_suit: Some(Suit::Heart),
+            joker_lead: Some(Lead::Suit(Suit::Heart)),
             call_joker: false,
         },
     );
     assert_eq!(legal_cards(&state), sorted("SA H2 H3"));
+}
+
+#[test]
+fn only_trump_and_a_joker_left_forces_trump() {
+    // Void in the led suit on the first trick: trump is held back, but a
+    // joker alone is no real choice, so trump becomes playable.
+    let hand = "BJ H2 H3 H4 H5 H6 H7 H8 H9 H10";
+    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    to_play(&mut state, FriendCall::FirstTrick);
+    lead(&mut state, "D2");
+    assert_eq!(legal_cards(&state), sorted(hand));
+}
+
+#[test]
+fn a_joker_may_lead_its_colour_where_allowed() {
+    let mut rules = Rules::default();
+    rules.joker_lead.by_color = true;
+    let declarer = "BJ D3 D4 D5 D6 D7 D8 D9 C3 C4";
+    let hand = "SA H2 D2 S2 S3 S4 S5 S6 S7 S8";
+    let mut state = start(rules, &[declarer, hand], KITTY);
+    to_play(&mut state, FriendCall::FirstTrick);
+    let by_colour = Action::Play {
+        card: Card::Joker(Color::Black),
+        joker_lead: Some(Lead::Color(Color::Red)),
+        call_joker: false,
+    };
+    assert!(Mighty::legal_actions(&state).contains(&by_colour));
+    act(&mut state, by_colour);
+    // Either red suit follows; trump (hearts) too, since it follows.
+    assert_eq!(legal_cards(&state), sorted("SA H2 D2"));
 }
 
 #[test]
@@ -206,7 +236,7 @@ fn joker_call_forces_the_joker_out() {
     to_play(&mut state, FriendCall::FirstTrick);
     let call = Action::Play {
         card: cards("C3")[0],
-        joker_suit: None,
+        joker_lead: None,
         call_joker: true,
     };
     assert!(Mighty::legal_actions(&state).contains(&call));
@@ -223,7 +253,7 @@ fn mighty_may_defend_a_called_joker() {
         &mut state,
         Action::Play {
             card: cards("C3")[0],
-            joker_suit: None,
+            joker_lead: None,
             call_joker: true,
         },
     );
@@ -235,7 +265,7 @@ fn mighty_may_defend_a_called_joker() {
         &mut kmla,
         Action::Play {
             card: cards("C3")[0],
-            joker_suit: None,
+            joker_lead: None,
             call_joker: true,
         },
     );

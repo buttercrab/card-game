@@ -10,6 +10,7 @@ pub mod trick;
 mod view;
 
 pub use state::{Action, Error, FriendCall, Options, State};
+pub use trick::Lead;
 pub use view::{PhaseView, View};
 
 use engine::{Game, Turn, Viewer};

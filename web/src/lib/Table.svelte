@@ -7,7 +7,7 @@
   import Hand from './Hand.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
   import SuitIcon from './SuitIcon.svelte';
-  import { cardLabel, contractLabel, friendCallLabel, isPoint, mightyCard, sameCard, sealOf, SUIT_SYMBOL } from './cards';
+  import { cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
   import { flyFrom, flyTo, pop, wait } from './motion';
   import { settings } from './settings.svelte';
@@ -149,7 +149,7 @@
   }
 
   function variantLabel(p: PlayAction): string {
-    if (p.joker_suit) return `${SUIT_SYMBOL[p.joker_suit]}로 내기`;
+    if (p.joker_lead) return 'Suit' in p.joker_lead ? `${leadLabel(p.joker_lead)}로 내기` : `${leadLabel(p.joker_lead)}으로 내기`;
     if (p.call_joker) return '조커콜';
     return '그냥 내기';
   }
@@ -370,7 +370,7 @@
   const trickNotes = $derived.by(() => {
     const notes: string[] = [];
     const lead = play?.lead;
-    if (lead && play && play.plays[0] && 'Joker' in play.plays[0].card) notes.push(`조커 선 ${SUIT_SYMBOL[lead]}`);
+    if (lead && play && play.plays[0] && 'Joker' in play.plays[0].card) notes.push(`조커 선 ${leadLabel(lead)}`);
     for (const p of onTable) {
       if (p.powered) continue;
       const when = trickNo === 1 ? '첫 트릭이라 ' : trickNo === view.rules.hand_size ? '마지막 트릭이라 ' : '';

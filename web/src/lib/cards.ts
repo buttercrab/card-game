@@ -1,4 +1,4 @@
-import type { Card, Contract, FriendCall, PhaseView, Rules, Suit } from './types';
+import type { Card, Contract, FriendCall, Lead, PhaseView, Rules, Suit } from './types';
 
 export const SUITS: Suit[] = ['Spade', 'Diamond', 'Heart', 'Club'];
 
@@ -79,4 +79,10 @@ export function sealOf(card: Card, rules: Rules, trump: Suit | null): Seal | nul
   if (sameCard(card, mightyCard(trump))) return 'mighty';
   const calls = jokers(rules).map((j) => jokerCallCard(rules, j, trump));
   return calls.some((c) => c && sameCard(c, card)) ? 'call' : null;
+}
+
+/** ♦, or 빨강 / 검정 for a colour lead. */
+export function leadLabel(lead: Lead): string {
+  if ('Suit' in lead) return SUIT_SYMBOL[lead.Suit];
+  return lead.Color === 'Red' ? '빨강' : '검정';
 }

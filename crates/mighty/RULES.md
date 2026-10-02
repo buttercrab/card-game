@@ -25,7 +25,8 @@ rewritten.
    - You must follow the led suit if you can. The mighty and jokers may
      always be played and never oblige you to follow.
    - Leading a joker names the suit to follow. With two jokers, the suit
-     must match the joker's colour.
+     must match the joker's colour. With `joker_lead.by_color` it may name
+     its colour instead, and a card of either suit of that colour follows.
    - Leading a joker killer (조커콜: ♣3, or ♠3 when clubs are trump) with
      a call makes the joker's holder play the joker, which then has no
      power unless `called_joker_has_power`. With `mighty_defense`, they may
@@ -38,6 +39,8 @@ rewritten.
      trump suit on the first trick, holding trump means following with it.
      By default jokers have no power on the first and last trick (confirmed
      for 경기과고).
+   - A held-back card may also be played when the only other choice is a
+     joker: holding only trump and a joker on the first trick forces trump.
 5. **Trick winner.** The highest of these wins:
    1. the mighty
    2. the joker (with two jokers: the joker of the trump colour, or of the
@@ -48,7 +51,10 @@ rewritten.
    5. the highest card of the led suit
 
    A powerless mighty or trump counts as a plain card of its suit. A
-   powerless joker cannot win.
+   powerless joker cannot win. With `joker_lead.powerless_passes`, a joker
+   led without power counts as played last: the first real card after it
+   sets the suit for step 5. After a colour lead that card's suit is used
+   too.
 6. **Scoring.** The declarer's side counts the point cards (10 to A) it won,
    plus any in the discards.
    - If the side reaches the contract, it scores `points − 10`. This is
@@ -81,6 +87,14 @@ rewritten.
 - Point cards in the declarer's discards count for the declarer's side.
 - Mighty defense: when the joker is killed, its holder may play the mighty
   instead.
+- Jokers have no power on the first and last trick.
+- A joker killer calls the joker only when it is led.
+- A led joker names a suit of its colour, or its colour; whoever holds a
+  card of what it named must play one.
+- A joker led without power counts as played last: the next card sets the
+  suit that wins.
+- Trump is held back on the first trick unless forced; holding only trump
+  and a joker counts as forced.
 
 ## Still open
 

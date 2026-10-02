@@ -1,7 +1,7 @@
-use crate::card::{Card, Suit};
+use crate::card::Card;
 use crate::rules::{Contract, Rules};
 use crate::state::{FriendCall, Phase, State};
-use crate::trick::{Played, Trick};
+use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +45,7 @@ pub enum PhaseView {
         friend: Option<Seat>,
         trick_no: usize,
         leader: Seat,
-        lead: Option<Suit>,
+        lead: Option<Lead>,
         plays: Vec<Played>,
         called_joker: Option<Card>,
         /// Completed tricks, oldest first. All of it was played face up.

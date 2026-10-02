@@ -134,6 +134,7 @@ fn play(view: &View, legal: &[Action]) -> Option<Action> {
         mighty: view.rules.mighty(trump),
         deck: view.rules.deck,
         lead: *lead,
+        powerless_joker_passes: view.rules.joker_lead.powerless_passes,
     };
     let winning = plays[trick::winner(&ctx, plays)].seat;
     if teammate(winning) {

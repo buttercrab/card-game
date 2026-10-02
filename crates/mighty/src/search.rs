@@ -138,8 +138,11 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
                 let Some(lead) = lead else { continue };
                 for p in trick.iter().skip(1) {
                     let free = p.card == mighty || p.card.is_joker();
-                    if !free && p.card.suit() != Some(lead) {
-                        void[p.seat][suit_index(lead)] = true;
+                    if !free && !lead.follows(p.card) {
+                        // Not following a colour shows both of its suits are gone.
+                        for suit in Suit::ALL.into_iter().filter(|&s| lead.follows(Card::new(s, 2))) {
+                            void[p.seat][suit_index(suit)] = true;
+                        }
                     }
                 }
             }

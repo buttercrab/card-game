@@ -13,7 +13,10 @@ export interface Contract {
 
 export type FriendCall = { Card: Card } | { Seat: number } | 'FirstTrick' | 'LastTrick' | 'Alone';
 
-export type PlayAction = { card: Card; joker_suit: Suit | null; call_joker: boolean };
+/** What a trick follows: a suit, or a colour when a joker leads by colour. */
+export type Lead = { Suit: Suit } | { Color: Color };
+
+export type PlayAction = { card: Card; joker_lead: Lead | null; call_joker: boolean };
 
 export type Action =
   | 'Misdeal'
@@ -32,7 +35,7 @@ export interface Played {
 
 export interface Trick {
   plays: Played[];
-  lead: Suit;
+  lead: Lead;
   winner: number;
 }
 
@@ -76,7 +79,7 @@ export type PhaseView =
         friend: number | null;
         trick_no: number;
         leader: number;
-        lead: Suit | null;
+        lead: Lead | null;
         plays: Played[];
         called_joker: Card | null;
         /** Completed tricks, oldest first. */
