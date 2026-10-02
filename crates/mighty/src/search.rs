@@ -2,7 +2,8 @@
 //! cards it cannot see in many ways consistent with what it has seen, plays
 //! every candidate to the end of the hand with [`SimpleBot`] in every seat,
 //! and picks the one with the best average payoff (Perfect Information
-//! Monte Carlo). The exchange is left to [`SimpleBot`].
+//! Monte Carlo). The exchange is left to [`SimpleBot`]: searching discards
+//! and friend calls, or weighting deals by the bids, did not measurably help.
 
 use crate::Mighty;
 use crate::bot::SimpleBot;
@@ -13,9 +14,9 @@ use engine::{Bot, Seat, Turn, Viewer};
 use rand::seq::SliceRandom;
 use rand::{Rng, RngCore};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SearchBot {
-    /// Deals sampled per decision. More is stronger and slower.
+    /// Deals sampled per decision. More is slower, and past 40 barely stronger.
     pub samples: usize,
 }
 
@@ -109,7 +110,8 @@ fn rollout(world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i
 
 /// A full state that `view` cannot tell apart from the real one: the
 /// unseen cards dealt at random, honouring every suit a seat has shown it
-/// lacks. Works while bidding and playing; `None` otherwise and for spectators.
+/// lacks. Works while bidding and playing; `None` otherwise and for
+/// spectators.
 pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
     let Viewer::Seat(me) = view.viewer else { return None };
     let rules = &view.rules;

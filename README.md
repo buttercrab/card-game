@@ -42,6 +42,7 @@ cargo test --workspace
 cargo run --release -p sim -- --games 2000            # every preset
 cargo run --release -p sim -- --preset gshs --bots random
 cargo run --release -p sim -- --games 2500 --bots search   # search bot vs simple bots
+cargo run --release -p sim -- --preset gshs --bots search --focus search:100 --field search  # any two bots
 (cd web && npm run check)
 ```
 
