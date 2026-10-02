@@ -34,7 +34,10 @@ rewritten.
    - Card policies limit what can be played on the first and last trick.
      `Invalid` means not at all and `NoLead` means not as a lead (both unless
      nothing else is legal). `NoEffect` cards can be played but lose their
-     power.
+     power. An `Invalid` card may still follow suit: when a joker names the
+     trump suit on the first trick, holding trump means following with it.
+     By default jokers have no power on the first and last trick (confirmed
+     for 경기과고).
 5. **Trick winner.** The highest of these wins:
    1. the mighty
    2. the joker (with two jokers: the joker of the trump colour, or of the

@@ -343,10 +343,12 @@ impl State {
                 .copied()
                 .filter(|c| !follows || free(c) || c.suit() == Some(lead))
                 .collect();
+            // Held-back cards (such as trump on the first trick) may still
+            // follow suit: a joker can name a suit that is otherwise held back.
             let allowed: Vec<Card> = candidates
                 .iter()
                 .copied()
-                .filter(|c| policy(c) != CardPolicy::Invalid)
+                .filter(|c| policy(c) != CardPolicy::Invalid || (follows && !free(c)))
                 .collect();
             if allowed.is_empty() { candidates } else { allowed }
         };

@@ -181,6 +181,25 @@ fn trump_is_held_back_on_the_first_trick() {
 }
 
 #[test]
+fn trump_led_on_the_first_trick_must_still_be_followed() {
+    // A joker may name the trump suit on the first trick; holding trump
+    // then means following with it, even though trump is otherwise held back.
+    let declarer = "BJ D3 D4 D5 D6 D7 D8 D9 C3 C4";
+    let hand = "SA H2 H3 D2 S2 S3 S4 S5 S6 S7";
+    let mut state = start(Rules::default(), &[declarer, hand], KITTY);
+    to_play(&mut state, FriendCall::FirstTrick);
+    act(
+        &mut state,
+        Action::Play {
+            card: Card::Joker(Color::Black),
+            joker_suit: Some(Suit::Heart),
+            call_joker: false,
+        },
+    );
+    assert_eq!(legal_cards(&state), sorted("SA H2 H3"));
+}
+
+#[test]
 fn joker_call_forces_the_joker_out() {
     let hand = "BJ C8 C9 S2 S3 S4 S5 S6 S7 S8";
     let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
