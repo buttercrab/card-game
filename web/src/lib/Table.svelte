@@ -12,7 +12,7 @@
   import { flyFrom, flyTo, pop, wait } from './motion';
   import { settings } from './settings.svelte';
   import { sound } from './sound';
-  import type { Action, Card as CardT, PhaseView, Played, PlayAction, StateMsg, Trick } from './types';
+  import type { Action, Card as CardT, FriendCall, PhaseView, Played, PlayAction, StateMsg, Suit, Trick } from './types';
 
   let { client }: { client: RoomClient } = $props();
 
@@ -223,6 +223,44 @@
     return felt?.querySelector(`[data-seat="${seat}"]`)?.getBoundingClientRect() ?? null;
   }
 
+  function describe(prev: StateMsg, next: StateMsg): string | null {
+    const was = prev.view.phase;
+    const now = next.view.phase;
+    if (typeof now !== 'object') return null;
+    if ('Bidding' in now) {
+      if (!(typeof was === 'object' && 'Bidding' in was)) return null;
+      const passed = now.Bidding.passed.findIndex((p, i) => p && !was.Bidding.passed[i]);
+      if (passed >= 0) return `${seatName(passed)} · 패스`;
+      const best = now.Bidding.best;
+      if (best && JSON.stringify(best) !== JSON.stringify(was.Bidding.best)) {
+        return `${seatName(best[0])} · 공약 ${contractLabel(best[1])}`;
+      }
+      return null;
+    }
+    if ('Exchange' in now && !(typeof was === 'object' && 'Exchange' in was)) {
+      return `${seatName(now.Exchange.declarer)} 주공 · ${contractLabel(now.Exchange.contract)}`;
+    }
+    if ('Play' in now && typeof was === 'object' && 'Exchange' in was) {
+      const label = friendCallLabel(now.Play.call, seatName, twoJokers);
+      return `프렌드 ${sameCallMighty(now.Play.call, now.Play.contract.trump) ? '마이티' : label}`;
+    }
+    const a = roundOf(was);
+    const b = roundOf(now);
+    if (a && b) {
+      if (b.friend !== null && a.friend === null) return `${seatName(b.friend)} 프렌드 공개`;
+      if (b.tricks.length > a.tricks.length) {
+        const t = b.tricks.at(-1)!;
+        const got = t.plays.filter((p) => isPoint(p.card)).length;
+        return `${seatName(t.winner)} 가져감${got > 0 ? ` · ${got}점` : ''}`;
+      }
+    }
+    return null;
+  }
+
+  function sameCallMighty(c: FriendCall, trump: Suit | null): boolean {
+    return typeof c === 'object' && 'Card' in c && sameCard(c.Card, mightyCard(trump));
+  }
+
   /** Shows `fresh` cards arriving from their players while `apply` updates the table. */
   async function land(fresh: Played[], apply: () => void, k: number) {
     const from = fresh.map((p) => anchor(p.seat, p.card));
@@ -239,10 +277,14 @@
     );
   }
 
-  /** Sounds that mark a change of state rather than a movement. */
+  /** The latest thing that happened, for anyone who looked away. */
+  let event = $state<string | null>(null);
+
+  /** Sounds and the event line for a change of state. */
   function cues(prev: StateMsg, next: StateMsg) {
     const was = prev.view.phase;
     const now = next.view.phase;
+    event = describe(prev, next) ?? event;
     const turnOf = (m: StateMsg) => (typeof m.turn === 'object' ? m.turn.Seat : null);
     if (me !== null && turnOf(next) === me && turnOf(prev) !== me) sound.turn();
     if (typeof was === 'object' && 'Bidding' in was && typeof now === 'object' && 'Bidding' in now) {
@@ -376,6 +418,7 @@
       {/if}
     {/if}
   </div>
+  {#if event && !done}<p class="event" aria-live="polite">{event}</p>{/if}
 
   <div class="felt" bind:this={felt}>
     {#each around as r (r)}
@@ -565,6 +608,12 @@
   }
   .status :global(.suit-Club) {
     color: var(--suit-club);
+  }
+  .event {
+    margin: -6px 0 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-muted);
   }
   .review {
     min-height: 32px;

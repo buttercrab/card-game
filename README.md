@@ -12,7 +12,7 @@ before anyone plays it.
 | [`mighty`](crates/mighty) | Mighty rules, nine regional presets, and bots: a simple one and a search bot that plays at the table; see [RULES.md](crates/mighty/RULES.md) |
 | [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
 | [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats |
-| [`web`](web) | The table in the browser (Svelte 5 + Vite) |
+| [`web`](web) | The table in the browser (Svelte 5 + Vite), in Korean; its look is specified in [DESIGN.md](DESIGN.md) |
 
 A game is a deterministic state machine:
 - `legal_actions` is the only source of truth for what is allowed.
@@ -32,7 +32,8 @@ Create a table, share its link, and add bots to any empty seats. Pass
 memory, so restarting the server closes them.
 
 For frontend work, run `npm run dev` in `web/` while the server runs. Vite
-forwards `/api` to the server.
+forwards `/api` to the server. `/deck` shows every card face, size and
+state in both themes. Visual changes follow [DESIGN.md](DESIGN.md).
 
 ## Test
 
