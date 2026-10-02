@@ -13,6 +13,7 @@
     turn = false,
     bubble = null,
     dim = false,
+    reveal = false,
   }: {
     name: string;
     bot?: boolean;
@@ -25,10 +26,12 @@
     bubble?: string | null;
     /** Out of the current round, such as after passing. */
     dim?: boolean;
+    /** Just revealed as the friend. */
+    reveal?: boolean;
   } = $props();
 </script>
 
-<div class="seat" class:turn class:dim aria-current={turn ? 'true' : undefined}>
+<div class="seat" class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
     <span class="name">{name}</span>
@@ -62,6 +65,28 @@
   .seat.turn {
     color: var(--ink);
     outline-color: var(--accent);
+  }
+  .seat.reveal {
+    animation: reveal var(--dur-reveal) var(--ease-standard);
+  }
+  @keyframes reveal {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 var(--team-declarer);
+    }
+    35% {
+      transform: scale(1.12);
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 14px transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .seat.reveal {
+      animation: none;
+      outline-color: var(--team-declarer);
+    }
   }
   .seat.dim {
     opacity: 0.6;

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
+  import { prefersReducedMotion } from 'svelte/motion';
   import BidPanel from './BidPanel.svelte';
   import Card from './Card.svelte';
   import ExchangePanel from './ExchangePanel.svelte';
@@ -8,12 +9,18 @@
   import SuitIcon from './SuitIcon.svelte';
   import { contractLabel, friendCallLabel, isPoint, mightyCard, sameCard, sealOf, SUIT_SYMBOL } from './cards';
   import type { RoomClient } from './client.svelte';
+  import { flyFrom, flyTo, pop, wait } from './motion';
   import { settings } from './settings.svelte';
-  import type { Action, Card as CardT, PlayAction, Trick } from './types';
+  import type { Action, Card as CardT, PhaseView, Played, PlayAction, StateMsg, Trick } from './types';
 
   let { client }: { client: RoomClient } = $props();
 
-  const msg = $derived(client.game!);
+  // What is drawn lags the server by the animations still playing: each new
+  // state waits in a queue, and the difference to the one on screen is
+  // animated before it is shown.
+  let shown = $state(untrack(() => client.game!));
+  const msg = $derived(shown);
+  let animating = $state(false);
   const room = $derived(client.room);
   const view = $derived(msg.view);
   const legal = $derived(msg.legal);
@@ -87,7 +94,7 @@
   const toDiscard = $derived(exchange ? kittySize - (exchange.discards?.length ?? 0) : 0);
   const plays = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Play' in a ? [a.Play] : [])));
   const discardable = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Discard' in a ? [a.Discard] : [])));
-  const handMode = $derived(!myTurn ? 'view' : discardable.length > 0 ? 'choose' : plays.length > 0 ? 'play' : 'view');
+  const handMode = $derived(!myTurn || animating ? 'view' : discardable.length > 0 ? 'choose' : plays.length > 0 ? 'play' : 'view');
 
   let chosen = $state<CardT[]>([]);
   let variants = $state<PlayAction[] | null>(null);
@@ -146,27 +153,144 @@
     return '그냥 내기';
   }
 
-  // ---- The trick on the table ----------------------------------------------
-  // The server clears a trick the moment its last card lands. Keep the
-  // finished trick on the table briefly so everyone sees how it ended.
-  const finished = $derived((play?.tricks ?? done?.tricks)?.at(-1) ?? null);
-  let held = $state<Trick | null>(null);
-  let seen: string | null | undefined;
-  let holdTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const key = finished && JSON.stringify(finished);
-    // Nothing to replay on first load, such as after a reload mid-hand.
-    if (seen !== undefined && key && key !== seen) {
-      held = finished;
-      clearTimeout(holdTimer);
-      holdTimer = setTimeout(() => (held = null), 1600);
-    }
-    seen = key;
-  });
-  onDestroy(() => clearTimeout(holdTimer));
+  // ---- Motion --------------------------------------------------------------
+  const queue: StateMsg[] = [];
+  let running = false;
+  /** A finished trick kept on the table while it resolves. */
+  let resolving = $state<{ plays: Played[]; key: number } | null>(null);
+  let winner = $state<number | null>(null);
+  let revealed = $state<number | null>(null);
+  let dealing = $state(false);
+  let felt: HTMLElement;
 
-  const shown = $derived(held ? held.plays : (play?.plays ?? []));
-  const trickNo = $derived(play ? play.trick_no + (held ? 0 : 1) : 0);
+  $effect(() => {
+    const next = client.game;
+    if (!next || next === untrack(() => shown)) return;
+    queue.push(next);
+    untrack(pump);
+  });
+
+  /** Duration multiplier: 0 skips motion; a backlog speeds it up. */
+  function pace(): number {
+    if (settings.speed === 'off') return 0;
+    return (settings.speed === 'fast' ? 0.5 : 1) / (1 + 0.5 * queue.length);
+  }
+
+  async function pump() {
+    if (running) return;
+    running = true;
+    try {
+      while (queue.length > 0) {
+        const next = queue.shift()!;
+        const k = pace();
+        // Too far behind or not being watched: catch up at once.
+        if (k === 0 || document.hidden || queue.length > 3) {
+          for (const a of felt?.getAnimations({ subtree: true }) ?? []) a.finish();
+          resolving = null;
+          winner = null;
+          shown = next;
+          continue;
+        }
+        animating = true;
+        await transition(shown, next, k);
+      }
+    } finally {
+      animating = false;
+      running = false;
+    }
+  }
+
+  type Round = { plays: Played[]; tricks: Trick[]; friend: number | null };
+  function roundOf(p: PhaseView): Round | null {
+    if (typeof p !== 'object') return null;
+    if ('Play' in p) return p.Play;
+    if ('Done' in p) return { plays: [], tricks: p.Done.tricks, friend: p.Done.friend };
+    return null;
+  }
+
+  function slotCard(seat: number): Element | null {
+    return felt?.querySelector(`[data-slot="${seat}"] .card`) ?? null;
+  }
+
+  /** Where a card played by `seat` comes from, or a finished trick goes to. */
+  function anchor(seat: number, card?: CardT): DOMRect | null {
+    if (seat === me) {
+      const inHand = card && document.querySelector(`.tray [data-card='${JSON.stringify(card)}']`);
+      return (inHand || document.querySelector('.tray'))?.getBoundingClientRect() ?? null;
+    }
+    return felt?.querySelector(`[data-seat="${seat}"]`)?.getBoundingClientRect() ?? null;
+  }
+
+  /** Shows `fresh` cards arriving from their players while `apply` updates the table. */
+  async function land(fresh: Played[], apply: () => void, k: number) {
+    const from = fresh.map((p) => anchor(p.seat, p.card));
+    apply();
+    await tick();
+    if (prefersReducedMotion.current) return;
+    await Promise.all(
+      fresh.map((p, i) => {
+        const origin = from[i];
+        return origin ? flyFrom(slotCard(p.seat), origin, (p.seat === me ? 220 : 320) * k, i * 60 * k) : undefined;
+      }),
+    );
+  }
+
+  async function transition(prev: StateMsg, next: StateMsg, k: number) {
+    const before = roundOf(prev.view.phase);
+    const after = roundOf(next.view.phase);
+    const newHand = typeof next.view.phase === 'object' && 'Bidding' in next.view.phase && !('Bidding' in Object(prev.view.phase));
+    if (!before || !after) {
+      shown = next;
+      if (newHand) {
+        dealing = true;
+        await wait(900 * k);
+        dealing = false;
+      }
+      return;
+    }
+    const reduced = prefersReducedMotion.current;
+    if (after.tricks.length === before.tricks.length) {
+      await land(after.plays.slice(before.plays.length), () => (shown = next), k);
+    } else if (after.tricks.length === before.tricks.length + 1) {
+      const trick = after.tricks.at(-1)!;
+      await land(
+        trick.plays.slice(before.plays.length),
+        () => {
+          resolving = { plays: trick.plays, key: after.tricks.length };
+          shown = next;
+        },
+        k,
+      );
+      // The hero moment: a beat, the winning card pops, the trick sweeps to its winner.
+      await wait(150 * k);
+      winner = trick.winner;
+      await pop(slotCard(trick.winner), reduced ? 0 : 360 * k);
+      await wait((reduced ? 700 : 250) * k);
+      const to = anchor(trick.winner);
+      if (!reduced && to) {
+        await Promise.all(trick.plays.map((p, i) => flyTo(slotCard(p.seat), to, 400 * k, i * 40 * k)));
+      }
+      await land(
+        after.plays,
+        () => {
+          resolving = null;
+          winner = null;
+        },
+        k,
+      );
+    } else {
+      shown = next;
+    }
+    if (before.friend === null && after.friend !== null && after.friend !== undefined) {
+      revealed = after.friend;
+      await wait(700 * k);
+      revealed = null;
+    }
+  }
+
+  const onTable = $derived(resolving ? resolving.plays : (play?.plays ?? []));
+  const trickKey = $derived(resolving ? `r${resolving.key}` : `p${play?.tricks.length ?? 0}`);
+  const trickNo = $derived(resolving ? resolving.key : play ? play.trick_no + 1 : 0);
   let review = $state(false);
   const lastTrick = $derived(play?.tricks.at(-1) ?? null);
 
@@ -214,17 +338,17 @@
       {#if play || done}
         <span class="item">주공팀 <strong>{teamPoints}/{contract.count}</strong></span>
       {/if}
-      {#if lastTrick && !held}
+      {#if lastTrick && !resolving}
         <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 트릭</button>
       {/if}
     {/if}
   </div>
 
-  <div class="felt">
+  <div class="felt" bind:this={felt}>
     {#each around as r (r)}
       {@const s = seatAt(r)}
       {@const info = room?.seats[s]}
-      <div class="spot" style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
+      <div class="spot" data-seat={s} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
         <Seat
           name={seatName(s)}
           bot={info?.kind === 'bot'}
@@ -234,29 +358,30 @@
           turn={turn === s}
           bubble={bubble(s)}
           dim={bidding?.passed[s] ?? false}
+          reveal={revealed === s}
         />
       </div>
     {/each}
 
-    <div class="trick" aria-label={held ? '끝난 트릭' : '이번 트릭'}>
-      {#each shown as p (p.seat)}
+    <div class="trick" aria-label={resolving ? '끝난 트릭' : '이번 트릭'}>
+      {#each onTable as p (`${trickKey}-${p.seat}`)}
         {@const r = relative(p.seat)}
-        <div class="slot" style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
+        <div class="slot" data-slot={p.seat} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
           <Card
             card={p.card}
             size="trick"
             seal={seal(p.card)}
             {twoJokers}
             powerless={!p.powered}
-            won={held !== null && p.seat === held.winner}
+            won={p.seat === winner}
           />
         </div>
       {/each}
     </div>
 
-    {#if held}
-      <p class="note below won-note">{held.winner === me ? '내가' : seatName(held.winner)} 가져감</p>
-    {:else if play && play.plays.length === 0}
+    {#if resolving && winner !== null}
+      <p class="note below won-note">{winner === me ? '내가' : seatName(winner)} 가져감</p>
+    {:else if play && play.plays.length === 0 && !resolving}
       <p class="note">{turn === me ? '내가 선' : `${seatName(play.leader)} 선`}</p>
     {:else if play?.called_joker}
       <p class="note below alert">조커콜 · 조커를 내야 해요</p>
@@ -339,7 +464,7 @@
       {/if}
     </div>
 
-    <div class="tray">
+    <div class="tray" class:reveal={revealed === me}>
       <div class="me-row">
         {#if team(me)}<span class="team {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/if}
         {#if points(me) > 0}<span class="my-points">{points(me)}점</span>{/if}
@@ -353,6 +478,7 @@
           {kitty}
           {seal}
           {twoJokers}
+          deal={dealing}
           onplay={playCard}
           ontoggle={toggle}
         />
@@ -515,6 +641,23 @@
 
   .result {
     text-align: center;
+    animation: rise var(--dur-reveal) var(--ease-settle) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translate(-50%, calc(-50% + 24px)) scale(0.96);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .result {
+      animation-name: fade;
+    }
+    @keyframes fade {
+      from {
+        opacity: 0;
+      }
+    }
   }
   .result p {
     margin: 0;

@@ -1,5 +1,6 @@
 <script lang="ts">
   // The player's own cards: one overlapping row, or two when they would not fit.
+  import { flip } from 'svelte/animate';
   import Card from './Card.svelte';
   import { sameCard, type Seal } from './cards';
   import { settings } from './settings.svelte';
@@ -13,6 +14,7 @@
     kitty = [],
     seal,
     twoJokers,
+    deal = false,
     onplay,
     ontoggle,
   }: {
@@ -25,6 +27,8 @@
     kitty?: CardT[];
     seal: (card: CardT) => Seal | null;
     twoJokers: boolean;
+    /** Play the dealing-in animation. */
+    deal?: boolean;
     onplay?: (card: CardT) => void;
     ontoggle?: (card: CardT) => void;
   } = $props();
@@ -80,13 +84,15 @@
 
 <!-- Tapping the tray outside a card lowers the raised one. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="hand" bind:clientWidth={width} onclick={(e) => e.target === e.currentTarget && (raised = null)}>
+<div class="hand" class:deal bind:clientWidth={width} onclick={(e) => e.target === e.currentTarget && (raised = null)}>
   {#each rows as row, r (r)}
     {@const step = stepFor(row.length)}
     <div class="row" style:--overlap="{step - cardWidth}px">
-      {#each row as card (JSON.stringify(card))}
+      {#each row as card, i (JSON.stringify(card))}
+        <div class="spot" style:--i={i} animate:flip={{ duration: settings.speed === 'off' ? 0 : 200 }}>
         <Card
           {card}
+          id={JSON.stringify(card)}
           seal={seal(card)}
           {twoJokers}
           kitty={kitty.some((k) => sameCard(k, card))}
@@ -94,6 +100,7 @@
           unplayable={mode !== 'view' && !playable(card)}
           onclick={mode === 'view' ? undefined : () => tap(card)}
         />
+        </div>
       {/each}
     </div>
   {/each}
@@ -110,10 +117,33 @@
     display: flex;
     justify-content: center;
   }
-  .row > :global(.card:not(:first-child)) {
+  .spot {
+    position: relative;
+  }
+  .spot:not(:first-child) {
     margin-left: var(--overlap);
   }
-  .row > :global(.card.raised) {
+  .spot:has(:global(.raised)) {
     z-index: 1;
+  }
+  .deal .spot {
+    animation: deal-in var(--dur-travel) var(--ease-settle) both;
+    animation-delay: calc(var(--i) * 45ms);
+  }
+  @keyframes deal-in {
+    from {
+      opacity: 0;
+      transform: translateY(-40px) scale(0.85);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .deal .spot {
+      animation-name: fade-in;
+    }
+    @keyframes fade-in {
+      from {
+        opacity: 0;
+      }
+    }
   }
 </style>

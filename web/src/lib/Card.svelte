@@ -50,6 +50,7 @@
     kitty = false,
     powerless = false,
     width,
+    id,
     onclick,
   }: {
     /** null draws the back. */
@@ -66,6 +67,8 @@
     powerless?: boolean;
     /** Overrides the size's width in pixels. */
     width?: number;
+    /** Exposed as data-card so motion can find this card on screen. */
+    id?: string;
     onclick?: () => void;
   } = $props();
 
@@ -133,6 +136,7 @@
     class:won
     class:powerless
     style:--w={width ? `${width}px` : undefined}
+    data-card={id}
     aria-label={label}
     aria-pressed={raised}
     disabled={unplayable}
@@ -149,6 +153,7 @@
     class:won
     class:powerless
     style:--w={width ? `${width}px` : undefined}
+    data-card={id}
     role="img"
     aria-label={label}
   >
