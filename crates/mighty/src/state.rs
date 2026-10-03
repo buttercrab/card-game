@@ -252,7 +252,7 @@ impl State {
                 let contract = Contract { trump, count };
                 let rank = self.rules.bid_rank(contract);
                 let beats_best = b.best.is_none_or(|(_, best)| rank > self.rules.bid_rank(best));
-                if rank.0 >= bidding.min && beats_best {
+                if self.rules.bid_value(contract) >= bidding.min && beats_best {
                     actions.push(Action::Bid(contract));
                 }
             }

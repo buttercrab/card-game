@@ -11,7 +11,9 @@ rewritten.
 2. **Bidding.** Starting at `first_bidder` and going around, each player bids
    a trump suit (or no-trump) and a point count, or passes. A pass is final.
    - A bid must outrank the best bid so far. A no-trump bid of `n` ranks as
-     `n + no_trump_bonus`, and no-trump wins a tie.
+     `n + no_trump_bonus`, also against the minimum bid. With
+     `no_trump_wins_ties`, no-trump wins a tie; otherwise a bid must rank
+     strictly higher. Which applies is a local rule.
    - A player whose hand qualifies under `misdeal` may ask for a redeal
      before they have bid.
    - When one bidder is left, they become the declarer. If everyone
@@ -83,6 +85,9 @@ rewritten.
 ## Confirmed for 경기과고 (`gshs`), our default
 
 - Bidding goes in turn and every bid must be higher than the last.
+- 노기루다 counts one more than it says: 노기루다 14 is worth ♠ 15, so a suit
+  must say 16 to overrule it, and 노기루다 13 meets the minimum of 14. An
+  equal bid never overrules (assumed; the user said it varies by group).
 - The minimum bid is 14.
 - Each joker killer kills only the joker of its own colour: ♣3 the black
   joker, ♥3 the red one.

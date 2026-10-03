@@ -146,6 +146,33 @@ fn bids_must_rise_and_no_trump_wins_ties() {
 }
 
 #[test]
+fn gshs_no_trump_counts_one_more_and_ties_never_win() {
+    let nt = |count| Action::Bid(Contract { trump: None, count });
+    let spade = |count| {
+        Action::Bid(Contract {
+            trump: Some(Suit::Spade),
+            count,
+        })
+    };
+    let state = start(Preset::Gshs.rules(), &[], "");
+    // 노기루다 13 is worth 14, the minimum.
+    let legal = Mighty::legal_actions(&state);
+    assert!(legal.contains(&nt(13)) && !legal.contains(&nt(12)));
+
+    // 노기루다 14 is worth 15: a suit must say 16 to overrule it.
+    let mut state = start(Preset::Gshs.rules(), &[], "");
+    act(&mut state, nt(14));
+    let legal = Mighty::legal_actions(&state);
+    assert!(!legal.contains(&spade(15)) && legal.contains(&spade(16)));
+
+    // And an equal 노기루다 does not overrule a suit.
+    let mut state = start(Preset::Gshs.rules(), &[], "");
+    act(&mut state, spade(15));
+    let legal = Mighty::legal_actions(&state);
+    assert!(!legal.contains(&nt(14)) && legal.contains(&nt(15)));
+}
+
+#[test]
 fn declarer_takes_the_kitty_then_discards() {
     let mut state = start(Rules::default(), &[DECLARER], KITTY);
     act(

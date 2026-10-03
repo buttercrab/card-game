@@ -38,9 +38,11 @@ pub struct Bidding {
     pub min: u8,
     pub max: u8,
     pub allow_no_trump: bool,
-    /// A no-trump bid of `n` ranks as a trump bid of `n + no_trump_bonus`;
-    /// at equal rank no-trump wins.
+    /// A no-trump bid of `n` ranks as a trump bid of `n + no_trump_bonus`.
     pub no_trump_bonus: u8,
+    /// At equal rank a no-trump bid overrules a trump bid; otherwise every
+    /// bid must rank strictly higher.
+    pub no_trump_wins_ties: bool,
     /// Whether the first bidder may pass before anyone has bid.
     pub first_bidder_may_pass: bool,
     /// Extra points the declarer must promise to change trump after taking the kitty.
@@ -148,6 +150,7 @@ impl Default for Rules {
                 max: 20,
                 allow_no_trump: true,
                 no_trump_bonus: 0,
+                no_trump_wins_ties: true,
                 first_bidder_may_pass: true,
                 change_trump_cost: 2,
             },
@@ -238,10 +241,21 @@ impl Rules {
     }
 
     /// Bids are compared by this key; higher wins.
+    /// What a bid is worth against the minimum: no-trump counts
+    /// `no_trump_bonus` more than it says.
+    pub fn bid_value(&self, contract: Contract) -> u8 {
+        let bonus = if contract.trump.is_none() {
+            self.bidding.no_trump_bonus
+        } else {
+            0
+        };
+        contract.count + bonus
+    }
+
+    /// Orders bids: a later bid must rank strictly higher.
     pub fn bid_rank(&self, contract: Contract) -> (u8, bool) {
-        let no_trump = contract.trump.is_none();
-        let bonus = if no_trump { self.bidding.no_trump_bonus } else { 0 };
-        (contract.count + bonus, no_trump)
+        let tie_break = contract.trump.is_none() && self.bidding.no_trump_wins_ties;
+        (self.bid_value(contract), tie_break)
     }
 
     /// The card that calls `joker` under `trump`, if the deck has that joker.
@@ -378,6 +392,8 @@ impl Preset {
                     threshold: 1,
                 };
                 r.bidding.min = 14;
+                r.bidding.no_trump_bonus = 1;
+                r.bidding.no_trump_wins_ties = false;
                 r.joker_call
                     .calls
                     .push((Card::new(Suit::Heart, 3), Card::new(Suit::Diamond, 3)));
