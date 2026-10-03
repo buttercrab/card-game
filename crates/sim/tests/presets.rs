@@ -28,6 +28,6 @@ fn random_bots_keep_every_invariant() {
 #[test]
 fn simple_bots_keep_every_invariant() {
     for preset in Preset::ALL {
-        run(preset, 100, |_| Box::new(SimpleBot));
+        run(preset, 100, |_| Box::new(SimpleBot::default()));
     }
 }

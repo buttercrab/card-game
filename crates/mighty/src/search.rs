@@ -22,6 +22,9 @@ pub struct SearchBot {
     /// gain over the simple bot's choice, across the sampled deals, must
     /// exceed this many standard errors. 0 takes the best average.
     pub confidence: f64,
+    /// The bot that plays every seat in the playouts, and whose choice the
+    /// search must beat.
+    pub policy: SimpleBot,
 }
 
 impl Default for SearchBot {
@@ -29,6 +32,7 @@ impl Default for SearchBot {
         SearchBot {
             samples: 40,
             confidence: 1.0,
+            policy: SimpleBot::default(),
         }
     }
 }
@@ -38,7 +42,7 @@ impl Bot<Mighty> for SearchBot {
         let candidates = match (&view.viewer, &view.phase) {
             (Viewer::Seat(_), PhaseView::Play { trick_no, .. }) => play_candidates(legal, *trick_no),
             (Viewer::Seat(_), PhaseView::Bidding { .. }) => bid_candidates(legal),
-            _ => return SimpleBot.act(view, legal, rng),
+            _ => return self.policy.act(view, legal, rng),
         };
         let Viewer::Seat(me) = view.viewer else {
             unreachable!("matched above")
@@ -48,15 +52,20 @@ impl Bot<Mighty> for SearchBot {
         }
         let worlds: Vec<State> = (0..self.samples).filter_map(|_| determinize(view, rng)).collect();
         if worlds.is_empty() {
-            return SimpleBot.act(view, legal, rng);
+            return self.policy.act(view, legal, rng);
         }
         // Every candidate is scored on the same deals, so luck in the
         // sampling affects them all alike.
         let scores: Vec<Vec<i64>> = candidates
             .iter()
-            .map(|action| worlds.iter().map(|world| rollout(world, action, me, rng)).collect())
+            .map(|action| {
+                worlds
+                    .iter()
+                    .map(|world| rollout(self.policy, world, action, me, rng))
+                    .collect()
+            })
             .collect();
-        let usual = SimpleBot.act(view, legal, rng);
+        let usual = self.policy.act(view, legal, rng);
         let choice = match candidates.iter().position(|a| *a == usual) {
             Some(base) => confident_best(&scores, base, self.confidence),
             None => best_average(&scores),
@@ -128,7 +137,7 @@ fn bid_candidates(legal: &[Action]) -> Vec<Action> {
 
 /// Plays `action` in `world`, then plays the hand out with simple bots,
 /// redealing if the hand is thrown in.
-fn rollout(world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
+fn rollout(mut policy: SimpleBot, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
     let mut state = world.clone();
     state.step(me, action.clone());
     // Redeals could in principle repeat forever; give up and call it even.
@@ -142,7 +151,7 @@ fn rollout(world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i
             Turn::Seat(seat) => {
                 let view = View::new(&state, Viewer::Seat(seat));
                 let legal = state.legal_actions();
-                let choice = SimpleBot.act(&view, &legal, rng);
+                let choice = policy.act(&view, &legal, rng);
                 state.step(seat, choice);
             }
         }
