@@ -16,6 +16,10 @@ struct Args {
     /// How long bots think before acting, in milliseconds.
     #[arg(long, default_value_t = 700)]
     bot_delay_ms: u64,
+    /// Cap on how long a 고수 bot thinks per move, in milliseconds. By
+    /// default it uses most of the bot delay; lower it on small servers.
+    #[arg(long)]
+    bot_think_ms: Option<u64>,
     /// Most tables open at once.
     #[arg(long, default_value_t = 500)]
     max_rooms: usize,
@@ -62,6 +66,9 @@ async fn main() -> std::io::Result<()> {
     }
     let mut state = AppState::new(Duration::from_millis(args.bot_delay_ms))
         .with_limits(args.max_rooms, Duration::from_secs(args.idle_minutes * 60));
+    if let Some(ms) = args.bot_think_ms {
+        state = state.with_bot_think(Duration::from_millis(ms));
+    }
     if let Some(dir) = args.data {
         state = state.with_data(dir);
         let restored = state.restore_rooms()?;

@@ -16,6 +16,9 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, WeakUnboundedSender}
 
 pub type ConnId = u64;
 
+/// How long a hint may think: the player is waiting for it.
+const HINT_THINK: Duration = Duration::from_millis(800);
+
 /// Bumped when [`Room::snapshot`] changes incompatibly; older files are skipped.
 const SNAPSHOT_FORMAT: u32 = 1;
 
@@ -150,6 +153,8 @@ pub struct Room<G: SessionGame> {
     scores: Vec<i64>,
     rng: StdRng,
     bot_delay: Duration,
+    /// How long a 고수 bot may think, within the delay.
+    bot_think: Duration,
     /// Bumped whenever the hand changes, so a bot's stale move is dropped.
     version: u64,
     thinking: bool,
@@ -172,10 +177,19 @@ impl<G: SessionGame> Room<G> {
             scores: vec![0; n],
             rng: StdRng::from_os_rng(),
             bot_delay,
+            // Bots wait out the delay anyway so people can follow along; spend
+            // most of it thinking, leaving a little for the move to travel.
+            bot_think: bot_delay.mul_f32(0.8),
             version: 0,
             thinking: false,
             me: None,
         }
+    }
+
+    /// Caps how long a 고수 bot thinks, for small servers; it never exceeds
+    /// the bot delay.
+    pub fn limit_think(&mut self, think: Duration) {
+        self.bot_think = self.bot_think.min(think);
     }
 
     pub fn id(&self) -> &str {
@@ -418,7 +432,8 @@ impl<G: SessionGame> Room<G> {
                 let legal = G::legal_actions(game);
                 let (seed, version) = (self.rng.random::<u64>(), self.version);
                 tokio::task::spawn_blocking(move || {
-                    let action = G::bot(BotLevel::Hard, seat).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
+                    let action =
+                        G::bot(BotLevel::Hard, seat, HINT_THINK).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
                     let msg = json!({ "type": "hint", "version": version, "action": action });
                     let _ = tx.send(msg.to_string());
                 });
@@ -549,11 +564,12 @@ impl<G: SessionGame> Room<G> {
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game);
         let (seed, version, delay) = (self.rng.random::<u64>(), self.version, self.bot_delay);
+        let think = self.bot_think;
         self.thinking = true;
         tokio::spawn(async move {
             let started = Instant::now();
             let choice = tokio::task::spawn_blocking(move || {
-                G::bot(level, seat).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
+                G::bot(level, seat, think).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
             })
             .await;
             // Thinking time counts toward the delay that lets people follow along.

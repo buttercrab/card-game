@@ -10,6 +10,7 @@ use rand::seq::IndexedRandom;
 use rand::{Rng, RngCore};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 pub trait SessionGame:
     Game<State: Send, Action: Serialize + DeserializeOwned + Send + 'static, View: Serialize + Send + 'static>
@@ -28,9 +29,10 @@ pub trait SessionGame:
     /// Options for hand number `hand` (0-based) of a session.
     fn hand_options(settings: &Self::Settings, hand: u32) -> Self::Options;
 
-    /// A bot of this strength for `seat`. Seats differ a little in temperament
-    /// so a table of bots does not play as one.
-    fn bot(level: BotLevel, seat: usize) -> Box<dyn Bot<Self> + Send>;
+    /// A bot of this strength for `seat`, which may think for about `think`
+    /// (zero for its own default). Seats differ a little in temperament so a
+    /// table of bots does not play as one.
+    fn bot(level: BotLevel, seat: usize, think: Duration) -> Box<dyn Bot<Self> + Send>;
 }
 
 /// How well a seated bot plays.
@@ -89,7 +91,7 @@ impl SessionGame for Mighty {
         mighty::Options { rules, first_bidder }
     }
 
-    fn bot(level: BotLevel, seat: usize) -> Box<dyn Bot<Mighty> + Send> {
+    fn bot(level: BotLevel, seat: usize, think: Duration) -> Box<dyn Bot<Mighty> + Send> {
         // Bolder or more careful bidders, by seat.
         const TEMPER: [f32; 8] = [0.0, 0.4, -0.4, 0.2, -0.2, 0.3, -0.3, 0.1];
         let mut policy = SimpleBot::default();
@@ -100,6 +102,14 @@ impl SessionGame for Mighty {
                 slips: 0.35,
             }),
             BotLevel::Normal => Box::new(policy),
+            // More sampled deals keep helping a little (2000 beat 200 by about
+            // a third of a point per hand), so deal until the time is up.
+            BotLevel::Hard if !think.is_zero() => Box::new(SearchBot {
+                samples: 5000,
+                budget: Some(think),
+                policy,
+                ..SearchBot::default()
+            }),
             BotLevel::Hard => Box::new(SearchBot {
                 policy,
                 ..SearchBot::default()

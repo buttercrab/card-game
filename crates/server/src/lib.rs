@@ -33,6 +33,8 @@ pub struct AppState {
     rooms: Registry,
     next_conn: Arc<AtomicU64>,
     bot_delay: Duration,
+    /// Most a 고수 bot may think per move, if less than its share of the delay.
+    bot_think: Option<Duration>,
     max_rooms: usize,
     /// A room with nobody connected for this long closes.
     idle: Duration,
@@ -48,10 +50,19 @@ impl AppState {
             rooms: Arc::default(),
             next_conn: Arc::default(),
             bot_delay,
+            bot_think: None,
             max_rooms: 500,
             idle: Duration::from_secs(30 * 60),
             data: None,
             reports: Arc::default(),
+        }
+    }
+
+    /// Caps bot thinking per move, for a server short on CPU.
+    pub fn with_bot_think(self, think: Duration) -> AppState {
+        AppState {
+            bot_think: Some(think),
+            ..self
         }
     }
 
@@ -80,7 +91,10 @@ impl AppState {
                 .and_then(|text| serde_json::from_str(&text).map_err(|e| e.to_string()))
                 .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.bot_delay));
             match loaded {
-                Ok(room) => {
+                Ok(mut room) => {
+                    if let Some(think) = self.bot_think {
+                        room.limit_think(think);
+                    }
                     let id = room.id().to_string();
                     let mut rooms = self.rooms.lock().expect("room registry poisoned");
                     self.spawn_room(&mut rooms, id, room);
@@ -121,7 +135,10 @@ impl AppState {
                 break id;
             }
         };
-        let room = Room::<G>::new(id.clone(), settings, self.bot_delay);
+        let mut room = Room::<G>::new(id.clone(), settings, self.bot_delay);
+        if let Some(think) = self.bot_think {
+            room.limit_think(think);
+        }
         self.spawn_room(&mut rooms, id.clone(), room);
         Some(id)
     }

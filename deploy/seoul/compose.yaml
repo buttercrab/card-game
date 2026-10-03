@@ -8,6 +8,9 @@ services:
   cards:
     image: card-game:latest
     container_name: card-game
+    # A nano instance earns little sustained CPU; cap bot thinking near what
+    # 200 sampled deals take, so long bot games do not drain its burst credit.
+    command: ["--bot-think-ms", "150"]
     restart: unless-stopped
     read_only: true
     security_opt:
