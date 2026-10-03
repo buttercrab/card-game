@@ -111,8 +111,8 @@
     <section>
       <h2>목표</h2>
       <p>
-        공약을 가장 높게 부른 사람이 <strong>여당</strong>이 되어 프렌드 한 명과 한 편이 되고, 나머지는
-        <strong>야당</strong>이 돼요. 여당은 부른 점수 이상을 가져와야 해요. 점수 카드는 10, J, Q, K, A로 한 장에
+        공약을 가장 높게 부른 사람이 <strong>주공</strong>이 되어 프렌드 한 명과 <strong>여당</strong>을 이루고,
+        나머지는 <strong>야당</strong>이 돼요. 여당은 부른 점수 이상을 가져와야 해요. 점수 카드는 10, J, Q, K, A로 한 장에
         1점, 모두 20점이에요.
       </p>
       <div class="cards" aria-hidden="true">
@@ -125,7 +125,7 @@
     <section>
       <h2>카드 나누기</h2>
       <p>
-        52장에 조커 {jokers(r).length}장을 더해 한 사람에 {r.hand_size}장씩 나누고, 남은 {kitty(r)}장은 바닥에 엎어
+        52장에 조커 {jokers(r).length}장을 더해 한 사람에 {r.hand_size}장씩 나누고, 남은 {kitty(r)}장은 키티로 엎어
         둬요.
       </p>
       {#if misdealText(r)}<p>{misdealText(r)}</p>{/if}
@@ -161,9 +161,9 @@
     </section>
 
     <section>
-      <h2>바닥패와 프렌드</h2>
+      <h2>키티와 프렌드</h2>
       <ul>
-        <li>여당이 바닥패 {kitty(r)}장을 가져가고 {kitty(r)}장을 버려요. 버린 점수 카드는 여당 점수가 돼요.</li>
+        <li>주공이 키티 {kitty(r)}장을 가져가고 {kitty(r)}장을 버려요. 버린 점수 카드는 여당 점수가 돼요.</li>
         <li>
           {r.bidding.change_trump_cost > 0
             ? `기루다를 바꾸려면 공약을 ${r.bidding.change_trump_cost} 올려야 해요.`
@@ -217,7 +217,7 @@
     <section>
       <h2>카드 내기</h2>
       <ul>
-        <li>여당이 첫 라운드를 시작하고, 라운드를 이긴 사람이 다음 라운드를 시작해요.</li>
+        <li>주공이 첫 라운드를 시작하고, 라운드를 이긴 사람이 다음 라운드를 시작해요.</li>
         <li>처음 낸 무늬가 있으면 그 무늬를 내야 해요. 없으면 아무 카드나 낼 수 있어요.</li>
         <li>
           마이티와 조커는 언제든 낼 수 있어요. 다만 마이티도 그 무늬의 카드라서, 그 무늬가 나왔는데 가진 게 마이티뿐이면
@@ -276,13 +276,13 @@
         </li>
         <li>공약을 못 채우면 모자란 만큼 잃어요. 10점 이하로 가져왔다면 두 배로 잃어요.</li>
         <li>
-          그 점수를 야당은 한 사람마다 내고, 프렌드는 한 몫을 받고, 여당은 야당 수만큼 받아서 프렌드 몫을 뺀 만큼 가져요.
+          그 점수를 야당은 한 사람마다 내고, 프렌드는 한 몫을 받고, 주공은 야당 수만큼 받아서 프렌드 몫을 뺀 만큼 가져요.
           모두 더하면 항상 0이에요.
         </li>
       </ul>
       <p class="example">
         예: 공약 {r.bidding.min}에 {r.bidding.min + 2}점을 가져오면 {r.bidding.min - 8}점. 야당 세 명이 −{r.bidding.min - 8}씩,
-        프렌드 +{r.bidding.min - 8}, 여당 +{(r.bidding.min - 8) * 2}.
+        프렌드 +{r.bidding.min - 8}, 주공 +{(r.bidding.min - 8) * 2}.
       </p>
     </section>
   {/if}

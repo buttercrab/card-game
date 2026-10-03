@@ -1,3 +1,4 @@
+import { sound } from './sound';
 import type { Action, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
 interface Saved {
@@ -57,12 +58,15 @@ export class RoomClient {
   seat = $state<number | null>(null);
   error = $state<string | null>(null);
   status = $state<'connecting' | 'open' | 'closed' | 'missing'>('connecting');
+  /** The latest reaction per seat, cleared after a few seconds. `id` restarts its animation. */
+  reactions = $state<Record<number, { text: string; id: number }>>({});
 
   #id: string;
   #ws: WebSocket | null = null;
   #closed = false;
   #retry = 500;
   #errorTimer: ReturnType<typeof setTimeout> | undefined;
+  #reactionId = 0;
 
   constructor(id: string) {
     this.#id = id;
@@ -123,6 +127,15 @@ export class RoomClient {
         store(this.#key, { token: msg.token, name } satisfies Saved);
         break;
       }
+      case 'reaction': {
+        const id = ++this.#reactionId;
+        this.reactions[msg.seat] = { text: msg.text, id };
+        sound.react();
+        setTimeout(() => {
+          if (this.reactions[msg.seat]?.id === id) delete this.reactions[msg.seat];
+        }, 2800);
+        break;
+      }
       case 'error':
         this.error = translate(msg.message);
         clearTimeout(this.#errorTimer);
@@ -162,6 +175,10 @@ export class RoomClient {
 
   setRules(preset: string, rules: Rules | null) {
     this.#send({ type: 'set_settings', settings: rules ? { preset, rules } : { preset } });
+  }
+
+  react(text: string) {
+    this.#send({ type: 'react', text });
   }
 
   start() {

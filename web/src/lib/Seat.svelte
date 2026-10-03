@@ -12,6 +12,7 @@
     points = 0,
     turn = false,
     bubble = null,
+    reaction = null,
     dim = false,
     reveal = false,
   }: {
@@ -24,6 +25,8 @@
     turn?: boolean;
     /** A short note beside the seat, such as a bid or 패스. */
     bubble?: string | null;
+    /** A reaction the player just sent; `id` replays it when repeated. */
+    reaction?: { text: string; id: number } | null;
     /** Out of the current round, such as after passing. */
     dim?: boolean;
     /** Just revealed as the friend. */
@@ -42,6 +45,11 @@
     {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
   </div>
   {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
+  {#if reaction}
+    {#key reaction.id}
+      <span class="reaction" class:emoji={/^\p{Extended_Pictographic}/u.test(reaction.text)} aria-live="polite">{reaction.text}</span>
+    {/key}
+  {/if}
 </div>
 
 <style>
@@ -153,6 +161,47 @@
   }
   .points {
     color: var(--ink);
+  }
+  /* Rises above the seat, holds, then fades; the client drops it after 2.8 s. */
+  .reaction {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    z-index: 5;
+    padding: 4px 12px;
+    border-radius: 16px;
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+    animation: react 2.8s var(--ease-standard, ease) both;
+  }
+  .reaction.emoji {
+    padding: 2px 8px;
+    font-size: 28px;
+  }
+  @keyframes react {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -40%) scale(0.6);
+    }
+    10% {
+      opacity: 1;
+      transform: translate(-50%, -100%) scale(1.08);
+    }
+    16%,
+    82% {
+      opacity: 1;
+      transform: translate(-50%, -100%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -130%) scale(1);
+    }
   }
   .bubble {
     position: absolute;

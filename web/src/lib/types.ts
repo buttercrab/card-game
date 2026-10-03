@@ -154,4 +154,5 @@ export type ServerMsg =
   | RoomMsg
   | StateMsg
   | { type: 'welcome'; seat: number; token: string }
+  | { type: 'reaction'; seat: number; text: string }
   | { type: 'error'; message: string };

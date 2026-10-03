@@ -113,6 +113,8 @@
     error: null,
     act: () => {},
     start: () => {},
+    react: () => {},
+    reactions: { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
 
   if (which === 'sweep') {

@@ -6,6 +6,7 @@
   import ExchangePanel from './ExchangePanel.svelte';
   import Hand from './Hand.svelte';
   import LeadTag from './LeadTag.svelte';
+  import Reactions from './Reactions.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
@@ -474,10 +475,12 @@
         <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
       {/if}
     {/if}
+    {#if me !== null}<span class="react-status"><Reactions below onreact={(text) => client.react(text)} /></span>{/if}
   </div>
   {#if event && !done}{#key event}<p class="event fade-up" aria-live="polite">{event}</p>{/key}{/if}
 
   <div class="felt" bind:this={felt}>
+    {#if me !== null}<span class="react-spot"><Reactions onreact={(text) => client.react(text)} /></span>{/if}
     {#each around as r (r)}
       {@const s = seatAt(r)}
       {@const info = room?.seats[s]}
@@ -490,6 +493,7 @@
           points={points(s)}
           turn={turn === s}
           bubble={bubble(s)}
+          reaction={client.reactions?.[s] ?? null}
           dim={bidding?.passed[s] ?? false}
           reveal={revealed === s}
         />
@@ -650,12 +654,24 @@
   }
   .status {
     grid-area: status;
+    /* Above the felt, so the reactions menu opens over the seats. */
+    position: relative;
+    z-index: 8;
   }
   .event {
     grid-area: event;
   }
   .felt {
     grid-area: felt;
+  }
+  .react-status {
+    display: none;
+  }
+  .react-spot {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    z-index: 6;
   }
   .strip,
   .spectating {
@@ -1013,6 +1029,13 @@
   /* Phones on their side: the strip moves beside the felt, seats go down
      both sides, and the note moves into the event line. */
   @media (orientation: landscape) and (max-height: 520px) {
+    /* Seats fill the felt's corners here; the wide status row has room. */
+    .react-spot {
+      display: none;
+    }
+    .react-status {
+      display: inline-flex;
+    }
     .table {
       grid-template-columns: minmax(0, 1fr) minmax(240px, 36%);
       grid-template-rows: auto minmax(0, 1fr) auto;

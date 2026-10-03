@@ -291,3 +291,22 @@ async fn seated_players_change_the_rules_between_hands() {
     send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs" } })).await;
     next(&mut ws, "error").await;
 }
+
+#[tokio::test]
+async fn reactions_reach_the_table_and_unknown_ones_are_refused() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    let (seat, _) = join(&mut a, "A", None).await;
+    let mut watcher = connect(addr, &room).await;
+
+    send(&mut a, json!({ "type": "react", "text": "나이스" })).await;
+    let r = next(&mut watcher, "reaction").await;
+    assert_eq!(r["seat"], seat);
+    assert_eq!(r["text"], "나이스");
+
+    send(&mut a, json!({ "type": "react", "text": "<script>" })).await;
+    next(&mut a, "error").await;
+    send(&mut watcher, json!({ "type": "react", "text": "👏" })).await;
+    next(&mut watcher, "error").await;
+}

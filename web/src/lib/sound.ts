@@ -131,6 +131,11 @@ export const sound = {
   call() {
     [659, 740, 988].forEach((f, i) => note(i * 0.06, f, { level: 0.1, length: 0.3 }));
   },
+  /** Someone at the table reacted. */
+  react() {
+    note(0, 988, { level: 0.06, length: 0.18, type: 'sine' });
+    note(0.06, 1319, { level: 0.05, length: 0.22, type: 'sine' });
+  },
   /** Something was refused. */
   error() {
     note(0, 196, { level: 0.12, length: 0.18, type: 'square' });

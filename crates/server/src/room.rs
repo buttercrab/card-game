@@ -75,6 +75,10 @@ pub enum ClientMsg {
     SetSettings {
         settings: Value,
     },
+    /// Show a quick reaction from your seat to the whole table.
+    React {
+        text: String,
+    },
     /// Deal the next hand once every seat is filled.
     Start,
     Act {
@@ -94,7 +98,14 @@ enum Occupant {
 struct Conn {
     tx: UnboundedSender<String>,
     seat: Option<usize>,
+    /// When this connection last reacted, to keep reactions from flooding.
+    reacted: Option<Instant>,
 }
+
+/// The reactions a player can send; anything else is refused.
+pub const REACTIONS: [&str; 12] = [
+    "👏", "😂", "😮", "😭", "🔥", "🙏", "나이스", "아…", "ㅋㅋㅋ", "빨리요~", "미안", "굿",
+];
 
 pub struct Room<G: SessionGame> {
     id: String,
@@ -253,14 +264,19 @@ impl<G: SessionGame> Room<G> {
     fn handle(&mut self, cmd: Command) {
         match cmd {
             Command::Connect { conn, tx } => {
-                self.conns.insert(conn, Conn { tx, seat: None });
+                self.conns.insert(conn, Conn { tx, seat: None, reacted: None });
             }
             Command::Disconnect { conn } => {
                 self.conns.remove(&conn);
             }
             Command::Message { conn, msg } => {
+                // A reaction changes nothing the room or the hand shows.
+                let quiet = matches!(msg, ClientMsg::React { .. });
                 if let Err(message) = self.on_message(conn, msg) {
                     self.send(conn, &json!({ "type": "error", "message": message }));
+                    return;
+                }
+                if quiet {
                     return;
                 }
             }
@@ -322,6 +338,23 @@ impl<G: SessionGame> Room<G> {
                 }
                 tracing::info!(room = %self.id, settings = %log_action(&settings), "settings");
                 self.settings = settings;
+                Ok(())
+            }
+            ClientMsg::React { text } => {
+                let seat = my_seat.ok_or("you are not seated")?;
+                if !REACTIONS.contains(&text.as_str()) {
+                    return Err("unknown reaction".into());
+                }
+                let c = self.conns.get_mut(&conn).ok_or("not connected")?;
+                // Too fast: drop it quietly rather than nag.
+                if c.reacted.is_some_and(|t| t.elapsed() < Duration::from_millis(700)) {
+                    return Ok(());
+                }
+                c.reacted = Some(Instant::now());
+                let msg = json!({ "type": "reaction", "seat": seat, "text": text }).to_string();
+                for c in self.conns.values() {
+                    let _ = c.tx.send(msg.clone());
+                }
                 Ok(())
             }
             ClientMsg::Start => {
