@@ -374,10 +374,11 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
     }
 }
 
-/// The card that costs the least to give away: low, and not a point.
+/// The card that costs the least to give away: never the mighty or a
+/// joker if anything else will do, then not a point, then the lowest.
 fn cheapest_dump(t: &Table, cards: &[Card]) -> Card {
     *cards
         .iter()
-        .min_by_key(|c| (c.is_point(), t.power(**c)))
+        .min_by_key(|c| (**c == t.mighty || c.is_joker(), c.is_point(), t.power(**c)))
         .expect("a legal play exists")
 }

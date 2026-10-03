@@ -24,8 +24,8 @@ struct Args {
     #[arg(long, value_enum, default_value_t = Bots::Mixed)]
     bots: Bots,
     /// With `--bots search`: the measured bot, moving one seat each game.
-    /// `random`, `simple`, or `search[:SAMPLES]` (bare `search` is the
-    /// default search bot).
+    /// `random`, `simple`, or `search[:SAMPLES[:CONFIDENCE]]` (bare
+    /// `search` is the default search bot).
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.
@@ -65,8 +65,15 @@ impl FromStr for Spec {
             _ => {}
         }
         let rest = s.strip_prefix("search:").ok_or(format!("unknown bot {s:?}"))?;
-        let samples = rest.parse().map_err(|_| format!("bad sample count in {s:?}"))?;
-        Ok(Spec::Search(SearchBot { samples }))
+        let mut parts = rest.split(':');
+        let mut bot = SearchBot::default();
+        if let Some(samples) = parts.next() {
+            bot.samples = samples.parse().map_err(|_| format!("bad sample count in {s:?}"))?;
+        }
+        if let Some(confidence) = parts.next() {
+            bot.confidence = confidence.parse().map_err(|_| format!("bad confidence in {s:?}"))?;
+        }
+        Ok(Spec::Search(bot))
     }
 }
 

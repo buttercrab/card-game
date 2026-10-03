@@ -14,22 +14,29 @@ use engine::{Bot, Seat, Turn, Viewer};
 use rand::seq::SliceRandom;
 use rand::{Rng, RngCore};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SearchBot {
     /// Deals sampled per decision. More is slower, and past 40 barely stronger.
     pub samples: usize,
+    /// How sure the search must be before it overrides [`SimpleBot`]: the
+    /// gain over the simple bot's choice, across the sampled deals, must
+    /// exceed this many standard errors. 0 takes the best average.
+    pub confidence: f64,
 }
 
 impl Default for SearchBot {
     fn default() -> SearchBot {
-        SearchBot { samples: 40 }
+        SearchBot {
+            samples: 40,
+            confidence: 1.0,
+        }
     }
 }
 
 impl Bot<Mighty> for SearchBot {
     fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
         let candidates = match (&view.viewer, &view.phase) {
-            (Viewer::Seat(_), PhaseView::Play { .. }) => legal.to_vec(),
+            (Viewer::Seat(_), PhaseView::Play { trick_no, .. }) => play_candidates(legal, *trick_no),
             (Viewer::Seat(_), PhaseView::Bidding { .. }) => bid_candidates(legal),
             _ => return SimpleBot.act(view, legal, rng),
         };
@@ -45,15 +52,50 @@ impl Bot<Mighty> for SearchBot {
         }
         // Every candidate is scored on the same deals, so luck in the
         // sampling affects them all alike.
-        let mut best = (i64::MIN, 0);
-        for (i, action) in candidates.iter().enumerate() {
-            let total: i64 = worlds.iter().map(|world| rollout(world, action, me, rng)).sum();
-            if total > best.0 {
-                best = (total, i);
-            }
-        }
-        candidates[best.1].clone()
+        let scores: Vec<Vec<i64>> = candidates
+            .iter()
+            .map(|action| worlds.iter().map(|world| rollout(world, action, me, rng)).collect())
+            .collect();
+        let usual = SimpleBot.act(view, legal, rng);
+        let choice = match candidates.iter().position(|a| *a == usual) {
+            Some(base) => confident_best(&scores, base, self.confidence),
+            None => best_average(&scores),
+        };
+        candidates[choice].clone()
     }
+}
+
+fn best_average(scores: &[Vec<i64>]) -> usize {
+    (0..scores.len())
+        .max_by_key(|&i| scores[i].iter().sum::<i64>())
+        .expect("at least one candidate")
+}
+
+/// The candidate that beats `base` by the most, on the same deals, among
+/// those that beat it by more than `z` standard errors; else `base`. With
+/// a few dozen noisy playouts, small leads are mostly luck, and acting on
+/// them throws good cards away.
+fn confident_best(scores: &[Vec<i64>], base: usize, z: f64) -> usize {
+    let n = scores[base].len() as f64;
+    let mut best = (0.0, base);
+    for (i, s) in scores.iter().enumerate() {
+        let diffs: Vec<f64> = s.iter().zip(&scores[base]).map(|(a, b)| (a - b) as f64).collect();
+        let mean = diffs.iter().sum::<f64>() / n;
+        let var = diffs.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1.0).max(1.0);
+        let se = (var / n).sqrt();
+        if mean > best.0 && mean > z * se {
+            best = (mean, i);
+        }
+    }
+    best.1
+}
+
+/// Every legal card, except a joker on the first trick when anything else
+/// will do: it has no power there, and the playouts undervalue keeping it.
+fn play_candidates(legal: &[Action], trick_no: usize) -> Vec<Action> {
+    let keep = |a: &&Action| !(trick_no == 0 && matches!(a, Action::Play { card, .. } if card.is_joker()));
+    let out: Vec<Action> = legal.iter().filter(keep).cloned().collect();
+    if out.is_empty() { legal.to_vec() } else { out }
 }
 
 /// Passing, a misdeal when allowed, and the three cheapest bids in each
@@ -279,6 +321,21 @@ mod tests {
     use engine::Game;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+
+    #[test]
+    fn a_joker_is_not_thrown_away_on_the_first_trick() {
+        use crate::card::Color;
+        let play = |card| Action::Play {
+            card,
+            joker_lead: None,
+            call_joker: false,
+        };
+        let joker = play(Card::Joker(Color::Red));
+        let two = play(Card::new(Suit::Club, 2));
+        assert_eq!(play_candidates(&[joker.clone(), two.clone()], 0), vec![two.clone()]);
+        assert_eq!(play_candidates(&[joker.clone(), two], 1).len(), 2);
+        assert_eq!(play_candidates(std::slice::from_ref(&joker), 0), vec![joker]);
+    }
 
     /// A sampled world must look exactly like the real one to the bot,
     /// keep every card, and respect the voids it has seen.
