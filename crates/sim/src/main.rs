@@ -2,7 +2,7 @@ use clap::{Parser, ValueEnum};
 use engine::{Bot, RandomBot};
 use mighty::bot::SimpleBot;
 use mighty::rules::Preset;
-use mighty::search::SearchBot;
+use mighty::search::{Reading, SearchBot};
 use mighty::{Action, Mighty, Options, View};
 use rand::RngCore;
 use sim::{Checks, Failure};
@@ -31,7 +31,9 @@ struct Args {
     /// (bare `search` is the default search bot; a budget of 0 turns the
     /// time limit off, which keeps runs reproducible). `@name=value,...`
     /// after `simple` or `search` changes the simple bot's weights, e.g.
-    /// `simple@bid_base=7` or `search:80@draw_trumps=3`.
+    /// `simple@bid_base=7` or `search:80@draw_trumps=3`; for `search`,
+    /// `read.NAME=value` changes how it reads the other players, e.g.
+    /// `search@read.on=false`.
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.
@@ -75,9 +77,13 @@ impl FromStr for Spec {
     fn from_str(s: &str) -> Result<Spec, String> {
         let (name, weights) = s.split_once('@').unwrap_or((s, ""));
         let mut policy = SimpleBot::default();
+        let mut reading = Reading::default();
         for setting in weights.split(',').filter(|w| !w.is_empty()) {
             let (key, value) = setting.split_once('=').ok_or(format!("bad weight {setting:?}"))?;
-            set_weight(&mut policy, key, value)?;
+            match key.strip_prefix("read.") {
+                Some(key) if name.starts_with("search") => set_reading(&mut reading, key, value)?,
+                _ => set_weight(&mut policy, key, value)?,
+            }
         }
         match name {
             "random" => return Ok(Spec::Random),
@@ -90,6 +96,7 @@ impl FromStr for Spec {
         }
         let mut bot = SearchBot {
             policy,
+            reading,
             ..SearchBot::default()
         };
         if let Some(samples) = parts.next() {
@@ -141,6 +148,22 @@ fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String>
         "lead_mighty" => bot.lead_mighty = int()?,
         "defend_trump" => bot.defend_trump = int()?,
         _ => return Err(format!("unknown weight {key:?}")),
+    }
+    Ok(())
+}
+
+/// Sets how the search bot reads the other players, for tuning from the
+/// command line: `read.on`, `read.slip`, `read.bid_scale`, `read.min_share`, `read.draws`.
+fn set_reading(reading: &mut Reading, key: &str, value: &str) -> Result<(), String> {
+    let bad = || format!("bad value {value:?} for read.{key}");
+    let float = || value.parse::<f64>().map_err(|_| bad());
+    match key {
+        "on" => reading.on = value.parse().map_err(|_| bad())?,
+        "slip" => reading.slip = float()?,
+        "bid_scale" => reading.bid_scale = float()?,
+        "min_share" => reading.min_share = float()?,
+        "draws" => reading.draws = value.parse().map_err(|_| bad())?,
+        _ => return Err(format!("unknown setting read.{key}")),
     }
     Ok(())
 }
