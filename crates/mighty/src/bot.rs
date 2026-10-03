@@ -75,6 +75,13 @@ impl Default for SimpleBot {
 
 impl Bot<Mighty> for SimpleBot {
     fn act(&mut self, view: &View, legal: &[Action], _rng: &mut dyn RngCore) -> Action {
+        self.decide(view, legal)
+    }
+}
+
+impl SimpleBot {
+    /// What [`Bot::act`] chooses; it never needs randomness.
+    pub(crate) fn decide(&self, view: &View, legal: &[Action]) -> Action {
         let choice = match &view.phase {
             PhaseView::Bidding { .. } => self.bid(view, legal),
             PhaseView::Exchange { contract, .. } => self.exchange(view, legal, contract.trump),
@@ -83,9 +90,7 @@ impl Bot<Mighty> for SimpleBot {
         };
         choice.unwrap_or_else(|| legal[0].clone())
     }
-}
 
-impl SimpleBot {
     /// Rough number of points a hand could promise with `trump`: long and
     /// high trump, the mighty, jokers and side aces. No-trump is never
     /// bid; these rules play it badly.
@@ -268,7 +273,7 @@ impl Table<'_> {
 }
 
 /// A card's own bit, for sets of cards.
-fn bit(card: Card) -> u64 {
+pub(crate) fn bit(card: Card) -> u64 {
     match card {
         Card::Normal(suit, rank) => 1 << (suit as u64 * 15 + u64::from(rank)),
         Card::Joker(color) => 1 << (color as u64 + 60),

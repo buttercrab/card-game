@@ -2,11 +2,15 @@
 //! plays, it deals the cards it cannot see in many ways consistent with
 //! what it has seen and with the bidding, plays every candidate to the end
 //! of the hand with [`SimpleBot`] in every seat, and picks the one with the
-//! best average payoff (Perfect Information Monte Carlo).
+//! best average payoff (Perfect Information Monte Carlo). Deals count by
+//! how well they explain what the other players have bid and played; see
+//! [`Reading`].
 
 use crate::Mighty;
 use crate::bot::SimpleBot;
 use crate::card::{ACE, Card, Suit};
+use crate::read::Memo;
+pub use crate::read::Reading;
 use crate::state::{Action, Bidding, Exchange, FriendCall, Phase, Play, State};
 use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Turn, Viewer};
@@ -29,6 +33,9 @@ pub struct SearchBot {
     /// The bot that plays every seat in the playouts, and whose choice the
     /// search must beat.
     pub policy: SimpleBot,
+    /// How much each sampled deal counts, by how well it explains what the
+    /// other players have done.
+    pub reading: Reading,
 }
 
 impl Default for SearchBot {
@@ -38,6 +45,7 @@ impl Default for SearchBot {
             confidence: 1.0,
             budget: Some(Duration::from_secs(1)),
             policy: SimpleBot::default(),
+            reading: Reading::default(),
         }
     }
 }
@@ -60,11 +68,16 @@ impl Bot<Mighty> for SearchBot {
         // sampling affects them all alike.
         let started = Instant::now();
         let mut scores: Vec<Vec<i64>> = vec![Vec::new(); candidates.len()];
+        let mut log_weights = Vec::new();
+        let mut memo = Memo::default();
         for _ in 0..self.samples {
             if self.budget.is_some_and(|budget| started.elapsed() >= budget) {
                 break;
             }
-            let Some(world) = self.sample(view, rng) else { continue };
+            let Some((world, log_weight)) = self.draw(view, me, rng, &mut memo) else {
+                continue;
+            };
+            log_weights.push(log_weight);
             for (action, scores) in candidates.iter().zip(&mut scores) {
                 scores.push(rollout(self.policy, &world, action, me, rng));
             }
@@ -72,16 +85,40 @@ impl Bot<Mighty> for SearchBot {
         if scores[0].is_empty() {
             return self.policy.act(view, legal, rng);
         }
+        let weights = self.reading.weights(&log_weights);
         let usual = self.policy.act(view, legal, rng);
         let choice = match candidates.iter().position(|a| *a == usual) {
-            Some(base) => confident_best(&scores, base, self.confidence),
-            None => best_average(&scores),
+            Some(base) => confident_best(&scores, &weights, base, self.confidence),
+            None => best_average(&scores, &weights),
         };
         candidates[choice].clone()
     }
 }
 
 impl SearchBot {
+    /// A world to play out, and its log weight. Reading the table samples
+    /// several and keeps one in proportion to its weight, so that fewer
+    /// playouts go to deals the other players' actions rule out; the one
+    /// kept carries their average weight.
+    fn draw(&self, view: &View, me: Seat, rng: &mut dyn RngCore, memo: &mut Memo) -> Option<(State, f64)> {
+        if !self.reading.on {
+            return Some((self.sample(view, rng)?, 0.0));
+        }
+        let mut kept = None;
+        let mut total = f64::NEG_INFINITY;
+        let draws = self.reading.draws.max(1);
+        for _ in 0..draws {
+            let world = self.sample(view, rng)?;
+            let log_weight = self.reading.log_weight(&self.policy, &world, me, memo);
+            let top = total.max(log_weight);
+            total = top + ((total - top).exp() + (log_weight - top).exp()).ln();
+            if rng.random::<f64>() < (log_weight - total).exp() {
+                kept = Some(world);
+            }
+        }
+        Some((kept?, total - (draws as f64).ln()))
+    }
+
     /// A determinized world, redealt up to 20 times until the policy would
     /// have bid what the declarer, or the best bidder so far, did. Past
     /// that, a wrong guess about how they bid is likelier than bad luck.
@@ -117,24 +154,30 @@ impl SearchBot {
     }
 }
 
-fn best_average(scores: &[Vec<i64>]) -> usize {
+fn best_average(scores: &[Vec<i64>], weights: &[f64]) -> usize {
+    let average = |s: &Vec<i64>| s.iter().zip(weights).map(|(&x, w)| x as f64 * w).sum::<f64>();
     (0..scores.len())
-        .max_by_key(|&i| scores[i].iter().sum::<i64>())
+        .max_by(|&a, &b| average(&scores[a]).total_cmp(&average(&scores[b])))
         .expect("at least one candidate")
 }
 
 /// The candidate that beats `base` by the most, on the same deals, among
 /// those that beat it by more than `z` standard errors; else `base`. With
 /// a few dozen noisy playouts, small leads are mostly luck, and acting on
-/// them throws good cards away.
-fn confident_best(scores: &[Vec<i64>], base: usize, z: f64) -> usize {
-    let n = scores[base].len() as f64;
+/// them throws good cards away. Deals count by `weights`, which sum to 1.
+fn confident_best(scores: &[Vec<i64>], weights: &[f64], base: usize, z: f64) -> usize {
+    // The effective number of deals, for the usual small-sample correction.
+    let n = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
     let mut best = (0.0, base);
     for (i, s) in scores.iter().enumerate() {
         let diffs: Vec<f64> = s.iter().zip(&scores[base]).map(|(a, b)| (a - b) as f64).collect();
-        let mean = diffs.iter().sum::<f64>() / n;
-        let var = diffs.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1.0).max(1.0);
-        let se = (var / n).sqrt();
+        let mean = diffs.iter().zip(weights).map(|(d, w)| d * w).sum::<f64>();
+        let spread = diffs
+            .iter()
+            .zip(weights)
+            .map(|(d, w)| (w * (d - mean)).powi(2))
+            .sum::<f64>();
+        let se = (spread * n / (n - 1.0).max(1.0)).sqrt();
         if mean > best.0 && mean > z * se {
             best = (mean, i);
         }
@@ -306,6 +349,7 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
         hands,
         kitty: Vec::new(),
         taken: vec![Vec::new(); seats],
+        bids: view.bids.clone(),
     };
     state.phase = match &view.phase {
         PhaseView::Bidding {

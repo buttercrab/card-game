@@ -3,13 +3,14 @@
 
 pub mod bot;
 pub mod card;
+mod read;
 pub mod rules;
 pub mod search;
 mod state;
 pub mod trick;
 mod view;
 
-pub use state::{Action, Error, FriendCall, Options, State};
+pub use state::{Action, Bid, Error, FriendCall, Options, State};
 pub use trick::Lead;
 pub use view::{PhaseView, View};
 

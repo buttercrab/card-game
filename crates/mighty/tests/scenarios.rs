@@ -3,7 +3,7 @@
 use engine::{Game, Turn, Viewer};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, Preset, Rules};
-use mighty::{Action, FriendCall, Lead, Mighty, Options, PhaseView, State};
+use mighty::{Action, Bid, FriendCall, Lead, Mighty, Options, PhaseView, State};
 
 /// Parses cards such as `"SA D10 HK C3 BJ"`.
 fn cards(s: &str) -> Vec<Card> {
@@ -115,6 +115,43 @@ fn everyone_passing_redeals() {
         act(&mut state, Action::Pass);
     }
     assert_eq!(Mighty::turn(&state), Turn::Chance);
+}
+
+#[test]
+fn everyone_hears_every_bid_until_the_redeal() {
+    let spade = |count| {
+        Some(Contract {
+            trump: Some(Suit::Spade),
+            count,
+        })
+    };
+    let heard = [
+        (0, None),
+        (1, spade(13)),
+        (2, spade(14)),
+        (3, None),
+        (4, None),
+        (1, None),
+    ]
+    .map(|(seat, contract)| Bid { seat, contract });
+    let mut state = start(Rules::default(), &[DECLARER], KITTY);
+    for bid in &heard {
+        act(&mut state, bid.contract.map_or(Action::Pass, Action::Bid));
+    }
+    // Seat 2 declares; everyone still knows how the bidding went.
+    let view = Mighty::view(&state, Viewer::Seat(3));
+    assert!(matches!(view.phase, PhaseView::Exchange { declarer: 2, .. }));
+    assert_eq!(view.bids, heard);
+    assert_eq!(Mighty::view(&state, Viewer::Spectator).bids, heard);
+
+    // A thrown-in deal starts a fresh record.
+    let mut state = start(Rules::default(), &[], "");
+    act(&mut state, Action::Pass);
+    assert_eq!(Mighty::view(&state, Viewer::Spectator).bids.len(), 1);
+    for _ in 1..5 {
+        act(&mut state, Action::Pass);
+    }
+    assert!(Mighty::view(&state, Viewer::Spectator).bids.is_empty());
 }
 
 #[test]

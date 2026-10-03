@@ -128,6 +128,13 @@ export interface View {
   hand_sizes: number[];
   points_taken: Card[][];
   phase: PhaseView;
+  /** Every bid and pass of this deal so far, in order; null is a pass. Older servers leave this out. */
+  bids?: Bid[];
+}
+
+export interface Bid {
+  seat: number;
+  contract: Contract | null;
 }
 
 export type SeatInfo =
