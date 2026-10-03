@@ -70,10 +70,12 @@ pub fn winner(ctx: &TrickContext, plays: &[Played]) -> usize {
     let (main_joker, sub_joker) = match (ctx.deck, ctx.trump) {
         (DeckKind::OneJoker, _) => (Some(Card::Joker(Color::Black)), None),
         // Mighty, then the trump-colour joker, then trump, then the other
-        // joker, then everything else.
+        // joker, then everything else. The other joker beats plain cards
+        // only when the lead is not trump's colour: with ♠ trump, a ♣ lead
+        // beats the red joker.
         (DeckKind::TwoJokers, Some(trump)) => (
             Some(Card::Joker(trump.color())),
-            Some(Card::Joker(other(trump.color()))),
+            (ctx.lead.color() != trump.color()).then(|| Card::Joker(other(trump.color()))),
         ),
         (DeckKind::TwoJokers, None) => (Some(Card::Joker(ctx.lead.color())), None),
     };
@@ -192,16 +194,27 @@ mod tests {
         assert_eq!(winner(&c, &plays(&[(BJ, true), (RJ, true), (h2, true)])), 1);
         // Trump beats the other joker...
         assert_eq!(winner(&c, &plays(&[(BJ, true), (h2, true)])), 1);
-        // ...which still beats every plain card, whatever the lead's colour.
+        // ...which beats plain cards on a lead of the other colour...
         assert_eq!(winner(&c, &plays(&[(Card::new(Suit::Club, ACE), true), (BJ, true)])), 1);
+        // ...but not on a lead of trump's colour.
         let red_lead = ctx(DeckKind::TwoJokers, Some(Suit::Heart), Suit::Diamond);
-        let p = plays(&[(Card::new(Suit::Diamond, ACE), true), (BJ, true)]);
-        assert_eq!(winner(&red_lead, &p), 1);
-        // Black trump: the black joker outranks the red one.
-        let black = ctx(DeckKind::TwoJokers, Some(Suit::Club), Suit::Spade);
+        let p = plays(&[(Card::new(Suit::Diamond, 2), true), (BJ, true)]);
+        assert_eq!(winner(&red_lead, &p), 0);
+        // Black trump: the black joker outranks the red one, and a ♣ lead
+        // beats the red joker (table 4tgz87, hand 3, trick 2).
+        let black = ctx(DeckKind::TwoJokers, Some(Suit::Spade), Suit::Club);
         assert_eq!(winner(&black, &plays(&[(RJ, true), (BJ, true)])), 1);
-        let p = plays(&[(Card::new(Suit::Spade, 13), true), (RJ, true)]);
-        assert_eq!(winner(&black, &p), 1);
+        let p = plays(&[
+            (Card::new(Suit::Club, ACE), true),
+            (RJ, true),
+            (Card::new(Suit::Club, 4), true),
+        ]);
+        assert_eq!(winner(&black, &p), 0);
+        let hearts = ctx(DeckKind::TwoJokers, Some(Suit::Spade), Suit::Heart);
+        assert_eq!(
+            winner(&hearts, &plays(&[(Card::new(Suit::Heart, ACE), true), (RJ, true)])),
+            1
+        );
     }
 
     #[test]
