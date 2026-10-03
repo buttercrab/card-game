@@ -306,6 +306,7 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
         hands,
         kitty: Vec::new(),
         taken: vec![Vec::new(); seats],
+        bids: view.bids.clone(),
     };
     state.phase = match &view.phase {
         PhaseView::Bidding {

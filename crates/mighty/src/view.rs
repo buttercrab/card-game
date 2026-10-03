@@ -1,6 +1,6 @@
 use crate::card::Card;
 use crate::rules::{Contract, Rules};
-use crate::state::{FriendCall, Phase, State};
+use crate::state::{Bid, FriendCall, Phase, State};
 use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,10 @@ pub struct View {
     /// Point cards each seat has won; they lie face up.
     pub points_taken: Vec<Vec<Card>>,
     pub phase: PhaseView,
+    /// Every bid and pass of this deal so far, in order; everyone hears
+    /// them. Empty while dealing.
+    #[serde(default)]
+    pub bids: Vec<Bid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,6 +127,7 @@ impl View {
                 .map(|t| t.iter().copied().filter(|c| c.is_point()).collect())
                 .collect(),
             phase,
+            bids: state.bids.clone(),
         }
     }
 }

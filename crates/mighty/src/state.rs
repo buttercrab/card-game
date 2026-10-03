@@ -48,6 +48,14 @@ pub enum Action {
     },
 }
 
+/// One turn of the bidding, as everyone at the table heard it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Bid {
+    pub seat: Seat,
+    /// `None` is a pass.
+    pub contract: Option<Contract>,
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -72,6 +80,8 @@ pub struct State {
     pub(crate) kitty: Vec<Card>,
     /// Every card each seat won in tricks.
     pub(crate) taken: Vec<Vec<Card>>,
+    /// Every bid and pass of this deal, in order.
+    pub(crate) bids: Vec<Bid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,6 +154,7 @@ impl State {
             hands: vec![Vec::new(); n],
             kitty: Vec::new(),
             taken: vec![Vec::new(); n],
+            bids: Vec::new(),
         })
     }
 
@@ -218,6 +229,7 @@ impl State {
             hand.clear();
         }
         self.kitty.clear();
+        self.bids.clear();
         self.phase = Phase::Dealing;
     }
 
@@ -436,14 +448,19 @@ impl State {
     }
 
     fn step_bidding(&mut self, mut b: Bidding, seat: Seat, action: Action) -> Phase {
-        match action {
-            Action::Pass => b.passed[seat] = true,
+        let contract = match action {
+            Action::Pass => {
+                b.passed[seat] = true;
+                None
+            }
             Action::Bid(contract) => {
                 b.best = Some((seat, contract));
                 b.has_bid[seat] = true;
+                Some(contract)
             }
             other => unreachable!("{other:?} while bidding"),
-        }
+        };
+        self.bids.push(Bid { seat, contract });
         let active = b.passed.iter().filter(|p| !**p).count();
         match (active, b.best) {
             (0, _) => {
@@ -694,9 +711,14 @@ impl State {
         }
 
         match &self.phase {
-            Phase::Bidding(_) => {
+            Phase::Bidding(b) => {
                 if self.hands.iter().any(|h| h.len() != hand_size) {
                     return Err("hand size changed during bidding".into());
+                }
+                let last = self.bids.iter().rev().find_map(|bid| Some((bid.seat, bid.contract?)));
+                let passes = self.bids.iter().filter(|bid| bid.contract.is_none()).count();
+                if last != b.best || passes != b.passed.iter().filter(|p| **p).count() {
+                    return Err("the bidding record disagrees with the bidding".into());
                 }
             }
             Phase::Play(p) => {
