@@ -10,7 +10,7 @@
   import SuitIcon from './SuitIcon.svelte';
   import { cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
-  import { flyFrom, flyTo, pop, wait } from './motion';
+  import { flyFrom, flyTo, pop } from './motion';
   import { settings } from './settings.svelte';
   import { sound } from './sound';
   import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, StateMsg, Suit, Trick } from './types';
@@ -22,7 +22,6 @@
   // animated before it is shown.
   let shown = $state(untrack(() => client.game!));
   const msg = $derived(shown);
-  let animating = $state(false);
   const room = $derived(client.room);
   const view = $derived(msg.view);
   const legal = $derived(msg.legal);
@@ -94,9 +93,18 @@
   // ---- My choices ----------------------------------------------------------
   const kittySize = $derived(52 + (twoJokers ? 2 : 1) - n * view.rules.hand_size);
   const toDiscard = $derived(exchange ? kittySize - (exchange.discards?.length ?? 0) : 0);
-  const plays = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Play' in a ? [a.Play] : [])));
-  const discardable = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Discard' in a ? [a.Discard] : [])));
-  const handMode = $derived(!myTurn || animating ? 'view' : discardable.length > 0 ? 'choose' : plays.length > 0 ? 'play' : 'view');
+  // The hand answers to the latest server state, not the one still being
+  // animated: once it is your turn you can play, and playing skips ahead.
+  const live = $derived(client.game!);
+  const liveTurn = $derived(me !== null && typeof live.turn === 'object' && live.turn.Seat === me);
+  const handLegal = $derived(liveTurn ? live.legal : legal);
+  const plays = $derived(handLegal.flatMap((a) => (typeof a === 'object' && 'Play' in a ? [a.Play] : [])));
+  const discardable = $derived(
+    handLegal.flatMap((a) => (typeof a === 'object' && 'Discard' in a ? [a.Discard] : [])),
+  );
+  const handMode = $derived(
+    !(myTurn || liveTurn) ? 'view' : discardable.length > 0 ? 'choose' : plays.length > 0 ? 'play' : 'view',
+  );
 
   let chosen = $state<CardT[]>([]);
   let variants = $state<PlayAction[] | null>(null);
@@ -129,6 +137,7 @@
 
   function act(action: Action) {
     variants = null;
+    skipAhead();
     client.act(action);
   }
 
@@ -145,6 +154,7 @@
   }
 
   function discardChosen() {
+    skipAhead();
     for (const card of chosen) client.act({ Discard: card });
     chosen = [];
   }
@@ -164,6 +174,30 @@
   let revealed = $state<number | null>(null);
   let dealing = $state(false);
   let felt: HTMLElement;
+  /** Set when the player acts: finish what is animating and show the latest state. */
+  let hurry = false;
+  const pauses = new Set<() => void>();
+
+  /** A pause that ends early when the player acts. */
+  function pause(ms: number): Promise<void> {
+    if (hurry || ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        pauses.delete(done);
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      pauses.add(done);
+    });
+  }
+
+  function skipAhead() {
+    if (!running) return;
+    hurry = true;
+    for (const a of felt?.getAnimations({ subtree: true }) ?? []) a.finish();
+    for (const done of [...pauses]) done();
+  }
 
   $effect(() => {
     const next = client.game;
@@ -174,8 +208,10 @@
 
   /** Duration multiplier: 0 skips motion; a backlog speeds it up. */
   function pace(): number {
-    if (settings.speed === 'off') return 0;
-    return (settings.speed === 'fast' ? 0.5 : 1) / (1 + 0.5 * queue.length);
+    if (settings.speed === 'off' || hurry) return 0;
+    // Once it is your turn, what is left to show plays three times as fast.
+    const waiting = untrack(() => liveTurn) ? 3 : 1;
+    return (settings.speed === 'fast' ? 0.5 : 1) / (1 + 0.5 * queue.length) / waiting;
   }
 
   async function pump() {
@@ -194,12 +230,11 @@
           shown = next;
           continue;
         }
-        animating = true;
         await transition(shown, next, k);
       }
     } finally {
-      animating = false;
       running = false;
+      hurry = false;
     }
   }
 
@@ -273,7 +308,7 @@
         const origin = from[i];
         const duration = (p.seat === me ? 220 : 320) * k;
         sound.card((i * 60 * k + duration * 0.8) / 1000);
-        return origin ? flyFrom(slotCard(p.seat), origin, duration, i * 60 * k) : undefined;
+        return origin && !hurry ? flyFrom(slotCard(p.seat), origin, duration, i * 60 * k) : undefined;
       }),
     );
   }
@@ -317,7 +352,7 @@
       shown = next;
       if (newHand) {
         dealing = true;
-        await wait(900 * k);
+        await pause(900 * k);
         dealing = false;
       }
       return;
@@ -336,13 +371,13 @@
         k,
       );
       // The hero moment: a beat, the winning card pops, the trick sweeps to its winner.
-      await wait(150 * k);
+      await pause(150 * k);
       winner = trick.winner;
-      await pop(slotCard(trick.winner), reduced ? 0 : 360 * k);
-      await wait((reduced ? 700 : 250) * k);
+      await pop(slotCard(trick.winner), reduced || hurry ? 0 : 360 * k);
+      await pause((reduced ? 700 : 250) * k);
       const to = anchor(trick.winner);
       sound.sweep(trick.plays.filter((p) => isPoint(p.card)).length);
-      if (!reduced && to) {
+      if (!reduced && !hurry && to) {
         await Promise.all(trick.plays.map((p, i) => flyTo(slotCard(p.seat), to, 400 * k, i * 40 * k)));
       }
       await land(
@@ -359,7 +394,7 @@
     if (before.friend === null && after.friend !== null && after.friend !== undefined) {
       revealed = after.friend;
       sound.friend();
-      await wait(700 * k);
+      await pause(700 * k);
       revealed = null;
     }
   }
