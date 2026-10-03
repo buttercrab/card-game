@@ -49,14 +49,23 @@
     <input type="checkbox" bind:checked={settings.haptics} />
   </label>
 
-  <label class="row">
-    <span><strong>소리</strong></span>
-    <input type="checkbox" bind:checked={settings.sound} />
-  </label>
-  <label class="row">
-    <span><strong>음량</strong></span>
-    <input type="range" min="0" max="1" step="0.1" bind:value={settings.volume} disabled={!settings.sound} />
-  </label>
+  <div class="row">
+    <span><strong>효과음</strong></span>
+    <span class="pair">
+      <input type="range" min="0" max="1" step="0.1" bind:value={settings.volume} disabled={!settings.sound} aria-label="효과음 음량" />
+      <input type="checkbox" bind:checked={settings.sound} aria-label="효과음 켜기" />
+    </span>
+  </div>
+  <div class="row">
+    <span>
+      <strong>배경 음악</strong>
+      <span class="muted">잔잔한 재즈</span>
+    </span>
+    <span class="pair">
+      <input type="range" min="0" max="1" step="0.1" bind:value={settings.musicVolume} disabled={!settings.music} aria-label="배경 음악 음량" />
+      <input type="checkbox" bind:checked={settings.music} aria-label="배경 음악 켜기" />
+    </span>
+  </div>
 
   <div class="row">
     <strong>애니메이션</strong>
@@ -116,6 +125,14 @@
     border: none;
     background: none;
     accent-color: var(--accent);
+  }
+  .row > .pair {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .pair input[type='range'] {
+    width: 110px;
   }
   .preview {
     display: flex;

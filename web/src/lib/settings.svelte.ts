@@ -8,6 +8,10 @@ interface Settings {
   /** Play a card with one tap instead of raise-then-play. */
   singleTap: boolean;
   sound: boolean;
+  /** Quiet background jazz. */
+  music: boolean;
+  /** 0 to 1. */
+  musicVolume: number;
   /** A short vibration when your turn starts (Android only). */
   haptics: boolean;
   /** 0 to 1. */
@@ -16,7 +20,7 @@ interface Settings {
 }
 
 const KEY = 'mighty.settings';
-const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, haptics: true, volume: 0.7, speed: 'normal' };
+const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, music: false, musicVolume: 0.5, haptics: true, volume: 0.7, speed: 'normal' };
 
 function load(): Settings {
   try {

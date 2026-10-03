@@ -1,0 +1,5 @@
+Background music from Open Lo-Fi (https://github.com/btahir/open-lofi), CC0 1.0.
+Re-encoded to 96 kbps MP3 at -20 LUFS.
+
+- candlelit-at-70-bpm.mp3: "Candlelit at 70 BPM"
+- stacks-of-quiet-books.mp3: "Stacks of Quiet Books"

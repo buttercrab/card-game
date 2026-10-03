@@ -19,6 +19,15 @@ function unlock() {
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
   }
   if (ctx.state === 'suspended') void ctx.resume();
+  onUnlock?.(ctx);
+}
+
+let onUnlock: ((ctx: AudioContext) => void) | null = null;
+
+/** Runs `f` with the audio context once the browser allows sound, and after every later tap. */
+export function withAudio(f: (ctx: AudioContext) => void) {
+  onUnlock = f;
+  if (ctx) f(ctx);
 }
 
 if (typeof window !== 'undefined') {
