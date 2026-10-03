@@ -5,6 +5,7 @@
   import Card from './Card.svelte';
   import ExchangePanel from './ExchangePanel.svelte';
   import Hand from './Hand.svelte';
+  import HandReplay from './HandReplay.svelte';
   import LeadTag from './LeadTag.svelte';
   import Reactions from './Reactions.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
@@ -425,6 +426,7 @@
     return notes;
   });
   let review = $state(false);
+  let replay = $state(false);
   const lastTrick = $derived(play?.tricks.at(-1) ?? null);
 
   const callLabel = $derived.by(() => {
@@ -608,6 +610,7 @@
       {:else if done}
         <div class="next">
           {#if seated && !full}<span class="muted">빈 자리를 채우면 다음 판을 시작할 수 있어요</span>{/if}
+          {#if done.tricks.length}<button onclick={() => (replay = true)}>다시 보기</button>{/if}
           <button class="primary" disabled={!seated || !full} onclick={() => client.start()}>다음 판</button>
         </div>
       {:else if waitingFor}
@@ -637,6 +640,18 @@
     </div>
   {:else}
     <p class="prompt muted spectating">구경하는 중{waitingFor ? ` · ${waitingFor}` : ''}</p>
+  {/if}
+  {#if replay && done}
+    <HandReplay
+      tricks={done.tricks}
+      discards={done.discards ?? []}
+      declarer={done.declarer}
+      friend={done.friend}
+      {seatName}
+      {seal}
+      {twoJokers}
+      onclose={() => (replay = false)}
+    />
   {/if}
 </section>
 

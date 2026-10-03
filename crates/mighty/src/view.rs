@@ -61,6 +61,8 @@ pub enum PhaseView {
         team_points: u8,
         payoffs: Vec<i64>,
         tricks: Vec<Trick>,
+        /// Shown to everyone once the hand is over.
+        discards: Vec<Card>,
     },
 }
 
@@ -106,6 +108,7 @@ impl View {
                 team_points: d.team_points,
                 payoffs: d.payoffs.clone(),
                 tricks: d.tricks.clone(),
+                discards: d.discards.clone(),
             },
         };
         View {

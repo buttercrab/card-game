@@ -114,6 +114,8 @@ export type PhaseView =
         team_points: number;
         payoffs: number[];
         tricks: Trick[];
+        /** Older servers leave this out. */
+        discards?: Card[];
       };
     };
 
