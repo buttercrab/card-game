@@ -51,7 +51,7 @@
     add({ Card: { Joker: 'Red' } }, '홍조커');
     if (contract.trump) add({ Card: { Normal: [contract.trump, 14] } }, `기루다 A`);
     if (contract.trump) add({ Card: { Normal: [contract.trump, 13] } }, `기루다 K`);
-    add('FirstTrick', '초구');
+    add('FirstTrick', '첫 라운드');
     add('Alone', '노프렌드');
     return out;
   });

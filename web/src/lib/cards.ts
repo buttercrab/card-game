@@ -35,8 +35,8 @@ export function contractLabel(c: Contract): string {
 }
 
 export function friendCallLabel(call: FriendCall, name: (seat: number) => string, twoJokers = true): string {
-  if (call === 'FirstTrick') return '초구';
-  if (call === 'LastTrick') return '마지막 트릭';
+  if (call === 'FirstTrick') return '첫 라운드';
+  if (call === 'LastTrick') return '마지막 라운드';
   if (call === 'Alone') return '노프렌드';
   if ('Seat' in call) return name(call.Seat);
   if (!twoJokers && 'Joker' in call.Card) return '조커';

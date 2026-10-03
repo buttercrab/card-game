@@ -409,7 +409,7 @@
     const notes: string[] = [];
     for (const p of onTable) {
       if (p.powered) continue;
-      const when = trickNo === 1 ? '첫 트릭이라 ' : trickNo === view.rules.hand_size ? '마지막 트릭이라 ' : '';
+      const when = trickNo === 1 ? '첫 라운드라 ' : trickNo === view.rules.hand_size ? '마지막 라운드라 ' : '';
       notes.push(`${when}${cardLabel(p.card)} 효력 없음`);
     }
     return notes;
@@ -457,12 +457,12 @@
         </strong>
       </span>
       {#if callLabel}<span class="item">프렌드 <strong>{callLabel}</strong></span>{/if}
-      {#if play}<span class="item">트릭 <strong>{trickNo}/{view.rules.hand_size}</strong></span>{/if}
+      {#if play}<span class="item">라운드 <strong>{trickNo}/{view.rules.hand_size}</strong></span>{/if}
       {#if play || done}
-        <span class="item">주공팀 <strong>{teamPoints}/{contract.count}</strong></span>
+        <span class="item">여당 <strong>{teamPoints}/{contract.count}</strong></span>
       {/if}
       {#if lastTrick && !resolving}
-        <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 트릭</button>
+        <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
       {/if}
     {/if}
   </div>
@@ -472,7 +472,7 @@
     {#each around as r (r)}
       {@const s = seatAt(r)}
       {@const info = room?.seats[s]}
-      <div class="spot" data-seat={s} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
+      <div class="spot pos-{n === 5 ? r : 'free'}" data-seat={s} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
         <Seat
           name={seatName(s)}
           bot={info?.kind === 'bot'}
@@ -487,7 +487,7 @@
       </div>
     {/each}
 
-    <div class="trick" aria-label={resolving ? '끝난 트릭' : '이번 트릭'}>
+    <div class="trick" aria-label={resolving ? '끝난 라운드' : '이번 라운드'}>
       {#each onTable as p, i (`${trickKey}-${p.seat}`)}
         {@const r = relative(p.seat)}
         <div class="slot" data-slot={p.seat} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
@@ -515,7 +515,7 @@
     {/if}
 
     {#if review && lastTrick}
-      <div class="sheet review-sheet" role="dialog" aria-label="직전 트릭">
+      <div class="sheet review-sheet" role="dialog" aria-label="직전 라운드">
         <div class="review-cards">
           {#each lastTrick.plays as p, i (p.seat)}
             <figure>
@@ -534,8 +534,8 @@
     {#if done}
       {@const won = done.team_points >= done.contract.count}
       <div class="sheet result" role="status">
-        <p class="headline">{won ? '주공 승리' : '야당 승리'}</p>
-        <p class="sub">주공팀 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
+        <p class="headline">{won ? '여당 승리' : '야당 승리'}</p>
+        <p class="sub">여당 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
         <table>
           <thead>
             <tr><th scope="col">이름</th><th scope="col">역할</th><th scope="col">점수</th><th scope="col">이번 판</th><th scope="col">누적</th></tr>
@@ -618,11 +618,32 @@
 </section>
 
 <style>
+  /* The table fills the screen exactly; the felt takes what is left and
+     sizes its cards from its own width and height (container units), so
+     nothing scrolls and nothing collides. */
   .table {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-height: calc(100dvh - 72px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: 'status' 'event' 'felt' 'strip' 'tray';
+    gap: 6px;
+    height: calc(100dvh - var(--chrome, 80px));
+  }
+  .status {
+    grid-area: status;
+  }
+  .event {
+    grid-area: event;
+  }
+  .felt {
+    grid-area: felt;
+  }
+  .strip,
+  .spectating {
+    grid-area: strip;
+  }
+  .tray {
+    grid-area: tray;
   }
 
   /* 상황판 */
@@ -680,29 +701,56 @@
     border-color: var(--ink);
   }
 
-  /* The table: seats on an ellipse, played cards between each seat and the centre. */
+  /* The felt: four seats in fixed bands (two on top, one each side), the
+     trick in the middle, each card between its player and the centre. */
   .felt {
-    --rx: 37%;
-    --ry: 38%;
-    --tx: 70px;
-    --ty: 64px;
+    --seat-w: 92px;
+    --seat-h: 64px;
     position: relative;
-    flex: 1;
-    min-height: 300px;
+    min-height: 0;
+    container-type: size;
   }
-  @media (min-width: 1024px) {
-    .felt {
-      --rx: 40%;
-      --tx: 110px;
-      --ty: 84px;
-      min-height: 420px;
-    }
+  /* Card size from the room left between the seats: wide enough that the
+     side cards clear the side seats, short enough that the top cards clear
+     the top seats and the bottom card leaves room for the note. */
+  .trick,
+  .note {
+    --card-w: clamp(
+      40px,
+      min((100cqw - 2 * var(--seat-w) - 16px) / 3.4, (50cqh - var(--seat-h) - 14px) / 1.84, (50cqh - 40px) / 2.1),
+      84px
+    );
+    --card-h: calc(var(--card-w) * 1.4);
+    --tx: calc(var(--card-w) * 1.25);
+    --ty: calc(var(--card-h) + 6px);
   }
   .spot {
     position: absolute;
-    left: calc(50% + var(--x) * var(--rx));
-    top: calc(50% + var(--y) * var(--ry));
+    left: calc(50% + var(--x) * 38%);
+    top: calc(50% + var(--y) * 40%);
     transform: translate(-50%, -50%);
+  }
+  .spot.pos-1 {
+    left: auto;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .spot.pos-2,
+  .spot.pos-3 {
+    top: 0;
+    transform: translateX(-50%);
+  }
+  .spot.pos-2 {
+    left: 75%;
+  }
+  .spot.pos-3 {
+    left: 25%;
+  }
+  .spot.pos-4 {
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
   }
   .trick {
     position: absolute;
@@ -712,6 +760,9 @@
   .slot {
     position: absolute;
     transform: translate(calc(-50% + var(--x) * var(--tx)), calc(-50% + var(--y) * var(--ty)));
+  }
+  .trick .slot :global(.card) {
+    --w: var(--card-w);
   }
   .note {
     position: absolute;
@@ -725,7 +776,7 @@
     pointer-events: none;
   }
   .note.below {
-    top: calc(50% + var(--ty) + 52px);
+    top: calc(50% + var(--ty) + var(--card-h) / 2 + 16px);
   }
   .won-note {
     color: var(--ink);
@@ -742,6 +793,8 @@
     top: 50%;
     transform: translate(-50%, -50%);
     width: min(100%, 420px);
+    max-height: calc(100% - 8px);
+    overflow: auto;
     padding: 16px;
     border-radius: 16px;
     background: var(--panel);
@@ -919,5 +972,64 @@
   }
   .spectating {
     padding: 16px;
+  }
+
+  /* Phones on their side: the strip moves beside the felt, seats go down
+     both sides, and the note moves into the event line. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    .table {
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 36%);
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-areas: 'status status' 'felt strip' 'tray tray';
+      gap: 4px 8px;
+    }
+    .event,
+    .note.below,
+    .me-row {
+      display: none;
+    }
+    .strip {
+      align-self: stretch;
+      overflow-y: auto;
+    }
+    .trick,
+    .note {
+      --card-w: clamp(36px, min((100cqw - 2 * var(--seat-w) - 16px) / 3.4, (50cqh - 6px) / 2.1), 72px);
+    }
+    .spot.pos-1,
+    .spot.pos-2,
+    .spot.pos-3,
+    .spot.pos-4 {
+      transform: none;
+    }
+    .spot.pos-3 {
+      left: 0;
+      top: 0;
+    }
+    .spot.pos-4 {
+      left: 0;
+      top: auto;
+      bottom: 0;
+    }
+    .spot.pos-2 {
+      left: auto;
+      right: 0;
+      top: 0;
+    }
+    .spot.pos-1 {
+      right: 0;
+      top: auto;
+      bottom: 0;
+    }
+    .tray {
+      padding: 0 4px 4px;
+    }
+    /* Bottom seats show their bubble above, clear of the hand. */
+    .spot.pos-1 :global(.bubble),
+    .spot.pos-4 :global(.bubble) {
+      top: -12px;
+      bottom: auto;
+      transform: translate(-50%, -50%);
+    }
   }
 </style>

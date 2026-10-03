@@ -14,8 +14,8 @@ colors:
   on-accent: "#FFFFFF"
   suit-spade: "#1C1915"
   suit-heart: "#B8342A"
-  suit-diamond: "#1E4A7C"
-  suit-club: "#007A4D"
+  suit-diamond: "#C2620A"
+  suit-club: "#1D5FB0"
   team-declarer: "#E69F00"
   team-defense: "#3B4A6B"
   seal: "#C23B22"
@@ -165,7 +165,7 @@ A warm paper neutral, near-black ink, four suit inks, two team colours, and a si
 
 ### Suits (card faces and trump markers only)
 The four-colour deck is on by default; a setting switches diamonds and clubs back to red and ink.
-- **Spade** (#1C1915), **Heart** (#B8342A), **Diamond** (#1E4A7C), **Club** (#007A4D). All pass 4.5:1 on Card. The suit glyph is always drawn, so colour is never the only cue.
+- **Spade** (#1C1915), **Heart** (#B8342A), **Diamond** (#C2620A, orange: still reads as a red suit), **Club** (#1D5FB0, blue). Diamond passes 3.9:1 on Card (enough for the bold index), the others 4.5:1 or more. The suit glyph is always drawn, so colour is never the only cue.
 
 ### Teams (seat badges, result sheet)
 Following the convention Korean Mighty players already know from MightyKorea:
@@ -206,7 +206,7 @@ Badges always carry the word (주공, 프렌드, 야당); the colour is the seco
 Phone portrait is the primary layout; desktop is the same table with more room.
 
 - **Seats.** You sit at the bottom. The four others sit at top-left, top-right, mid-left and mid-right, the positions Korean Mighty players know. Each played card lands between its owner and the centre, not in a shared pile.
-- **Top display (상황판).** Top centre, one line: `공약 15 ♠` · `프렌드 ♠A` or `?` · `트릭 4/10` · `주공팀 10/15`.
+- **Top display (상황판).** Top centre, one line: `공약 15 ♠` · `프렌드 ♠A` or `?` · `라운드 4/10` · `여당 10/15`.
 - **Action strip.** One fixed 64px slot between the table and the hand. Its content changes by phase: bid chips and 패스; the exchange counter `3장 선택` with 기루다 변경; friend shortcuts; `내 차례` hints during play. No dropdowns, no modals except the result sheet and settings.
 - **Hand tray.** Docked at the bottom, about 30% of the viewport height on phones including the strip. One flat row of 10 cards, overlapping so each corner index stays visible; the declarer's 13 cards wrap to two rows. Sorted by suit with trump first.
 - **Breakpoints.** Phone below 600px; tablet 600–1023px; desktop 1024px and up adds a 300px side column for the event log, spectators and running scores.
@@ -275,7 +275,7 @@ Panel background, 64px tall, content by phase. The primary action is always a pl
 A row of number chips (13–20, respecting the preset's minimum) and a row of suit chips (♠ ♦ ♥ ♣ 노기루다). Selected chips invert to Ink. The 패스 button is secondary.
 
 ### Result sheet
-Headline (`주공 승리` / `야당 승리`), `주공팀 18 / 공약 15`, a table of player, role, points won, change and running total, then each multiplier on its own line. Buttons: 다음 판 (primary), 나가기.
+Headline (`여당 승리` / `야당 승리`), `여당 18 / 공약 15`, a table of player, role, points won, change and running total, then each multiplier on its own line. Buttons: 다음 판 (primary), 나가기.
 
 ### Event log
 Desktop side column, or a two-line ticker under the top display on phones: `철수 · 패스`, `영희 · 공약 ♠ 14`.
@@ -329,7 +329,7 @@ The first pass synthesises every cue with Web Audio (`web/src/lib/sound.ts`): fi
 ## Do's and Don'ts
 
 **Do**
-- Use the Korean Mighty terms: 주공, 프렌드, 야당, 기루다, 노기루다, 공약, 초구, 마이티, 조커, 조커콜.
+- Use the Korean Mighty terms: 주공 (the declarer), 여당 (declarer and friend), 프렌드, 야당, 기루다, 노기루다, 공약, 라운드 (not 트릭), 첫/마지막 라운드, 마이티, 조커, 조커콜.
 - Keep the cards the brightest objects, in both themes.
 - Pair every colour with a glyph, a word or a shape.
 - Check every change on a 375px phone and a desktop, in light and dark mode, and lay the phase screenshots side by side.

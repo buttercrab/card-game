@@ -34,15 +34,23 @@
   } = $props();
 
   let width = $state(0);
-  let wide = $state(typeof matchMedia === 'function' && matchMedia('(min-width: 1024px)').matches);
+  // Card width by screen: larger on desktops, smaller on phones held sideways.
+  const WIDE = '(min-width: 1024px)';
+  const SHORT = '(orientation: landscape) and (max-height: 520px)';
+  const matches = (q: string) => typeof matchMedia === 'function' && matchMedia(q).matches;
+  let wide = $state(matches(WIDE));
+  let short = $state(matches(SHORT));
   $effect(() => {
-    const query = matchMedia('(min-width: 1024px)');
-    const update = () => (wide = query.matches);
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
+    const queries = [WIDE, SHORT].map((q) => matchMedia(q));
+    const update = () => {
+      wide = queries[0].matches;
+      short = queries[1].matches;
+    };
+    for (const q of queries) q.addEventListener('change', update);
+    return () => queries.forEach((q) => q.removeEventListener('change', update));
   });
 
-  const cardWidth = $derived(wide ? 88 : 60);
+  const cardWidth = $derived(short ? 46 : wide ? 88 : 60);
   /** Each corner index needs this much showing to stay readable. */
   const MIN_STEP = 26;
 
@@ -92,6 +100,7 @@
         <div class="spot" style:--i={i} animate:flip={{ duration: settings.speed === 'off' ? 0 : 200 }}>
         <Card
           {card}
+          width={cardWidth}
           id={JSON.stringify(card)}
           seal={seal(card)}
           {twoJokers}
@@ -111,7 +120,6 @@
     display: grid;
     gap: 8px;
     padding-top: 14px;
-    min-height: 98px;
   }
   .row {
     display: flex;

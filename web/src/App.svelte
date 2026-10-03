@@ -1,5 +1,6 @@
 <script lang="ts">
   import DeckPreview from './lib/DeckPreview.svelte';
+  import TablePreview from './lib/TablePreview.svelte';
   import Home from './lib/Home.svelte';
   import Room from './lib/Room.svelte';
 
@@ -17,6 +18,8 @@
 
 {#if path === '/deck'}
   <DeckPreview />
+{:else if path === '/preview'}
+  <TablePreview />
 {:else if roomId}
   {#key roomId}
     <Room id={roomId} onleave={() => navigate('/')} />

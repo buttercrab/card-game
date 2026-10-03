@@ -304,6 +304,11 @@
     color: var(--ink-muted);
   }
   .banner {
+    position: fixed;
+    top: 56px;
+    left: 16px;
+    right: 16px;
+    z-index: 15;
     display: flex;
     flex-wrap: wrap;
     align-items: center;

@@ -48,9 +48,11 @@
   .seat {
     position: relative;
     display: grid;
+    /* One column no wider than the seat, so long names end in an ellipsis. */
+    grid-template-columns: minmax(0, 1fr);
     justify-items: center;
     gap: 3px;
-    width: 92px;
+    width: var(--seat-w, 92px);
     padding: 6px 6px 7px;
     border-radius: 12px;
     background: var(--panel);

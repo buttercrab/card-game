@@ -83,7 +83,7 @@
           {/each}
         </div>
 
-        <h3>트릭 · 미니</h3>
+        <h3>라운드 · 미니</h3>
         <div class="row wrap">
           {#each deck.slice(0, 13) as card, i (i)}
             <Card {card} size="trick" seal={sealOf(card, rules, trump)} />
@@ -99,7 +99,7 @@
         <div class="row states">
           <figure><Card card={deck[0]} raised /><figcaption>선택</figcaption></figure>
           <figure><Card card={deck[14]} unplayable /><figcaption>낼 수 없음</figcaption></figure>
-          <figure><Card card={deck[27]} won /><figcaption>트릭 승리</figcaption></figure>
+          <figure><Card card={deck[27]} won /><figcaption>라운드 승리</figcaption></figure>
           <figure><Card card={deck[40]} kitty /><figcaption>키티</figcaption></figure>
           <figure><Card card={deck[52]} powerless seal="joker" /><figcaption>효력 없음</figcaption></figure>
           <figure><Card /><figcaption>뒷면</figcaption></figure>

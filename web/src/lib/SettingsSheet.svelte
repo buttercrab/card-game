@@ -22,7 +22,7 @@
   <label class="row">
     <span>
       <strong>4색 덱</strong>
-      <span class="muted">♦ 파랑, ♣ 초록</span>
+      <span class="muted">♦ 주황, ♣ 파랑</span>
     </span>
     <input type="checkbox" bind:checked={settings.fourColor} />
   </label>
