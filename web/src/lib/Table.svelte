@@ -5,6 +5,7 @@
   import Card from './Card.svelte';
   import ExchangePanel from './ExchangePanel.svelte';
   import Hand from './Hand.svelte';
+  import LeadTag from './LeadTag.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
@@ -12,7 +13,7 @@
   import { flyFrom, flyTo, pop, wait } from './motion';
   import { settings } from './settings.svelte';
   import { sound } from './sound';
-  import type { Action, Card as CardT, FriendCall, PhaseView, Played, PlayAction, StateMsg, Suit, Trick } from './types';
+  import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, StateMsg, Suit, Trick } from './types';
 
   let { client }: { client: RoomClient } = $props();
 
@@ -158,7 +159,7 @@
   const queue: StateMsg[] = [];
   let running = false;
   /** A finished trick kept on the table while it resolves. */
-  let resolving = $state<{ plays: Played[]; key: number } | null>(null);
+  let resolving = $state<{ plays: Played[]; key: number; lead: Lead } | null>(null);
   let winner = $state<number | null>(null);
   let revealed = $state<number | null>(null);
   let dealing = $state(false);
@@ -329,7 +330,7 @@
       await land(
         trick.plays.slice(before.plays.length),
         () => {
-          resolving = { plays: trick.plays, key: after.tricks.length };
+          resolving = { plays: trick.plays, key: after.tricks.length, lead: trick.lead };
           shown = next;
         },
         k,
@@ -364,13 +365,13 @@
   }
 
   const onTable = $derived(resolving ? resolving.plays : (play?.plays ?? []));
+  const onTableLead = $derived(resolving ? resolving.lead : (play?.lead ?? null));
   const trickKey = $derived(resolving ? `r${resolving.key}` : `p${play?.tricks.length ?? 0}`);
   const trickNo = $derived(resolving ? resolving.key : play ? play.trick_no + 1 : 0);
-  /** Why the trick looks the way it does: a joker lead, or a card without its power. */
+  /** Why a card on the table is hatched: it has no power here. The suit a
+   * led joker named is shown on the joker itself. */
   const trickNotes = $derived.by(() => {
     const notes: string[] = [];
-    const lead = play?.lead;
-    if (lead && play && play.plays[0] && 'Joker' in play.plays[0].card) notes.push(`조커 선 ${leadLabel(lead)}`);
     for (const p of onTable) {
       if (p.powered) continue;
       const when = trickNo === 1 ? '첫 트릭이라 ' : trickNo === view.rules.hand_size ? '마지막 트릭이라 ' : '';
@@ -452,7 +453,7 @@
     {/each}
 
     <div class="trick" aria-label={resolving ? '끝난 트릭' : '이번 트릭'}>
-      {#each onTable as p (`${trickKey}-${p.seat}`)}
+      {#each onTable as p, i (`${trickKey}-${p.seat}`)}
         {@const r = relative(p.seat)}
         <div class="slot" data-slot={p.seat} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
           <Card
@@ -463,6 +464,7 @@
             powerless={!p.powered}
             won={p.seat === winner}
           />
+          {#if i === 0 && 'Joker' in p.card && onTableLead}<LeadTag lead={onTableLead} />{/if}
         </div>
       {/each}
     </div>
@@ -480,9 +482,12 @@
     {#if review && lastTrick}
       <div class="sheet review-sheet" role="dialog" aria-label="직전 트릭">
         <div class="review-cards">
-          {#each lastTrick.plays as p (p.seat)}
+          {#each lastTrick.plays as p, i (p.seat)}
             <figure>
-              <Card card={p.card} size="mini" seal={seal(p.card)} {twoJokers} won={p.seat === lastTrick.winner} />
+              <span class="mini-slot">
+                <Card card={p.card} size="mini" seal={seal(p.card)} {twoJokers} won={p.seat === lastTrick.winner} />
+                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={lastTrick.lead} />{/if}
+              </span>
               <figcaption>{seatName(p.seat)}</figcaption>
             </figure>
           {/each}
@@ -713,6 +718,10 @@
     justify-items: center;
     gap: 8px;
     width: auto;
+  }
+  .mini-slot {
+    position: relative;
+    margin-bottom: 8px;
   }
   .review-cards {
     display: flex;

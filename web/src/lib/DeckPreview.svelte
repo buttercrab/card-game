@@ -1,6 +1,7 @@
 <script lang="ts">
   // A sheet of every card face, size and state in both themes, for design review.
   import Card from './Card.svelte';
+  import LeadTag from './LeadTag.svelte';
   import { sealOf, SUITS } from './cards';
   import { settings } from './settings.svelte';
   import type { Card as CardT, Rules, Suit } from './types';
@@ -102,6 +103,9 @@
           <figure><Card card={deck[40]} kitty /><figcaption>키티</figcaption></figure>
           <figure><Card card={deck[52]} powerless seal="joker" /><figcaption>효력 없음</figcaption></figure>
           <figure><Card /><figcaption>뒷면</figcaption></figure>
+          <figure><span class="tagged"><Card card={{ Joker: 'Red' }} seal="joker" /><LeadTag lead={{ Suit: 'Diamond' }} /></span><figcaption>조커 선 ♦</figcaption></figure>
+          <figure><span class="tagged"><Card card={{ Joker: 'Red' }} seal="joker" /><LeadTag lead={{ Color: 'Red' }} /></span><figcaption>조커 선 빨강</figcaption></figure>
+          <figure><span class="tagged"><Card card={{ Joker: 'Black' }} seal="joker" /><LeadTag lead={{ Suit: 'Club' }} /></span><figcaption>조커 선 ♣</figcaption></figure>
         </div>
       </section>
     {/each}
@@ -176,6 +180,10 @@
     display: grid;
     justify-items: center;
     gap: 6px;
+  }
+  .tagged {
+    position: relative;
+    margin-bottom: 8px;
   }
   figcaption {
     font-size: 12px;
