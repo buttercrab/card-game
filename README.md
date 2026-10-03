@@ -20,6 +20,25 @@ A game is a deterministic state machine:
 - Shuffling is a server-drawn chance action, so any game replays exactly
   from its log.
 
+## At the table
+
+- **Seats and bots:** share the link; fill empty seats with bots at 초보,
+  보통 or 고수 (a search bot; the default).
+- **Rules:** pick a preset, read it as a rulebook generated from the rule
+  values, or change it between hands with the rule editor.
+- **Between friends:** quick reactions, replay of every finished hand, and
+  a per-device record (내 기록).
+- **Learning:** a seven-step guide that ends in a practice table, a tip line
+  on each turn, and an optional 💡 that shows what the bot would do.
+- **Comfort:** sound, optional background jazz (CC0, from Open Lo-Fi),
+  installable to the home screen, screen kept awake during a hand.
+- **When something breaks:** 문제 신고 sends the table's move log; the deploy
+  host files it as a GitHub issue labelled `report`, and
+  [`report-fix`](.github/workflows/report-fix.yaml) has Claude propose a
+  fix as a pull request (needs the `ANTHROPIC_API_KEY` secret). An
+  [uptime check](.github/workflows/uptime.yaml) opens an `outage` issue
+  when cards.buttercrab.io stops answering.
+
 ## Play
 
 ```sh
