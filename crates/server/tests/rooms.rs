@@ -181,3 +181,29 @@ async fn unknown_rooms_are_not_found() {
     assert_eq!(http(addr, "GET", "/api/rooms/nope", "").await.0, 404);
     assert!(connect_async(format!("ws://{addr}/api/rooms/nope/ws")).await.is_err());
 }
+
+#[tokio::test]
+async fn idle_rooms_close_and_the_room_count_is_capped() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = AppState::new(Duration::ZERO).with_limits(2, Duration::from_millis(200));
+    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+
+    assert_eq!(http(addr, "GET", "/healthz", "").await.0, 200);
+    let first = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &first).await;
+    create_room(addr, "gshs").await;
+    // Two rooms open: a third is refused.
+    let (status, _) = http(addr, "POST", "/api/rooms", &json!({ "preset": "gshs" }).to_string()).await;
+    assert_eq!(status, 503);
+
+    // The empty room closes; the one with a connection stays.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(http(addr, "GET", &format!("/api/rooms/{first}"), "").await.0, 200);
+    create_room(addr, "gshs").await;
+
+    // Once everyone leaves, it closes too.
+    ws.close(None).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(http(addr, "GET", &format!("/api/rooms/{first}"), "").await.0, 404);
+}

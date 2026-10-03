@@ -137,6 +137,7 @@
     class:powerless
     style:--w={width ? `${width}px` : undefined}
     data-card={id}
+    draggable="false"
     aria-label={label}
     aria-pressed={raised}
     disabled={unplayable}
@@ -154,6 +155,7 @@
     class:powerless
     style:--w={width ? `${width}px` : undefined}
     data-card={id}
+    draggable="false"
     role="img"
     aria-label={label}
   >

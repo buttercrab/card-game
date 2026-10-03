@@ -26,11 +26,16 @@ use std::time::Duration;
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tower_http::services::{ServeDir, ServeFile};
 
+type Registry = Arc<Mutex<HashMap<String, UnboundedSender<Command>>>>;
+
 #[derive(Clone)]
 pub struct AppState {
-    rooms: Arc<Mutex<HashMap<String, UnboundedSender<Command>>>>,
+    rooms: Registry,
     next_conn: Arc<AtomicU64>,
     bot_delay: Duration,
+    max_rooms: usize,
+    /// A room with nobody connected for this long closes.
+    idle: Duration,
 }
 
 impl AppState {
@@ -39,13 +44,28 @@ impl AppState {
             rooms: Arc::default(),
             next_conn: Arc::default(),
             bot_delay,
+            max_rooms: 500,
+            idle: Duration::from_secs(30 * 60),
         }
     }
 
-    /// Opens a room and returns its id, which is also its share link.
-    pub fn create_room<G: SessionGame>(&self, settings: G::Settings) -> String {
+    /// At most `max_rooms` open at once; each closes after `idle` with nobody connected.
+    pub fn with_limits(self, max_rooms: usize, idle: Duration) -> AppState {
+        AppState {
+            max_rooms,
+            idle,
+            ..self
+        }
+    }
+
+    /// Opens a room and returns its id, which is also its share link, or
+    /// `None` when the server already has as many rooms as it allows.
+    pub fn create_room<G: SessionGame>(&self, settings: G::Settings) -> Option<String> {
         const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
         let mut rooms = self.rooms.lock().expect("room registry poisoned");
+        if rooms.len() >= self.max_rooms {
+            return None;
+        }
         let mut rng = rand::rng();
         let id = loop {
             let id: String = (0..6)
@@ -57,9 +77,14 @@ impl AppState {
         };
         let (tx, rx) = mpsc::unbounded_channel();
         let room = Room::<G>::new(id.clone(), settings, self.bot_delay);
-        tokio::spawn(room.run(tx.downgrade(), rx));
+        let (registry, key, idle, me) = (self.rooms.clone(), id.clone(), self.idle, tx.downgrade());
+        tokio::spawn(async move {
+            room.run(me, rx, idle).await;
+            registry.lock().expect("room registry poisoned").remove(&key);
+            tracing::info!(room = key, "closed idle room");
+        });
         rooms.insert(id.clone(), tx);
-        id
+        Some(id)
     }
 
     fn room(&self, id: &str) -> Option<UnboundedSender<Command>> {
@@ -70,6 +95,7 @@ impl AppState {
 /// The API under `/api`, plus the built web client from `web_dir` if given.
 pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
     let api = Router::new()
+        .route("/healthz", get(|| async { "ok" }))
         .route("/api/presets", get(presets))
         .route("/api/rooms", post(create_room))
         .route("/api/rooms/{id}", get(room_info))
@@ -92,10 +118,12 @@ struct CreateRoom {
     preset: Option<Preset>,
 }
 
-async fn create_room(State(app): State<AppState>, body: Option<Json<CreateRoom>>) -> Json<serde_json::Value> {
+async fn create_room(State(app): State<AppState>, body: Option<Json<CreateRoom>>) -> Response {
     let preset = body.and_then(|Json(b)| b.preset).unwrap_or(Preset::Gshs);
-    let id = app.create_room::<Mighty>(MightySettings { preset });
-    Json(json!({ "id": id }))
+    match app.create_room::<Mighty>(MightySettings { preset }) {
+        Some(id) => Json(json!({ "id": id })).into_response(),
+        None => (StatusCode::SERVICE_UNAVAILABLE, "too many tables are open").into_response(),
+    }
 }
 
 async fn room_info(State(app): State<AppState>, Path(id): Path<String>) -> Response {

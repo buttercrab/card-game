@@ -211,3 +211,17 @@ select {
   --suit-diamond: var(--suit-heart);
   --suit-club: var(--suit-spade);
 }
+
+/* The table is a game surface, not a page: no text selection, no dragging
+   cards or icons out of it, no long-press menus on phones. */
+.table,
+.card,
+.chip {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.table svg,
+.card {
+  -webkit-user-drag: none;
+}

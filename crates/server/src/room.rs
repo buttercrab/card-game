@@ -111,12 +111,27 @@ impl<G: SessionGame> Room<G> {
         }
     }
 
-    /// `me` must send to `rx`; bots use it to report their moves.
-    pub async fn run(mut self, me: WeakUnboundedSender<Command>, mut rx: UnboundedReceiver<Command>) {
+    /// `me` must send to `rx`; bots use it to report their moves. Returns
+    /// once nobody has been connected for `idle`.
+    pub async fn run(mut self, me: WeakUnboundedSender<Command>, mut rx: UnboundedReceiver<Command>, idle: Duration) {
         self.me = Some(me);
-        while let Some(cmd) = rx.recv().await {
+        let mut empty_since = Some(tokio::time::Instant::now());
+        loop {
+            let next = match empty_since {
+                Some(since) => tokio::select! {
+                    cmd = rx.recv() => cmd,
+                    () = tokio::time::sleep_until(since + idle) => None,
+                },
+                None => rx.recv().await,
+            };
+            let Some(cmd) = next else { break };
             self.handle(cmd);
             self.think();
+            empty_since = match (self.conns.is_empty(), empty_since) {
+                (true, None) => Some(tokio::time::Instant::now()),
+                (true, since) => since,
+                (false, _) => None,
+            };
         }
     }
 
