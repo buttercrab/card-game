@@ -31,7 +31,9 @@ jobs:
           # Three tries, so one dropped request does not page anyone.
           up=false
           for i in 1 2 3; do
-            if [ "$(curl -fsS --max-time 10 "https://$SITE/healthz" 2>/dev/null)" = ok ]; then up=true; break; fi
+            code=$(curl -sS --max-time 10 -o body -w '%{http_code}' "https://$SITE/healthz" || true)
+            echo "try $i: HTTP $code"
+            if [ "$code" = 200 ] && [ "$(cat body)" = ok ]; then up=true; break; fi
             sleep 20
           done
           title="서버 응답 없음: $SITE"
