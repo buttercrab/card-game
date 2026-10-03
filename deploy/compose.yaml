@@ -43,8 +43,11 @@ services:
     env_file: ${HOME}/.config/card-game/bots.env
     environment:
       RUST_LOG: info
+    # It serves nothing, so "healthy" only means the binary runs.
     healthcheck:
-      disable: true
+      test: ["CMD", "server", "--help"]
+      interval: 1m
+      start_period: 5s
     logging:
       driver: json-file
       options:
