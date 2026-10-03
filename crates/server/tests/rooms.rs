@@ -233,7 +233,10 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     // Play a few of our own moves, then stop on our turn.
     let mut moves = 0;
     let before = loop {
-        let msg = next_where(&mut ws, "state", |m| m["legal"].as_array().is_some_and(|l| !l.is_empty())).await;
+        let msg = next_where(&mut ws, "state", |m| {
+            m["legal"].as_array().is_some_and(|l| !l.is_empty())
+        })
+        .await;
         if moves == 3 {
             break msg;
         }
@@ -264,21 +267,37 @@ async fn seated_players_change_the_rules_between_hands() {
 
     // Spectators may not.
     rules["bidding"]["min"] = json!(15);
-    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    send(
+        &mut ws,
+        json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } }),
+    )
+    .await;
     next(&mut ws, "error").await;
 
     join(&mut ws, "Jae", None).await;
-    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    send(
+        &mut ws,
+        json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } }),
+    )
+    .await;
     let msg = next_where(&mut ws, "room", |r| r["settings"]["rules"].is_object()).await;
     assert_eq!(msg["settings"]["rules"]["bidding"]["min"], 15);
 
     // Rules that cannot be played, or a different table size, are refused.
     rules["bidding"]["min"] = json!(30);
-    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    send(
+        &mut ws,
+        json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } }),
+    )
+    .await;
     next(&mut ws, "error").await;
     rules["bidding"]["min"] = json!(15);
     rules["players"] = json!(4);
-    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    send(
+        &mut ws,
+        json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } }),
+    )
+    .await;
     next(&mut ws, "error").await;
 
     // The hand is dealt under the new rules.
@@ -288,7 +307,11 @@ async fn seated_players_change_the_rules_between_hands() {
     send(&mut ws, json!({ "type": "start" })).await;
     let state = next(&mut ws, "state").await;
     assert_eq!(state["view"]["rules"]["bidding"]["min"], 15);
-    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs" } })).await;
+    send(
+        &mut ws,
+        json!({ "type": "set_settings", "settings": { "preset": "gshs" } }),
+    )
+    .await;
     next(&mut ws, "error").await;
 }
 

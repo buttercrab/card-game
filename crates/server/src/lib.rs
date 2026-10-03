@@ -54,7 +54,10 @@ impl AppState {
 
     /// Saves every room under `dir` as it changes; see [`AppState::restore_rooms`].
     pub fn with_data(self, dir: PathBuf) -> AppState {
-        AppState { data: Some(dir), ..self }
+        AppState {
+            data: Some(dir),
+            ..self
+        }
     }
 
     /// Reopens the rooms saved under the data directory, returning how many.

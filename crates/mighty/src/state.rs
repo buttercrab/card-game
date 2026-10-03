@@ -637,8 +637,8 @@ impl State {
             engine::Viewer::Spectator => None,
         };
         // Everyone sees the discards once the hand is over.
-        let sees_discards = matches!(self.phase, Phase::Done(_))
-            || self.discards().is_some_and(|(_, declarer)| Some(declarer) == me);
+        let sees_discards =
+            matches!(self.phase, Phase::Done(_)) || self.discards().is_some_and(|(_, declarer)| Some(declarer) == me);
         let mut next = self.clone();
 
         let mut pool: Vec<Card> = Vec::new();

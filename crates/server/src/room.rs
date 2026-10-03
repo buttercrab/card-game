@@ -104,7 +104,18 @@ struct Conn {
 
 /// The reactions a player can send; anything else is refused.
 pub const REACTIONS: [&str; 12] = [
-    "👏", "😂", "😮", "😭", "🔥", "🙏", "나이스", "아…", "ㅋㅋㅋ", "빨리요~", "미안", "굿",
+    "👏",
+    "😂",
+    "😮",
+    "😭",
+    "🔥",
+    "🙏",
+    "나이스",
+    "아…",
+    "ㅋㅋㅋ",
+    "빨리요~",
+    "미안",
+    "굿",
 ];
 
 pub struct Room<G: SessionGame> {
@@ -264,7 +275,14 @@ impl<G: SessionGame> Room<G> {
     fn handle(&mut self, cmd: Command) {
         match cmd {
             Command::Connect { conn, tx } => {
-                self.conns.insert(conn, Conn { tx, seat: None, reacted: None });
+                self.conns.insert(
+                    conn,
+                    Conn {
+                        tx,
+                        seat: None,
+                        reacted: None,
+                    },
+                );
             }
             Command::Disconnect { conn } => {
                 self.conns.remove(&conn);
@@ -331,7 +349,8 @@ impl<G: SessionGame> Room<G> {
                 if self.in_hand() {
                     return Err("rules can change only between hands".into());
                 }
-                let settings: G::Settings = serde_json::from_value(settings).map_err(|e| format!("bad settings: {e}"))?;
+                let settings: G::Settings =
+                    serde_json::from_value(settings).map_err(|e| format!("bad settings: {e}"))?;
                 G::validate(&settings)?;
                 if G::seats(&settings) != self.seats.len() {
                     return Err("the number of players cannot change".into());
@@ -491,7 +510,9 @@ impl<G: SessionGame> Room<G> {
         };
         let Some(game) = self.game.as_mut() else { return false };
         let logged = log_action(&*action);
-        let Ok(entry) = serde_json::to_value(&*action) else { return false };
+        let Ok(entry) = serde_json::to_value(&*action) else {
+            return false;
+        };
         if let Err(e) = G::apply(game, *action) {
             tracing::error!(room = %self.id, seat, action = %logged, "bot chose an illegal action: {e}");
             return false;
