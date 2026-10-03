@@ -117,6 +117,11 @@ body {
   line-height: 1.45;
 }
 
+/* Installed to the home screen the page runs under the notch and home bar. */
+body {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
 button,
 input,
 select {

@@ -646,7 +646,7 @@
     grid-template-rows: auto auto minmax(0, 1fr) auto auto;
     grid-template-areas: 'status' 'event' 'felt' 'strip' 'tray';
     gap: 6px;
-    height: calc(100dvh - var(--chrome, 80px));
+    height: calc(100dvh - var(--chrome, 80px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
   .status {
     grid-area: status;

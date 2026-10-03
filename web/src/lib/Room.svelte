@@ -5,6 +5,7 @@
   import SettingsSheet from './SettingsSheet.svelte';
   import { sound } from './sound';
   import Table from './Table.svelte';
+  import { keepAwake } from './wakeLock';
 
   let { id, onleave }: { id: string; onleave: () => void } = $props();
 
@@ -22,6 +23,8 @@
   const room = $derived(client.room);
   const seated = $derived(client.seat !== null);
   const inHand = $derived(room?.in_hand ?? false);
+  $effect(() => keepAwake(inHand));
+  onDestroy(() => keepAwake(false));
   const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
   const showTable = $derived(client.game !== null && (inHand || (room?.hands_played ?? 0) > 0));
   const showLobby = $derived(!showTable || (!inHand && (showSeats || !seated)));
@@ -309,7 +312,7 @@
   }
   .banner {
     position: fixed;
-    top: 56px;
+    top: calc(56px + env(safe-area-inset-top));
     left: 16px;
     right: 16px;
     z-index: 15;
@@ -325,7 +328,7 @@
   .toast {
     position: fixed;
     left: 50%;
-    bottom: 20px;
+    bottom: calc(20px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
     max-width: calc(100% - 32px);
     padding: 10px 16px;

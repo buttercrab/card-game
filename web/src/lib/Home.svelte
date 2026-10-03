@@ -1,5 +1,6 @@
 <script lang="ts">
   import Card from './Card.svelte';
+  import InstallHint from './InstallHint.svelte';
   import { PRESETS } from './presets';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
@@ -65,6 +66,8 @@
       <button type="submit" disabled={!code.trim()}>들어가기</button>
     </form>
   </section>
+
+  <InstallHint />
 </main>
 
 <style>
