@@ -445,8 +445,11 @@ impl<G: SessionGame> Room<G> {
                 let legal = G::legal_actions(game);
                 let (seed, version) = (self.rng.random::<u64>(), self.version);
                 tokio::task::spawn_blocking(move || {
-                    let action =
-                        G::bot(BotLevel::Hard, seat, HINT_THINK).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
+                    let action = G::bot(BotLevel::Hard, seat, HINT_THINK, 1).act(
+                        &view,
+                        &legal,
+                        &mut StdRng::seed_from_u64(seed),
+                    );
                     let msg = json!({ "type": "hint", "version": version, "action": action });
                     let _ = tx.send(msg.to_string());
                 });
@@ -599,7 +602,7 @@ impl<G: SessionGame> Room<G> {
                 Some(action) => Ok(action),
                 None => {
                     tokio::task::spawn_blocking(move || {
-                        G::bot(level, seat, think).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
+                        G::bot(level, seat, think, 1).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
                     })
                     .await
                 }

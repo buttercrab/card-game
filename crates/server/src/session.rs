@@ -33,9 +33,9 @@ pub trait SessionGame:
     fn hand_options(settings: &Self::Settings, hand: u32) -> Self::Options;
 
     /// A bot of this strength for `seat`, which may think for about `think`
-    /// (zero for its own default). Seats differ a little in temperament so a
-    /// table of bots does not play as one.
-    fn bot(level: BotLevel, seat: usize, think: Duration) -> Box<dyn Bot<Self> + Send>;
+    /// (zero for its own default) on `threads` threads. Seats differ a
+    /// little in temperament so a table of bots does not play as one.
+    fn bot(level: BotLevel, seat: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
 }
 
 /// How well a seated bot plays.
@@ -94,7 +94,7 @@ impl SessionGame for Mighty {
         mighty::Options { rules, first_bidder }
     }
 
-    fn bot(level: BotLevel, seat: usize, think: Duration) -> Box<dyn Bot<Mighty> + Send> {
+    fn bot(level: BotLevel, seat: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
         // Bolder or more careful bidders, by seat.
         const TEMPER: [f32; 8] = [0.0, 0.4, -0.4, 0.2, -0.2, 0.3, -0.3, 0.1];
         let mut policy = SimpleBot::default();
@@ -108,8 +108,9 @@ impl SessionGame for Mighty {
             // More sampled deals keep helping a little (2000 beat 200 by about
             // a third of a point per hand), so deal until the time is up.
             BotLevel::Hard if !think.is_zero() => Box::new(SearchBot {
-                samples: 5000,
+                samples: 5000 * threads.max(1),
                 budget: Some(think),
+                threads,
                 policy,
                 ..SearchBot::default()
             }),

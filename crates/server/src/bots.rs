@@ -180,6 +180,7 @@ fn solve<G: SessionGame>(job: &Job, think: Duration) -> Option<Value> {
     if legal.is_empty() {
         return None;
     }
-    let action = G::bot(job.level, job.seat, think).act(&view, &legal, &mut StdRng::seed_from_u64(job.seed));
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let action = G::bot(job.level, job.seat, think, threads).act(&view, &legal, &mut StdRng::seed_from_u64(job.seed));
     serde_json::to_value(action).ok()
 }

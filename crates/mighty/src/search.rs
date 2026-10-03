@@ -14,8 +14,9 @@ pub use crate::read::Reading;
 use crate::state::{Action, Bidding, Exchange, FriendCall, Phase, Play, State};
 use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Turn, Viewer};
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, RngCore};
+use rand::{Rng, RngCore, SeedableRng};
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -36,6 +37,9 @@ pub struct SearchBot {
     /// How much each sampled deal counts, by how well it explains what the
     /// other players have done.
     pub reading: Reading,
+    /// Threads dealing and playing out deals at once. The deals are split
+    /// between them, and so is the budget's work.
+    pub threads: usize,
 }
 
 impl Default for SearchBot {
@@ -46,6 +50,7 @@ impl Default for SearchBot {
             budget: Some(Duration::from_secs(1)),
             policy: SimpleBot::default(),
             reading: Reading::default(),
+            threads: 1,
         }
     }
 }
@@ -67,21 +72,41 @@ impl Bot<Mighty> for SearchBot {
         // Every candidate is scored on the same deals, so luck in the
         // sampling affects them all alike.
         let started = Instant::now();
-        let mut scores: Vec<Vec<i64>> = vec![Vec::new(); candidates.len()];
-        let mut log_weights = Vec::new();
-        let mut memo = Memo::default();
-        for _ in 0..self.samples {
-            if self.budget.is_some_and(|budget| started.elapsed() >= budget) {
-                break;
+        let threads = self.threads.max(1);
+        let (scores, log_weights) = if threads == 1 {
+            self.search(view, me, &candidates, self.samples, started, rng)
+        } else {
+            let share = self.samples.div_ceil(threads);
+            let seeds: Vec<u64> = (0..threads).map(|_| rng.next_u64()).collect();
+            let bot: &SearchBot = self;
+            let parts: Vec<_> = std::thread::scope(|scope| {
+                let handles: Vec<_> = seeds
+                    .into_iter()
+                    .map(|seed| {
+                        let candidates = &candidates;
+                        scope.spawn(move || {
+                            let mut rng = StdRng::seed_from_u64(seed);
+                            bot.search(view, me, candidates, share, started, &mut rng)
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().expect("search thread panicked"))
+                    .collect()
+            });
+            // Each part is a run of whole deals, so joining them keeps the
+            // candidates' scores paired deal by deal.
+            let mut scores = vec![Vec::new(); candidates.len()];
+            let mut log_weights = Vec::new();
+            for (part_scores, part_weights) in parts {
+                for (all, part) in scores.iter_mut().zip(part_scores) {
+                    all.extend(part);
+                }
+                log_weights.extend(part_weights);
             }
-            let Some((world, log_weight)) = self.draw(view, me, rng, &mut memo) else {
-                continue;
-            };
-            log_weights.push(log_weight);
-            for (action, scores) in candidates.iter().zip(&mut scores) {
-                scores.push(rollout(self.policy, &world, action, me, rng));
-            }
-        }
+            (scores, log_weights)
+        };
         if scores[0].is_empty() {
             return self.policy.act(view, legal, rng);
         }
@@ -96,6 +121,36 @@ impl Bot<Mighty> for SearchBot {
 }
 
 impl SearchBot {
+    /// Deals up to `samples` worlds, until the budget runs out, and plays
+    /// every candidate out on each: the payoffs per candidate, deal by deal,
+    /// and each deal's log weight.
+    fn search(
+        &self,
+        view: &View,
+        me: Seat,
+        candidates: &[Action],
+        samples: usize,
+        started: Instant,
+        rng: &mut dyn RngCore,
+    ) -> (Vec<Vec<i64>>, Vec<f64>) {
+        let mut scores: Vec<Vec<i64>> = vec![Vec::new(); candidates.len()];
+        let mut log_weights = Vec::new();
+        let mut memo = Memo::default();
+        for _ in 0..samples {
+            if self.budget.is_some_and(|budget| started.elapsed() >= budget) {
+                break;
+            }
+            let Some((world, log_weight)) = self.draw(view, me, rng, &mut memo) else {
+                continue;
+            };
+            log_weights.push(log_weight);
+            for (action, scores) in candidates.iter().zip(&mut scores) {
+                scores.push(rollout(self.policy, &world, action, me, rng));
+            }
+        }
+        (scores, log_weights)
+    }
+
     /// A world to play out, and its log weight. Reading the table samples
     /// several and keeps one in proportion to its weight, so that fewer
     /// playouts go to deals the other players' actions rule out; the one
