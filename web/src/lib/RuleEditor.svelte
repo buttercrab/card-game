@@ -285,7 +285,8 @@
     padding: 0 8px;
     border: 1px solid var(--line);
     border-radius: 10px;
-    background: var(--card);
+    background: var(--bg);
+    color: var(--ink);
   }
   .actions {
     display: flex;

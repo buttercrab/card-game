@@ -1,5 +1,5 @@
 import { sound } from './sound';
-import type { Action, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
+import type { Action, BotLevel, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
 interface Saved {
   token: string;
@@ -171,8 +171,9 @@ export class RoomClient {
     }
   }
 
-  addBot(seat: number) {
-    this.#send({ type: 'add_bot', seat });
+  /** Seats a bot, or changes the level of the one already there. */
+  addBot(seat: number, level: BotLevel = 'hard') {
+    this.#send({ type: 'add_bot', seat, level });
   }
 
   removeBot(seat: number) {

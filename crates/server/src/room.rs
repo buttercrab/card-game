@@ -2,7 +2,7 @@
 //! so its state needs no locks. Bots think on a blocking thread and send
 //! their move back as a command.
 
-use crate::session::SessionGame;
+use crate::session::{BotLevel, SessionGame};
 use engine::{Turn, Viewer};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -69,8 +69,11 @@ pub enum ClientMsg {
     /// Give up your seat; a bot takes over if a hand is in progress.
     Leave,
     /// Seat a bot in an empty seat, or in place of a disconnected player.
+    /// On a bot's seat, changes how well it plays.
     AddBot {
         seat: usize,
+        #[serde(default)]
+        level: BotLevel,
     },
     RemoveBot {
         seat: usize,
@@ -97,8 +100,14 @@ pub enum ClientMsg {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Occupant {
     Empty,
-    Human { name: String, token: String },
-    Bot,
+    Human {
+        name: String,
+        token: String,
+    },
+    Bot {
+        #[serde(default)]
+        level: BotLevel,
+    },
 }
 
 struct Conn {
@@ -246,7 +255,7 @@ impl<G: SessionGame> Room<G> {
             .map(|s| match s {
                 Occupant::Empty => json!("empty"),
                 Occupant::Human { name, .. } => json!({ "human": name }),
-                Occupant::Bot => json!("bot"),
+                Occupant::Bot { level } => json!({ "bot": level }),
             })
             .collect();
         report
@@ -343,21 +352,26 @@ impl<G: SessionGame> Room<G> {
             ClientMsg::Join { name, token, seat } => self.join(conn, name, token, seat),
             ClientMsg::Leave => {
                 let seat = my_seat.ok_or("you are not seated")?;
-                self.seats[seat] = if self.in_hand() { Occupant::Bot } else { Occupant::Empty };
+                self.seats[seat] = if self.in_hand() {
+                    Occupant::Bot {
+                        level: BotLevel::default(),
+                    }
+                } else {
+                    Occupant::Empty
+                };
                 self.detach(seat);
                 Ok(())
             }
-            ClientMsg::AddBot { seat } => {
+            ClientMsg::AddBot { seat, level } => {
                 my_seat.ok_or("only seated players can add bots")?;
                 let free = match self.seats.get(seat).ok_or("no such seat")? {
-                    Occupant::Empty => true,
+                    Occupant::Empty | Occupant::Bot { .. } => true,
                     Occupant::Human { .. } => !self.connected(seat),
-                    Occupant::Bot => false,
                 };
                 if !free {
                     return Err("that seat is taken".into());
                 }
-                self.seats[seat] = Occupant::Bot;
+                self.seats[seat] = Occupant::Bot { level };
                 Ok(())
             }
             ClientMsg::RemoveBot { seat } => {
@@ -366,7 +380,7 @@ impl<G: SessionGame> Room<G> {
                     return Err("bots stay until the hand is over".into());
                 }
                 match self.seats.get(seat) {
-                    Some(Occupant::Bot) => {
+                    Some(Occupant::Bot { .. }) => {
                         self.seats[seat] = Occupant::Empty;
                         Ok(())
                     }
@@ -404,7 +418,7 @@ impl<G: SessionGame> Room<G> {
                 let legal = G::legal_actions(game);
                 let (seed, version) = (self.rng.random::<u64>(), self.version);
                 tokio::task::spawn_blocking(move || {
-                    let action = G::bot().act(&view, &legal, &mut StdRng::seed_from_u64(seed));
+                    let action = G::bot(BotLevel::Hard, seat).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
                     let msg = json!({ "type": "hint", "version": version, "action": action });
                     let _ = tx.send(msg.to_string());
                 });
@@ -514,7 +528,7 @@ impl<G: SessionGame> Room<G> {
 
     fn bot_to_act(&self) -> Option<usize> {
         match self.game.as_ref().map(G::turn) {
-            Some(Turn::Seat(s)) if matches!(self.seats[s], Occupant::Bot) => Some(s),
+            Some(Turn::Seat(s)) if matches!(self.seats[s], Occupant::Bot { .. }) => Some(s),
             _ => None,
         }
     }
@@ -529,15 +543,19 @@ impl<G: SessionGame> Room<G> {
         let (Some(seat), Some(game), Some(tx)) = (self.bot_to_act(), self.game.as_ref(), me) else {
             return;
         };
+        let Occupant::Bot { level } = self.seats[seat] else {
+            return;
+        };
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game);
         let (seed, version, delay) = (self.rng.random::<u64>(), self.version, self.bot_delay);
         self.thinking = true;
         tokio::spawn(async move {
             let started = Instant::now();
-            let choice =
-                tokio::task::spawn_blocking(move || G::bot().act(&view, &legal, &mut StdRng::seed_from_u64(seed)))
-                    .await;
+            let choice = tokio::task::spawn_blocking(move || {
+                G::bot(level, seat).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
+            })
+            .await;
             // Thinking time counts toward the delay that lets people follow along.
             tokio::time::sleep(delay.saturating_sub(started.elapsed())).await;
             let action: Box<dyn Any + Send> = match choice {
@@ -604,7 +622,7 @@ impl<G: SessionGame> Room<G> {
                 Occupant::Human { name, .. } => {
                     json!({ "kind": "human", "name": name, "connected": self.connected(i) })
                 }
-                Occupant::Bot => json!({ "kind": "bot", "name": format!("Bot {}", i + 1) }),
+                Occupant::Bot { level } => json!({ "kind": "bot", "name": format!("Bot {}", i + 1), "level": level }),
             })
             .collect();
         json!({

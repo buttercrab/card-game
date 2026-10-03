@@ -391,3 +391,29 @@ async fn a_hint_is_one_of_the_legal_actions() {
     let hint = next(&mut ws, "hint").await;
     assert!(state["legal"].as_array().unwrap().contains(&hint["action"]));
 }
+
+#[tokio::test]
+async fn bots_default_to_hard_and_their_level_can_change() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    join(&mut ws, "Jae", None).await;
+    send(&mut ws, json!({ "type": "add_bot", "seat": 1 })).await;
+    next_where(&mut ws, "room", |r| r["seats"][1]["level"] == "hard").await;
+    send(&mut ws, json!({ "type": "add_bot", "seat": 1, "level": "easy" })).await;
+    next_where(&mut ws, "room", |r| r["seats"][1]["level"] == "easy").await;
+    // Easy bots still finish a hand with legal moves.
+    for bot in 2..5 {
+        send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
+    }
+    send(&mut ws, json!({ "type": "start" })).await;
+    loop {
+        let msg = next(&mut ws, "state").await;
+        if msg["view"]["phase"].get("Done").is_some() {
+            break;
+        }
+        if let Some(action) = msg["legal"].as_array().and_then(|l| l.first()) {
+            send(&mut ws, json!({ "type": "act", "action": action })).await;
+        }
+    }
+}

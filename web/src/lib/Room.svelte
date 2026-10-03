@@ -9,6 +9,9 @@
   import { sound } from './sound';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
+  import type { BotLevel } from './types';
+
+  const LEVEL: Record<BotLevel, string> = { easy: '초보', normal: '보통', hard: '고수' };
 
   let { id, onleave }: { id: string; onleave: () => void } = $props();
 
@@ -121,6 +124,7 @@
                   <span class="muted">빈 자리</span>
                 {:else}
                   {s.kind === 'bot' ? `봇 ${i + 1}` : s.name}
+                  {#if s.kind === 'bot' && !seated}<span class="tag">{LEVEL[s.level ?? 'hard']}</span>{/if}
                   {#if client.seat === i}<span class="tag">나</span>{/if}
                   {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>{/if}
                 {/if}
@@ -134,7 +138,17 @@
                 {:else if s.kind === 'empty' && seated}
                   <button onclick={() => client.addBot(i)}>봇 넣기</button>
                 {:else if s.kind === 'bot' && seated}
-                  <button class="ghost" onclick={() => client.removeBot(i)}>빼기</button>
+                  <select
+                    class="level"
+                    aria-label="봇 {i + 1} 실력"
+                    value={s.level ?? 'hard'}
+                    onchange={(e) => client.addBot(i, e.currentTarget.value as BotLevel)}
+                  >
+                    <option value="easy">초보</option>
+                    <option value="normal">보통</option>
+                    <option value="hard">고수</option>
+                  </select>
+                  {#if !inHand}<button class="ghost" onclick={() => client.removeBot(i)}>빼기</button>{/if}
                 {:else if s.kind === 'human' && !s.connected && seated}
                   <button class="ghost" onclick={() => client.addBot(i)}>봇으로 바꾸기</button>
                 {/if}
@@ -333,6 +347,15 @@
   form input {
     flex: 1;
     min-width: 0;
+  }
+  .level {
+    min-height: 40px;
+    padding: 0 8px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--ink);
+    font-weight: 600;
   }
   .rules-line {
     display: flex;

@@ -3,8 +3,11 @@
 
 use engine::{Bot, Game};
 use mighty::Mighty;
+use mighty::bot::SimpleBot;
 use mighty::rules::{Preset, Rules};
 use mighty::search::SearchBot;
+use rand::seq::IndexedRandom;
+use rand::{Rng, RngCore};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +28,22 @@ pub trait SessionGame:
     /// Options for hand number `hand` (0-based) of a session.
     fn hand_options(settings: &Self::Settings, hand: u32) -> Self::Options;
 
-    fn bot() -> Box<dyn Bot<Self> + Send>;
+    /// A bot of this strength for `seat`. Seats differ a little in temperament
+    /// so a table of bots does not play as one.
+    fn bot(level: BotLevel, seat: usize) -> Box<dyn Bot<Self> + Send>;
+}
+
+/// How well a seated bot plays.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BotLevel {
+    /// Plays sensibly but often slips when choosing a card.
+    Easy,
+    /// The rule-of-thumb bot.
+    Normal,
+    /// Searches sampled deals; the strongest.
+    #[default]
+    Hard,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,7 +89,38 @@ impl SessionGame for Mighty {
         mighty::Options { rules, first_bidder }
     }
 
-    fn bot() -> Box<dyn Bot<Mighty> + Send> {
-        Box::new(SearchBot::default())
+    fn bot(level: BotLevel, seat: usize) -> Box<dyn Bot<Mighty> + Send> {
+        // Bolder or more careful bidders, by seat.
+        const TEMPER: [f32; 8] = [0.0, 0.4, -0.4, 0.2, -0.2, 0.3, -0.3, 0.1];
+        let mut policy = SimpleBot::default();
+        policy.bid_base += TEMPER[seat % TEMPER.len()];
+        match level {
+            BotLevel::Easy => Box::new(Clumsy {
+                inner: policy,
+                slips: 0.35,
+            }),
+            BotLevel::Normal => Box::new(policy),
+            BotLevel::Hard => Box::new(SearchBot {
+                policy,
+                ..SearchBot::default()
+            }),
+        }
+    }
+}
+
+/// A simple bot that, when playing a card, picks one at random this often.
+struct Clumsy {
+    inner: SimpleBot,
+    slips: f64,
+}
+
+impl Bot<Mighty> for Clumsy {
+    fn act(&mut self, view: &mighty::View, legal: &[mighty::Action], rng: &mut dyn RngCore) -> mighty::Action {
+        let playing = legal.iter().all(|a| matches!(a, mighty::Action::Play { .. }));
+        if playing && rng.random_bool(self.slips) {
+            legal.choose(rng).expect("a bot acts only with legal actions").clone()
+        } else {
+            self.inner.act(view, legal, rng)
+        }
     }
 }

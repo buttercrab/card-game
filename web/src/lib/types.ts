@@ -1,6 +1,7 @@
 // Mirrors the JSON the server sends: serde's default enum encoding of the
 // Rust types in crates/mighty and crates/server.
 
+export type BotLevel = 'easy' | 'normal' | 'hard';
 export type Suit = 'Spade' | 'Diamond' | 'Heart' | 'Club';
 export type Color = 'Black' | 'Red';
 export type Card = { Normal: [Suit, number] } | { Joker: Color };
@@ -132,7 +133,7 @@ export interface View {
 export type SeatInfo =
   | { kind: 'empty' }
   | { kind: 'human'; name: string; connected: boolean }
-  | { kind: 'bot'; name: string };
+  | { kind: 'bot'; name: string; level?: BotLevel };
 
 export interface RoomMsg {
   type: 'room';
