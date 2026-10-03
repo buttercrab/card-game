@@ -6,14 +6,16 @@
   import { PRESET_NAME } from './presets';
   import type { Card as CardT, CardPolicy, Rules, TrickPolicy } from './types';
 
-  let { preset }: { preset: string } = $props();
+  /** `rules` overrides the preset's, for a table whose players changed them. */
+  let { preset, rules: given = null }: { preset: string; rules?: Rules | null } = $props();
 
   let rules = $state<Rules | null>(null);
   let failed = $state(false);
 
   $effect(() => {
-    rules = null;
+    rules = given;
     failed = false;
+    if (given) return;
     fetch(`/api/presets/${preset}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((r: Rules) => (rules = r))
@@ -88,7 +90,7 @@
 
 <article class="book">
   <header>
-    <h1>{PRESET_NAME[preset] ?? preset} 규칙</h1>
+    <h1>{PRESET_NAME[preset] ?? preset} 규칙{#if given}<span class="changed">바꾼 규칙</span>{/if}</h1>
     {#if rules}
       <ul class="facts">
         <li>{rules.players}명</li>
@@ -301,6 +303,16 @@
     font-family: var(--font-display);
     font-size: 26px;
     font-weight: 800;
+  }
+  .changed {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: var(--font);
+    font-size: 13px;
+    vertical-align: middle;
   }
   .facts {
     display: flex;

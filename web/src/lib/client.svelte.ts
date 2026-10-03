@@ -1,4 +1,4 @@
-import type { Action, RoomMsg, ServerMsg, StateMsg } from './types';
+import type { Action, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
 interface Saved {
   token: string;
@@ -27,6 +27,11 @@ const ERRORS: [RegExp, string][] = [
   [/every seat needs/, '빈 자리를 먼저 채워 주세요'],
   [/pick a name/, '이름을 적어 주세요'],
   [/illegal action/, '지금은 그렇게 할 수 없어요'],
+  [/only between hands/, '규칙은 판과 판 사이에만 바꿀 수 있어요'],
+  [/bidding range is empty/, '공약 최소가 최대보다 클 수 없어요'],
+  [/no-trump bonus/, '노기루다 보너스는 최소 공약보다 작아야 해요'],
+  [/no way to choose a friend/, '프렌드를 정하는 방법을 하나는 골라 주세요'],
+  [/invalid rules/, '그 규칙으로는 게임을 할 수 없어요'],
 ];
 
 function translate(message: string): string {
@@ -153,6 +158,10 @@ export class RoomClient {
 
   removeBot(seat: number) {
     this.#send({ type: 'remove_bot', seat });
+  }
+
+  setRules(preset: string, rules: Rules | null) {
+    this.#send({ type: 'set_settings', settings: rules ? { preset, rules } : { preset } });
   }
 
   start() {

@@ -179,7 +179,7 @@ struct CreateRoom {
 
 async fn create_room(State(app): State<AppState>, body: Option<Json<CreateRoom>>) -> Response {
     let preset = body.and_then(|Json(b)| b.preset).unwrap_or(Preset::Gshs);
-    match app.create_room::<Mighty>(MightySettings { preset }) {
+    match app.create_room::<Mighty>(MightySettings { preset, rules: None }) {
         Some(id) => Json(json!({ "id": id })).into_response(),
         None => (StatusCode::SERVICE_UNAVAILABLE, "too many tables are open").into_response(),
     }

@@ -3,7 +3,7 @@
 
 use engine::{Bot, Game};
 use mighty::Mighty;
-use mighty::rules::Preset;
+use mighty::rules::{Preset, Rules};
 use mighty::search::SearchBot;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -19,20 +19,35 @@ pub trait SessionGame:
 
     fn seats(settings: &Self::Settings) -> usize;
 
+    /// Checks settings a player proposes for the table.
+    fn validate(settings: &Self::Settings) -> Result<(), String>;
+
     /// Options for hand number `hand` (0-based) of a session.
     fn hand_options(settings: &Self::Settings, hand: u32) -> Self::Options;
 
     fn bot() -> Box<dyn Bot<Self> + Send>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MightySettings {
     pub preset: Preset,
+    /// The table's own rules, when its players changed the preset's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<Rules>,
+}
+
+impl MightySettings {
+    pub fn rules(&self) -> Rules {
+        self.rules.clone().unwrap_or_else(|| self.preset.rules())
+    }
 }
 
 impl Default for MightySettings {
     fn default() -> MightySettings {
-        MightySettings { preset: Preset::Gshs }
+        MightySettings {
+            preset: Preset::Gshs,
+            rules: None,
+        }
     }
 }
 
@@ -42,12 +57,16 @@ impl SessionGame for Mighty {
     const NAME: &'static str = "mighty";
 
     fn seats(settings: &MightySettings) -> usize {
-        settings.preset.rules().players
+        settings.rules().players
+    }
+
+    fn validate(settings: &MightySettings) -> Result<(), String> {
+        settings.rules().validate().map_err(|e| e.to_string())
     }
 
     /// The first bidder moves one seat to the left each hand.
     fn hand_options(settings: &MightySettings, hand: u32) -> mighty::Options {
-        let rules = settings.preset.rules();
+        let rules = settings.rules();
         let first_bidder = hand as usize % rules.players;
         mighty::Options { rules, first_bidder }
     }

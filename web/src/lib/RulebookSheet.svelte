@@ -1,7 +1,8 @@
 <script lang="ts">
   import Rulebook from './Rulebook.svelte';
+  import type { Rules } from './types';
 
-  let { preset, onclose }: { preset: string; onclose: () => void } = $props();
+  let { preset, rules = null, onclose }: { preset: string; rules?: Rules | null; onclose: () => void } = $props();
 
   let dialog: HTMLDialogElement;
   $effect(() => {
@@ -11,7 +12,7 @@
 
 <dialog bind:this={dialog} onclose={onclose} aria-label="규칙">
   <div class="body">
-    <Rulebook {preset} />
+    <Rulebook {preset} {rules} />
   </div>
   <form method="dialog">
     <button class="primary">닫기</button>

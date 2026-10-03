@@ -253,3 +253,41 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     assert_eq!(after["legal"], before["legal"]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn seated_players_change_the_rules_between_hands() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let (_, rules) = http(addr, "GET", "/api/presets/gshs", "").await;
+    let mut rules: Value = serde_json::from_str(&rules).unwrap();
+    let mut ws = connect(addr, &room).await;
+
+    // Spectators may not.
+    rules["bidding"]["min"] = json!(15);
+    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    next(&mut ws, "error").await;
+
+    join(&mut ws, "Jae", None).await;
+    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    let msg = next_where(&mut ws, "room", |r| r["settings"]["rules"].is_object()).await;
+    assert_eq!(msg["settings"]["rules"]["bidding"]["min"], 15);
+
+    // Rules that cannot be played, or a different table size, are refused.
+    rules["bidding"]["min"] = json!(30);
+    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    next(&mut ws, "error").await;
+    rules["bidding"]["min"] = json!(15);
+    rules["players"] = json!(4);
+    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } })).await;
+    next(&mut ws, "error").await;
+
+    // The hand is dealt under the new rules.
+    for bot in 1..5 {
+        send(&mut ws, json!({ "type": "add_bot", "seat": bot })).await;
+    }
+    send(&mut ws, json!({ "type": "start" })).await;
+    let state = next(&mut ws, "state").await;
+    assert_eq!(state["view"]["rules"]["bidding"]["min"], 15);
+    send(&mut ws, json!({ "type": "set_settings", "settings": { "preset": "gshs" } })).await;
+    next(&mut ws, "error").await;
+}

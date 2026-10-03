@@ -2,6 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { RoomClient, savedName } from './client.svelte';
   import { PRESET_NAME } from './presets';
+  import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import SettingsSheet from './SettingsSheet.svelte';
   import { sound } from './sound';
@@ -20,6 +21,7 @@
   let copied = $state(false);
   let showSettings = $state(false);
   let showRules = $state(false);
+  let editRules = $state(false);
   let showSeats = $state(false);
 
   const room = $derived(client.room);
@@ -99,6 +101,14 @@
         {#if seated && !full}
           <p class="muted hint">빈 자리를 친구나 봇으로 채우면 시작할 수 있어요.</p>
         {/if}
+        <div class="rules-line">
+          <span>
+            {PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙
+            {#if room.settings.rules}<span class="tag">바꾼 규칙</span>{/if}
+          </span>
+          <button class="ghost small" onclick={() => (showRules = true)}>보기</button>
+          {#if seated}<button class="ghost small" onclick={() => (editRules = true)}>바꾸기</button>{/if}
+        </div>
 
         <ol class="seats">
           {#each room.seats as s, i (i)}
@@ -152,8 +162,16 @@
 {#if showSettings}
   <SettingsSheet onclose={() => (showSettings = false)} />
 {/if}
+{#if editRules && room}
+  <RuleEditor
+    preset={room.settings.preset}
+    rules={room.settings.rules ?? null}
+    onsave={(rules) => client.setRules(room.settings.preset, rules)}
+    onclose={() => (editRules = false)}
+  />
+{/if}
 {#if showRules && room}
-  <RulebookSheet preset={room.settings.preset} onclose={() => (showRules = false)} />
+  <RulebookSheet preset={room.settings.preset} rules={room.settings.rules ?? null} onclose={() => (showRules = false)} />
 {/if}
 
 <style>
@@ -310,6 +328,18 @@
   form input {
     flex: 1;
     min-width: 0;
+  }
+  .rules-line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+  }
+  .rules-line > span {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
   .leave {
     justify-self: start;

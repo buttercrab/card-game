@@ -136,7 +136,7 @@ export interface RoomMsg {
   type: 'room';
   id: string;
   game: string;
-  settings: { preset: string };
+  settings: { preset: string; rules?: Rules };
   seats: SeatInfo[];
   scores: number[];
   hands_played: number;

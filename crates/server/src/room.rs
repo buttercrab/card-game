@@ -71,6 +71,10 @@ pub enum ClientMsg {
     RemoveBot {
         seat: usize,
     },
+    /// Change the table's settings between hands. The seat count must stay.
+    SetSettings {
+        settings: Value,
+    },
     /// Deal the next hand once every seat is filled.
     Start,
     Act {
@@ -305,6 +309,20 @@ impl<G: SessionGame> Room<G> {
                     }
                     _ => Err("no bot in that seat".into()),
                 }
+            }
+            ClientMsg::SetSettings { settings } => {
+                my_seat.ok_or("only seated players can change the rules")?;
+                if self.in_hand() {
+                    return Err("rules can change only between hands".into());
+                }
+                let settings: G::Settings = serde_json::from_value(settings).map_err(|e| format!("bad settings: {e}"))?;
+                G::validate(&settings)?;
+                if G::seats(&settings) != self.seats.len() {
+                    return Err("the number of players cannot change".into());
+                }
+                tracing::info!(room = %self.id, settings = %log_action(&settings), "settings");
+                self.settings = settings;
+                Ok(())
             }
             ClientMsg::Start => {
                 my_seat.ok_or("only seated players can start")?;
