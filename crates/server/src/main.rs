@@ -22,6 +22,27 @@ struct Args {
     /// Close a table after this many minutes with nobody connected.
     #[arg(long, default_value_t = 30)]
     idle_minutes: u64,
+    /// Ask the server at --addr whether it is up, then exit (for container health checks).
+    #[arg(long)]
+    healthcheck: bool,
+}
+
+/// Exits successfully when the server at `addr` answers /healthz.
+async fn healthcheck(addr: SocketAddr) -> std::io::Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let host = SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), addr.port());
+    let mut stream = tokio::net::TcpStream::connect(host).await?;
+    stream
+        .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+        .await?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await?;
+    // The web client's catch-all also answers 200, so check the body too.
+    if response.starts_with("HTTP/1.1 200") && response.ends_with("\r\n\r\nok") {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(response))
+    }
 }
 
 #[tokio::main]
@@ -30,6 +51,9 @@ async fn main() -> std::io::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
     let args = Args::parse();
+    if args.healthcheck {
+        return healthcheck(args.addr).await;
+    }
     if !args.web.join("index.html").exists() {
         tracing::warn!("no web client at {}; serving the API only", args.web.display());
     }

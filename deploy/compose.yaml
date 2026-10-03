@@ -1,0 +1,30 @@
+# Runs the card game behind the homelab's Traefik (network traefik-proxy),
+# which the Cloudflare tunnel reaches. Started by deploy/update.sh.
+name: card-game
+
+services:
+  cards:
+    build: ..
+    image: card-game:latest
+    container_name: card-game
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      RUST_LOG: info
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      traefik-proxy:
+        aliases:
+          - cards-origin
+
+networks:
+  traefik-proxy:
+    external: true

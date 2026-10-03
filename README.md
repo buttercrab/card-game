@@ -35,6 +35,21 @@ For frontend work, run `npm run dev` in `web/` while the server runs. Vite
 forwards `/api` to the server. `/deck` shows every card face, size and
 state in both themes. Visual changes follow [DESIGN.md](DESIGN.md).
 
+## Deploy
+
+[cards.buttercrab.io](https://cards.buttercrab.io) runs on the home server
+from `main`. [`Dockerfile`](Dockerfile) builds the web client and the
+server into one image serving port 3030; [`deploy/`](deploy) holds the
+compose file, which joins the homelab's Traefik network, and a systemd
+timer that runs [`deploy/update.sh`](deploy/update.sh) every two minutes
+to rebuild when `main` moves. A deploy restarts the server, which closes
+open tables.
+
+```sh
+docker build -t card-game .
+docker run --rm -p 3030:3030 card-game   # http://localhost:3030
+```
+
 ## Test
 
 ```sh

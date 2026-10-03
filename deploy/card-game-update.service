@@ -1,0 +1,6 @@
+[Unit]
+Description=Deploy the card game when main moves
+
+[Service]
+Type=oneshot
+ExecStart=%h/docker-compose/card-game/deploy/update.sh
