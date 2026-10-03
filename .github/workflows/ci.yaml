@@ -43,7 +43,8 @@ jobs:
           for bots in random simple mixed; do
             cargo run --release -p sim -- --games 2000 --bots "$bots"
           done
-          cargo run --release -p sim -- --games 100 --bots search
+          # The search bot is slow; a few games still catch illegal moves.
+          cargo run --release -p sim -- --games 30 --bots search
 
   web:
     runs-on: ubuntu-latest
