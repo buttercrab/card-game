@@ -109,6 +109,26 @@
     return null;
   }
 
+  // ---- Tips for learners (초보 도움말) ---------------------------------------
+  const tip = $derived.by(() => {
+    if (!settings.tips || !myTurn) return null;
+    if (bidding)
+      return bidding.best
+        ? `${contractLabel(bidding.best[1])}보다 높게 부르거나 패스해요. 기루다로 할 무늬가 많고 마이티·조커가 있으면 도전!`
+        : '공약 차례예요. 많이 가진 무늬를 기루다로 골라 점수를 불러요. 자신 없으면 패스.';
+    if (exchange)
+      return toDiscard > 0
+        ? `키티를 가져왔어요. 필요 없는 카드 ${toDiscard}장을 골라 버려요. 점수 카드는 버려도 여당 점수예요.`
+        : '프렌드를 불러요. 보통 마이티나 조커처럼 센 카드를 가진 사람을 불러요.';
+    if (play) {
+      if (play.plays.length === 0) return '내가 선이에요. 아무 카드나 낼 수 있어요. 센 카드로 점수 카드를 모아 보세요.';
+      const lead = play.lead;
+      if (lead && 'Suit' in lead) return `${leadLabel(lead)}를 따라 내야 해요. 없으면 아무 카드나 내도 돼요. 마이티와 조커는 언제든 낼 수 있어요.`;
+      return '처음 낸 색의 카드가 있으면 그 색을 내야 해요. 없으면 아무 카드나 내도 돼요.';
+    }
+    return null;
+  });
+
   // ---- My choices ----------------------------------------------------------
   const kittySize = $derived(52 + (twoJokers ? 2 : 1) - n * view.rules.hand_size);
   const toDiscard = $derived(exchange ? kittySize - (exchange.discards?.length ?? 0) : 0);
@@ -508,7 +528,9 @@
       </span>
     {/if}
   </div>
-  {#if event && !done}{#key event}<p class="event fade-up" aria-live="polite">{event}</p>{/key}{/if}
+  {#if tip}
+    {#key tip}<p class="event tip fade-up" aria-live="polite">💬 {tip}</p>{/key}
+  {:else if event && !done}{#key event}<p class="event fade-up" aria-live="polite">{event}</p>{/key}{/if}
 
   <div class="felt" bind:this={felt}>
     {#if me !== null}
@@ -709,6 +731,10 @@
   }
   .event {
     grid-area: event;
+  }
+  .event.tip {
+    color: var(--ink);
+    font-weight: 600;
   }
   .felt {
     grid-area: felt;

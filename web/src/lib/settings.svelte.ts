@@ -19,10 +19,12 @@ interface Settings {
   speed: Speed;
   /** A button that shows what the bot would do on your turn. */
   hints: boolean;
+  /** A line of advice on your turn, for people learning the game. */
+  tips: boolean;
 }
 
 const KEY = 'mighty.settings';
-const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, music: false, musicVolume: 0.5, haptics: true, volume: 0.7, speed: 'normal', hints: false };
+const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, music: false, musicVolume: 0.5, haptics: true, volume: 0.7, speed: 'normal', hints: false, tips: false };
 
 function load(): Settings {
   try {

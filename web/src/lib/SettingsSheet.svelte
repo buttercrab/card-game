@@ -43,6 +43,14 @@
 
   <label class="row">
     <span>
+      <strong>초보 도움말</strong>
+      <span class="muted">내 차례마다 뭘 하면 되는지 알려 줘요</span>
+    </span>
+    <input type="checkbox" bind:checked={settings.tips} />
+  </label>
+
+  <label class="row">
+    <span>
       <strong>힌트 버튼</strong>
       <span class="muted">내 차례에 💡를 누르면 봇이라면 뭘 할지 알려 줘요</span>
     </span>

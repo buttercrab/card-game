@@ -3,6 +3,8 @@
   import InstallHint from './InstallHint.svelte';
   import ReportSheet from './ReportSheet.svelte';
   import StatsSheet from './StatsSheet.svelte';
+  import Tutorial from './Tutorial.svelte';
+  import { settings } from './settings.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import { PRESETS } from './presets';
 
@@ -14,19 +16,31 @@
   let showRules = $state(false);
   let reporting = $state(false);
   let showStats = $state(false);
+  let learning = $state(false);
   let error = $state<string | null>(null);
 
-  async function create() {
+  /** With `practice`, the room seats you with easy bots and starts at once. */
+  async function create(practice = false) {
     busy = true;
     error = null;
     try {
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preset }),
+        body: JSON.stringify({ preset: practice ? 'gshs' : preset }),
       });
       if (!res.ok) throw new Error(String(res.status));
-      onopen((await res.json()).id);
+      const id: string = (await res.json()).id;
+      if (practice) {
+        settings.tips = true;
+        settings.hints = true;
+        try {
+          sessionStorage.setItem('mighty.practice', id);
+        } catch {
+          // Without storage the practice table just opens as a normal one.
+        }
+      }
+      onopen(id);
     } catch {
       error = '테이블을 만들지 못했어요. 잠시 뒤에 다시 해 보세요.';
     } finally {
@@ -64,9 +78,14 @@
         </button>
       {/each}
     </div>
-    <button class="primary" onclick={create} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</button>
+    <button class="primary" onclick={() => create()} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</button>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </section>
+
+  <button class="learn" onclick={() => (learning = true)}>
+    <strong>마이티가 처음이에요</strong>
+    <span class="muted">1분 설명 보고 봇이랑 연습하기 →</span>
+  </button>
 
   <section class="panel">
     <h2>테이블 들어가기</h2>
@@ -82,6 +101,9 @@
     <button class="ghost small" onclick={() => (reporting = true)}>문제 신고</button>
   </div>
 </main>
+{#if learning}
+  <Tutorial onpractice={() => create(true)} onclose={() => (learning = false)} />
+{/if}
 {#if showStats}
   <StatsSheet onclose={() => (showStats = false)} />
 {/if}
@@ -140,6 +162,18 @@
     padding: 4px 10px;
     font-size: 14px;
     color: var(--ink-muted);
+  }
+  .learn {
+    display: grid;
+    gap: 2px;
+    justify-items: start;
+    padding: 14px 20px;
+    border-radius: 16px;
+    text-align: left;
+  }
+  .learn .muted {
+    font-size: 14px;
+    font-weight: 500;
   }
   .footer {
     display: flex;

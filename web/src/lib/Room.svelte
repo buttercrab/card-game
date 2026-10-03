@@ -34,6 +34,36 @@
   const inHand = $derived(room?.in_hand ?? false);
   $effect(() => keepAwake(inHand));
   onDestroy(() => keepAwake(false));
+  // A practice table from the tutorial seats you, fills up with easy bots
+  // and deals, so a newcomer lands straight in a hand.
+  let practice = $state(
+    (() => {
+      try {
+        return sessionStorage.getItem('mighty.practice') === untrack(() => id);
+      } catch {
+        return false;
+      }
+    })(),
+  );
+  $effect(() => {
+    if (!practice || !room || client.status !== 'open') return;
+    if (client.seat === null) {
+      client.join(name.trim() || '나');
+      return;
+    }
+    if (room.in_hand || room.hands_played > 0) {
+      practice = false;
+      try {
+        sessionStorage.removeItem('mighty.practice');
+      } catch {
+        // Nothing to forget.
+      }
+      return;
+    }
+    const empty = room.seats.findIndex((s) => s.kind === 'empty');
+    if (empty >= 0) client.addBot(empty, 'easy');
+    else client.start();
+  });
   const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
   const showTable = $derived(client.game !== null && (inHand || (room?.hands_played ?? 0) > 0));
   const showLobby = $derived(!showTable || (!inHand && (showSeats || !seated)));
