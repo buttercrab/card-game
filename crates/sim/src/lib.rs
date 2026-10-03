@@ -62,7 +62,11 @@ pub fn play<G: Game>(
     seed: u64,
     checks: Checks,
 ) -> Result<Report<G>, Failure> {
+    // Deals draw from their own stream, so two bots compared on one seed
+    // get the same cards even when they use randomness differently.
+    let mut chance = ChaCha8Rng::seed_from_u64(seed);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    rng.set_stream(1);
     let mut log: Vec<G::Action> = Vec::new();
     let fail = |log: &[G::Action], message: String| Failure {
         seed,
@@ -84,7 +88,7 @@ pub fn play<G: Game>(
         }
         let action = match G::turn(&state) {
             Turn::Over => break,
-            Turn::Chance => G::sample_chance(&state, &mut rng),
+            Turn::Chance => G::sample_chance(&state, &mut chance),
             Turn::Seat(seat) => {
                 let legal = G::legal_actions(&state);
                 if legal.is_empty() {

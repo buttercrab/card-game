@@ -11,59 +11,171 @@ use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Viewer};
 use rand::RngCore;
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SimpleBot;
+/// The weights and thresholds behind the rules. The defaults were tuned
+/// with `sim --baseline`, one weight at a time against the previous best;
+/// see `crates/sim` for how to try others.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SimpleBot {
+    /// Points a hand promises before counting anything: the kitty and the
+    /// friend bring some.
+    pub bid_base: f32,
+    /// Per trump other than the mighty.
+    pub bid_trump: f32,
+    /// Extra for the trump ace, king and queen.
+    pub bid_trump_honor: f32,
+    pub bid_mighty: f32,
+    pub bid_joker: f32,
+    /// With two jokers, for the one not of trump's colour.
+    pub bid_sub_joker: f32,
+    /// Per side ace; the mighty counts as one too.
+    pub bid_ace: f32,
+    pub bid_king: f32,
+    /// How much better another trump must look, after the kitty, to pay
+    /// for changing to it.
+    pub change_trump: f32,
+    /// The declarer's side leads trump to draw the opponents' only while
+    /// holding at least this many; drawing early mostly wasted trumps.
+    pub draw_trumps: usize,
+    /// The last this many tricks count as late: the mighty and jokers come
+    /// out, and every trick is worth taking.
+    pub late_tricks: usize,
+    /// Points a trick must hold before the mighty or a joker takes it.
+    pub special_worth: usize,
+    /// Scores for leading, against 100 for a side ace: a point card's
+    /// penalty when giving the lead away, the joker and the mighty before
+    /// the late tricks, and trump for a defender.
+    pub lead_point_penalty: i32,
+    pub lead_joker: i32,
+    pub lead_mighty: i32,
+    pub defend_trump: i32,
+}
+
+impl Default for SimpleBot {
+    fn default() -> SimpleBot {
+        SimpleBot {
+            bid_base: 6.5,
+            bid_trump: 1.25,
+            bid_trump_honor: 1.25,
+            bid_mighty: 1.0,
+            bid_joker: 2.0,
+            bid_sub_joker: 1.0,
+            bid_ace: 1.0,
+            bid_king: 0.5,
+            change_trump: 2.0,
+            draw_trumps: 8,
+            late_tricks: 2,
+            special_worth: 1,
+            lead_point_penalty: 15,
+            lead_joker: -40,
+            lead_mighty: -100,
+            defend_trump: -100,
+        }
+    }
+}
 
 impl Bot<Mighty> for SimpleBot {
     fn act(&mut self, view: &View, legal: &[Action], _rng: &mut dyn RngCore) -> Action {
         let choice = match &view.phase {
-            PhaseView::Bidding { .. } => bid(view, legal),
-            PhaseView::Exchange { contract, .. } => exchange(view, legal, contract.trump),
-            PhaseView::Play { .. } => play(view, legal),
+            PhaseView::Bidding { .. } => self.bid(view, legal),
+            PhaseView::Exchange { contract, .. } => self.exchange(view, legal, contract.trump),
+            PhaseView::Play { .. } => play(self, view, legal),
             PhaseView::Dealing | PhaseView::Done { .. } => None,
         };
         choice.unwrap_or_else(|| legal[0].clone())
     }
 }
 
-const BID_BASE: usize = 6;
-
-/// Rough number of points a hand could promise with `trump` (`None` for
-/// no-trump): long trump, the mighty, jokers and side aces (the mighty
-/// counts twice over when it is an ace; tuned that way).
-fn strength(rules: &Rules, hand: &[Card], trump: Option<Suit>) -> u8 {
-    let mighty = rules.mighty(trump);
-    let trumps = hand
-        .iter()
-        .filter(|c| c.suit() == trump && trump.is_some() && **c != mighty)
-        .count();
-    let jokers = hand.iter().filter(|c| c.is_joker()).count();
-    let aces = hand
-        .iter()
-        .filter(|c| c.rank() == Some(ACE) && c.suit() != trump)
-        .count();
-    (BID_BASE + trumps + 2 * usize::from(hand.contains(&mighty)) + 2 * jokers + aces) as u8
-}
-
-fn estimate(view: &View, trump: Suit) -> u8 {
-    strength(&view.rules, &view.hand, Some(trump))
-}
-
-fn bid(view: &View, legal: &[Action]) -> Option<Action> {
-    if legal.contains(&Action::Misdeal) {
-        return Some(Action::Misdeal);
+impl SimpleBot {
+    /// Rough number of points a hand could promise with `trump`: long and
+    /// high trump, the mighty, jokers and side aces. No-trump is never
+    /// bid; these rules play it badly.
+    pub(crate) fn estimate(&self, rules: &Rules, hand: &[Card], trump: Option<Suit>) -> f32 {
+        let mighty = rules.mighty(trump);
+        let count = |f: &dyn Fn(&Card) -> bool| hand.iter().filter(|c| f(c)).count() as f32;
+        let trumps = count(&|c| c.suit() == trump && trump.is_some() && *c != mighty);
+        let honors = count(&|c| c.suit() == trump && trump.is_some() && *c != mighty && c.rank() >= Some(ACE - 2));
+        // With two jokers, the one not of trump's colour ranks below trump.
+        let main = trump.map(|t| Card::Joker(t.color()));
+        let two = rules.deck.jokers().len() > 1;
+        let jokers = count(&|c| c.is_joker() && !(two && Some(*c) != main));
+        let sub_jokers = count(&|c| c.is_joker() && two && Some(*c) != main);
+        // The mighty is a side ace too; it counts as both (tuned that way).
+        let aces = count(&|c| c.rank() == Some(ACE) && c.suit() != trump);
+        let kings = count(&|c| c.rank() == Some(ACE - 1) && c.suit() != trump);
+        self.bid_base
+            + self.bid_trump * trumps
+            + self.bid_trump_honor * honors
+            + self.bid_mighty * f32::from(u8::from(hand.contains(&mighty)))
+            + self.bid_joker * jokers
+            + self.bid_sub_joker * sub_jokers
+            + self.bid_ace * aces
+            + self.bid_king * kings
     }
-    let trump = Suit::ALL.into_iter().max_by_key(|&s| estimate(view, s))?;
-    let cheapest = legal
-        .iter()
-        .filter_map(|a| match a {
-            Action::Bid(c) if c.trump == Some(trump) => Some(*c),
-            _ => None,
-        })
-        .min_by_key(|c| c.count);
-    match cheapest {
-        Some(c) if c.count <= estimate(view, trump) || !legal.contains(&Action::Pass) => Some(Action::Bid(c)),
-        _ => Some(Action::Pass),
+
+    fn bid(&self, view: &View, legal: &[Action]) -> Option<Action> {
+        if legal.contains(&Action::Misdeal) {
+            return Some(Action::Misdeal);
+        }
+        let cheapest = |trump: Option<Suit>| {
+            legal
+                .iter()
+                .filter_map(|a| match a {
+                    Action::Bid(c) if c.trump == trump => Some(*c),
+                    _ => None,
+                })
+                .min_by_key(|c| c.count)
+        };
+        let estimate = |trump: Option<Suit>| self.estimate(&view.rules, &view.hand, trump);
+        let trump = Suit::ALL
+            .into_iter()
+            .map(Some)
+            .max_by(|&a, &b| estimate(a).total_cmp(&estimate(b)))?;
+        match cheapest(trump) {
+            Some(c) if f32::from(c.count) <= estimate(trump) || !legal.contains(&Action::Pass) => Some(Action::Bid(c)),
+            _ => Some(Action::Pass),
+        }
+    }
+
+    fn exchange(&self, view: &View, legal: &[Action], trump: Option<Suit>) -> Option<Action> {
+        let estimate = |trump: Option<Suit>| self.estimate(&view.rules, &view.hand, trump);
+        if legal.iter().any(|a| matches!(a, Action::Discard(_))) {
+            // The kitty may have made another trump much better.
+            let change = legal
+                .iter()
+                .filter_map(|a| match a {
+                    Action::ChangeTrump(Some(t)) => Some(Some(*t)),
+                    _ => None,
+                })
+                .filter(|&t| estimate(t) >= estimate(trump) + self.change_trump)
+                .max_by(|&a, &b| estimate(a).total_cmp(&estimate(b)));
+            return change.map(Action::ChangeTrump).or_else(|| discard(view, legal, trump));
+        }
+        // The strongest card it lacks makes the best friend. With two
+        // jokers, the one of trump's colour outranks trump; the other
+        // comes after the trump king. Leaving it to the first trick picks
+        // a friend at random.
+        let jokers = view.rules.deck.jokers();
+        let main_joker = jokers
+            .iter()
+            .copied()
+            .find(|&j| trump.is_some_and(|t| j == Card::Joker(t.color())));
+        let main_joker = main_joker.unwrap_or(jokers[0]);
+        let other_joker = jokers.iter().copied().find(|&j| j != main_joker);
+        let trump_card = |rank| trump.map(|t| Card::new(t, rank));
+        let wanted = [
+            Some(view.rules.mighty(trump)),
+            Some(main_joker),
+            trump_card(ACE),
+            trump_card(ACE - 1),
+            other_joker,
+            trump_card(ACE - 2),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|c| !view.hand.contains(c))
+        .map(FriendCall::Card)
+        .chain([FriendCall::FirstTrick]);
+        wanted.map(Action::CallFriend).find(|a| legal.contains(a))
     }
 }
 
@@ -79,21 +191,6 @@ fn power(view: &View, trump: Option<Suit>, card: Card) -> u8 {
     } else {
         card.rank().unwrap_or(0)
     }
-}
-
-fn exchange(view: &View, legal: &[Action], trump: Option<Suit>) -> Option<Action> {
-    if legal.iter().any(|a| matches!(a, Action::Discard(_))) {
-        return discard(view, legal, trump);
-    }
-    let wanted = [
-        FriendCall::Card(view.rules.mighty(trump)),
-        FriendCall::Card(view.rules.deck.jokers()[0]),
-    ]
-    .into_iter()
-    .chain(trump.map(|t| FriendCall::Card(Card::new(t, ACE))))
-    .filter(|call| !matches!(call, FriendCall::Card(c) if view.hand.contains(c)))
-    .chain([FriendCall::FirstTrick]);
-    wanted.map(Action::CallFriend).find(|a| legal.contains(a))
 }
 
 /// Discarded point cards still count for the declarer, so side-suit tens to
@@ -119,6 +216,7 @@ fn discard(view: &View, legal: &[Action], trump: Option<Suit>) -> Option<Action>
 
 /// What one seat knows during play.
 struct Table<'a> {
+    bot: &'a SimpleBot,
     view: &'a View,
     me: Seat,
     trump: Option<Suit>,
@@ -126,6 +224,12 @@ struct Table<'a> {
     trick_no: usize,
     /// Every card not in my hand and not yet played.
     unseen: Vec<Card>,
+    /// Summaries of `unseen` for [`Table::sure_lead`], which runs often:
+    /// whether a joker or the mighty is out, whether a trump is, and the
+    /// highest rank out in each suit (the mighty aside).
+    specials_out: bool,
+    trumps_out: bool,
+    top_out: [u8; 4],
     /// Seats known to be on my side, and known to be against me.
     friends: Vec<Seat>,
     attacking: bool,
@@ -150,19 +254,24 @@ impl Table<'_> {
         if card == self.mighty {
             return true;
         }
-        let Some(suit) = card.suit() else { return false };
-        let specials_out = self.unseen.iter().any(|c| c.is_joker() || *c == self.mighty);
-        let higher_out = self
-            .unseen
-            .iter()
-            .any(|c| *c != self.mighty && c.suit() == Some(suit) && c.rank() > card.rank());
-        let trumps_out = self.unseen.iter().any(|c| *c != self.mighty && c.suit() == self.trump);
-        let ruffable = Some(suit) != self.trump && trumps_out;
-        !specials_out && !higher_out && !ruffable
+        let (Some(suit), Some(rank)) = (card.suit(), card.rank()) else {
+            return false;
+        };
+        let higher_out = self.top_out[suit as usize] > rank;
+        let ruffable = Some(suit) != self.trump && self.trumps_out;
+        !self.specials_out && !higher_out && !ruffable
     }
 
     fn late(&self) -> bool {
-        self.trick_no + 3 >= self.view.rules.hand_size
+        self.trick_no + self.bot.late_tricks >= self.view.rules.hand_size
+    }
+}
+
+/// A card's own bit, for sets of cards.
+fn bit(card: Card) -> u64 {
+    match card {
+        Card::Normal(suit, rank) => 1 << (suit as u64 * 15 + u64::from(rank)),
+        Card::Joker(color) => 1 << (color as u64 + 60),
     }
 }
 
@@ -173,7 +282,7 @@ fn card_of(a: &Action) -> Card {
     }
 }
 
-fn play(view: &View, legal: &[Action]) -> Option<Action> {
+fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
     let PhaseView::Play {
         declarer,
         contract,
@@ -195,32 +304,43 @@ fn play(view: &View, legal: &[Action]) -> Option<Action> {
     let i_am_friend = *friend == Some(me) || matches!(call, FriendCall::Card(c) if view.hand.contains(c));
     let attacking = me == *declarer || i_am_friend;
     // Seats known to be on my side. A defender learns who the other
-    // defenders are only once the friend is out.
+    // defenders are once the friend is out, or at once when the
+    // declarer plays alone.
     let friends: Vec<Seat> = (0..seats)
         .filter(|&s| s != me)
         .filter(|&s| {
             let on_attack = s == *declarer || *friend == Some(s);
-            let known = s == *declarer || friend.is_some() || attacking;
+            let known = s == *declarer || friend.is_some() || attacking || *call == FriendCall::Alone;
             known && on_attack == attacking
         })
         .collect();
-    let played: Vec<Card> = tricks
-        .iter()
-        .flat_map(|t| t.plays.iter().map(|p| p.card))
-        .chain(plays.iter().map(|p| p.card))
-        .collect();
+    let played = tricks.iter().flat_map(|t| &t.plays).chain(plays).map(|p| p.card);
+    let seen = played
+        .chain(view.hand.iter().copied())
+        .fold(0u64, |seen, c| seen | bit(c));
     let unseen: Vec<Card> = view
         .rules
         .deck
         .cards()
         .into_iter()
-        .filter(|c| !view.hand.contains(c) && !played.contains(c))
+        .filter(|&c| seen & bit(c) == 0)
         .collect();
+    let mighty = view.rules.mighty(trump);
+    let mut top_out = [0; 4];
+    for c in unseen.iter().filter(|&&c| c != mighty) {
+        if let (Some(suit), Some(rank)) = (c.suit(), c.rank()) {
+            top_out[suit as usize] = top_out[suit as usize].max(rank);
+        }
+    }
     let t = Table {
+        specials_out: unseen.iter().any(|c| c.is_joker() || *c == mighty),
+        trumps_out: unseen.iter().any(|c| *c != mighty && c.suit() == trump),
+        top_out,
+        bot,
         view,
         me,
         trump,
-        mighty: view.rules.mighty(trump),
+        mighty,
         trick_no: *trick_no,
         unseen,
         friends,
@@ -271,28 +391,28 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
         if card.is_joker() {
             // Save the joker for a trick worth taking, unless it cannot wait.
             let named_trump = matches!(joker_lead, Some(Lead::Suit(s)) if Some(*s) == t.trump);
-            let base = if t.late() { 150 } else { -40 };
+            let base = if t.late() { 150 } else { t.bot.lead_joker };
             return base + if t.attacking && named_trump { 20 } else { 0 };
         }
         if card == t.mighty {
-            return if t.late() { 140 } else { -60 };
+            return if t.late() { 140 } else { t.bot.lead_mighty };
         }
         let is_trump = card.suit() == t.trump;
         if t.sure_lead(card) {
             return 200 + p;
         }
-        if t.attacking && is_trump && trumps_out > 0 && my_trumps >= 4 {
+        if t.attacking && is_trump && trumps_out > 0 && my_trumps >= t.bot.draw_trumps {
             // Draw the opponents' trumps, from the top.
             return 120 + p;
         }
         if !t.attacking && is_trump {
-            return -100 + p;
+            return t.bot.defend_trump + p;
         }
         if card.rank() == Some(ACE) {
             return 100;
         }
         // Otherwise give the lead away cheaply, without handing over points.
-        let point_penalty = if card.is_point() { 30 } else { 0 };
+        let point_penalty = if card.is_point() { t.bot.lead_point_penalty } else { 0 };
         -p - point_penalty
     };
     legal
@@ -364,7 +484,7 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
         .filter(|&c| {
             let special = c == t.mighty || c.is_joker();
             // Big guns only for tricks worth it; cheap winners whenever they hold.
-            !special || worth >= 2 || last && points >= 1
+            !special || worth >= t.bot.special_worth || last && points >= 1
         })
         .filter(|&c| last || !foes_after || safe(Some(c)) || t.power(c) >= 50 || points == 0)
         .min_by_key(|c| t.power(*c));
