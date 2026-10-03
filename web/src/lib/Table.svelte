@@ -14,6 +14,7 @@
   import type { RoomClient } from './client.svelte';
   import { flyFrom, flyTo, pop } from './motion';
   import { settings } from './settings.svelte';
+  import { recordHand } from './stats';
   import { sound } from './sound';
   import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, StateMsg, Suit, Trick } from './types';
 
@@ -37,6 +38,22 @@
   const exchange = $derived(typeof phase === 'object' && 'Exchange' in phase ? phase.Exchange : null);
   const play = $derived(typeof phase === 'object' && 'Play' in phase ? phase.Play : null);
   const done = $derived(typeof phase === 'object' && 'Done' in phase ? phase.Done : null);
+
+  // Each finished hand goes into this browser's record (내 기록).
+  $effect(() => {
+    if (!done || me === null || !room || room.id === 'preview') return;
+    const role = me === done.declarer ? 'declarer' : me === done.friend ? 'friend' : 'defense';
+    const declarerWon = done.team_points >= done.contract.count;
+    recordHand({
+      key: `${room.id}-${room.hands_played}`,
+      at: Date.now(),
+      role,
+      won: role === 'defense' ? !declarerWon : declarerWon,
+      payoff: done.payoffs[me],
+      contract: done.contract,
+      teamPoints: done.team_points,
+    });
+  });
   const stage = $derived(exchange ?? play ?? done);
   const contract = $derived(stage?.contract ?? null);
   const declarer = $derived(stage?.declarer ?? null);
