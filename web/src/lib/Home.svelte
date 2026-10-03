@@ -1,6 +1,7 @@
 <script lang="ts">
   import Card from './Card.svelte';
   import InstallHint from './InstallHint.svelte';
+  import ReportSheet from './ReportSheet.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import { PRESETS } from './presets';
 
@@ -10,6 +11,7 @@
   let code = $state('');
   let busy = $state(false);
   let showRules = $state(false);
+  let reporting = $state(false);
   let error = $state<string | null>(null);
 
   async function create() {
@@ -73,7 +75,11 @@
   </section>
 
   <InstallHint />
+  <button class="ghost small footer" onclick={() => (reporting = true)}>문제 신고</button>
 </main>
+{#if reporting}
+  <ReportSheet onclose={() => (reporting = false)} />
+{/if}
 
 {#if showRules}
   <RulebookSheet {preset} onclose={() => (showRules = false)} />
@@ -126,6 +132,9 @@
     padding: 4px 10px;
     font-size: 14px;
     color: var(--ink-muted);
+  }
+  .footer {
+    justify-self: center;
   }
   .panel-head {
     display: flex;

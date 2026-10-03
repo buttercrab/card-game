@@ -2,7 +2,7 @@
   import Card from './Card.svelte';
   import { settings, type Speed } from './settings.svelte';
 
-  let { onclose }: { onclose: () => void } = $props();
+  let { onclose, onreport }: { onclose: () => void; onreport?: () => void } = $props();
 
   const SPEEDS: { id: Speed; label: string }[] = [
     { id: 'normal', label: '보통' },
@@ -79,6 +79,7 @@
   </div>
 
   <form method="dialog">
+    {#if onreport}<button type="button" class="ghost report" onclick={() => (dialog.close(), onreport())}>문제 신고</button>{/if}
     <button class="primary">닫기</button>
   </form>
 </dialog>
@@ -147,6 +148,10 @@
     display: flex;
     justify-content: flex-end;
     margin-top: 12px;
+  }
+  .report {
+    margin-right: auto;
+    color: var(--ink-muted);
   }
   form .primary {
     min-width: 120px;

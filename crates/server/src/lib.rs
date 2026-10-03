@@ -16,7 +16,7 @@ use mighty::rules::Preset;
 use rand::Rng;
 use room::{ClientMsg, Command, ConnId, Room};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use session::{MightySettings, SessionGame};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -38,6 +38,8 @@ pub struct AppState {
     idle: Duration,
     /// Where rooms are saved so they survive a restart, if anywhere.
     data: Option<PathBuf>,
+    /// When recent problem reports arrived, to cap them per hour.
+    reports: Arc<Mutex<Vec<std::time::Instant>>>,
 }
 
 impl AppState {
@@ -49,6 +51,7 @@ impl AppState {
             max_rooms: 500,
             idle: Duration::from_secs(30 * 60),
             data: None,
+            reports: Arc::default(),
         }
     }
 
@@ -154,6 +157,7 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .route("/api/rooms", post(create_room))
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
+        .route("/api/reports", post(report))
         .with_state(state);
     match web_dir {
         // Unknown paths such as /r/abc123 get the app, which routes on the client.
@@ -185,6 +189,86 @@ async fn create_room(State(app): State<AppState>, body: Option<Json<CreateRoom>>
     match app.create_room::<Mighty>(MightySettings { preset, rules: None }) {
         Some(id) => Json(json!({ "id": id })).into_response(),
         None => (StatusCode::SERVICE_UNAVAILABLE, "too many tables are open").into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct Report {
+    text: String,
+    #[serde(default)]
+    room: Option<String>,
+    #[serde(default)]
+    seat: Option<usize>,
+    /// Browser, screen size and such, as the client describes itself.
+    #[serde(default)]
+    client: Value,
+}
+
+/// Reports kept at most this long, and accepted at most this often.
+const REPORT_DAYS: u64 = 14;
+const REPORTS_PER_HOUR: usize = 30;
+
+/// Saves a player's problem report with the room's state and move log under
+/// `<data>/reports`, where the deploy host picks it up and files an issue.
+async fn report(State(app): State<AppState>, Json(r): Json<Report>) -> Response {
+    let text: String = r.text.trim().chars().take(2000).collect();
+    if text.is_empty() {
+        return (StatusCode::BAD_REQUEST, "describe the problem").into_response();
+    }
+    {
+        let mut recent = app.reports.lock().expect("report times poisoned");
+        recent.retain(|t| t.elapsed() < Duration::from_secs(3600));
+        if recent.len() >= REPORTS_PER_HOUR {
+            return (StatusCode::TOO_MANY_REQUESTS, "too many reports").into_response();
+        }
+        recent.push(std::time::Instant::now());
+    }
+    let room_id = r.room.filter(|id| id.len() <= 12);
+    let mut room = Value::Null;
+    if let Some(tx) = room_id.as_deref().and_then(|id| app.room(id)) {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        if tx.send(Command::Report { reply }).is_ok() {
+            room = tokio::time::timeout(Duration::from_secs(2), rx)
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .unwrap_or(Value::Null);
+        }
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let report = json!({
+        "time": now,
+        "version": env!("CARGO_PKG_VERSION"),
+        "text": text,
+        "room_id": room_id,
+        "seat": r.seat,
+        "client": r.client,
+        "room": room,
+    });
+    tracing::warn!(report = %report, "problem report");
+    if let Some(dir) = &app.data {
+        let dir = dir.join("reports");
+        let name = format!("{now}-{:06x}.json", rand::rng().random::<u32>() & 0xff_ffff);
+        let saved = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join(name), report.to_string()));
+        if let Err(e) = saved {
+            tracing::error!("could not save the report: {e}");
+        }
+        prune_reports(&dir, now);
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// Deletes reports older than [`REPORT_DAYS`]; their names start with the time.
+fn prune_reports(dir: &std::path::Path, now: u64) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let time = name.to_str().and_then(|n| n.split('-').next()?.parse::<u64>().ok());
+        if time.is_some_and(|t| now.saturating_sub(t) > REPORT_DAYS * 86_400) {
+            let _ = std::fs::remove_file(entry.path());
+        }
     }
 }
 

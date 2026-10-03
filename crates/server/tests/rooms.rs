@@ -333,3 +333,32 @@ async fn reactions_reach_the_table_and_unknown_ones_are_refused() {
     send(&mut watcher, json!({ "type": "react", "text": "👏" })).await;
     next(&mut watcher, "error").await;
 }
+
+#[tokio::test]
+async fn a_report_saves_the_room_without_seat_tokens() {
+    let dir = std::env::temp_dir().join(format!("cards-report-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = AppState::new(Duration::ZERO).with_data(dir.clone());
+    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    let (_, token) = join(&mut ws, "Jae", None).await;
+
+    let (status, _) = http(addr, "POST", "/api/reports", &json!({ "text": "  " }).to_string()).await;
+    assert_eq!(status, 400);
+    let body = json!({ "text": "joker won wrongly", "room": room, "seat": 0, "client": { "ua": "test" } });
+    let (status, _) = http(addr, "POST", "/api/reports", &body.to_string()).await;
+    assert_eq!(status, 204);
+
+    let files: Vec<_> = std::fs::read_dir(dir.join("reports")).unwrap().flatten().collect();
+    assert_eq!(files.len(), 1);
+    let text = std::fs::read_to_string(files[0].path()).unwrap();
+    assert!(!text.contains(&token), "tokens stay private");
+    let report: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(report["text"], "joker won wrongly");
+    assert_eq!(report["room"]["seats"][0]["human"], "Jae");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -43,6 +43,10 @@ pub enum Command {
         conn: ConnId,
         msg: ClientMsg,
     },
+    /// What a problem report should carry about this room.
+    Report {
+        reply: tokio::sync::oneshot::Sender<Value>,
+    },
     /// A bot's chosen action (a boxed `G::Action`), for game `version`.
     BotMove {
         version: u64,
@@ -228,6 +232,22 @@ impl<G: SessionGame> Room<G> {
         })
     }
 
+    /// The room for a problem report: like [`Room::snapshot`], but seats show
+    /// only names, never the tokens that reclaim them.
+    fn report(&self) -> Value {
+        let mut report = self.snapshot();
+        report["seats"] = self
+            .seats
+            .iter()
+            .map(|s| match s {
+                Occupant::Empty => json!("empty"),
+                Occupant::Human { name, .. } => json!({ "human": name }),
+                Occupant::Bot => json!("bot"),
+            })
+            .collect();
+        report
+    }
+
     /// Rebuilds a room from [`Room::snapshot`] by replaying its hand.
     pub fn restore(snapshot: Value, bot_delay: Duration) -> Result<Room<G>, String> {
         #[derive(Deserialize)]
@@ -297,6 +317,10 @@ impl<G: SessionGame> Room<G> {
                 if quiet {
                     return;
                 }
+            }
+            Command::Report { reply } => {
+                let _ = reply.send(self.report());
+                return;
             }
             Command::BotMove { version, seat, action } => {
                 self.thinking = false;

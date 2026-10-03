@@ -2,6 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { RoomClient, savedName } from './client.svelte';
   import { PRESET_NAME } from './presets';
+  import ReportSheet from './ReportSheet.svelte';
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import SettingsSheet from './SettingsSheet.svelte';
@@ -22,6 +23,7 @@
   let showSettings = $state(false);
   let showRules = $state(false);
   let editRules = $state(false);
+  let reporting = $state(false);
   let showSeats = $state(false);
 
   const room = $derived(client.room);
@@ -160,7 +162,10 @@
 </div>
 
 {#if showSettings}
-  <SettingsSheet onclose={() => (showSettings = false)} />
+  <SettingsSheet onclose={() => (showSettings = false)} onreport={() => (reporting = true)} />
+{/if}
+{#if reporting}
+  <ReportSheet room={id} seat={client.seat} onclose={() => (reporting = false)} />
 {/if}
 {#if editRules && room}
   <RuleEditor
