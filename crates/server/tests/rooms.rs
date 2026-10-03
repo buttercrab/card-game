@@ -224,33 +224,41 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     let (addr, restored) = serve(dir.clone()).await;
     assert_eq!(restored, 0);
     let room = create_room(addr, "gshs").await;
-    let mut ws = connect(addr, &room).await;
-    let (_, token) = join(&mut ws, "Jae", None).await;
-    for bot in 1..5 {
-        send(&mut ws, json!({ "type": "add_bot", "seat": bot })).await;
+    // Five people rather than bots, so the test never waits on a bot thinking.
+    let mut players = Vec::new();
+    for name in ["A", "B", "C", "D", "E"] {
+        let mut ws = connect(addr, &room).await;
+        let (_, token) = join(&mut ws, name, None).await;
+        players.push((ws, token));
     }
-    send(&mut ws, json!({ "type": "start" })).await;
-    // Play a few of our own moves, then stop on our turn.
-    let mut moves = 0;
-    let before = loop {
-        let msg = next_where(&mut ws, "state", |m| {
-            m["legal"].as_array().is_some_and(|l| !l.is_empty())
-        })
-        .await;
-        if moves == 3 {
-            break msg;
+    send(&mut players[0].0, json!({ "type": "start" })).await;
+    // Each move reaches everyone; whoever has legal actions makes the next one.
+    let mut before = Value::Null;
+    for step in 0..8 {
+        let mut mover = None;
+        for (i, (ws, _)) in players.iter_mut().enumerate() {
+            let msg = next(ws, "state").await;
+            if msg["legal"].as_array().is_some_and(|l| !l.is_empty()) {
+                mover = Some((i, msg));
+            }
         }
-        send(&mut ws, json!({ "type": "act", "action": msg["legal"][0] })).await;
-        moves += 1;
-    };
+        let (i, msg) = mover.expect("someone is to act");
+        if step == 7 {
+            before = msg;
+            break;
+        }
+        send(&mut players[i].0, json!({ "type": "act", "action": msg["legal"][0] })).await;
+    }
+    let seat = before["turn"]["Seat"].as_u64().unwrap() as usize;
+    let token = players[seat].1.clone();
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // A second server reading the same directory picks the hand up where it was.
     let (addr, restored) = serve(dir.clone()).await;
     assert_eq!(restored, 1);
     let mut ws = connect(addr, &room).await;
-    let (seat, _) = join(&mut ws, "Jae", Some(&token)).await;
-    assert_eq!(seat, 0, "the token still holds the seat");
+    let (reclaimed, _) = join(&mut ws, "again", Some(&token)).await;
+    assert_eq!(reclaimed as usize, seat, "the token still holds the seat");
     let after = next(&mut ws, "state").await;
     assert_eq!(after["view"], before["view"]);
     assert_eq!(after["legal"], before["legal"]);
