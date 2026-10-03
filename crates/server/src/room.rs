@@ -15,6 +15,11 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, WeakUnboundedSender}
 
 pub type ConnId = u64;
 
+/// One line of JSON per move, so a hand can be replayed from the server log.
+fn log_action(action: &impl serde::Serialize) -> String {
+    serde_json::to_string(action).unwrap_or_else(|e| format!("unserializable: {e}"))
+}
+
 pub enum Command {
     Connect {
         conn: ConnId,
@@ -216,7 +221,9 @@ impl<G: SessionGame> Room<G> {
                     return Err("it is not your turn".into());
                 }
                 let action: G::Action = serde_json::from_value(action).map_err(|e| format!("bad action: {e}"))?;
+                let logged = log_action(&action);
                 G::apply(game, action).map_err(|e| e.to_string())?;
+                tracing::info!(room = %self.id, seat, action = %logged, "move");
                 self.advance();
                 Ok(())
             }
@@ -322,10 +329,12 @@ impl<G: SessionGame> Room<G> {
             return false;
         };
         let Some(game) = self.game.as_mut() else { return false };
+        let logged = log_action(&*action);
         if let Err(e) = G::apply(game, *action) {
-            tracing::error!(room = %self.id, seat, "bot chose an illegal action: {e}");
+            tracing::error!(room = %self.id, seat, action = %logged, "bot chose an illegal action: {e}");
             return false;
         }
+        tracing::info!(room = %self.id, seat, action = %logged, "bot move");
         self.advance();
         true
     }
@@ -336,6 +345,7 @@ impl<G: SessionGame> Room<G> {
         let Some(game) = self.game.as_mut() else { return };
         while G::turn(game) == Turn::Chance {
             let deal = G::sample_chance(game, &mut self.rng);
+            tracing::info!(room = %self.id, action = %log_action(&deal), "deal");
             G::apply(game, deal).expect("a sampled chance action is legal");
         }
         if G::turn(game) == Turn::Over
