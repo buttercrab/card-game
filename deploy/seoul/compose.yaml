@@ -1,0 +1,45 @@
+# Runs on the Seoul Lightsail instance (cards-seoul), which serves
+# cards.buttercrab.io directly: Korean ISPs reach it in a few ms, where
+# Cloudflare's free plan sends them through Los Angeles. The image is built
+# on the home server and shipped here by deploy/update.sh.
+name: card-game
+
+services:
+  cards:
+    image: card-game:latest
+    container_name: card-game
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      RUST_LOG: info
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  caddy:
+    image: caddy:2
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  caddy-data:
+  caddy-config:

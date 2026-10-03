@@ -1,0 +1,12 @@
+# HTTPS with an automatic Let's Encrypt certificate; WebSockets pass through.
+cards.buttercrab.io {
+	encode zstd gzip
+
+	# Built files carry a content hash in their name, so they never change.
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	@page path / /index.html /r/*
+	header @page Cache-Control "no-cache"
+
+	reverse_proxy cards:3030
+}

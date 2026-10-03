@@ -37,13 +37,20 @@ state in both themes. Visual changes follow [DESIGN.md](DESIGN.md).
 
 ## Deploy
 
-[cards.buttercrab.io](https://cards.buttercrab.io) runs on the home server
-from `main`. [`Dockerfile`](Dockerfile) builds the web client and the
-server into one image serving port 3030; [`deploy/`](deploy) holds the
-compose file, which joins the homelab's Traefik network, and a systemd
-timer that runs [`deploy/update.sh`](deploy/update.sh) every two minutes
-to rebuild when `main` moves. A deploy restarts the server, which closes
-open tables.
+[cards.buttercrab.io](https://cards.buttercrab.io) runs on a small AWS
+Lightsail instance in Seoul (`cards-seoul`), reached directly: through
+Cloudflare's free plan, Korean ISPs are routed via Los Angeles (about
+500 ms a round trip). [cards.buttercrab.net](https://cards.buttercrab.net)
+is the same build on the home server through the Cloudflare tunnel.
+
+[`Dockerfile`](Dockerfile) builds the web client and the server into one
+image serving port 3030. On the home server, a systemd timer runs
+[`deploy/update.sh`](deploy/update.sh) every two minutes: when `main`
+moves it rebuilds, restarts the home container
+([`deploy/compose.yaml`](deploy/compose.yaml), behind Traefik) and ships
+the image to Seoul, where [`deploy/seoul/`](deploy/seoul) runs it behind
+Caddy with an automatic certificate. A deploy restarts the server, which
+closes open tables.
 
 ```sh
 docker build -t card-game .
