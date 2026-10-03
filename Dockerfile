@@ -14,12 +14,15 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked -p server && cp target/release/server /server
+    cargo build --release --locked -p server && cp target/release/server /server \
+    && mkdir /data
 
 FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=server /server /usr/local/bin/server
 COPY --from=web /web/dist /srv/web
+# Saved tables; mount a volume here so they outlive the container.
+COPY --from=server --chown=nonroot:nonroot /data /data
 EXPOSE 3030
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["server", "--addr", "0.0.0.0:3030", "--healthcheck"]
-ENTRYPOINT ["server", "--addr", "0.0.0.0:3030", "--web", "/srv/web"]
+ENTRYPOINT ["server", "--addr", "0.0.0.0:3030", "--web", "/srv/web", "--data", "/data"]

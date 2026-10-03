@@ -22,6 +22,9 @@ struct Args {
     /// Close a table after this many minutes with nobody connected.
     #[arg(long, default_value_t = 30)]
     idle_minutes: u64,
+    /// Save tables here so they survive restarts and deploys.
+    #[arg(long)]
+    data: Option<PathBuf>,
     /// Ask the server at --addr whether it is up, then exit (for container health checks).
     #[arg(long)]
     healthcheck: bool,
@@ -57,8 +60,13 @@ async fn main() -> std::io::Result<()> {
     if !args.web.join("index.html").exists() {
         tracing::warn!("no web client at {}; serving the API only", args.web.display());
     }
-    let state = AppState::new(Duration::from_millis(args.bot_delay_ms))
+    let mut state = AppState::new(Duration::from_millis(args.bot_delay_ms))
         .with_limits(args.max_rooms, Duration::from_secs(args.idle_minutes * 60));
+    if let Some(dir) = args.data {
+        state = state.with_data(dir);
+        let restored = state.restore_rooms()?;
+        tracing::info!(restored, "restored saved tables");
+    }
     let listener = tokio::net::TcpListener::bind(args.addr).await?;
     tracing::info!("listening on http://{}", listener.local_addr()?);
     axum::serve(listener, router(state, Some(args.web))).await

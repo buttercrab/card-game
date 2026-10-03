@@ -16,6 +16,8 @@ services:
       - ALL
     environment:
       RUST_LOG: info
+    volumes:
+      - tables:/data
     logging:
       driver: json-file
       options:
@@ -41,5 +43,6 @@ services:
         max-file: "3"
 
 volumes:
+  tables:
   caddy-data:
   caddy-config:

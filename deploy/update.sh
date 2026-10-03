@@ -4,7 +4,8 @@
 # ships the same image to the Seoul instance (cards.buttercrab.io). Run from
 # a checkout used only for deploying; a systemd timer
 # (deploy/card-game-update.timer) runs it every two minutes. Pass --force to
-# rebuild anyway. Restarting closes every open table.
+# rebuild anyway. Tables are saved in a volume, so a restart only drops
+# connections for a moment and players rejoin where they were.
 set -euo pipefail
 
 # Wrapped in a function so bash reads it all before `git reset` replaces

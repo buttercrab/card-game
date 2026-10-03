@@ -13,7 +13,7 @@ pub trait SessionGame:
     + Send
     + 'static
 {
-    type Settings: Clone + Serialize + Send + 'static;
+    type Settings: Clone + Serialize + DeserializeOwned + Send + 'static;
 
     const NAME: &'static str;
 

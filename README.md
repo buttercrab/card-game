@@ -28,8 +28,9 @@ cargo run --release -p server        # http://127.0.0.1:3030
 ```
 
 Create a table, share its link, and add bots to any empty seats. Pass
-`--addr 0.0.0.0:3030` so friends on your network can join. Rooms live in
-memory, so restarting the server closes them.
+`--addr 0.0.0.0:3030` so friends on your network can join. Pass
+`--data <dir>` to save tables there, so a restart picks every hand up where
+it was; without it rooms live in memory only.
 
 For frontend work, run `npm run dev` in `web/` while the server runs. Vite
 forwards `/api` to the server. `/deck` shows every card face, size and
@@ -49,8 +50,8 @@ image serving port 3030. On the home server, a systemd timer runs
 moves it rebuilds, restarts the home container
 ([`deploy/compose.yaml`](deploy/compose.yaml), behind Traefik) and ships
 the image to Seoul, where [`deploy/seoul/`](deploy/seoul) runs it behind
-Caddy with an automatic certificate. A deploy restarts the server, which
-closes open tables.
+Caddy with an automatic certificate. Tables are saved in a `tables`
+volume, so a deploy only drops connections for a moment.
 
 ```sh
 docker build -t card-game .

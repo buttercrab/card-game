@@ -207,3 +207,49 @@ async fn idle_rooms_close_and_the_room_count_is_capped() {
     tokio::time::sleep(Duration::from_millis(600)).await;
     assert_eq!(http(addr, "GET", &format!("/api/rooms/{first}"), "").await.0, 404);
 }
+
+#[tokio::test]
+async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
+    let dir = std::env::temp_dir().join(format!("cards-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let serve = |dir: std::path::PathBuf| async move {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let state = AppState::new(Duration::ZERO).with_data(dir);
+        let restored = state.restore_rooms().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+        (addr, restored)
+    };
+
+    let (addr, restored) = serve(dir.clone()).await;
+    assert_eq!(restored, 0);
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    let (_, token) = join(&mut ws, "Jae", None).await;
+    for bot in 1..5 {
+        send(&mut ws, json!({ "type": "add_bot", "seat": bot })).await;
+    }
+    send(&mut ws, json!({ "type": "start" })).await;
+    // Play a few of our own moves, then stop on our turn.
+    let mut moves = 0;
+    let before = loop {
+        let msg = next_where(&mut ws, "state", |m| m["legal"].as_array().is_some_and(|l| !l.is_empty())).await;
+        if moves == 3 {
+            break msg;
+        }
+        send(&mut ws, json!({ "type": "act", "action": msg["legal"][0] })).await;
+        moves += 1;
+    };
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // A second server reading the same directory picks the hand up where it was.
+    let (addr, restored) = serve(dir.clone()).await;
+    assert_eq!(restored, 1);
+    let mut ws = connect(addr, &room).await;
+    let (seat, _) = join(&mut ws, "Jae", Some(&token)).await;
+    assert_eq!(seat, 0, "the token still holds the seat");
+    let after = next(&mut ws, "state").await;
+    assert_eq!(after["view"], before["view"]);
+    assert_eq!(after["legal"], before["legal"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}

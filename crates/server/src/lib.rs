@@ -36,6 +36,8 @@ pub struct AppState {
     max_rooms: usize,
     /// A room with nobody connected for this long closes.
     idle: Duration,
+    /// Where rooms are saved so they survive a restart, if anywhere.
+    data: Option<PathBuf>,
 }
 
 impl AppState {
@@ -46,7 +48,45 @@ impl AppState {
             bot_delay,
             max_rooms: 500,
             idle: Duration::from_secs(30 * 60),
+            data: None,
         }
+    }
+
+    /// Saves every room under `dir` as it changes; see [`AppState::restore_rooms`].
+    pub fn with_data(self, dir: PathBuf) -> AppState {
+        AppState { data: Some(dir), ..self }
+    }
+
+    /// Reopens the rooms saved under the data directory, returning how many.
+    /// A file that no longer loads (say, after an incompatible rules change)
+    /// is set aside as `.bad` rather than deleted.
+    pub fn restore_rooms(&self) -> std::io::Result<usize> {
+        let Some(dir) = &self.data else { return Ok(0) };
+        std::fs::create_dir_all(dir)?;
+        let mut restored = 0;
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            let loaded = std::fs::read_to_string(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|text| serde_json::from_str(&text).map_err(|e| e.to_string()))
+                .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.bot_delay));
+            match loaded {
+                Ok(room) => {
+                    let id = room.id().to_string();
+                    let mut rooms = self.rooms.lock().expect("room registry poisoned");
+                    self.spawn_room(&mut rooms, id, room);
+                    restored += 1;
+                }
+                Err(e) => {
+                    tracing::warn!(file = %path.display(), "could not restore room: {e}");
+                    let _ = std::fs::rename(&path, path.with_extension("bad"));
+                }
+            }
+        }
+        Ok(restored)
     }
 
     /// At most `max_rooms` open at once; each closes after `idle` with nobody connected.
@@ -75,16 +115,26 @@ impl AppState {
                 break id;
             }
         };
-        let (tx, rx) = mpsc::unbounded_channel();
         let room = Room::<G>::new(id.clone(), settings, self.bot_delay);
+        self.spawn_room(&mut rooms, id.clone(), room);
+        Some(id)
+    }
+
+    fn spawn_room<G: SessionGame>(
+        &self,
+        rooms: &mut HashMap<String, UnboundedSender<Command>>,
+        id: String,
+        room: Room<G>,
+    ) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let save = self.data.as_ref().map(|dir| dir.join(format!("{id}.json")));
         let (registry, key, idle, me) = (self.rooms.clone(), id.clone(), self.idle, tx.downgrade());
         tokio::spawn(async move {
-            room.run(me, rx, idle).await;
+            room.run(me, rx, idle, save).await;
             registry.lock().expect("room registry poisoned").remove(&key);
             tracing::info!(room = key, "closed idle room");
         });
-        rooms.insert(id.clone(), tx);
-        Some(id)
+        rooms.insert(id, tx);
     }
 
     fn room(&self, id: &str) -> Option<UnboundedSender<Command>> {
