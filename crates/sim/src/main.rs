@@ -3,12 +3,15 @@ use engine::{Bot, RandomBot};
 use mighty::bot::SimpleBot;
 use mighty::rules::Preset;
 use mighty::search::SearchBot;
-use mighty::{Mighty, Options};
+use mighty::{Action, Mighty, Options, View};
+use rand::RngCore;
 use sim::{Checks, Failure};
+use std::cell::Cell;
 use std::process::ExitCode;
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Play many Mighty games with bots, checking every invariant after each step.
 #[derive(Parser)]
@@ -24,9 +27,10 @@ struct Args {
     #[arg(long, value_enum, default_value_t = Bots::Mixed)]
     bots: Bots,
     /// With `--bots search`: the measured bot, moving one seat each game.
-    /// `random`, `simple`, or `search[:SAMPLES[:CONFIDENCE]]` (bare
-    /// `search` is the default search bot). `@name=value,...` after
-    /// `simple` or `search` changes the simple bot's weights, e.g.
+    /// `random`, `simple`, or `search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]`
+    /// (bare `search` is the default search bot; a budget of 0 turns the
+    /// time limit off, which keeps runs reproducible). `@name=value,...`
+    /// after `simple` or `search` changes the simple bot's weights, e.g.
     /// `simple@bid_base=7` or `search:80@draw_trumps=3`.
     #[arg(long, default_value = "search")]
     focus: Spec,
@@ -94,6 +98,10 @@ impl FromStr for Spec {
         if let Some(confidence) = parts.next() {
             bot.confidence = confidence.parse().map_err(|_| format!("bad confidence in {s:?}"))?;
         }
+        if let Some(budget) = parts.next() {
+            let ms: u64 = budget.parse().map_err(|_| format!("bad budget in {s:?}"))?;
+            bot.budget = (ms > 0).then(|| Duration::from_millis(ms));
+        }
         Ok(Spec::Search(bot))
     }
 }
@@ -118,37 +126,42 @@ fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String>
     match key {
         "bid_base" => bot.bid_base = float()?,
         "bid_trump" => bot.bid_trump = float()?,
+        "bid_trump_honor" => bot.bid_trump_honor = float()?,
         "bid_mighty" => bot.bid_mighty = float()?,
         "bid_joker" => bot.bid_joker = float()?,
+        "bid_sub_joker" => bot.bid_sub_joker = float()?,
         "bid_ace" => bot.bid_ace = float()?,
-        "bid_trump_honor" => bot.bid_trump_honor = float()?,
         "bid_king" => bot.bid_king = float()?,
-        "bid_no_trump" => bot.bid_no_trump = float()?,
         "change_trump" => bot.change_trump = float()?,
-        "alone" => bot.alone = float()?,
         "draw_trumps" => bot.draw_trumps = count()?,
         "late_tricks" => bot.late_tricks = count()?,
         "special_worth" => bot.special_worth = count()?,
-        "lead_ace" => bot.lead_ace = int()?,
         "lead_point_penalty" => bot.lead_point_penalty = int()?,
         "lead_joker" => bot.lead_joker = int()?,
         "lead_mighty" => bot.lead_mighty = int()?,
         "defend_trump" => bot.defend_trump = int()?,
-        "late_worth" => bot.late_worth = count()?,
-        "call_joker_first" => bot.call_joker_first = value.parse().map_err(|_| bad())?,
         _ => return Err(format!("unknown weight {key:?}")),
     }
     Ok(())
 }
 
 /// The bots for one game, and the seat whose payoff is being measured.
-fn table(args: &Args, seats: usize, game: u64, focus_bot: Spec) -> (Vec<Box<dyn Bot<Mighty>>>, Option<usize>) {
+fn table(
+    args: &Args,
+    seats: usize,
+    game: u64,
+    focus_bot: Spec,
+    clock: &Rc<Cell<Clock>>,
+) -> (Vec<Box<dyn Bot<Mighty>>>, Option<usize>) {
     // The first bidder is `game % seats`; cycling this separately covers
     // every pairing of measured seat and first bidder equally.
     let focus = matches!(args.bots, Bots::Search).then(|| (game as usize / seats) % seats);
     let bots = (0..seats)
         .map(|seat| match (args.bots, seat % 2) {
-            _ if Some(seat) == focus => focus_bot.build(),
+            _ if Some(seat) == focus => Box::new(Timed {
+                bot: focus_bot.build(),
+                clock: clock.clone(),
+            }),
             (Bots::Search, _) => args.field.build(),
             (Bots::Random, _) | (Bots::Mixed, 1) => Box::new(RandomBot),
             _ => Box::new(SimpleBot::default()),
@@ -157,7 +170,36 @@ fn table(args: &Args, seats: usize, game: u64, focus_bot: Spec) -> (Vec<Box<dyn 
     (bots, focus)
 }
 
+/// Thinking time of the focus bot.
+#[derive(Debug, Clone, Copy, Default)]
+struct Clock {
+    total: Duration,
+    decisions: u32,
+    slowest: Duration,
+}
+
+/// Times every decision of the bot it wraps.
+struct Timed {
+    bot: Box<dyn Bot<Mighty>>,
+    clock: Rc<Cell<Clock>>,
+}
+
+impl Bot<Mighty> for Timed {
+    fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
+        let started = Instant::now();
+        let action = self.bot.act(view, legal, rng);
+        let took = started.elapsed();
+        let mut clock = self.clock.get();
+        clock.total += took;
+        clock.decisions += 1;
+        clock.slowest = clock.slowest.max(took);
+        self.clock.set(clock);
+        action
+    }
+}
+
 struct Outcome {
+    clock: Clock,
     steps: usize,
     focus_payoff: Option<f64>,
     baseline_payoff: Option<f64>,
@@ -190,8 +232,10 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                             first_bidder: game as usize % seats,
                         };
                         let one = |focus_bot: Spec| {
-                            let (mut bots, focus) = table(args, seats, game, focus_bot);
+                            let clock = Rc::new(Cell::new(Clock::default()));
+                            let (mut bots, focus) = table(args, seats, game, focus_bot, &clock);
                             sim::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
+                                clock: clock.get(),
                                 steps: report.steps,
                                 focus_payoff: focus.map(|seat| report.payoffs[seat] as f64),
                                 baseline_payoff: None,
@@ -254,7 +298,15 @@ fn main() -> ExitCode {
             print!(", {mean:+.3} ± {margin:.3} over the baseline");
         }
         if !focus.is_empty() {
-            print!(" ({:.0} s)", started.elapsed().as_secs_f64());
+            let total: Duration = outcomes.iter().map(|o| o.clock.total).sum();
+            let decisions: u32 = outcomes.iter().map(|o| o.clock.decisions).sum();
+            let slowest = outcomes.iter().map(|o| o.clock.slowest).max().unwrap_or_default();
+            print!(
+                ", thinking {:.1} ms per decision, at most {:.0} ms ({:.0} s)",
+                total.as_secs_f64() * 1000.0 / f64::from(decisions.max(1)),
+                slowest.as_secs_f64() * 1000.0,
+                started.elapsed().as_secs_f64()
+            );
         }
         println!();
     }

@@ -1,27 +1,31 @@
-//! A bot that searches. For each bid and each card it plays, it deals the
-//! cards it cannot see in many ways consistent with what it has seen, plays
-//! every candidate to the end of the hand with [`SimpleBot`] in every seat,
-//! and picks the one with the best average payoff (Perfect Information
-//! Monte Carlo). The exchange is left to [`SimpleBot`]: searching discards
-//! and friend calls, or weighting deals by the bids, did not measurably help.
+//! A bot that searches. For each bid, discard, friend call and card it
+//! plays, it deals the cards it cannot see in many ways consistent with
+//! what it has seen and with the bidding, plays every candidate to the end
+//! of the hand with [`SimpleBot`] in every seat, and picks the one with the
+//! best average payoff (Perfect Information Monte Carlo).
 
 use crate::Mighty;
 use crate::bot::SimpleBot;
-use crate::card::{Card, Suit};
-use crate::state::{Action, Bidding, Phase, Play, State};
+use crate::card::{ACE, Card, Suit};
+use crate::state::{Action, Bidding, Exchange, FriendCall, Phase, Play, State};
 use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Turn, Viewer};
 use rand::seq::SliceRandom;
 use rand::{Rng, RngCore};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SearchBot {
-    /// Deals sampled per decision. More is slower, and past 40 barely stronger.
+    /// Most deals sampled per decision. Up to a few hundred, more is
+    /// measurably stronger.
     pub samples: usize,
     /// How sure the search must be before it overrides [`SimpleBot`]: the
     /// gain over the simple bot's choice, across the sampled deals, must
     /// exceed this many standard errors. 0 takes the best average.
     pub confidence: f64,
+    /// Stop dealing once a decision has taken this long, so that one with
+    /// many candidates, or a slow machine, still answers in time.
+    pub budget: Option<Duration>,
     /// The bot that plays every seat in the playouts, and whose choice the
     /// search must beat.
     pub policy: SimpleBot,
@@ -30,8 +34,9 @@ pub struct SearchBot {
 impl Default for SearchBot {
     fn default() -> SearchBot {
         SearchBot {
-            samples: 40,
+            samples: 200,
             confidence: 1.0,
+            budget: Some(Duration::from_secs(1)),
             policy: SimpleBot::default(),
         }
     }
@@ -42,6 +47,7 @@ impl Bot<Mighty> for SearchBot {
         let candidates = match (&view.viewer, &view.phase) {
             (Viewer::Seat(_), PhaseView::Play { trick_no, .. }) => play_candidates(legal, *trick_no),
             (Viewer::Seat(_), PhaseView::Bidding { .. }) => bid_candidates(legal),
+            (Viewer::Seat(_), PhaseView::Exchange { .. }) => exchange_candidates(view, legal),
             _ => return self.policy.act(view, legal, rng),
         };
         let Viewer::Seat(me) = view.viewer else {
@@ -50,27 +56,64 @@ impl Bot<Mighty> for SearchBot {
         if candidates.len() == 1 {
             return candidates[0].clone();
         }
-        let worlds: Vec<State> = (0..self.samples).filter_map(|_| determinize(view, rng)).collect();
-        if worlds.is_empty() {
-            return self.policy.act(view, legal, rng);
-        }
         // Every candidate is scored on the same deals, so luck in the
         // sampling affects them all alike.
-        let scores: Vec<Vec<i64>> = candidates
-            .iter()
-            .map(|action| {
-                worlds
-                    .iter()
-                    .map(|world| rollout(self.policy, world, action, me, rng))
-                    .collect()
-            })
-            .collect();
+        let started = Instant::now();
+        let mut scores: Vec<Vec<i64>> = vec![Vec::new(); candidates.len()];
+        for _ in 0..self.samples {
+            if self.budget.is_some_and(|budget| started.elapsed() >= budget) {
+                break;
+            }
+            let Some(world) = self.sample(view, rng) else { continue };
+            for (action, scores) in candidates.iter().zip(&mut scores) {
+                scores.push(rollout(self.policy, &world, action, me, rng));
+            }
+        }
+        if scores[0].is_empty() {
+            return self.policy.act(view, legal, rng);
+        }
         let usual = self.policy.act(view, legal, rng);
         let choice = match candidates.iter().position(|a| *a == usual) {
             Some(base) => confident_best(&scores, base, self.confidence),
             None => best_average(&scores),
         };
         candidates[choice].clone()
+    }
+}
+
+impl SearchBot {
+    /// A determinized world, redealt up to 20 times until the policy would
+    /// have bid what the declarer, or the best bidder so far, did. Past
+    /// that, a wrong guess about how they bid is likelier than bad luck.
+    fn sample(&self, view: &View, rng: &mut dyn RngCore) -> Option<State> {
+        let mut world = determinize(view, rng)?;
+        for _ in 0..20 {
+            if self.agrees_with_bidding(&world, view) {
+                break;
+            }
+            world = determinize(view, rng)?;
+        }
+        Some(world)
+    }
+
+    /// Whether the policy would bid as high as the bidder did on its hand
+    /// in `world`; for a declarer, on the cards it kept.
+    fn agrees_with_bidding(&self, world: &State, view: &View) -> bool {
+        let Viewer::Seat(me) = view.viewer else { return true };
+        let (seat, contract, hand) = match &world.phase {
+            Phase::Bidding(b) => match b.best {
+                Some((seat, contract)) => (seat, contract, world.hands[seat].clone()),
+                None => return true,
+            },
+            Phase::Play(p) => {
+                let played = p.tricks.iter().flat_map(|t| &t.plays).chain(&p.plays);
+                let mut hand = world.hands[p.declarer].clone();
+                hand.extend(played.filter(|pl| pl.seat == p.declarer).map(|pl| pl.card));
+                (p.declarer, p.contract, hand)
+            }
+            _ => return true,
+        };
+        seat == me || self.policy.estimate(&world.rules, &hand, contract.trump) >= f32::from(contract.count)
     }
 }
 
@@ -104,6 +147,38 @@ fn confident_best(scores: &[Vec<i64>], base: usize, z: f64) -> usize {
 fn play_candidates(legal: &[Action], trick_no: usize) -> Vec<Action> {
     let keep = |a: &&Action| !(trick_no == 0 && matches!(a, Action::Play { card, .. } if card.is_joker()));
     let out: Vec<Action> = legal.iter().filter(keep).cloned().collect();
+    if out.is_empty() { legal.to_vec() } else { out }
+}
+
+/// While discarding, every card but the mighty and jokers; when calling a
+/// friend, the strongest cards not in hand, the first trick, and playing
+/// alone.
+fn exchange_candidates(view: &View, legal: &[Action]) -> Vec<Action> {
+    let PhaseView::Exchange { contract, .. } = &view.phase else {
+        return legal.to_vec();
+    };
+    let trump = contract.trump;
+    let mighty = view.rules.mighty(trump);
+    if legal.iter().any(|a| matches!(a, Action::Discard(_))) {
+        let out: Vec<Action> = legal
+            .iter()
+            .filter(|a| !matches!(a, Action::Discard(c) if *c == mighty || c.is_joker()))
+            .cloned()
+            .collect();
+        return if out.is_empty() { legal.to_vec() } else { out };
+    }
+    let mut calls: Vec<FriendCall> = vec![FriendCall::Card(mighty)];
+    calls.extend(view.rules.deck.jokers().iter().map(|&j| FriendCall::Card(j)));
+    if let Some(t) = trump {
+        calls.extend([ACE, ACE - 1, ACE - 2].map(|r| FriendCall::Card(Card::new(t, r))));
+    }
+    calls.extend([FriendCall::FirstTrick, FriendCall::Alone]);
+    let out: Vec<Action> = calls
+        .into_iter()
+        .filter(|c| !matches!(c, FriendCall::Card(card) if view.hand.contains(card)))
+        .map(Action::CallFriend)
+        .filter(|a| legal.contains(a))
+        .collect();
     if out.is_empty() { legal.to_vec() } else { out }
 }
 
@@ -161,8 +236,8 @@ fn rollout(mut policy: SimpleBot, world: &State, action: &Action, me: Seat, rng:
 
 /// A full state that `view` cannot tell apart from the real one: the
 /// unseen cards dealt at random, honouring every suit a seat has shown it
-/// lacks. Works while bidding and playing; `None` otherwise and for
-/// spectators.
+/// lacks. Works while bidding, exchanging and playing; `None` otherwise
+/// and for spectators.
 pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
     let Viewer::Seat(me) = view.viewer else { return None };
     let rules = &view.rules;
@@ -201,6 +276,11 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
             }
             // Only the declarer has seen the discards.
             if discards.is_some() { 0 } else { rules.kitty_size() }
+        }
+        // Only the declarer acts while exchanging, and it has seen the kitty.
+        PhaseView::Exchange { discards, .. } => {
+            seen.extend(discards.iter().flatten());
+            0
         }
         _ => return None,
     };
@@ -272,6 +352,17 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
                 tricks: tricks.clone(),
             })
         }
+        PhaseView::Exchange {
+            declarer,
+            contract,
+            trump_changed,
+            discards,
+        } => Phase::Exchange(Exchange {
+            declarer: *declarer,
+            contract: *contract,
+            discards: discards.clone().unwrap_or_default(),
+            trump_changed: *trump_changed,
+        }),
         _ => unreachable!("other phases returned above"),
     };
     Some(state)
@@ -360,7 +451,7 @@ mod tests {
                 let mut state = Mighty::new_game(&options).unwrap();
                 while let Turn::Chance | Turn::Seat(_) = Mighty::turn(&state) {
                     if let Turn::Seat(seat) = Mighty::turn(&state)
-                        && matches!(state.phase, Phase::Bidding(_) | Phase::Play(_))
+                        && matches!(state.phase, Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_))
                     {
                         let view = Mighty::view(&state, Viewer::Seat(seat));
                         let world = determinize(&view, &mut rng).expect("a deal exists");
