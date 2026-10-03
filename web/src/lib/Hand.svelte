@@ -4,6 +4,7 @@
   import Card from './Card.svelte';
   import { sameCard, type Seal } from './cards';
   import { settings } from './settings.svelte';
+  import { sound } from './sound';
   import type { Card as CardT } from './types';
 
   let {
@@ -73,6 +74,7 @@
 
   function tap(card: CardT) {
     if (mode === 'choose') {
+      sound.raise();
       ontoggle?.(card);
     } else if (mode === 'play') {
       if (settings.singleTap || (raised && sameCard(raised, card))) {
@@ -80,6 +82,7 @@
         onplay?.(card);
       } else {
         raised = card;
+        sound.raise();
       }
     }
   }

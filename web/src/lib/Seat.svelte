@@ -39,9 +39,9 @@
   </div>
   <div class="meta">
     {#if team}<span class="team {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/if}
-    {#if points > 0}<span class="points">{points}점</span>{/if}
+    {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
   </div>
-  {#if bubble}<span class="bubble">{bubble}</span>{/if}
+  {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
 </div>
 
 <style>

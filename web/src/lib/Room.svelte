@@ -3,11 +3,15 @@
   import { RoomClient, savedName } from './client.svelte';
   import { PRESET_NAME } from './presets';
   import SettingsSheet from './SettingsSheet.svelte';
+  import { sound } from './sound';
   import Table from './Table.svelte';
 
   let { id, onleave }: { id: string; onleave: () => void } = $props();
 
   const client = new RoomClient(untrack(() => id));
+  $effect(() => {
+    if (client.error) sound.error();
+  });
   onDestroy(() => client.close());
 
   let name = $state(savedName());

@@ -1,6 +1,6 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
-  // /preview?state=bidding | exchange | play | sweep | done
+  // /preview?state=bidding | exchange | play | sweep | done | won
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
   import type { Card, PhaseView, Played, RoomMsg, Rules, StateMsg } from './types';
@@ -63,12 +63,16 @@
     done: {
       Done: { declarer: 2, contract, call: { Card: { Joker: 'Black' } }, friend: 3, team_points: 16, payoffs: [-1, -1, 4, 2, -4], tricks: [] },
     },
+    won: {
+      Done: { declarer: 0, contract, call: { Card: { Joker: 'Black' } }, friend: 3, team_points: 17, payoffs: [6, -2, -2, 2, -2], tricks: [] },
+    },
   };
   const legal: Record<string, StateMsg['legal']> = {
     bidding: ['Pass', ...[15, 16, 17].map((count) => ({ Bid: { trump: 'Spade' as const, count } }))],
     exchange: hand.map((card) => ({ Discard: card })),
     play: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     done: [],
+    won: [],
   };
   const msg = (phase: PhaseView, key: string, turn: StateMsg['turn']): StateMsg => ({
     type: 'state',
@@ -98,13 +102,13 @@
     ],
     scores: [12, -3, 5, -8, -6],
     hands_played: 3,
-    in_hand: which !== 'done',
+    in_hand: which !== 'done' && which !== 'won',
   };
 
   const key = which === 'sweep' ? 'play' : which;
   const client = $state({
     room,
-    game: msg(phases[key] ?? phases.play, key, key === 'done' ? 'Over' : { Seat: 0 }),
+    game: msg(phases[key] ?? phases.play, key, key === 'done' || key === 'won' ? 'Over' : { Seat: 0 }),
     seat: 0,
     error: null,
     act: () => {},

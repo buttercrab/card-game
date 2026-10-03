@@ -24,6 +24,11 @@ function unlock() {
 if (typeof window !== 'undefined') {
   window.addEventListener('pointerdown', unlock, { capture: true });
   window.addEventListener('keydown', unlock, { capture: true });
+  // Every chip and button answers with a tap, without wiring each one.
+  window.addEventListener('click', (e) => {
+    const button = (e.target as Element | null)?.closest?.('button');
+    if (button && !button.disabled && !button.classList.contains('card')) sound.tap();
+  });
 }
 
 /** The output for one cue, or null when sound is off or not yet allowed. */
@@ -94,6 +99,32 @@ export const sound = {
   /** The friend is revealed. */
   friend() {
     [554, 659, 880, 1109].forEach((f, i) => note(i * 0.07, f, { level: 0.16, length: 0.5 }));
+  },
+  /** Cards being shuffled and dealt: a quick riffle of paper snaps. */
+  shuffle() {
+    for (let i = 0; i < 14; i++) snap(i * 0.035, { freq: 1500 + Math.random() * 1500, length: 0.04, level: 0.28 });
+  },
+  /** A chip or button pressed. */
+  tap() {
+    snap(0, { freq: 4200, length: 0.02, level: 0.18 });
+  },
+  /** A card raised from the hand. */
+  raise() {
+    snap(0, { freq: 2600, length: 0.035, level: 0.2 });
+    note(0, 1319, { level: 0.04, length: 0.12, type: 'sine' });
+  },
+  /** The contract is settled: two firm notes. */
+  contract() {
+    note(0, 440, { level: 0.14, length: 0.35 });
+    note(0.12, 659, { level: 0.14, length: 0.5 });
+  },
+  /** The friend has been called: a short rising question. */
+  call() {
+    [659, 740, 988].forEach((f, i) => note(i * 0.06, f, { level: 0.1, length: 0.3 }));
+  },
+  /** Something was refused. */
+  error() {
+    note(0, 196, { level: 0.12, length: 0.18, type: 'square' });
   },
   /** The hand is over. */
   result(won: boolean) {

@@ -8,13 +8,15 @@ interface Settings {
   /** Play a card with one tap instead of raise-then-play. */
   singleTap: boolean;
   sound: boolean;
+  /** A short vibration when your turn starts (Android only). */
+  haptics: boolean;
   /** 0 to 1. */
   volume: number;
   speed: Speed;
 }
 
 const KEY = 'mighty.settings';
-const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, volume: 0.7, speed: 'normal' };
+const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, haptics: true, volume: 0.7, speed: 'normal' };
 
 function load(): Settings {
   try {
@@ -29,6 +31,7 @@ export const settings: Settings = $state(load());
 $effect.root(() => {
   $effect(() => {
     document.documentElement.dataset.fourColor = String(settings.fourColor);
+    document.documentElement.dataset.motion = settings.speed;
   });
   $effect(() => {
     const json = JSON.stringify(settings);

@@ -42,6 +42,14 @@
   </label>
 
   <label class="row">
+    <span>
+      <strong>진동</strong>
+      <span class="muted">내 차례가 되면 짧게 (안드로이드)</span>
+    </span>
+    <input type="checkbox" bind:checked={settings.haptics} />
+  </label>
+
+  <label class="row">
     <span><strong>소리</strong></span>
     <input type="checkbox" bind:checked={settings.sound} />
   </label>

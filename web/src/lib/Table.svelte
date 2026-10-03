@@ -322,7 +322,16 @@
     const now = next.view.phase;
     event = describe(prev, next) ?? event;
     const turnOf = (m: StateMsg) => (typeof m.turn === 'object' ? m.turn.Seat : null);
-    if (me !== null && turnOf(next) === me && turnOf(prev) !== me) sound.turn();
+    if (me !== null && turnOf(next) === me && turnOf(prev) !== me) {
+      sound.turn();
+      if (settings.haptics) navigator.vibrate?.(18);
+    }
+    const kind = (p: PhaseView) => (typeof p === 'object' ? Object.keys(p)[0] : p);
+    if (kind(now) !== kind(was)) {
+      if (kind(now) === 'Exchange') sound.contract();
+      if (kind(now) === 'Play' && kind(was) === 'Exchange') sound.call();
+      if (kind(now) === 'Bidding') sound.shuffle();
+    }
     if (typeof was === 'object' && 'Bidding' in was && typeof now === 'object' && 'Bidding' in now) {
       const moved = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best) ||
         was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length;
@@ -459,14 +468,14 @@
       {#if callLabel}<span class="item">프렌드 <strong>{callLabel}</strong></span>{/if}
       {#if play}<span class="item">라운드 <strong>{trickNo}/{view.rules.hand_size}</strong></span>{/if}
       {#if play || done}
-        <span class="item">여당 <strong>{teamPoints}/{contract.count}</strong></span>
+        <span class="item">여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}</span>
       {/if}
       {#if lastTrick && !resolving}
         <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
       {/if}
     {/if}
   </div>
-  {#if event && !done}<p class="event" aria-live="polite">{event}</p>{/if}
+  {#if event && !done}{#key event}<p class="event fade-up" aria-live="polite">{event}</p>{/key}{/if}
 
   <div class="felt" bind:this={felt}>
     {#each around as r (r)}
@@ -533,8 +542,18 @@
 
     {#if done}
       {@const won = done.team_points >= done.contract.count}
+      {@const mineWon = me !== null && won === (me === done.declarer || me === done.friend)}
       <div class="sheet result" role="status">
-        <p class="headline">{won ? '여당 승리' : '야당 승리'}</p>
+        <p class="headline">
+          {won ? '여당 승리' : '야당 승리'}
+          {#if mineWon}
+            <span class="burst" aria-hidden="true">
+              {#each ['Spade', 'Heart', 'Diamond', 'Club', 'Spade', 'Heart', 'Diamond', 'Club'] as const as suit, i (i)}
+                <span class="spark suit-{suit}" style:--a="{i * 45 + 20}deg"><SuitIcon {suit} /></span>
+              {/each}
+            </span>
+          {/if}
+        </p>
         <p class="sub">여당 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
         <table>
           <thead>
@@ -854,6 +873,7 @@
     margin: 0;
   }
   .headline {
+    position: relative;
     font-family: var(--font-display);
     font-size: 30px;
     font-weight: 800;
@@ -958,6 +978,22 @@
   }
   .mine .tray {
     outline-color: var(--accent);
+    animation: turn-pulse 900ms var(--ease-standard);
+  }
+  /* Your turn: the tray's ring swells once, then settles. */
+  @keyframes turn-pulse {
+    0% {
+      outline-offset: -3px;
+      outline-width: 3px;
+    }
+    35% {
+      outline-offset: 2px;
+      outline-width: 5px;
+    }
+    100% {
+      outline-offset: -3px;
+      outline-width: 3px;
+    }
   }
   .me-row {
     display: flex;
@@ -1030,6 +1066,44 @@
       top: -12px;
       bottom: auto;
       transform: translate(-50%, -50%);
+    }
+  }
+
+  /* Your side won: suit marks burst out from the headline, once. */
+  .burst {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    pointer-events: none;
+  }
+  .spark {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    opacity: 0;
+    animation: spark 900ms var(--ease-standard) 200ms;
+  }
+  .spark.suit-Heart {
+    color: var(--suit-heart);
+  }
+  .spark.suit-Diamond {
+    color: var(--suit-diamond);
+  }
+  .spark.suit-Club {
+    color: var(--suit-club);
+  }
+  .spark.suit-Spade {
+    color: var(--ink);
+  }
+  @keyframes spark {
+    0% {
+      opacity: 1;
+      transform: rotate(var(--a)) translateX(10px) scale(0.6);
+    }
+    100% {
+      opacity: 0;
+      transform: rotate(var(--a)) translateX(110px) scale(1);
     }
   }
 </style>
