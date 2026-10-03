@@ -41,23 +41,41 @@ export interface Trick {
 
 export type Turn = 'Chance' | 'Over' | { Seat: number };
 
+export type CardPolicy = 'Valid' | 'NoEffect' | 'Invalid' | 'NoLead';
+export interface TrickPolicy {
+  first: CardPolicy;
+  last: CardPolicy;
+}
+
 export interface Rules {
   players: number;
   hand_size: number;
   deck: 'OneJoker' | 'TwoJokers';
+  /** Full rules carry these; the preview's made-up rules may not. */
+  misdeal?: { point_value: number; joker_value: number; card_values: [Card, number][]; threshold: number };
   bidding: {
     min: number;
     max: number;
     allow_no_trump: boolean;
     no_trump_bonus: number;
+    no_trump_wins_ties?: boolean;
     first_bidder_may_pass: boolean;
     change_trump_cost: number;
+  };
+  friend?: { by_card: boolean; by_seat: boolean; first_trick: boolean; last_trick: boolean; fake: boolean; alone: boolean };
+  policy?: {
+    mighty: TrickPolicy;
+    trump: TrickPolicy;
+    joker: TrickPolicy;
+    joker_call: TrickPolicy;
+    overrides: [Card, TrickPolicy][];
   };
   joker_call: {
     calls: [Card, Card][];
     mighty_defense: boolean;
     called_joker_has_power: boolean;
   };
+  joker_lead?: { by_color: boolean; powerless_passes: boolean };
 }
 
 export type PhaseView =

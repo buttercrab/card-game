@@ -1,6 +1,7 @@
 <script lang="ts">
   import Card from './Card.svelte';
   import InstallHint from './InstallHint.svelte';
+  import RulebookSheet from './RulebookSheet.svelte';
   import { PRESETS } from './presets';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
@@ -8,6 +9,7 @@
   let preset = $state('gshs');
   let code = $state('');
   let busy = $state(false);
+  let showRules = $state(false);
   let error = $state<string | null>(null);
 
   async function create() {
@@ -47,7 +49,10 @@
   </header>
 
   <section class="panel">
-    <h2>새 테이블</h2>
+    <div class="panel-head">
+      <h2>새 테이블</h2>
+      <button class="ghost small" onclick={() => (showRules = true)}>규칙 보기</button>
+    </div>
     <div class="presets" role="radiogroup" aria-label="규칙">
       {#each PRESETS as p (p.id)}
         <button class="chip" role="radio" aria-checked={preset === p.id} onclick={() => (preset = p.id)}>
@@ -69,6 +74,10 @@
 
   <InstallHint />
 </main>
+
+{#if showRules}
+  <RulebookSheet {preset} onclose={() => (showRules = false)} />
+{/if}
 
 <style>
   main {
@@ -111,6 +120,17 @@
     padding: 20px;
     border-radius: 16px;
     background: var(--panel);
+  }
+  .small {
+    min-height: 36px;
+    padding: 4px 10px;
+    font-size: 14px;
+    color: var(--ink-muted);
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   h2 {
     margin: 0;

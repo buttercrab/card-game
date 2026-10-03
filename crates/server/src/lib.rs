@@ -147,6 +147,7 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
     let api = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/api/presets", get(presets))
+        .route("/api/presets/{id}", get(preset_rules))
         .route("/api/rooms", post(create_room))
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
@@ -160,6 +161,14 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
 
 async fn presets() -> Json<Vec<&'static str>> {
     Json(Preset::ALL.iter().map(|p| p.name()).collect())
+}
+
+/// The full rules of a preset, for the rulebook.
+async fn preset_rules(Path(id): Path<String>) -> Response {
+    match id.parse::<Preset>() {
+        Ok(preset) => Json(preset.rules()).into_response(),
+        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+    }
 }
 
 #[derive(Deserialize, Default)]

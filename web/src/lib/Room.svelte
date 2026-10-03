@@ -2,6 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { RoomClient, savedName } from './client.svelte';
   import { PRESET_NAME } from './presets';
+  import RulebookSheet from './RulebookSheet.svelte';
   import SettingsSheet from './SettingsSheet.svelte';
   import { sound } from './sound';
   import Table from './Table.svelte';
@@ -18,6 +19,7 @@
   let name = $state(savedName());
   let copied = $state(false);
   let showSettings = $state(false);
+  let showRules = $state(false);
   let showSeats = $state(false);
 
   const room = $derived(client.room);
@@ -59,6 +61,7 @@
     {#if showTable && !inHand && seated}
       <button class="ghost small" aria-pressed={showSeats} onclick={() => (showSeats = !showSeats)}>자리</button>
     {/if}
+    <button class="ghost small" onclick={() => (showRules = true)} disabled={!room}>규칙</button>
     <button class="ghost small" onclick={copyLink}>{copied ? '복사됨' : '링크 복사'}</button>
     <button class="ghost icon" onclick={() => (showSettings = true)} aria-label="설정">⚙︎</button>
   </header>
@@ -66,7 +69,7 @@
   {#if client.status === 'missing'}
     <section class="panel center">
       <h2>{id} 테이블이 없어요</h2>
-      <p class="muted">서버가 다시 시작되면서 닫혔을 수 있어요.</p>
+      <p class="muted">아무도 없이 30분이 지나면 테이블이 닫혀요.</p>
       <button class="primary" onclick={onleave}>새 테이블 만들기</button>
     </section>
   {:else if !room}
@@ -148,6 +151,9 @@
 
 {#if showSettings}
   <SettingsSheet onclose={() => (showSettings = false)} />
+{/if}
+{#if showRules && room}
+  <RulebookSheet preset={room.settings.preset} onclose={() => (showRules = false)} />
 {/if}
 
 <style>
