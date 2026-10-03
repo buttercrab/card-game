@@ -50,8 +50,7 @@ rewritten.
    2. the joker (with two jokers: the joker of the trump colour, or of the
       lead colour at no-trump)
    3. the highest trump
-   4. with two jokers, the other joker, but only when the lead is not trump
-      colour
+   4. with two jokers, the other joker
    5. the highest card of the led suit
 
    A powerless mighty or trump counts as a plain card of its suit. A
@@ -99,6 +98,8 @@ rewritten.
 - The mighty counts as its own suit: if that suit is led and the mighty is
   your only card of it, you must play the mighty.
 - Jokers have no power on the first and last trick.
+- Trick order: the mighty, the joker of trump's colour, trump, the other
+  joker, then everything else.
 - A joker killer calls the joker only when it is led, and the called
   joker has no power.
 - A led joker names a suit of its colour, or its colour; whoever holds a
