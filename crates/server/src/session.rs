@@ -13,8 +13,11 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub trait SessionGame:
-    Game<State: Send, Action: Serialize + DeserializeOwned + Send + 'static, View: Serialize + Send + 'static>
-    + Send
+    Game<
+        State: Send,
+        Action: Serialize + DeserializeOwned + Send + 'static,
+        View: Serialize + DeserializeOwned + Send + 'static,
+    > + Send
     + 'static
 {
     type Settings: Clone + Serialize + DeserializeOwned + Send + 'static;

@@ -417,3 +417,48 @@ async fn bots_default_to_hard_and_their_level_can_change() {
         }
     }
 }
+
+#[tokio::test]
+async fn a_bot_worker_thinks_for_the_room() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = AppState::new(Duration::ZERO).with_bot_token("secret".into());
+    let remote = state.remote_bots();
+    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+
+    // Without the token, no worker gets in.
+    let refused = connect_async(format!("ws://{addr}/internal/bots")).await;
+    assert!(refused.is_err());
+
+    tokio::spawn(server::bots::run_worker::<mighty::Mighty>(
+        format!("ws://{addr}/internal/bots"),
+        "secret".into(),
+        Duration::from_millis(20),
+    ));
+    let wait = async {
+        while !remote.connected() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(5), wait)
+        .await
+        .expect("worker connects");
+
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    join(&mut ws, "Jae", None).await;
+    for bot in 1..5 {
+        send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "normal" })).await;
+    }
+    send(&mut ws, json!({ "type": "start" })).await;
+    loop {
+        let msg = next(&mut ws, "state").await;
+        if msg["view"]["phase"].get("Done").is_some() {
+            break;
+        }
+        if let Some(action) = msg["legal"].as_array().and_then(|l| l.first()) {
+            send(&mut ws, json!({ "type": "act", "action": action })).await;
+        }
+    }
+    assert!(remote.answered() > 10, "the worker made the bots' moves");
+}

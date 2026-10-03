@@ -2,6 +2,7 @@
 //! so its state needs no locks. Bots think on a blocking thread and send
 //! their move back as a command.
 
+use crate::bots::RemoteBots;
 use crate::session::{BotLevel, SessionGame};
 use engine::{Turn, Viewer};
 use rand::rngs::StdRng;
@@ -11,10 +12,14 @@ use serde_json::{Value, json};
 use std::any::Any;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, WeakUnboundedSender};
 
 pub type ConnId = u64;
+
+/// How long a room waits for a bot worker's move before thinking itself.
+const REMOTE_WAIT: Duration = Duration::from_secs(4);
 
 /// How long a hint may think: the player is waiting for it.
 const HINT_THINK: Duration = Duration::from_millis(800);
@@ -155,6 +160,8 @@ pub struct Room<G: SessionGame> {
     bot_delay: Duration,
     /// How long a 고수 bot may think, within the delay.
     bot_think: Duration,
+    /// Another machine that thinks for bots, when one is connected.
+    remote: Option<Arc<RemoteBots>>,
     /// Bumped whenever the hand changes, so a bot's stale move is dropped.
     version: u64,
     thinking: bool,
@@ -180,6 +187,7 @@ impl<G: SessionGame> Room<G> {
             // Bots wait out the delay anyway so people can follow along; spend
             // most of it thinking, leaving a little for the move to travel.
             bot_think: bot_delay.mul_f32(0.8),
+            remote: None,
             version: 0,
             thinking: false,
             me: None,
@@ -190,6 +198,11 @@ impl<G: SessionGame> Room<G> {
     /// the bot delay.
     pub fn limit_think(&mut self, think: Duration) {
         self.bot_think = self.bot_think.min(think);
+    }
+
+    /// Lets bots think on a connected worker; see [`crate::bots`].
+    pub fn use_remote(&mut self, remote: Arc<RemoteBots>) {
+        self.remote = Some(remote);
     }
 
     pub fn id(&self) -> &str {
@@ -565,13 +578,32 @@ impl<G: SessionGame> Room<G> {
         let legal = G::legal_actions(game);
         let (seed, version, delay) = (self.rng.random::<u64>(), self.version, self.bot_delay);
         let think = self.bot_think;
+        let remote = self.remote.clone().filter(|r| r.connected());
+        let job = remote
+            .as_ref()
+            .map(|_| json!({ "level": level, "seat": seat, "seed": seed, "view": view, "legal": legal }));
         self.thinking = true;
         tokio::spawn(async move {
             let started = Instant::now();
-            let choice = tokio::task::spawn_blocking(move || {
-                G::bot(level, seat, think).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
-            })
-            .await;
+            // A worker may think as long as it likes up to REMOTE_WAIT; past
+            // that, or with no worker, the room thinks for itself.
+            let mut remote_choice = None;
+            if let (Some(remote), Some(job)) = (remote, job)
+                && let Some(answer) = remote.ask(job, REMOTE_WAIT).await
+            {
+                remote_choice = serde_json::from_value::<G::Action>(answer)
+                    .ok()
+                    .filter(|a| legal.contains(a));
+            }
+            let choice = match remote_choice {
+                Some(action) => Ok(action),
+                None => {
+                    tokio::task::spawn_blocking(move || {
+                        G::bot(level, seat, think).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
+                    })
+                    .await
+                }
+            };
             // Thinking time counts toward the delay that lets people follow along.
             tokio::time::sleep(delay.saturating_sub(started.elapsed())).await;
             let action: Box<dyn Any + Send> = match choice {

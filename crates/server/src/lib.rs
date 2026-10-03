@@ -1,6 +1,7 @@
 //! HTTP and WebSocket front end. Rooms live in memory; each runs as its own
 //! task (see [`room`]).
 
+pub mod bots;
 pub mod room;
 pub mod session;
 
@@ -40,6 +41,10 @@ pub struct AppState {
     idle: Duration,
     /// Where rooms are saved so they survive a restart, if anywhere.
     data: Option<PathBuf>,
+    /// A machine that thinks for bots, if one has dialled in.
+    remote: Arc<bots::RemoteBots>,
+    /// The secret a bot worker must present; without one, none may connect.
+    bot_token: Option<String>,
     /// When recent problem reports arrived, to cap them per hour.
     reports: Arc<Mutex<Vec<std::time::Instant>>>,
 }
@@ -55,7 +60,22 @@ impl AppState {
             idle: Duration::from_secs(30 * 60),
             data: None,
             reports: Arc::default(),
+            remote: Arc::default(),
+            bot_token: None,
         }
+    }
+
+    /// Accepts bot workers that present `token`; see [`bots`].
+    pub fn with_bot_token(self, token: String) -> AppState {
+        AppState {
+            bot_token: Some(token),
+            ..self
+        }
+    }
+
+    /// The connection to a bot worker, if one dials in.
+    pub fn remote_bots(&self) -> Arc<bots::RemoteBots> {
+        self.remote.clone()
     }
 
     /// Caps bot thinking per move, for a server short on CPU.
@@ -95,6 +115,7 @@ impl AppState {
                     if let Some(think) = self.bot_think {
                         room.limit_think(think);
                     }
+                    room.use_remote(self.remote.clone());
                     let id = room.id().to_string();
                     let mut rooms = self.rooms.lock().expect("room registry poisoned");
                     self.spawn_room(&mut rooms, id, room);
@@ -139,6 +160,7 @@ impl AppState {
         if let Some(think) = self.bot_think {
             room.limit_think(think);
         }
+        room.use_remote(self.remote.clone());
         self.spawn_room(&mut rooms, id.clone(), room);
         Some(id)
     }
@@ -175,6 +197,7 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
         .route("/api/reports", post(report))
+        .route("/internal/bots", get(bot_worker))
         .with_state(state);
     match web_dir {
         // Unknown paths such as /r/abc123 get the app, which routes on the client.
@@ -185,6 +208,27 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
 
 async fn presets() -> Json<Vec<&'static str>> {
     Json(Preset::ALL.iter().map(|p| p.name()).collect())
+}
+
+/// Where a bot worker dials in; it must present the bot token.
+async fn bot_worker(State(app): State<AppState>, headers: axum::http::HeaderMap, ws: WebSocketUpgrade) -> Response {
+    let presented = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let allowed = match (&app.bot_token, presented) {
+        (Some(token), Some(given)) => constant_time_eq(token.as_bytes(), given.as_bytes()),
+        _ => false,
+    };
+    if !allowed {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    ws.on_upgrade(move |socket| async move { app.remote.serve(socket).await })
+}
+
+/// Compares secrets without leaking how much of them matched.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// The full rules of a preset, for the rulebook.

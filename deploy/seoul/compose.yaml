@@ -1,3 +1,5 @@
+# Bots think on the home server, which dials in to /internal/bots; when it
+# is away, bots here think for themselves within --bot-think-ms.
 # Runs on the Seoul Lightsail instance (cards-seoul), which serves
 # cards.buttercrab.io directly: Korean ISPs reach it in a few ms, where
 # Cloudflare's free plan sends them through Los Angeles. The image is built
@@ -11,6 +13,8 @@ services:
     # A nano instance earns little sustained CPU; cap bot thinking near what
     # 200 sampled deals take, so long bot games do not drain its burst credit.
     command: ["--bot-think-ms", "150"]
+    # BOT_TOKEN, the secret the home server's bot worker presents.
+    env_file: bots.env
     restart: unless-stopped
     read_only: true
     security_opt:

@@ -27,6 +27,30 @@ services:
         aliases:
           - cards-origin
 
+  # Thinks for the bots of the Seoul server (cards.buttercrab.io), which is
+  # too small to search deeply. It dials out, so no port is opened here.
+  # The shared secret lives outside the repository.
+  bots:
+    image: card-game:latest
+    container_name: card-game-bots
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command: ["--bot-worker", "wss://cards.buttercrab.io/internal/bots", "--worker-think-ms", "1000"]
+    env_file: ${HOME}/.config/card-game/bots.env
+    environment:
+      RUST_LOG: info
+    healthcheck:
+      disable: true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
 networks:
   traefik-proxy:
     external: true

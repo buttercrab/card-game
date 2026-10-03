@@ -29,6 +29,13 @@ struct Args {
     /// Save tables here so they survive restarts and deploys.
     #[arg(long)]
     data: Option<PathBuf>,
+    /// Instead of serving, think for the bots of the server at this URL
+    /// (wss://host/internal/bots). Needs BOT_TOKEN.
+    #[arg(long)]
+    bot_worker: Option<String>,
+    /// How long a worker thinks per move, in milliseconds.
+    #[arg(long, default_value_t = 1000)]
+    worker_think_ms: u64,
     /// Ask the server at --addr whether it is up, then exit (for container health checks).
     #[arg(long)]
     healthcheck: bool,
@@ -61,11 +68,22 @@ async fn main() -> std::io::Result<()> {
     if args.healthcheck {
         return healthcheck(args.addr).await;
     }
+    let token = std::env::var("BOT_TOKEN").ok().filter(|t| !t.is_empty());
+    if let Some(url) = args.bot_worker {
+        let Some(token) = token else {
+            return Err(std::io::Error::other("--bot-worker needs BOT_TOKEN"));
+        };
+        server::bots::run_worker::<mighty::Mighty>(url, token, Duration::from_millis(args.worker_think_ms)).await;
+        return Ok(());
+    }
     if !args.web.join("index.html").exists() {
         tracing::warn!("no web client at {}; serving the API only", args.web.display());
     }
     let mut state = AppState::new(Duration::from_millis(args.bot_delay_ms))
         .with_limits(args.max_rooms, Duration::from_secs(args.idle_minutes * 60));
+    if let Some(token) = token {
+        state = state.with_bot_token(token);
+    }
     if let Some(ms) = args.bot_think_ms {
         state = state.with_bot_think(Duration::from_millis(ms));
     }
