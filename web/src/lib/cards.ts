@@ -1,4 +1,4 @@
-import type { Card, Contract, FriendCall, Lead, PhaseView, Rules, Suit } from './types';
+import type { Action, Card, Contract, FriendCall, Lead, PhaseView, Rules, Suit } from './types';
 
 export const SUITS: Suit[] = ['Spade', 'Diamond', 'Heart', 'Club'];
 
@@ -85,4 +85,19 @@ export function sealOf(card: Card, rules: Rules, trump: Suit | null): Seal | nul
 export function leadLabel(lead: Lead): string {
   if ('Suit' in lead) return SUIT_SYMBOL[lead.Suit];
   return lead.Color === 'Red' ? '빨강' : '검정';
+}
+
+/** Any action in words, for hints: ♠A, ♥ 15, 패스. */
+export function actionLabel(action: Action, name: (seat: number) => string): string {
+  if (action === 'Misdeal') return '딜미스';
+  if (action === 'Pass') return '패스';
+  if ('Bid' in action) return contractLabel(action.Bid);
+  if ('ChangeTrump' in action) return `기루다를 ${trumpLabel(action.ChangeTrump)}로 바꾸기`;
+  if ('Discard' in action) return `${cardLabel(action.Discard)} 버리기`;
+  if ('CallFriend' in action) return `프렌드 ${friendCallLabel(action.CallFriend, name)}`;
+  const p = action.Play;
+  let label = cardLabel(p.card);
+  if (p.joker_lead) label += ` · ${leadLabel(p.joker_lead)}`;
+  if (p.call_joker) label += ' · 조커콜';
+  return label;
 }

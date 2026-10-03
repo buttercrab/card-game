@@ -79,6 +79,8 @@ pub enum ClientMsg {
     SetSettings {
         settings: Value,
     },
+    /// Ask what the bot would do in your place, on your turn.
+    Hint,
     /// Show a quick reaction from your seat to the whole table.
     React {
         text: String,
@@ -104,6 +106,8 @@ struct Conn {
     seat: Option<usize>,
     /// When this connection last reacted, to keep reactions from flooding.
     reacted: Option<Instant>,
+    /// When this connection last asked for a hint; a bot's think is not free.
+    hinted: Option<Instant>,
 }
 
 /// The reactions a player can send; anything else is refused.
@@ -301,6 +305,7 @@ impl<G: SessionGame> Room<G> {
                         tx,
                         seat: None,
                         reacted: None,
+                        hinted: None,
                     },
                 );
             }
@@ -309,7 +314,7 @@ impl<G: SessionGame> Room<G> {
             }
             Command::Message { conn, msg } => {
                 // A reaction changes nothing the room or the hand shows.
-                let quiet = matches!(msg, ClientMsg::React { .. });
+                let quiet = matches!(msg, ClientMsg::React { .. } | ClientMsg::Hint);
                 if let Err(message) = self.on_message(conn, msg) {
                     self.send(conn, &json!({ "type": "error", "message": message }));
                     return;
@@ -381,6 +386,28 @@ impl<G: SessionGame> Room<G> {
                 }
                 tracing::info!(room = %self.id, settings = %log_action(&settings), "settings");
                 self.settings = settings;
+                Ok(())
+            }
+            ClientMsg::Hint => {
+                let seat = my_seat.ok_or("you are not seated")?;
+                let game = self.game.as_ref().ok_or("no hand in progress")?;
+                if G::turn(game) != Turn::Seat(seat) {
+                    return Err("it is not your turn".into());
+                }
+                let c = self.conns.get_mut(&conn).ok_or("not connected")?;
+                if c.hinted.is_some_and(|t| t.elapsed() < Duration::from_secs(1)) {
+                    return Ok(());
+                }
+                c.hinted = Some(Instant::now());
+                let tx = c.tx.clone();
+                let view = G::view(game, Viewer::Seat(seat));
+                let legal = G::legal_actions(game);
+                let (seed, version) = (self.rng.random::<u64>(), self.version);
+                tokio::task::spawn_blocking(move || {
+                    let action = G::bot().act(&view, &legal, &mut StdRng::seed_from_u64(seed));
+                    let msg = json!({ "type": "hint", "version": version, "action": action });
+                    let _ = tx.send(msg.to_string());
+                });
                 Ok(())
             }
             ClientMsg::React { text } => {

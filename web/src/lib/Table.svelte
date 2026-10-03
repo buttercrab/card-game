@@ -10,7 +10,7 @@
   import Reactions from './Reactions.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
   import SuitIcon from './SuitIcon.svelte';
-  import { cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
+  import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
   import { flyFrom, flyTo, pop } from './motion';
   import { settings } from './settings.svelte';
@@ -451,6 +451,13 @@
 
 <section class="table" class:mine={myTurn}>
   <!-- 상황판: everything about the hand on one line. -->
+  {#snippet hintTools()}
+    {#if client.hint && myTurn}
+      <span class="hint-text pop" role="status">💡 봇이라면 <strong>{actionLabel(client.hint, seatName)}</strong></span>
+    {:else if settings.hints && liveTurn}
+      <button class="hint-btn" aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}>💡</button>
+    {/if}
+  {/snippet}
   <div class="status" aria-live="polite">
     {#if bidding}
       {#if bidding.best}
@@ -477,12 +484,22 @@
         <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
       {/if}
     {/if}
-    {#if me !== null}<span class="react-status"><Reactions below onreact={(text) => client.react(text)} /></span>{/if}
+    {#if me !== null}
+      <span class="react-status">
+        {@render hintTools()}
+        <Reactions below onreact={(text) => client.react(text)} />
+      </span>
+    {/if}
   </div>
   {#if event && !done}{#key event}<p class="event fade-up" aria-live="polite">{event}</p>{/key}{/if}
 
   <div class="felt" bind:this={felt}>
-    {#if me !== null}<span class="react-spot"><Reactions onreact={(text) => client.react(text)} /></span>{/if}
+    {#if me !== null}
+      <span class="react-spot">
+        {@render hintTools()}
+        <Reactions onreact={(text) => client.react(text)} />
+      </span>
+    {/if}
     {#each around as r (r)}
       {@const s = seatAt(r)}
       {@const info = room?.seats[s]}
@@ -687,6 +704,29 @@
     right: 4px;
     bottom: 4px;
     z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .react-status {
+    align-items: center;
+    gap: 6px;
+  }
+  .hint-btn {
+    min-height: 40px;
+    min-width: 40px;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 18px;
+  }
+  .hint-text {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.14);
+    font-size: 14px;
+    white-space: nowrap;
   }
   .strip,
   .spectating {

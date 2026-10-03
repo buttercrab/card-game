@@ -43,6 +43,14 @@
 
   <label class="row">
     <span>
+      <strong>힌트 버튼</strong>
+      <span class="muted">내 차례에 💡를 누르면 봇이라면 뭘 할지 알려 줘요</span>
+    </span>
+    <input type="checkbox" bind:checked={settings.hints} />
+  </label>
+
+  <label class="row">
+    <span>
       <strong>진동</strong>
       <span class="muted">내 차례가 되면 짧게 (안드로이드)</span>
     </span>

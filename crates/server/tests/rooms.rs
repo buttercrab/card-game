@@ -370,3 +370,24 @@ async fn a_report_saves_the_room_without_seat_tokens() {
     assert_eq!(report["room"]["seats"][0]["human"], "Jae");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn a_hint_is_one_of_the_legal_actions() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    join(&mut ws, "Jae", None).await;
+    send(&mut ws, json!({ "type": "hint" })).await;
+    next(&mut ws, "error").await;
+    for bot in 1..5 {
+        send(&mut ws, json!({ "type": "add_bot", "seat": bot })).await;
+    }
+    send(&mut ws, json!({ "type": "start" })).await;
+    let state = next_where(&mut ws, "state", |m| {
+        m["legal"].as_array().is_some_and(|l| !l.is_empty())
+    })
+    .await;
+    send(&mut ws, json!({ "type": "hint" })).await;
+    let hint = next(&mut ws, "hint").await;
+    assert!(state["legal"].as_array().unwrap().contains(&hint["action"]));
+}

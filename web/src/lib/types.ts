@@ -157,4 +157,5 @@ export type ServerMsg =
   | StateMsg
   | { type: 'welcome'; seat: number; token: string }
   | { type: 'reaction'; seat: number; text: string }
+  | { type: 'hint'; version: number; action: Action }
   | { type: 'error'; message: string };

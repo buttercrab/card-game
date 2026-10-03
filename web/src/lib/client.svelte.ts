@@ -60,6 +60,8 @@ export class RoomClient {
   status = $state<'connecting' | 'open' | 'closed' | 'missing'>('connecting');
   /** The latest reaction per seat, cleared after a few seconds. `id` restarts its animation. */
   reactions = $state<Record<number, { text: string; id: number }>>({});
+  /** What the bot would do in your place, until the hand moves on. */
+  hint = $state<Action | null>(null);
 
   #id: string;
   #ws: WebSocket | null = null;
@@ -120,6 +122,10 @@ export class RoomClient {
         break;
       case 'state':
         this.game = msg;
+        this.hint = null;
+        break;
+      case 'hint':
+        this.hint = msg.action;
         break;
       case 'welcome': {
         this.seat = msg.seat;
@@ -175,6 +181,10 @@ export class RoomClient {
 
   setRules(preset: string, rules: Rules | null) {
     this.#send({ type: 'set_settings', settings: rules ? { preset, rules } : { preset } });
+  }
+
+  askHint() {
+    this.#send({ type: 'hint' });
   }
 
   react(text: string) {
