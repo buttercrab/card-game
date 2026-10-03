@@ -1,0 +1,51 @@
+# Checks both sites from outside every 10 minutes. When one stops
+# answering, it opens an issue labelled `outage` and assigns the owner, so
+# GitHub notifies their phone; when the site answers again, it closes it.
+# GitHub may delay scheduled runs by a few minutes, and pauses them after
+# 60 days without commits.
+name: uptime
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        site: [cards.buttercrab.io, cards.buttercrab.net]
+    steps:
+      - name: Check ${{ matrix.site }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SITE: ${{ matrix.site }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          # Three tries, so one dropped request does not page anyone.
+          up=false
+          for i in 1 2 3; do
+            if [ "$(curl -fsS --max-time 10 "https://$SITE/healthz" 2>/dev/null)" = ok ]; then up=true; break; fi
+            sleep 20
+          done
+          title="서버 응답 없음: $SITE"
+          open=$(gh issue list -R "$REPO" --label outage --state open --search "in:title $SITE" --json number -q '.[0].number')
+          if [ "$up" = true ]; then
+            echo "$SITE is up"
+            if [ -n "$open" ]; then
+              gh issue close "$open" -R "$REPO" -c "다시 응답해요 ($(date -u +%H:%MZ))."
+            fi
+          else
+            echo "$SITE is down"
+            if [ -z "$open" ]; then
+              gh issue create -R "$REPO" --label outage --assignee "$OWNER" --title "$title" \
+                --body "https://$SITE/healthz 가 세 번 연속 응답하지 않았어요 ($(date -u +%H:%MZ)). 다시 응답하면 이 이슈는 자동으로 닫혀요."
+            fi
+            exit 1
+          fi
