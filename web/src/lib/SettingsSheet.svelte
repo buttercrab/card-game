@@ -1,8 +1,26 @@
 <script lang="ts">
   import Card from './Card.svelte';
   import { settings, type Speed } from './settings.svelte';
+  import type { BotPace } from './types';
 
-  let { onclose, onreport }: { onclose: () => void; onreport?: () => void } = $props();
+  let {
+    onclose,
+    onreport,
+    pace,
+    onpace,
+  }: {
+    onclose: () => void;
+    onreport?: () => void;
+    /** The table's bot pace, when opened at a table where you are seated. */
+    pace?: BotPace;
+    onpace?: (pace: BotPace) => void;
+  } = $props();
+
+  const PACES: { id: BotPace; label: string }[] = [
+    { id: 'fast', label: '빠르게' },
+    { id: 'normal', label: '보통' },
+    { id: 'slow', label: '느리게' },
+  ];
 
   const SPEEDS: { id: Speed; label: string }[] = [
     { id: 'normal', label: '보통' },
@@ -93,6 +111,20 @@
       {/each}
     </div>
   </div>
+
+  {#if pace && onpace}
+    <div class="row">
+      <span>
+        <strong>봇 속도</strong>
+        <span class="muted">이 테이블 모두에게 적용돼요</span>
+      </span>
+      <div class="chips" role="radiogroup" aria-label="봇 속도">
+        {#each PACES as p (p.id)}
+          <button class="chip" role="radio" aria-checked={pace === p.id} onclick={() => onpace(p.id)}>{p.label}</button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   <form method="dialog">
     {#if onreport}<button type="button" class="ghost report" onclick={() => (dialog.close(), onreport())}>문제 신고</button>{/if}

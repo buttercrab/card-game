@@ -13,8 +13,9 @@ struct Args {
     /// Directory with the built web client (`npm run build` in web/).
     #[arg(long, default_value = "web/dist")]
     web: PathBuf,
-    /// How long bots think before acting, in milliseconds.
-    #[arg(long, default_value_t = 700)]
+    /// How long a bot move takes at normal pace, thinking included, in
+    /// milliseconds; tables pick faster or slower.
+    #[arg(long, default_value_t = 1400)]
     bot_delay_ms: u64,
     /// Cap on how long a 고수 bot thinks per move, in milliseconds. By
     /// default it uses most of the bot delay; lower it on small servers.
@@ -33,8 +34,9 @@ struct Args {
     /// (wss://host/internal/bots). Needs BOT_TOKEN.
     #[arg(long)]
     bot_worker: Option<String>,
-    /// How long a worker thinks per move, in milliseconds.
-    #[arg(long, default_value_t = 1000)]
+    /// The most a worker thinks per move, in milliseconds; rooms ask for
+    /// less at faster paces.
+    #[arg(long, default_value_t = 3000)]
     worker_think_ms: u64,
     /// Ask the server at --addr whether it is up, then exit (for container health checks).
     #[arg(long)]

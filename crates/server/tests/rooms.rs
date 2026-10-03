@@ -462,3 +462,16 @@ async fn a_bot_worker_thinks_for_the_room() {
     }
     assert!(remote.answered() > 10, "the worker made the bots' moves");
 }
+
+#[tokio::test]
+async fn seated_players_set_the_bots_pace() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    next_where(&mut ws, "room", |r| r["bot_pace"] == "normal").await;
+    send(&mut ws, json!({ "type": "set_pace", "pace": "slow" })).await;
+    next(&mut ws, "error").await;
+    join(&mut ws, "Jae", None).await;
+    send(&mut ws, json!({ "type": "set_pace", "pace": "slow" })).await;
+    next_where(&mut ws, "room", |r| r["bot_pace"] == "slow").await;
+}

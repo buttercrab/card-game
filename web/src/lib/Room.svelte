@@ -9,7 +9,7 @@
   import { sound } from './sound';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
-  import type { BotLevel } from './types';
+  import type { BotLevel, BotPace } from './types';
 
   const LEVEL: Record<BotLevel, string> = { easy: '초보', normal: '보통', hard: '고수' };
 
@@ -144,6 +144,16 @@
           <button class="ghost small" onclick={() => (showRules = true)}>보기</button>
           {#if seated}<button class="ghost small" onclick={() => (editRules = true)}>바꾸기</button>{/if}
         </div>
+        {#if seated && room.seats.some((s) => s.kind === 'bot')}
+          <div class="rules-line">
+            <span>봇 속도</span>
+            <select class="level" aria-label="봇 속도" value={room.bot_pace ?? 'normal'} onchange={(e) => client.setPace(e.currentTarget.value as BotPace)}>
+              <option value="fast">빠르게</option>
+              <option value="normal">보통</option>
+              <option value="slow">느리게</option>
+            </select>
+          </div>
+        {/if}
 
         <ol class="seats">
           {#each room.seats as s, i (i)}
@@ -206,7 +216,12 @@
 </div>
 
 {#if showSettings}
-  <SettingsSheet onclose={() => (showSettings = false)} onreport={() => (reporting = true)} />
+  <SettingsSheet
+    onclose={() => (showSettings = false)}
+    onreport={() => (reporting = true)}
+    pace={seated ? (room?.bot_pace ?? 'normal') : undefined}
+    onpace={(pace) => client.setPace(pace)}
+  />
 {/if}
 {#if reporting}
   <ReportSheet room={id} seat={client.seat} onclose={() => (reporting = false)} />

@@ -39,6 +39,9 @@ struct Job {
     level: BotLevel,
     seat: usize,
     seed: u64,
+    /// How long the room would like it to think.
+    #[serde(default)]
+    think_ms: Option<u64>,
     view: Value,
     legal: Value,
 }
@@ -124,7 +127,7 @@ impl RemoteBots {
 }
 
 /// Runs a bot worker for `url` forever, reconnecting when the link drops.
-/// Each move gets about `think` of thinking.
+/// Each move gets the thinking time the room asks for, at most `think`.
 pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Duration) {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::{Message, http::HeaderValue};
@@ -174,7 +177,8 @@ pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Durat
     }
 }
 
-fn solve<G: SessionGame>(job: &Job, think: Duration) -> Option<Value> {
+fn solve<G: SessionGame>(job: &Job, most: Duration) -> Option<Value> {
+    let think = job.think_ms.map_or(most, |ms| Duration::from_millis(ms).min(most));
     let view: G::View = serde_json::from_value(job.view.clone()).ok()?;
     let legal: Vec<G::Action> = serde_json::from_value(job.legal.clone()).ok()?;
     if legal.is_empty() {

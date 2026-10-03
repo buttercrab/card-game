@@ -39,7 +39,7 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    command: ["--bot-worker", "wss://cards.buttercrab.io/internal/bots", "--worker-think-ms", "1000"]
+    command: ["--bot-worker", "wss://cards.buttercrab.io/internal/bots"]
     env_file: ${HOME}/.config/card-game/bots.env
     environment:
       RUST_LOG: info
