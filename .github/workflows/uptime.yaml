@@ -19,7 +19,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        site: [cards.buttercrab.io, cards.buttercrab.net]
+        # cards.buttercrab.net sits behind Cloudflare, which answers 403 to
+        # GitHub's runners, so only the Seoul site can be checked from here.
+        site: [cards.buttercrab.io]
     steps:
       - name: Check ${{ matrix.site }}
         env:
