@@ -383,6 +383,18 @@
   let winner = $state<number | null>(null);
   let revealed = $state<number | null>(null);
   let dealing = $state(false);
+  // The table can open straight onto a fresh deal (the first hand of a
+  // room); deal it in then too, not only when a hand follows another.
+  $effect(() => {
+    const first = untrack(() => shown);
+    const phase = first.view.phase;
+    const fresh = typeof phase === 'object' && 'Bidding' in phase && (first.view.bids ?? []).length === 0;
+    if (!fresh || settings.speed === 'off') return;
+    dealing = true;
+    sound.shuffle();
+    const timer = setTimeout(() => (dealing = false), 900);
+    return () => clearTimeout(timer);
+  });
   let felt: HTMLElement;
   /** Set when the player acts: finish what is animating and show the latest state. */
   let hurry = false;

@@ -40,13 +40,13 @@
 
   const buzz = (pattern: number | number[]) => settings.haptics && navigator.vibrate?.(pattern);
 
-  /** A refused card shakes its head: ±4px, four times in 300 ms (Wordle, halved). */
+  /** A refused card shakes its head, clearly: ±9px easing out over 420 ms. */
   function shake(card: CardT) {
     const el = document.querySelector(`.hand [data-card='${JSON.stringify(card)}']`);
     if (!el || typeof el.animate !== 'function' || settings.speed === 'off') return;
     el.animate(
-      [0, -4, 4, -4, 4, -2, 0].map((x) => ({ transform: `translateX(${x}px)` })),
-      { duration: 300, easing: 'ease-out' },
+      [0, -9, 9, -7, 7, -4, 4, -1, 0].map((x) => ({ transform: `translateX(${x}px)` })),
+      { duration: 420, easing: 'ease-out' },
     );
   }
 

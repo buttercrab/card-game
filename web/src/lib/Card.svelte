@@ -490,8 +490,7 @@
   /* States. Lifts use the separate translate and scale properties, so a
      tilt (transform) and the motion helpers can combine with them. */
   .raised {
-    translate: 0 calc(var(--w) * -0.26);
-    scale: 1.04;
+    translate: 0 calc(var(--w) * -0.36);
     box-shadow: var(--shadow-raised);
     /* A raised card sways a hair while it waits, as if held. */
     animation: sway 2.6s ease-in-out 300ms infinite;
@@ -536,7 +535,6 @@
   /* Touching a card previews the lift. */
   button.card:active:not(.unplayable):not(.raised) {
     translate: 0 -6px;
-    scale: 1.04;
     box-shadow: var(--shadow-card);
   }
   button.card:active {

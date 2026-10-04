@@ -89,6 +89,7 @@
 <style>
   dialog {
     width: min(100% - 32px, 420px);
+    overflow-x: hidden;
     padding: 20px;
     border: none;
     border-radius: 16px;
@@ -104,6 +105,8 @@
   }
   .step {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
     gap: 12px;
     min-height: 260px;
     align-content: start;
@@ -114,11 +117,16 @@
     font-size: 26px;
     font-weight: 800;
   }
+  /* Up to five cards share the dialog's width; none overflows it. */
   .cards {
     display: flex;
     justify-content: center;
     gap: 6px;
     padding: 6px 0;
+    container-type: inline-size;
+  }
+  .cards :global(.card) {
+    --w: min(64px, calc((100cqw - 24px) / 5)) !important;
   }
   p {
     margin: 0;
