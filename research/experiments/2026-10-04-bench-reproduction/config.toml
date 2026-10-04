@@ -1,0 +1,12 @@
+# The 2026-10-04 benchmark's head-to-head runs, redone by the eval runner
+# (P1's exit check). Tables, seeds and deal counts are in the suite.
+
+suite = "bench-2026-10-04"
+suite_sha256 = "ad26a5d079cd1eab555fad6df51a76d5e8023adef11c7431813e67ba2a56cf82"
+bot = "search:430:1:0"
+baseline = "search:200:1:0"
+
+[run]
+commit = "6e2ed835ef6a5834e3685fa1770cc832a04eaee8"
+command = "nice -n 10 target/release/eval run --suite bench-2026-10-04 --bot search:430:1:0 --baseline search:200:1:0 --out <dir>"
+machine = "the Mac (M4 Pro, 14 threads), shared with other work"
