@@ -967,7 +967,9 @@ pub(crate) fn hand_value(rules: &Rules, contract: Contract, alone: bool, team_po
             WinScore::OverTen => (points - 10).max(1),
             WinScore::OverMin => points - min,
             WinScore::OverBid => points - count,
-            WinScore::BidBonus => points - count + 2 * (i64::from(rules.bid_value(contract)) - min),
+            // A bid under the minimum (the dealer's last chance) earns no bonus,
+            // never a penalty: a made contract never costs the declarer.
+            WinScore::BidBonus => points - count + 2 * (i64::from(rules.bid_value(contract)) - min).max(0),
             WinScore::BothOver(n) => (points - i64::from(n) + count - i64::from(n)).max(1),
         }
     } else {

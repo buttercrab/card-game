@@ -261,8 +261,8 @@ Regional rules (지역별 규칙) against the presets, for the owner:
   one-eyed jack (♠J, ♥J) or the mighty, where ours lists ♠10, ♥10 and ♠A;
   all point cards is a misdeal (`misdeal.all_points`, left off so the preset is unchanged).
 - **동대전 5마 / `ddshs`:** the rules match 대전동신과학고 (no no-trump, card
-  friend only, +1 to change, ♣3 always calls), so the preset's name 대구동신과고
-  may be wrong. Its scoring is |bid − points| with no doubling
+  friend only, +1 to change, ♣3 always calls); the owner confirmed the
+  preset is 대전동신과고 (it was misnamed 대구동신과고). Its scoring is |bid − points| with no doubling
   (`OverBid`).
 - **수원 5마 / `skku`:** matches (minimum 12, free trump change, jokers
   valid on the first and last trick, trump may lead the first trick, a

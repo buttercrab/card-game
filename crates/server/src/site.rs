@@ -22,7 +22,7 @@ pub const SITE_URL: &str = "https://cards.buttercrab.io";
 pub fn preset_name(preset: Preset) -> &'static str {
     match preset {
         Preset::Default => "기본",
-        Preset::Ddshs => "대구동신과고",
+        Preset::Ddshs => "대전동신과고",
         Preset::Dshs => "대구과고",
         Preset::Kmla => "민사고",
         Preset::Gsa => "광주과고",

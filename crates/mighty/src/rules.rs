@@ -239,7 +239,8 @@ pub enum WinScore {
     /// Points taken − the contract.
     OverBid,
     /// Points taken − the contract + 2 × how far the bid ranks above the
-    /// minimum: high bids pay for their risk. 나무위키 calls it the usual one.
+    /// minimum (never below 0): high bids pay for their risk. 나무위키 calls
+    /// it the usual one.
     BidBonus,
     /// (Points taken − n) + (contract − n), at least 1.
     BothOver(u8),
@@ -602,7 +603,7 @@ impl Rules {
 pub enum Preset {
     /// 기본 5마: the owner's written rules (RULES.md, "기본")
     Default,
-    /// 대구동신과학고등학교
+    /// 대전동신과학고등학교
     Ddshs,
     /// 대구과학고등학교
     Dshs,
