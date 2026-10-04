@@ -1,0 +1,1354 @@
+{
+  "schema": "eval-results/1",
+  "suite": {
+    "name": "v1",
+    "game": "mighty",
+    "sha256": "dd53cdf85cb7cbebbad37835b5a2b85c25946403c958c79a1c2af25edf42d95b",
+    "quick": false
+  },
+  "bot": "hard",
+  "baseline": null,
+  "reproducible": true,
+  "run": {
+    "commit": "fa3f2021e6a026e7790ed15b65b20d58be65853c",
+    "dirty": false,
+    "started": "2026-10-04T14:51:31Z",
+    "wall_seconds": 11616.768169417,
+    "threads": 14,
+    "command": [
+      "/private/tmp/claude-501/-Users-jaeyong-Development-Github-card-game/a0227ca7-bdd9-4d3e-93aa-264aa45cdbd7/scratchpad/eval-v1",
+      "run",
+      "--suite",
+      "v1",
+      "--bot",
+      "hard",
+      "--machine",
+      "the Mac (M4 Pro), shared with other work",
+      "--out",
+      "/private/tmp/claude-501/-Users-jaeyong-Development-Github-card-game/a0227ca7-bdd9-4d3e-93aa-264aa45cdbd7/scratchpad/v1-full"
+    ]
+  },
+  "machine": {
+    "label": "the Mac (M4 Pro), shared with other work",
+    "os": "macos",
+    "arch": "aarch64",
+    "cpu": "Apple M4 Pro",
+    "threads": 14,
+    "load": [
+      117.07,
+      134.15,
+      158.01
+    ]
+  },
+  "ladder": {
+    "rungs": [
+      {
+        "name": "random",
+        "rules": "gshs",
+        "field": "random",
+        "seed": 1000000,
+        "deals": 2000,
+        "bot": {
+          "mean": 18.836,
+          "ci95": 0.7865073985075739,
+          "n": 2000
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "a428617549adca188811e3914c7640b008b8147b24ac41ea90aa066f2fb6a47d"
+      },
+      {
+        "name": "초보",
+        "rules": "gshs",
+        "field": "easy",
+        "seed": 1002000,
+        "deals": 2000,
+        "bot": {
+          "mean": 3.946,
+          "ci95": 0.46969205173063233,
+          "n": 2000
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "8eee1777da12c0471922489b169a56c20b1cfc42ef4d71a958e1c47bcd2fc168"
+      },
+      {
+        "name": "보통",
+        "rules": "gshs",
+        "field": "normal",
+        "seed": 1004000,
+        "deals": 2000,
+        "bot": {
+          "mean": 4.709,
+          "ci95": 0.5171261014855253,
+          "n": 2000
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "b90fce1b6b98b8c8d9b324c7bae153df9119385810872aa85ad6b384640a7d54"
+      },
+      {
+        "name": "고수",
+        "rules": "gshs",
+        "field": "hard",
+        "seed": 1006000,
+        "deals": 2000,
+        "bot": {
+          "mean": -0.263,
+          "ci95": 0.4396152387757762,
+          "n": 2000
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "7dd584ffe91d605e58ea952e7a17683a967e5105512593f139c31007eebb2c54"
+      }
+    ],
+    "rating": {
+      "bot": {
+        "mean": 6.8069999999999995,
+        "ci95": 0.28503130029520257,
+        "n": 8000
+      },
+      "baseline": null,
+      "diff": null
+    },
+    "seconds": 5020.864668916
+  },
+  "presets": {
+    "tables": [
+      {
+        "name": "default",
+        "rules": "default",
+        "field": "hard",
+        "seed": 2000000,
+        "deals": 500,
+        "bot": {
+          "mean": -0.268,
+          "ci95": 0.8034001143456831,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "d31d86c265f42a6ab53b4255b2f34461efafc3a763f37ca18c08d4584147b8c8"
+      },
+      {
+        "name": "ddshs",
+        "rules": "ddshs",
+        "field": "hard",
+        "seed": 2000500,
+        "deals": 500,
+        "bot": {
+          "mean": -0.256,
+          "ci95": 0.8809474223395237,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "ae69a7cd69c990f491e205168f989bc90cafca11b684e6cad84438913f40dadc"
+      },
+      {
+        "name": "dshs",
+        "rules": "dshs",
+        "field": "hard",
+        "seed": 2001000,
+        "deals": 500,
+        "bot": {
+          "mean": -0.212,
+          "ci95": 0.9067031100192805,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "b211d6f65b5c86f7d5d619d8ff905ae713940f0fba8b761b8db9434266c90864"
+      },
+      {
+        "name": "kmla",
+        "rules": "kmla",
+        "field": "hard",
+        "seed": 2001500,
+        "deals": 500,
+        "bot": {
+          "mean": 0.378,
+          "ci95": 0.8980524686922521,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "6df295732c409c161dd1e65a7292b29c7517ecc8e8ed9e5cc3ad911584732ba6"
+      },
+      {
+        "name": "gsa",
+        "rules": "gsa",
+        "field": "hard",
+        "seed": 2002000,
+        "deals": 500,
+        "bot": {
+          "mean": 0.104,
+          "ci95": 0.9667568538871989,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "523ff6ff120124fc09bb12b43a46dc51c7fdfb37e9602c0ab4828ef1e9d862e0"
+      },
+      {
+        "name": "gshs",
+        "rules": "gshs",
+        "field": "hard",
+        "seed": 2002500,
+        "deals": 500,
+        "bot": {
+          "mean": -0.38,
+          "ci95": 0.9288008009124198,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "ac699a94b4de34a14fbb1cd0e17e4e364f4b1784486671b36c3bad89191ffc3d"
+      },
+      {
+        "name": "skku",
+        "rules": "skku",
+        "field": "hard",
+        "seed": 2003000,
+        "deals": 500,
+        "bot": {
+          "mean": 0.406,
+          "ci95": 1.226090795219115,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "6374944a106d941190c22d836c0f17ac701190940dbea815c00194a36e7229e7"
+      },
+      {
+        "name": "sshs",
+        "rules": "sshs",
+        "field": "hard",
+        "seed": 2003500,
+        "deals": 500,
+        "bot": {
+          "mean": -0.536,
+          "ci95": 0.8631598124893194,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "4f1a3adb730dfb245c2867c6dbb227e0a216395d0af47a26d3ccc772914e2974"
+      },
+      {
+        "name": "yonsei",
+        "rules": "yonsei",
+        "field": "hard",
+        "seed": 2004000,
+        "deals": 500,
+        "bot": {
+          "mean": -0.172,
+          "ci95": 0.7762553735860662,
+          "n": 500
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "7063e8fa3ceaf87198a168728dfba77c26a78c4b017294a9406335ec1226a140"
+      }
+    ],
+    "average": {
+      "bot": {
+        "mean": -0.104,
+        "ci95": 0.30828747443255977,
+        "n": 4500
+      },
+      "baseline": null,
+      "diff": null
+    },
+    "seconds": 5151.591835458
+  },
+  "heldout": {
+    "tables": [
+      {
+        "name": "set 0",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000000,
+        "deals": 25,
+        "bot": {
+          "mean": -0.72,
+          "ci95": 7.3017300306160315,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "c21faf4c670a459ed4a225bf12e70ee645f658b86e61b28d694251bab3bc0e9d"
+      },
+      {
+        "name": "set 1",
+        "rules": "6 players, 53 cards",
+        "field": "hard",
+        "seed": 3000025,
+        "deals": 25,
+        "bot": {
+          "mean": 6.24,
+          "ci95": 11.236733162267399,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "90813f69ab8b9ac7829a0afb3703454de5b579821e8fcad3b1c9ffe9bbd08777"
+      },
+      {
+        "name": "set 2",
+        "rules": "4 players, 43 cards",
+        "field": "hard",
+        "seed": 3000050,
+        "deals": 25,
+        "bot": {
+          "mean": -3.8,
+          "ci95": 2.23187693806506,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "93862fc9848410a354120a93e9eb091b010539f46502ff1787e56b66d8f0d709"
+      },
+      {
+        "name": "set 3",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000075,
+        "deals": 25,
+        "bot": {
+          "mean": -2.12,
+          "ci95": 4.010934600979344,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "9267d564f1f06b7304db81a3dba151691c065728c186f75bee6f55ccb70ff2fe"
+      },
+      {
+        "name": "set 4",
+        "rules": "6 players, 53 cards",
+        "field": "hard",
+        "seed": 3000100,
+        "deals": 25,
+        "bot": {
+          "mean": -1.56,
+          "ci95": 4.265841428526538,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "372803cadffe9ee0da04e4006ae3e039f40b558d6668d1870134c77a9301fbd0"
+      },
+      {
+        "name": "set 5",
+        "rules": "7 players, 54 cards",
+        "field": "hard",
+        "seed": 3000125,
+        "deals": 25,
+        "bot": {
+          "mean": -10.0,
+          "ci95": 12.573060088936186,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "ac7b6deadeae862350dc1906dbe3594cb5ecdf06ba2ad6314616bccbd67f8584"
+      },
+      {
+        "name": "set 6",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000150,
+        "deals": 25,
+        "bot": {
+          "mean": 3.04,
+          "ci95": 12.804906659558283,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "ccb6d481ebfe9df67cf28adad1e429d6ae37d1419eff6ac479a357c8e3c8e289"
+      },
+      {
+        "name": "set 7",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000175,
+        "deals": 25,
+        "bot": {
+          "mean": 4.88,
+          "ci95": 4.969183069009768,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "75cb597c79b771b0076ccdb9cf294217454d9394fbf6e7a6947ede0d9cd7ee0d"
+      },
+      {
+        "name": "set 8",
+        "rules": "5 players, 53 cards",
+        "field": "hard",
+        "seed": 3000200,
+        "deals": 25,
+        "bot": {
+          "mean": -1.4,
+          "ci95": 3.3664105513142624,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "eb056362153db9a178d914db862bcce79e8ecd0c846d36b3f502b4e6dd6b20c1"
+      },
+      {
+        "name": "set 9",
+        "rules": "5 players, 53 cards",
+        "field": "hard",
+        "seed": 3000225,
+        "deals": 25,
+        "bot": {
+          "mean": 0.48,
+          "ci95": 3.045094082837726,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "40d165eb2baaf9199c82443ea4069db6fb0b8e475556199bce7c5a42c3e2fff7"
+      },
+      {
+        "name": "set 10",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000250,
+        "deals": 25,
+        "bot": {
+          "mean": 3.24,
+          "ci95": 3.7037950123263217,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "8e0627fa302ed5cafc6ff39f58e45460b1ec788a993b92037758697b3e3e332f"
+      },
+      {
+        "name": "set 11",
+        "rules": "6 players, 53 cards",
+        "field": "hard",
+        "seed": 3000275,
+        "deals": 25,
+        "bot": {
+          "mean": -0.12,
+          "ci95": 5.99251636404385,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "9f54d91cffe973d9d94cfd322aef0a7650cc2541fb3b0eaf42dff25a40d1652e"
+      },
+      {
+        "name": "set 12",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000300,
+        "deals": 25,
+        "bot": {
+          "mean": -4.56,
+          "ci95": 7.629814529855887,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "d2b8793a34176d87757d8b235a764d59e3dbbdca8aea6044cd083fdf82fa3b00"
+      },
+      {
+        "name": "set 13",
+        "rules": "4 players, 43 cards",
+        "field": "hard",
+        "seed": 3000325,
+        "deals": 25,
+        "bot": {
+          "mean": -0.6,
+          "ci95": 4.139267568060804,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "f2860730d0786a7e69b9947c94f5f473ee45717f2064067a595294c874ad4771"
+      },
+      {
+        "name": "set 14",
+        "rules": "7 players, 54 cards",
+        "field": "hard",
+        "seed": 3000350,
+        "deals": 25,
+        "bot": {
+          "mean": 1.64,
+          "ci95": 8.192143514367896,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "a4ba0d99b7bb4a650e8bd3b92a30d0d802488c06efeaa52246ed7181dd02a15d"
+      },
+      {
+        "name": "set 15",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000375,
+        "deals": 25,
+        "bot": {
+          "mean": -7.0,
+          "ci95": 11.494582608052081,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "537de474f006ab4ceafe0e5bace66e377708bf8341d24da971bdc1783434d6c4"
+      },
+      {
+        "name": "set 16",
+        "rules": "5 players, 53 cards",
+        "field": "hard",
+        "seed": 3000400,
+        "deals": 25,
+        "bot": {
+          "mean": 0.48,
+          "ci95": 1.8355760149518916,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "2fe4f75246d02e0d2e6c2f5170198184cd9a20433c3c6a8f6056d2cb3a050e57"
+      },
+      {
+        "name": "set 17",
+        "rules": "5 players, 53 cards",
+        "field": "hard",
+        "seed": 3000425,
+        "deals": 25,
+        "bot": {
+          "mean": 0.56,
+          "ci95": 3.7051776961436,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "4eee5c6aa963f29663bedeccc9676f63d801c791572f143b036053b1582eb603"
+      },
+      {
+        "name": "set 18",
+        "rules": "5 players, 53 cards",
+        "field": "hard",
+        "seed": 3000450,
+        "deals": 25,
+        "bot": {
+          "mean": 0.44,
+          "ci95": 1.043780513326437,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "6dd0720a84e81284a8031febc87302e1fccc0a283a675eac1eed837bee16dcde"
+      },
+      {
+        "name": "set 19",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000475,
+        "deals": 25,
+        "bot": {
+          "mean": 0.8,
+          "ci95": 3.644054152543107,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "83f7cb6ea5582687a4e42eb82959c15e4a31a85d0721dc24b34e2afcfee67f7f"
+      },
+      {
+        "name": "set 20",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000500,
+        "deals": 25,
+        "bot": {
+          "mean": 2.96,
+          "ci95": 10.790377066009635,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "ba358e12b893438e80e97c7727f4047f1ed3f0c503c99dc23ebb619ecd026ba6"
+      },
+      {
+        "name": "set 21",
+        "rules": "4 players, 43 cards",
+        "field": "hard",
+        "seed": 3000525,
+        "deals": 25,
+        "bot": {
+          "mean": 0.44,
+          "ci95": 4.400305492425118,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "223c636e2a71eabdcf9d20f56e5f8c056e0ce02b5b47d61adb364221d6cf2449"
+      },
+      {
+        "name": "set 22",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000550,
+        "deals": 25,
+        "bot": {
+          "mean": -5.44,
+          "ci95": 8.505948375107856,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "963d5a297e5762d4150184e6124c2849601d0f1970a20fb3baa2d9b1ec55344f"
+      },
+      {
+        "name": "set 23",
+        "rules": "3 players, 34 cards",
+        "field": "hard",
+        "seed": 3000575,
+        "deals": 25,
+        "bot": {
+          "mean": 1.12,
+          "ci95": 6.793711727767083,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "40daf720ac822bab9c10437f14f8e30198ba33cdf0d311697ffc5d9c1f133a64"
+      },
+      {
+        "name": "set 24",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000600,
+        "deals": 25,
+        "bot": {
+          "mean": -2.2,
+          "ci95": 7.729792062748734,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "e60bdc750dc242700208a50acf0ac9e2b3d1f8b5b17d5e1da2bc8a8e71ffa8ef"
+      },
+      {
+        "name": "set 25",
+        "rules": "5 players, 53 cards",
+        "field": "hard",
+        "seed": 3000625,
+        "deals": 25,
+        "bot": {
+          "mean": 0.6,
+          "ci95": 4.828924517943928,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "62e1ec699b7b47c3d0503f59e4ce2900a3aad08a6b5b51bf756d7e965c43759a"
+      },
+      {
+        "name": "set 26",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000650,
+        "deals": 25,
+        "bot": {
+          "mean": -4.04,
+          "ci95": 8.892641896159617,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "8ee111aabe8553e51be7680092e0bb2293045a0e7bc0b74b192086f345340299"
+      },
+      {
+        "name": "set 27",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000675,
+        "deals": 25,
+        "bot": {
+          "mean": -0.32,
+          "ci95": 3.640045948427941,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "c3da5d8904a5b789161213fb28df36c67246d58be6cff9439fcd29876ee23827"
+      },
+      {
+        "name": "set 28",
+        "rules": "3 players, 33 cards",
+        "field": "hard",
+        "seed": 3000700,
+        "deals": 25,
+        "bot": {
+          "mean": -3.2,
+          "ci95": 8.039982752883658,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "4d47fdfdbd233f171041902bf3cf87861195f6a0eb9171239ecc7e0b906fc89d"
+      },
+      {
+        "name": "set 29",
+        "rules": "6 players, 53 cards",
+        "field": "hard",
+        "seed": 3000725,
+        "deals": 25,
+        "bot": {
+          "mean": -0.56,
+          "ci95": 4.059739945694387,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "bfac6b2690f703945356104fdbf7b6fdd8f595c84d397fca360f5a24ede7650c"
+      },
+      {
+        "name": "set 30",
+        "rules": "6 players, 53 cards",
+        "field": "hard",
+        "seed": 3000750,
+        "deals": 25,
+        "bot": {
+          "mean": -0.08,
+          "ci95": 7.02774119045373,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "07479bfa730114f8b011db9a8db515ced4837e8e988ac175aa7edad89a268046"
+      },
+      {
+        "name": "set 31",
+        "rules": "6 players, 53 cards",
+        "field": "hard",
+        "seed": 3000775,
+        "deals": 25,
+        "bot": {
+          "mean": -1.88,
+          "ci95": 1.652765472372492,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "fcc55ddf8aea47e1ef7a22583cc3acdb38dfdc7da1ab53fb718dceced080ca04"
+      },
+      {
+        "name": "set 32",
+        "rules": "5 players, 54 cards",
+        "field": "hard",
+        "seed": 3000800,
+        "deals": 25,
+        "bot": {
+          "mean": 0.96,
+          "ci95": 3.5595816083729095,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "7fbf1f05c548a5b0d04e58874404dfb2ac224befbd9029be9595738f77a0c03e"
+      },
+      {
+        "name": "set 33",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000825,
+        "deals": 25,
+        "bot": {
+          "mean": -0.24,
+          "ci95": 2.591057729962804,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "1f43668c75abe44aa77e4e8019ded7f2d1228e81328c51db8f6186b4c9a176af"
+      },
+      {
+        "name": "set 34",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000850,
+        "deals": 25,
+        "bot": {
+          "mean": 0.28,
+          "ci95": 4.175490083810522,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "66fb3e5edcd536fba4b18661f9bb4e6099ec1f3c4e5f1ee07a3ba8d4edd3281d"
+      },
+      {
+        "name": "set 35",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000875,
+        "deals": 25,
+        "bot": {
+          "mean": -0.6,
+          "ci95": 4.414715996905501,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "c4c899cae7d866b106baef6d1006156373ee83b45131f3a7575fcf483234c3a4"
+      },
+      {
+        "name": "set 36",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000900,
+        "deals": 25,
+        "bot": {
+          "mean": 1.16,
+          "ci95": 7.5561156440770985,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "aca2b89ecc055fed34ae20cd9b4db5c8c5491cc6bf9fbd89ef8f93e3a2412e8f"
+      },
+      {
+        "name": "set 37",
+        "rules": "7 players, 53 cards",
+        "field": "hard",
+        "seed": 3000925,
+        "deals": 25,
+        "bot": {
+          "mean": -3.64,
+          "ci95": 4.751238367696011,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "ead0f24ce4221fe985d6ee7a8ae3dfd57f44d3f0ba8d4697321a2ef5e38f4ec0"
+      },
+      {
+        "name": "set 38",
+        "rules": "4 players, 43 cards",
+        "field": "hard",
+        "seed": 3000950,
+        "deals": 25,
+        "bot": {
+          "mean": 0.4,
+          "ci95": 2.395159563230252,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "e605164a84a188b6631d5acdd1941faf5590699f35628c912ab95494acf87572"
+      },
+      {
+        "name": "set 39",
+        "rules": "5 players, 53 cards",
+        "field": "hard",
+        "seed": 3000975,
+        "deals": 25,
+        "bot": {
+          "mean": -0.44,
+          "ci95": 2.4948780384352793,
+          "n": 25
+        },
+        "baseline": null,
+        "diff": null,
+        "digest": "3bde92599c2036bd841952ec158d41db0513b07aec1138a86b88c0beafdcb267"
+      }
+    ],
+    "average": {
+      "bot": {
+        "mean": -0.6199999999999998,
+        "ci95": 1.0163508766825229,
+        "n": 1000
+      },
+      "baseline": null,
+      "diff": null
+    },
+    "seconds": 1112.22319925
+  },
+  "matches": null,
+  "cost": {
+    "rules": "gshs",
+    "field": "hard",
+    "seed": 4000000,
+    "deals": 40,
+    "bot": {
+      "decisions": 408,
+      "mean_ms": 165.7401854411766,
+      "median_ms": 167.541041,
+      "p90_ms": 282.191708,
+      "p99_ms": 394.99758299999996,
+      "max_ms": 414.204375
+    },
+    "baseline": null,
+    "seconds": 330.021224708
+  },
+  "puzzles": {
+    "passed": 6,
+    "scored": 6,
+    "baseline_passed": null,
+    "puzzles": [
+      {
+        "id": "joker-before-last-trick-follow",
+        "title": "The friend, two tricks left under 경기과고, with the joker and the ♥9: play the joker now",
+        "scored": true,
+        "bot": {
+          "right": 3,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Black"
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Black"
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Black"
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "joker-before-last-trick-default",
+        "title": "Two tricks left under 기본, the joker and the ♠7 in hand: play the joker now",
+        "scored": true,
+        "bot": {
+          "right": 3,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Black"
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Black"
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Black"
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "joker-before-last-trick-lead",
+        "title": "Leading the second-to-last trick with the red joker or the ♦6: lead the joker",
+        "scored": true,
+        "bot": {
+          "right": 3,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Red"
+                },
+                "joker_lead": {
+                  "Color": "Red"
+                }
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Red"
+                },
+                "joker_lead": {
+                  "Color": "Red"
+                }
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Red"
+                },
+                "joker_lead": {
+                  "Color": "Red"
+                }
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "joker-before-last-trick-trick-nine",
+        "title": "The declarer, with the red joker and the ♥7 on the second-to-last trick: play the joker",
+        "scored": true,
+        "bot": {
+          "right": 3,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Red"
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Red"
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Joker": "Red"
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "partner-trick-bank-the-queen",
+        "title": "The friend's ♥A wins the trick; the declarer holds the joker and two trumps: throw the ♦Q",
+        "scored": true,
+        "bot": {
+          "right": 3,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Diamond",
+                    12
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Diamond",
+                    12
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Diamond",
+                    12
+                  ]
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "joker-before-last-trick-not-always",
+        "title": "Two tricks left under 기본, the joker and the ♦K, with the ♦A still out: play the king",
+        "scored": true,
+        "bot": {
+          "right": 3,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Diamond",
+                    13
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Diamond",
+                    13
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Diamond",
+                    13
+                  ]
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "early-joker-call-own-side-1",
+        "title": "Declarer leads the second trick holding the joker-call card; the friend has the joker",
+        "scored": false,
+        "bot": {
+          "right": 0,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "early-joker-call-own-side-2",
+        "title": "Declarer leads the second trick under 기본 and may call the joker, which the friend holds",
+        "scored": false,
+        "bot": {
+          "right": 1,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Club",
+                    8
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "early-joker-call-own-side-3",
+        "title": "Declarer leads the second trick under 경기과고 and may call the joker, which the friend holds",
+        "scored": false,
+        "bot": {
+          "right": 0,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": true,
+                "card": {
+                  "Normal": [
+                    "Spade",
+                    3
+                  ]
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      },
+      {
+        "id": "joker-onto-partners-mighty",
+        "title": "Partner's mighty is winning the fourth trick; you hold the red joker among eight cards",
+        "scored": false,
+        "bot": {
+          "right": 3,
+          "tries": 3,
+          "chose": [
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Club",
+                    12
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Club",
+                    2
+                  ]
+                },
+                "joker_lead": null
+              }
+            },
+            {
+              "Play": {
+                "call_joker": false,
+                "card": {
+                  "Normal": [
+                    "Club",
+                    2
+                  ]
+                },
+                "joker_lead": null
+              }
+            }
+          ]
+        },
+        "baseline": null
+      }
+    ]
+  }
+}

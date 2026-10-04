@@ -1,0 +1,68 @@
+{
+  "schema": "eval-results/1",
+  "suite": {
+    "name": "v1",
+    "game": "mighty",
+    "sha256": "dd53cdf85cb7cbebbad37835b5a2b85c25946403c958c79a1c2af25edf42d95b",
+    "quick": false
+  },
+  "bot": "hard",
+  "baseline": null,
+  "reproducible": true,
+  "run": {
+    "commit": "2a6095a1f5e26616ee7fb2b53cba548fb3da5eff",
+    "dirty": false,
+    "started": "2026-10-04T15:03:37Z",
+    "wall_seconds": 273.937418834,
+    "threads": 12,
+    "command": [
+      "./target/release/eval",
+      "run",
+      "--suite",
+      "v1",
+      "--bot",
+      "hard",
+      "--parts",
+      "cost",
+      "--machine",
+      "home server, beside the live bot worker",
+      "--commit",
+      "2a6095a1f5e26616ee7fb2b53cba548fb3da5eff",
+      "--out",
+      "cost-home"
+    ]
+  },
+  "machine": {
+    "label": "home server, beside the live bot worker",
+    "os": "linux",
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 5 5600X 6-Core Processor",
+    "threads": 12,
+    "load": [
+      3.13,
+      3.91,
+      4.34
+    ]
+  },
+  "ladder": null,
+  "presets": null,
+  "heldout": null,
+  "matches": null,
+  "cost": {
+    "rules": "gshs",
+    "field": "hard",
+    "seed": 4000000,
+    "deals": 40,
+    "bot": {
+      "decisions": 408,
+      "mean_ms": 137.95932710294127,
+      "median_ms": 130.72387,
+      "p90_ms": 226.104275,
+      "p99_ms": 345.825698,
+      "max_ms": 382.704502
+    },
+    "baseline": null,
+    "seconds": 273.936817751
+  },
+  "puzzles": null
+}

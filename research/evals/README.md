@@ -48,8 +48,9 @@ until a time budget runs out: that keeps every run reproducible.
 | cost | 경기과고 against `hard`, one deal at a time on one thread | 40 deals |
 | puzzles | 10 positions, 6 scored and 4 informational | 3 tries each |
 
-A full run of `hard` takes about two hours on the Mac with nothing else
-running (twice that with a baseline); `--quick` takes a few minutes.
+A full run of `hard` takes about 80,000 CPU-seconds: 3 h 13 min on the
+Mac while it was shared with other work, about 1.5 h when it is not;
+about twice that with a baseline. `--quick` takes a minute or two.
 
 ## How a table is played
 
