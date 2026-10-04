@@ -1,0 +1,53 @@
+{
+  "artifacts": [
+    {
+      "bytes": 106455772,
+      "path": "selfplay/selfplay-v1/shard-00000.npz",
+      "sha256": "ca729e6b1b4d047fe87987b1682f8dfb7d05bab8a131d0f0fce803d594ef635a"
+    },
+    {
+      "bytes": 106409349,
+      "path": "selfplay/selfplay-v1/shard-00001.npz",
+      "sha256": "65085cc11311d9523d48597b951942c6ce58c6ea8c1217d6a1b54456ac01cd76"
+    },
+    {
+      "bytes": 106412487,
+      "path": "selfplay/selfplay-v1/shard-00002.npz",
+      "sha256": "7f7728281cebed55295a8a655e976bcaef7e5a588b635adcaf6665ebd7064d25"
+    },
+    {
+      "bytes": 106213929,
+      "path": "selfplay/selfplay-v1/shard-00003.npz",
+      "sha256": "8aade2d8c37ad2cc2e479ba99ca9dfa3fa6f96b2d4719c067f5b4d73d01a81a0"
+    },
+    {
+      "bytes": 106194441,
+      "path": "selfplay/selfplay-v1/shard-00004.npz",
+      "sha256": "989c1ce4fbb8e4b5be504d40c81e277c8c1b0ad1136da4aaed892e21c1139034"
+    },
+    {
+      "bytes": 101710848,
+      "path": "selfplay/selfplay-v1/shard-00005.npz",
+      "sha256": "3516e4afd9396ffa830487072229f75b6b04f3444ae345c6ab00e136133eeebe"
+    },
+    {
+      "bytes": 24141,
+      "path": "selfplay/selfplay-v1/meta.json",
+      "sha256": "5649b4d7c9362740f2552a48f78f63e0ae7b16b5219bba7838284c662917dadd"
+    },
+    {
+      "bytes": 1454167,
+      "path": "selfplay/selfplay-v1/rules.jsonl.gz",
+      "sha256": "e2dcaa618c34b69dc2fc801454ff8681288b870eec627474119dd302111e213e"
+    }
+  ],
+  "commit": "2e9e67a3a4af8c6056d0db1bab6d4ed61041d34d",
+  "config": "research/experiments/2026-10-04-selfplay-v1/config.toml",
+  "created": "2026-10-04",
+  "encoding": "mighty-1",
+  "kind": "self-play",
+  "name": "selfplay-v1",
+  "seeds": [
+    20261004
+  ]
+}
