@@ -1016,6 +1016,9 @@
   /** Controls that rise over the felt's foot: bids, the exchange, a joker's choices. */
   const controls = $derived(!!variants || (myTurn && (bidding !== null || exchange !== null)));
   let controlsHeight = $state(0);
+  // Three rows of controls (the exchange with 공약 올리기) would lift the
+  // hint and reaction buttons into the seats; they step aside until then.
+  const crowded = $derived(controls && controlsHeight > 130);
 
   /** Where the result sits on wider screens, from the felt's top: under
    * the side seats when it fits there; else under the top seats and as wide
@@ -1202,7 +1205,7 @@
   </aside>
 
   <div class="felt" bind:this={felt} style:--over="{controls ? controlsHeight : 0}px">
-    {#if me !== null && !done}
+    {#if me !== null && !done && !crowded}
       <span class="react-spot">
         {@render hintTools()}
         <Reactions onreact={(text) => client.react(text)} />
