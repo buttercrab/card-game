@@ -8,7 +8,10 @@
 //!   bidding-consistency redeals ([`SearchBot::worlds`] without reading);
 //! - **reading**: the same weighed by how well each deal explains the
 //!   other players' bids and plays (the table's 고수 as it plays);
-//! - **model**: the belief model.
+//! - **model**: the belief model;
+//! - **model deals** and **model + reading**: the search's deals and
+//!   reading, dealing by the model ([`Sampler::Belief`]), as the belief
+//!   bot does with reading off and on.
 //!
 //! The search's beliefs are the shares of `--worlds` sampled worlds, mixed
 //! with 2% of the counts so that a card no world put somewhere costs a
@@ -23,7 +26,7 @@ use clap::Parser;
 use engine::{Bot, Encode, Game, Turn, Viewer};
 use infer::BeliefNet;
 use mighty::rules::{Preset, Rules};
-use mighty::search::{Reading, SearchBot};
+use mighty::search::{Reading, Sampler, SearchBot};
 use mighty::{Mighty, Options, PhaseView};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -47,7 +50,8 @@ struct Args {
     threads: u64,
 }
 
-const PREDICTORS: [&str; 4] = ["counts", "dealer", "reading", "model"];
+const PREDICTORS: [&str; N] = ["counts", "dealer", "reading", "model", "model deals", "model + reading"];
+const N: usize = 6;
 const PHASES: [&str; 4] = ["bidding", "exchange", "early tricks", "late tricks"];
 const CLASSES: usize = 9;
 const SMOOTHING: f64 = 0.02;
@@ -56,15 +60,15 @@ const SMOOTHING: f64 = 0.02;
 #[derive(Default, Clone)]
 struct Tally {
     cards: [usize; 4],
-    loss: [[f64; 4]; 4],
-    hits: [[usize; 4]; 4],
+    loss: [[f64; N]; 4],
+    hits: [[usize; N]; 4],
 }
 
 impl Tally {
     fn add(&mut self, other: &Tally) {
         for p in 0..4 {
             self.cards[p] += other.cards[p];
-            for k in 0..4 {
+            for k in 0..N {
                 self.loss[p][k] += other.loss[p][k];
                 self.hits[p][k] += other.hits[p][k];
             }
@@ -85,7 +89,7 @@ fn shares(worlds: &[(mighty::State, f64)], seat: usize) -> Vec<[f64; CLASSES]> {
     out
 }
 
-fn play(args: &Args, net: &BeliefNet, rules: &[Rules], hands: impl Iterator<Item = u64>) -> Tally {
+fn play(args: &Args, net: &'static BeliefNet, rules: &[Rules], hands: impl Iterator<Item = u64>) -> Tally {
     let mut tally = Tally::default();
     let hard = SearchBot {
         samples: 200,
@@ -99,6 +103,16 @@ fn play(args: &Args, net: &BeliefNet, rules: &[Rules], hands: impl Iterator<Item
         },
         ..hard
     };
+    let (believer, believer_reading) = (
+        SearchBot {
+            sampler: Sampler::Belief(net),
+            ..dealer
+        },
+        SearchBot {
+            sampler: Sampler::Belief(net),
+            ..hard
+        },
+    );
     for hand in hands {
         let rules = rules[hand as usize % rules.len()].clone();
         let players = rules.players;
@@ -135,6 +149,8 @@ fn play(args: &Args, net: &BeliefNet, rules: &[Rules], hands: impl Iterator<Item
                         let logits = &net.run(&[&obs]).expect("the model runs")[0];
                         let dealt = shares(&dealer.worlds(&view, args.worlds, &mut rng), seat);
                         let read = shares(&hard.worlds(&view, args.worlds, &mut rng), seat);
+                        let believed = shares(&believer.worlds(&view, args.worlds, &mut rng), seat);
+                        let believed_read = shares(&believer_reading.worlds(&view, args.worlds, &mut rng), seat);
                         for (card, &class) in truth.iter().enumerate() {
                             if class < 0 {
                                 continue;
@@ -152,7 +168,14 @@ fn play(args: &Args, net: &BeliefNet, rules: &[Rules], hands: impl Iterator<Item
                                     .map(|k| (1.0 - SMOOTHING) * s[k] / sum + SMOOTHING * prior[k])
                                     .collect()
                             };
-                            let predictions = [prior.clone(), mix(&dealt[card]), mix(&read[card]), model];
+                            let predictions = [
+                                prior.clone(),
+                                mix(&dealt[card]),
+                                mix(&read[card]),
+                                model,
+                                mix(&believed[card]),
+                                mix(&believed_read[card]),
+                            ];
                             tally.cards[phase] += 1;
                             for (k, p) in predictions.iter().enumerate() {
                                 tally.loss[phase][k] -= p[class as usize].ln();
@@ -172,7 +195,7 @@ fn play(args: &Args, net: &BeliefNet, rules: &[Rules], hands: impl Iterator<Item
 
 fn main() {
     let args = Args::parse();
-    let net = BeliefNet::open(&args.model).expect("a model directory");
+    let net: &'static BeliefNet = Box::leak(Box::new(BeliefNet::open(&args.model).expect("a model directory")));
     let rules: Vec<Rules> = match args.rules.parse::<Preset>() {
         Ok(preset) => vec![preset.rules()],
         Err(_) => serde_json::from_str(&std::fs::read_to_string(&args.rules).expect("a rules file"))
@@ -181,7 +204,7 @@ fn main() {
     let total = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..args.threads)
             .map(|t| {
-                let (args, net, rules) = (&args, &net, &rules);
+                let (args, rules) = (&args, &rules);
                 scope.spawn(move || play(args, net, rules, (t..args.hands).step_by(args.threads as usize)))
             })
             .collect();
@@ -201,14 +224,14 @@ fn main() {
         "cards",
         PREDICTORS.map(|p| format!("{p:>18}")).concat()
     );
-    let mut all = (0usize, [0.0; 4], [0usize; 4]);
+    let mut all = (0usize, [0.0; N], [0usize; N]);
     for (p, name) in PHASES.iter().enumerate() {
         let n = total.cards[p];
         if n == 0 {
             continue;
         }
         all.0 += n;
-        let cells: String = (0..4)
+        let cells: String = (0..N)
             .map(|k| {
                 all.1[k] += total.loss[p][k];
                 all.2[k] += total.hits[p][k];
@@ -221,7 +244,7 @@ fn main() {
             .collect();
         println!("{name:14}{n:>8}{cells}");
     }
-    let cells: String = (0..4)
+    let cells: String = (0..N)
         .map(|k| {
             format!(
                 "{:>11.4} ({:.2})",

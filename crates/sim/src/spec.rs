@@ -112,13 +112,17 @@ impl FromStr for Spec {
 }
 
 /// `belief:MODEL_DIR:SAMPLES@SETTINGS`: the table's 고수 (seat temper
-/// included) at `SAMPLES` deals, dealing by the model in `MODEL_DIR`.
+/// included) at `SAMPLES` deals, dealing by the model in `MODEL_DIR`, and
+/// not reading the table on top (`read.on=false`, unless the settings say
+/// otherwise): the model's beliefs already rest on every bid and card
+/// played, and weighing its deals by them again counts that evidence
+/// twice (the `beliefs` example of `crates/infer` measures it).
 fn belief(rest: &str, settings: &str) -> Result<Spec, String> {
     let (dir, samples) = rest
         .rsplit_once(':')
         .ok_or(format!("belief:{rest}: expected belief:MODEL_DIR:SAMPLES"))?;
     let samples: usize = samples.parse().map_err(|_| format!("bad sample count {samples:?}"))?;
-    let mut spec: Spec = format!("search:{samples}:1:0@{settings}").parse()?;
+    let mut spec: Spec = format!("search:{samples}:1:0@read.on=false,{settings}").parse()?;
     let Kind::Search(bot) = &mut spec.kind else {
         unreachable!("parsed as a search")
     };
@@ -306,7 +310,7 @@ mod tests {
     #[test]
     fn belief_bots_are_hard_dealing_by_a_model() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny");
-        let parsed = spec(&format!("belief:{dir}:50@read.on=false"));
+        let parsed = spec(&format!("belief:{dir}:50"));
         let Kind::Search(bot) = parsed.kind else {
             panic!("a belief bot searches")
         };
@@ -315,10 +319,11 @@ mod tests {
         assert!(!bot.reading.on);
         assert!(matches!(bot.sampler, Sampler::Belief(_)));
         // Loaded once: the same model for every spec naming it.
-        let Kind::Search(again) = spec(&format!("belief:{dir}:10")).kind else {
+        let Kind::Search(again) = spec(&format!("belief:{dir}:10@read.on=true")).kind else {
             panic!("a belief bot searches")
         };
         assert_eq!(again.sampler, bot.sampler);
+        assert!(again.reading.on);
         assert!("belief:/no/such/model:50".parse::<Spec>().is_err());
         assert!(format!("belief:{dir}").parse::<Spec>().is_err());
     }
