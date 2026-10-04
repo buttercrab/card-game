@@ -2,16 +2,16 @@ use clap::{Parser, ValueEnum};
 use engine::{Bot, RandomBot};
 use mighty::bot::SimpleBot;
 use mighty::rules::Preset;
-use mighty::{Action, Mighty, Options, View};
-use rand::{RngCore, SeedableRng};
+use mighty::{Mighty, Options};
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sim::spec::Spec;
-use sim::{Checks, Failure};
+use sim::stats::{mean_and_margin, quantile};
+use sim::{Checks, Clock, Failure, Timed};
 use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Play many Mighty games with bots, checking every invariant after each step.
 #[derive(Parser)]
@@ -31,10 +31,14 @@ struct Args {
     /// (bare `search` is the default search bot; a budget of 0 turns the
     /// time limit off, which keeps runs reproducible). `@name=value,...`
     /// after `simple` or `search` changes the simple bot's weights, e.g.
-    /// `simple@bid_base=7` or `search:80@draw_trumps=3`; for `search`,
+    /// `simple@bid_base=7` or `search:80@draw_trumps=3`; for `simple`,
+    /// `slips=P` plays a random card with probability P; for `search`,
     /// `read.NAME=value` changes how it reads the other players, e.g.
     /// `search@read.on=false`, `threads=N` splits each search across N
     /// threads, and `endgame=N` solves the last N tricks of each playout.
+    /// `easy`, `normal` and `hard` are the table's 초보, 보통 and 고수
+    /// (`hard` is `search:200:1:0`, without the table's time limit), each
+    /// bidding a little bolder or more carefully by seat as at the table.
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.
@@ -85,40 +89,19 @@ fn table(
     // every pairing of measured seat and first bidder equally.
     let focus = matches!(args.bots, Bots::Search).then(|| (game as usize / seats) % seats);
     let bots = (0..seats)
-        .map(|seat| match (args.bots, seat % 2) {
-            _ if Some(seat) == focus => Box::new(Timed {
-                bot: focus_bot.build(),
-                clock: clock.clone(),
-            }),
-            (Bots::Search, _) => args.field.build(),
-            (Bots::Random, _) | (Bots::Mixed, 1) => Box::new(RandomBot),
-            _ => Box::new(SimpleBot::default()),
+        .map(|seat| -> Box<dyn Bot<Mighty>> {
+            match (args.bots, seat % 2) {
+                _ if Some(seat) == focus => Box::new(Timed {
+                    bot: focus_bot.build(seat),
+                    clock: clock.clone(),
+                }),
+                (Bots::Search, _) => args.field.build(seat),
+                (Bots::Random, _) | (Bots::Mixed, 1) => Box::new(RandomBot),
+                _ => Box::new(SimpleBot::default()),
+            }
         })
         .collect();
     (bots, focus)
-}
-
-/// How long each of the focus bot's decisions with a real choice took.
-#[derive(Debug, Clone, Default)]
-struct Clock {
-    times: Vec<Duration>,
-}
-
-/// Times every decision of the bot it wraps.
-struct Timed {
-    bot: Box<dyn Bot<Mighty>>,
-    clock: Rc<RefCell<Clock>>,
-}
-
-impl Bot<Mighty> for Timed {
-    fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
-        let started = Instant::now();
-        let action = self.bot.act(view, legal, rng);
-        if legal.len() > 1 {
-            self.clock.borrow_mut().times.push(started.elapsed());
-        }
-        action
-    }
 }
 
 struct Outcome {
@@ -140,65 +123,43 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
             last_actions: Vec::new(),
         })?;
     }
-    let next = AtomicU64::new(0);
     let checks = Checks {
         view_every: args.view_every,
         ..Checks::default()
     };
-    let threads = args
-        .threads
-        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
-    let mut results: Vec<(u64, Result<Outcome, Failure>)> = std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..threads)
-            .map(|_| {
-                scope.spawn(|| {
-                    let mut done = Vec::new();
-                    loop {
-                        let game = next.fetch_add(1, Ordering::Relaxed);
-                        if game >= args.games {
-                            return done;
-                        }
-                        let rules = if args.vary {
-                            rules.varied(&mut ChaCha8Rng::seed_from_u64(args.seed + game))
-                        } else {
-                            rules.clone()
-                        };
-                        let seats = rules.players;
-                        let options = Options {
-                            rules,
-                            first_bidder: game as usize % seats,
-                        };
-                        let one = |focus_bot: Spec| {
-                            let clock = Rc::new(RefCell::new(Clock::default()));
-                            let (mut bots, focus) = table(args, seats, game, focus_bot, &clock);
-                            sim::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
-                                clock: clock.take(),
-                                baseline_clock: Clock::default(),
-                                steps: report.steps,
-                                focus_payoff: focus.map(|seat| report.payoffs[seat] as f64),
-                                baseline_payoff: None,
-                            })
-                        };
-                        let outcome = one(args.focus).and_then(|mut outcome| {
-                            if let Some(baseline) = args.baseline {
-                                let base = one(baseline)?;
-                                outcome.baseline_payoff = base.focus_payoff;
-                                outcome.baseline_clock = base.clock;
-                            }
-                            Ok(outcome)
-                        });
-                        done.push((game, outcome));
-                    }
-                })
+    sim::parallel(args.games, args.threads, |game| {
+        let rules = if args.vary {
+            rules.varied(&mut ChaCha8Rng::seed_from_u64(args.seed + game))
+        } else {
+            rules.clone()
+        };
+        let seats = rules.players;
+        let options = Options {
+            rules,
+            first_bidder: game as usize % seats,
+        };
+        let one = |focus_bot: Spec| {
+            let clock = Rc::new(RefCell::new(Clock::default()));
+            let (mut bots, focus) = table(args, seats, game, focus_bot, &clock);
+            sim::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
+                clock: clock.take(),
+                baseline_clock: Clock::default(),
+                steps: report.steps,
+                focus_payoff: focus.map(|seat| report.payoffs[seat] as f64),
+                baseline_payoff: None,
             })
-            .collect();
-        workers
-            .into_iter()
-            .flat_map(|w| w.join().expect("worker panicked"))
-            .collect()
-    });
-    results.sort_by_key(|(game, _)| *game);
-    results.into_iter().map(|(_, r)| r).collect()
+        };
+        one(args.focus).and_then(|mut outcome| {
+            if let Some(baseline) = args.baseline {
+                let base = one(baseline)?;
+                outcome.baseline_payoff = base.focus_payoff;
+                outcome.baseline_clock = base.clock;
+            }
+            Ok(outcome)
+        })
+    })
+    .into_iter()
+    .collect()
 }
 
 /// Median, 99th percentile and slowest decision, in milliseconds.
@@ -211,21 +172,12 @@ fn timing<'a>(clocks: impl Iterator<Item = &'a Clock>) -> String {
         return "nothing".into();
     }
     ms.sort_by(f64::total_cmp);
-    let at = |q: f64| ms[((ms.len() - 1) as f64 * q).round() as usize];
     format!(
         "median {:.1} ms, p99 {:.0} ms, at most {:.0} ms per decision",
-        at(0.5),
-        at(0.99),
+        quantile(&ms, 0.5),
+        quantile(&ms, 0.99),
         ms[ms.len() - 1]
     )
-}
-
-/// The mean, and the half-width of its 95% confidence interval.
-fn mean_and_margin(xs: &[f64]) -> (f64, f64) {
-    let n = xs.len() as f64;
-    let mean = xs.iter().sum::<f64>() / n;
-    let var = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0).max(1.0);
-    (mean, 1.96 * (var / n).sqrt())
 }
 
 fn main() -> ExitCode {

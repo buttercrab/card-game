@@ -1,79 +1,159 @@
-//! Bots named on the command line: `random`, `simple` or
-//! `search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]`, with `@name=value,...`
-//! weights. See `sim --help`.
+//! Bots named on the command line and in eval suites: `random`, `simple`
+//! or `search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]`, with `@name=value,...`
+//! settings, and the table's levels `easy`, `normal` and `hard`. See
+//! `sim --help`.
 
-use engine::{Bot, RandomBot};
-use mighty::Mighty;
+use engine::{Bot, RandomBot, Seat};
 use mighty::bot::SimpleBot;
 use mighty::search::{Reading, SearchBot};
+use mighty::{Action, Mighty, View};
+use rand::RngCore;
+use rand::seq::IndexedRandom;
 use std::str::FromStr;
 use std::time::Duration;
 
+/// A bot by name, built afresh for each seat it fills.
 #[derive(Clone, Copy, Debug)]
-pub enum Spec {
+pub struct Spec {
+    pub kind: Kind,
+    /// Bid a little bolder or more carefully by seat, as the server's
+    /// bots do ([`TEMPER`]); set for the table's levels.
+    pub temper: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Kind {
     Random,
     Simple(SimpleBot),
+    /// The simple bot, playing a random card this often.
+    Clumsy(SimpleBot, f64),
     Search(SearchBot),
 }
+
+/// The server's bid boldness by seat, added to the simple bot's
+/// `bid_base` (`server::session`), so a table of bots does not bid as one.
+pub const TEMPER: [f32; 8] = [0.0, 0.4, -0.4, 0.2, -0.2, 0.3, -0.3, 0.1];
+
+/// How often the table's 초보 picks a random card.
+pub const EASY_SLIPS: f64 = 0.35;
 
 impl FromStr for Spec {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Spec, String> {
-        let (name, weights) = s.split_once('@').unwrap_or((s, ""));
+        let (name, settings) = s.split_once('@').unwrap_or((s, ""));
+        // The table's levels, as the server builds them. 고수 thinks
+        // until a time budget runs out there; here it deals a fixed 200
+        // times instead, so runs reproduce.
+        let (name, temper, mut slips) = match name {
+            "easy" => ("simple", true, Some(EASY_SLIPS)),
+            "normal" => ("simple", true, None),
+            "hard" => ("search:200:1:0", true, None),
+            _ => (name, false, None),
+        };
+        let search = name.starts_with("search");
         let mut policy = SimpleBot::default();
         let mut reading = Reading::default();
         let mut search_threads = 1;
         let mut endgame = 0;
-        for setting in weights.split(',').filter(|w| !w.is_empty()) {
+        for setting in settings.split(',').filter(|w| !w.is_empty()) {
             let (key, value) = setting.split_once('=').ok_or(format!("bad weight {setting:?}"))?;
             match key.strip_prefix("read.") {
-                Some(key) if name.starts_with("search") => set_reading(&mut reading, key, value)?,
-                None if key == "threads" && name.starts_with("search") => {
+                Some(key) if search => set_reading(&mut reading, key, value)?,
+                None if key == "threads" && search => {
                     search_threads = value.parse().map_err(|_| format!("bad value {value:?} for threads"))?;
                 }
-                None if key == "endgame" && name.starts_with("search") => {
+                None if key == "endgame" && search => {
                     endgame = value.parse().map_err(|_| format!("bad value {value:?} for endgame"))?;
+                }
+                None if key == "slips" && name == "simple" => {
+                    slips = Some(value.parse().map_err(|_| format!("bad value {value:?} for slips"))?);
                 }
                 _ => set_weight(&mut policy, key, value)?,
             }
         }
-        match name {
-            "random" => return Ok(Spec::Random),
-            "simple" => return Ok(Spec::Simple(policy)),
-            _ => {}
-        }
-        let mut parts = name.split(':');
-        if parts.next() != Some("search") {
-            return Err(format!("unknown bot {s:?}"));
-        }
-        let mut bot = SearchBot {
-            policy,
-            reading,
-            threads: search_threads,
-            endgame,
-            ..SearchBot::default()
+        let kind = match name {
+            "random" => Kind::Random,
+            "simple" => match slips {
+                Some(slips) => Kind::Clumsy(policy, slips),
+                None => Kind::Simple(policy),
+            },
+            _ => {
+                let mut parts = name.split(':');
+                if parts.next() != Some("search") {
+                    return Err(format!("unknown bot {s:?}"));
+                }
+                let mut bot = SearchBot {
+                    policy,
+                    reading,
+                    threads: search_threads,
+                    endgame,
+                    ..SearchBot::default()
+                };
+                if let Some(samples) = parts.next() {
+                    bot.samples = samples.parse().map_err(|_| format!("bad sample count in {s:?}"))?;
+                }
+                if let Some(confidence) = parts.next() {
+                    bot.confidence = confidence.parse().map_err(|_| format!("bad confidence in {s:?}"))?;
+                }
+                if let Some(budget) = parts.next() {
+                    let ms: u64 = budget.parse().map_err(|_| format!("bad budget in {s:?}"))?;
+                    bot.budget = (ms > 0).then(|| Duration::from_millis(ms));
+                }
+                Kind::Search(bot)
+            }
         };
-        if let Some(samples) = parts.next() {
-            bot.samples = samples.parse().map_err(|_| format!("bad sample count in {s:?}"))?;
-        }
-        if let Some(confidence) = parts.next() {
-            bot.confidence = confidence.parse().map_err(|_| format!("bad confidence in {s:?}"))?;
-        }
-        if let Some(budget) = parts.next() {
-            let ms: u64 = budget.parse().map_err(|_| format!("bad budget in {s:?}"))?;
-            bot.budget = (ms > 0).then(|| Duration::from_millis(ms));
-        }
-        Ok(Spec::Search(bot))
+        Ok(Spec { kind, temper })
     }
 }
 
 impl Spec {
-    pub fn build(self) -> Box<dyn Bot<Mighty>> {
-        match self {
-            Spec::Random => Box::new(RandomBot),
-            Spec::Simple(bot) => Box::new(bot),
-            Spec::Search(bot) => Box::new(bot),
+    /// The bot for `seat`.
+    pub fn build(self, seat: Seat) -> Box<dyn Bot<Mighty> + Send> {
+        let temper = if self.temper { TEMPER[seat % TEMPER.len()] } else { 0.0 };
+        let temper = |mut policy: SimpleBot| {
+            policy.bid_base += temper;
+            policy
+        };
+        match self.kind {
+            Kind::Random => Box::new(RandomBot),
+            Kind::Simple(bot) => Box::new(temper(bot)),
+            Kind::Clumsy(bot, slips) => Box::new(Clumsy {
+                inner: temper(bot),
+                slips,
+            }),
+            Kind::Search(bot) => Box::new(SearchBot {
+                policy: temper(bot.policy),
+                ..bot
+            }),
+        }
+    }
+
+    /// Whether the bot decides the same way in every run: true unless it
+    /// stops thinking on a clock.
+    pub fn reproducible(self) -> bool {
+        match self.kind {
+            Kind::Search(bot) => bot.budget.is_none(),
+            Kind::Random | Kind::Simple(_) | Kind::Clumsy(..) => true,
+        }
+    }
+}
+
+/// A simple bot that, when playing a card, picks one at random this often:
+/// the table's 초보.
+#[derive(Debug, Clone, Copy)]
+pub struct Clumsy {
+    pub inner: SimpleBot,
+    pub slips: f64,
+}
+
+impl Bot<Mighty> for Clumsy {
+    fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
+        let playing = legal.iter().all(|a| matches!(a, Action::Play { .. }));
+        if playing && rand::Rng::random_bool(rng, self.slips) {
+            legal.choose(rng).expect("a bot acts only with legal actions").clone()
+        } else {
+            self.inner.act(view, legal, rng)
         }
     }
 }
@@ -123,4 +203,45 @@ fn set_reading(reading: &mut Reading, key: &str, value: &str) -> Result<(), Stri
         _ => return Err(format!("unknown setting read.{key}")),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec(s: &str) -> Spec {
+        s.parse().unwrap_or_else(|e| panic!("{s}: {e}"))
+    }
+
+    #[test]
+    fn levels_are_the_tables_bots() {
+        assert!(matches!(spec("easy").kind, Kind::Clumsy(_, s) if s == EASY_SLIPS));
+        assert!(matches!(spec("normal").kind, Kind::Simple(_)));
+        let Kind::Search(hard) = spec("hard").kind else {
+            panic!("hard searches")
+        };
+        assert_eq!((hard.samples, hard.confidence, hard.budget), (200, 1.0, None));
+        assert!(["easy", "normal", "hard"].iter().all(|s| spec(s).temper));
+        assert!(!spec("search:200:1:0").temper);
+    }
+
+    #[test]
+    fn settings_apply_to_levels_and_names() {
+        let Kind::Search(bot) = spec("hard@threads=4,read.on=false").kind else {
+            panic!("hard searches")
+        };
+        assert_eq!((bot.threads, bot.reading.on), (4, false));
+        assert!(matches!(spec("simple@slips=0.5").kind, Kind::Clumsy(_, s) if s == 0.5));
+        assert!(matches!(spec("easy@slips=0.1").kind, Kind::Clumsy(_, s) if s == 0.1));
+        assert!("search@slips=0.5".parse::<Spec>().is_err());
+        assert!("expert".parse::<Spec>().is_err());
+    }
+
+    #[test]
+    fn only_a_clock_makes_a_bot_irreproducible() {
+        assert!(spec("hard").reproducible());
+        assert!(spec("search:200:1:0@threads=4").reproducible());
+        assert!(!spec("search").reproducible());
+        assert!(!spec("search:60000:1:1280@threads=4").reproducible());
+    }
 }
