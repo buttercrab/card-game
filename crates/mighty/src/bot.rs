@@ -48,6 +48,9 @@ pub struct SimpleBot {
     pub lead_joker: i32,
     pub lead_mighty: i32,
     pub defend_trump: i32,
+    /// Spend a joker on the second-to-last trick when the rules strip its
+    /// power on the last one, instead of holding it to be wasted there.
+    pub plan_last_trick: bool,
 }
 
 impl Default for SimpleBot {
@@ -69,6 +72,7 @@ impl Default for SimpleBot {
             lead_joker: -40,
             lead_mighty: -100,
             defend_trump: -100,
+            plan_last_trick: true,
         }
     }
 }
@@ -267,6 +271,23 @@ impl Table<'_> {
         !self.specials_out && !higher_out && !ruffable
     }
 
+    /// A joker with power now that would have none on the last trick,
+    /// played on the trick before it: holding it on wastes it.
+    fn doomed(&self, card: Card) -> bool {
+        let rules = &self.view.rules;
+        let last = rules.hand_size - 1;
+        self.bot.plan_last_trick
+            && card.is_joker()
+            && self.trick_no + 1 == last
+            && self.powered(card, None)
+            && rules.policy(card, self.trump, last) == CardPolicy::NoEffect
+    }
+
+    /// How much a card is worth keeping for the tricks still to come.
+    fn keep(&self, card: Card) -> u8 {
+        if self.doomed(card) { 0 } else { self.power(card) }
+    }
+
     fn late(&self) -> bool {
         self.trick_no + self.bot.late_tricks >= self.view.rules.hand_size
     }
@@ -396,7 +417,14 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
         if card.is_joker() {
             // Save the joker for a trick worth taking, unless it cannot wait.
             let named_trump = matches!(joker_lead, Some(Lead::Suit(s)) if Some(*s) == t.trump);
-            let base = if t.late() { 150 } else { t.bot.lead_joker };
+            let base = if t.doomed(card) {
+                // Ahead of even a sure lead, which still wins next trick.
+                300
+            } else if t.late() {
+                150
+            } else {
+                t.bot.lead_joker
+            };
             return base + if t.attacking && named_trump { 20 } else { 0 };
         }
         if card == t.mighty {
@@ -492,7 +520,7 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
             !special || worth >= t.bot.special_worth || last && points >= 1
         })
         .filter(|&c| last || !foes_after || safe(Some(c)) || t.power(c) >= 50 || points == 0)
-        .min_by_key(|c| t.power(*c));
+        .min_by_key(|c| t.keep(*c));
     match take {
         Some(card) if !friend_winning => pick(card),
         _ => pick(cheapest_dump(t, &cards)),
@@ -500,10 +528,14 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
 }
 
 /// The card that costs the least to give away: never the mighty or a
-/// joker if anything else will do, then not a point, then the lowest.
+/// joker if anything else will do (unless the joker would be powerless on
+/// the last trick anyway), then not a point, then the lowest.
 fn cheapest_dump(t: &Table, cards: &[Card]) -> Card {
     *cards
         .iter()
-        .min_by_key(|c| (**c == t.mighty || c.is_joker(), c.is_point(), t.power(**c)))
+        .min_by_key(|&&c| {
+            let special = (c == t.mighty || c.is_joker()) && !t.doomed(c);
+            (special, c.is_point(), t.keep(c))
+        })
         .expect("a legal play exists")
 }
