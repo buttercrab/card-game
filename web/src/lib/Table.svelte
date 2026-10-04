@@ -2211,14 +2211,14 @@
   }
 
   /* The action strip: one slot whose content follows the phase. */
+  /* The strip has no panel of its own: prompts, bids and buttons sit on
+     the table itself. */
   .strip {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
     min-height: 64px;
-    padding: 10px 12px;
-    border-radius: 16px;
-    background: var(--panel);
+    padding: 6px 0;
   }
   /* After the hand the strip only holds buttons: they sit on the table
      itself, with no panel behind them. */
