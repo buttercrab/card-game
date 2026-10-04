@@ -51,6 +51,10 @@ pub struct SimpleBot {
     /// Spend a joker on the second-to-last trick when the rules strip its
     /// power on the last one, instead of holding it to be wasted there.
     pub plan_last_trick: bool,
+    /// Call a joker only when the joker that card calls is still out and
+    /// not the friend, rather than when any joker is. Off keeps the old
+    /// play; on measured even (+0.01 ± 0.02 a hand, simple bots, gshs).
+    pub aim_joker_call: bool,
 }
 
 impl Default for SimpleBot {
@@ -73,6 +77,7 @@ impl Default for SimpleBot {
             lead_mighty: -100,
             defend_trump: -100,
             plan_last_trick: true,
+            aim_joker_call: false,
         }
     }
 }
@@ -411,8 +416,20 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
         if *call_joker {
             // Killing a joker that is probably against us is worth a lot,
             // unless it is the friend the declarer called.
-            let ours = t.attacking && t.called.is_some_and(|c| c.is_joker());
-            return if joker_out && !ours { 300 } else { -50 };
+            if !t.bot.aim_joker_call {
+                let ours = t.attacking && t.called.is_some_and(|c| c.is_joker());
+                return if joker_out && !ours { 300 } else { -50 };
+            }
+            let rules = &t.view.rules;
+            let target = rules
+                .deck
+                .jokers()
+                .iter()
+                .copied()
+                .find(|&j| rules.joker_call_card(j, t.trump) == Some(card));
+            let out = target.is_some_and(|j| t.unseen.contains(&j));
+            let ours = t.attacking && t.called.is_some() && t.called == target;
+            return if out && !ours { 300 } else { -50 };
         }
         if card.is_joker() {
             // Save the joker for a trick worth taking, unless it cannot wait.

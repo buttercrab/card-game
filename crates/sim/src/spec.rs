@@ -98,6 +98,7 @@ fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String>
         "lead_mighty" => bot.lead_mighty = int()?,
         "defend_trump" => bot.defend_trump = int()?,
         "plan_last_trick" => bot.plan_last_trick = value.parse().map_err(|_| bad())?,
+        "aim_joker_call" => bot.aim_joker_call = value.parse().map_err(|_| bad())?,
         _ => return Err(format!("unknown weight {key:?}")),
     }
     Ok(())
