@@ -4,12 +4,17 @@ version = "0.1.0"
 description = "Training, export and scaling studies for the card-game bots"
 requires-python = ">=3.13"
 license = "MIT"
-dependencies = []
+dependencies = ["cardgame-env", "numpy>=2.3"]
 
 [project.optional-dependencies]
 # Kept out of the default install so CI and checks stay light; training
 # needs it: `uv sync --extra torch` (MPS on the Mac).
-torch = ["numpy>=2.3", "torch>=2.8"]
+torch = ["torch>=2.8"]
+
+[tool.uv.sources]
+# The Rust environment's bindings (crates/env-py), built by maturin on
+# `uv sync`; that needs a Rust toolchain.
+cardgame-env = { path = "../crates/env-py" }
 
 [dependency-groups]
 dev = ["pyright>=1.1.400", "pytest>=8.4", "ruff>=0.13"]
@@ -30,7 +35,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "PT", "PL"]
 "tests/**" = ["PLR2004"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "../crates/env-py/python"]
 typeCheckingMode = "strict"
 pythonVersion = "3.13"
 

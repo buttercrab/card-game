@@ -1,0 +1,35 @@
+[project]
+name = "cardgame-env"
+version = "0.1.0"
+description = "The card-game RL environment and self-play generator, from Rust"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["numpy>=2.3"]
+
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+# Linted, formatted and type-checked with ml/ and its settings.
+[tool.ruff]
+extend = "../../ml/pyproject.toml"
+
+[tool.maturin]
+python-source = "python"
+module-name = "cardgame_env._core"
+manifest-path = "Cargo.toml"
+profile = "release"
+
+# uv rebuilds the extension when any Rust it is made of changes.
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "src/**/*.rs" },
+    { file = "python/**/*" },
+    { file = "../env/**/*.rs" },
+    { file = "../engine/**/*.rs" },
+    { file = "../mighty/**/*.rs" },
+    { file = "../sim/**/*.rs" },
+    { file = "../../Cargo.lock" },
+]

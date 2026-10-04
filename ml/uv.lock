@@ -3,13 +3,27 @@ revision = 3
 requires-python = ">=3.13"
 
 [[package]]
+name = "cardgame-env"
+version = "0.1.0"
+source = { directory = "../crates/env-py" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "numpy", specifier = ">=2.3" }]
+
+[[package]]
 name = "cardgame-ml"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "cardgame-env" },
+    { name = "numpy" },
+]
 
 [package.optional-dependencies]
 torch = [
-    { name = "numpy" },
     { name = "torch" },
 ]
 
@@ -22,7 +36,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", marker = "extra == 'torch'", specifier = ">=2.3" },
+    { name = "cardgame-env", directory = "../crates/env-py" },
+    { name = "numpy", specifier = ">=2.3" },
     { name = "torch", marker = "extra == 'torch'", specifier = ">=2.8" },
 ]
 provides-extras = ["torch"]

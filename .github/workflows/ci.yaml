@@ -46,8 +46,10 @@ jobs:
           # The search bot is slow; a few games still catch illegal moves.
           cargo run --release -p sim -- --games 30 --bots search
 
-  # Lint, types and tests for the Python side. Installs without the torch
-  # extra, which nothing here needs yet.
+  # Lint, types and tests for the Python side, the environment's bindings
+  # (crates/env-py) included: `uv sync` builds them with maturin, and the
+  # tests replay positions the Rust side recorded. Installs without the
+  # torch extra, which nothing here needs yet.
   ml:
     runs-on: ubuntu-latest
     defaults:
@@ -55,13 +57,15 @@ jobs:
         working-directory: ml
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: ml/uv.lock
       - run: uv sync --locked
-      - run: uv run ruff check
-      - run: uv run ruff format --check
+      - run: uv run ruff check . ../crates/env-py/python
+      - run: uv run ruff format --check . ../crates/env-py/python
       - run: uv run pyright
       - run: uv run pytest
 
