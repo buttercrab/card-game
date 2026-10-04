@@ -399,8 +399,14 @@
     color: var(--table);
     font-size: 13px;
     font-weight: 700;
-    white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    /* A long note (딜미스 아님, 노기루다 20) takes two short lines, so the
+       two top seats' notes never meet in the middle. */
+    width: max-content;
+    max-width: 4.6em;
+    line-height: 1.2;
+    text-align: center;
+    word-break: keep-all;
   }
   /* Tablets: the seats grow with the table instead of staying phone-sized. */
   @media (min-width: 600px) {
