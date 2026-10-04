@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { botName } from './names';
   import { tick, untrack } from 'svelte';
   import { prefersReducedMotion } from 'svelte/motion';
   import BidPanel from './BidPanel.svelte';
@@ -90,7 +91,7 @@
     if (seat === me) return '나';
     const info = room?.seats[seat];
     if (!info || info.kind === 'empty') return `${seat + 1}번 자리`;
-    return info.kind === 'bot' ? `봇 ${seat + 1}` : info.name;
+    return info.kind === 'bot' ? botName(seat) : info.name;
   }
 
   // ---- Where everyone sits -------------------------------------------------

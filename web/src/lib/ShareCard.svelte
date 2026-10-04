@@ -2,6 +2,7 @@
   // The session so far as one image to send to the group chat: standings,
   // the MVP and the biggest hand. Drawn on a canvas, shared through the
   // phone's share sheet, or saved where sharing files is not supported.
+  import { botName } from './names';
   import { PRESET_NAME } from './presets';
   import type { RoomMsg } from './types';
 
@@ -13,7 +14,7 @@
   let file: File | null = null;
   let status = $state<string | null>(null);
 
-  const names = $derived(room.seats.map((s, i) => (s.kind === 'human' ? s.name : s.kind === 'bot' ? `봇 ${i + 1}` : `자리 ${i + 1}`)));
+  const names = $derived(room.seats.map((s, i) => (s.kind === 'human' ? s.name : s.kind === 'bot' ? botName(i) : `자리 ${i + 1}`)));
   const history = $derived(room.history ?? []);
   const standings = $derived(
     room.scores.map((score, seat) => ({ seat, score, name: names[seat] })).sort((a, b) => b.score - a.score),

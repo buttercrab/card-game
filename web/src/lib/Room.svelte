@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { botName } from './names';
   import { onDestroy, untrack } from 'svelte';
   import { RoomClient, savedName } from './client.svelte';
   import { PRESET_NAME } from './presets';
@@ -157,7 +158,7 @@
                 {#if s.kind === 'empty'}
                   <span class="muted">빈 자리</span>
                 {:else}
-                  {s.kind === 'bot' ? `봇 ${i + 1}` : s.name}
+                  {s.kind === 'bot' ? botName(i) : s.name}
                   {#if s.kind === 'bot' && !seated}<span class="tag">{LEVEL[s.level ?? 'hard']}</span>{/if}
                   {#if client.seat === i}<span class="tag">나</span>{/if}
                   {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>{/if}
@@ -174,7 +175,7 @@
                 {:else if s.kind === 'bot' && seated}
                   <select
                     class="level"
-                    aria-label="봇 {i + 1} 실력"
+                    aria-label="{botName(i)} 실력"
                     value={s.level ?? 'hard'}
                     onchange={(e) => client.addBot(i, e.currentTarget.value as BotLevel)}
                   >
