@@ -44,6 +44,10 @@
   $effect(() => {
     if (cue) juice(el, 0.6);
   });
+  // The turn arriving gives the plate a small nudge, so the eye follows it.
+  $effect(() => {
+    if (turn) juice(el, 0.2);
+  });
 
   // Points taken float up from the plate as "+2", then the count bumps.
   let gained = $state<{ n: number; id: number } | null>(null);

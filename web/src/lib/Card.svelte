@@ -490,6 +490,20 @@
     translate: 0 calc(var(--w) * -0.26);
     scale: 1.04;
     box-shadow: var(--shadow-raised);
+    /* A raised card sways a hair while it waits, as if held. */
+    animation: sway 2.6s ease-in-out 300ms infinite;
+  }
+  @keyframes sway {
+    0%,
+    100% {
+      rotate: 0deg;
+    }
+    30% {
+      rotate: 0.9deg;
+    }
+    70% {
+      rotate: -0.7deg;
+    }
   }
   /* Cards that cannot be played sink back and lose some colour, rather
      than greying out; they still answer a tap with the reason. */

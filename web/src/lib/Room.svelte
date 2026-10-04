@@ -149,7 +149,7 @@
           {#each room.seats as s, i (i)}
             <li class:me={client.seat === i}>
               <span class="seat-no">{i + 1}</span>
-              <span class="seat-name">
+              {#key s.kind + ('name' in s ? s.name : '')}<span class="seat-name fade-up">
                 {#if s.kind === 'empty'}
                   <span class="muted">빈 자리</span>
                 {:else}
@@ -158,7 +158,7 @@
                   {#if client.seat === i}<span class="tag">나</span>{/if}
                   {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>{/if}
                 {/if}
-              </span>
+              </span>{/key}
               {#if room.hands_played > 0}
                 <span class="score" class:neg={room.scores[i] < 0} title="누적 점수">{room.scores[i] > 0 ? '+' : ''}{room.scores[i]}</span>
               {/if}

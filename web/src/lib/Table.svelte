@@ -696,6 +696,8 @@
       if (!reduced && !hurry && to) {
         await Promise.all(trick.plays.map((p, i) => flyTo(slotCard(p.seat), to, 400 * k, i * 40 * k)));
       }
+      // The winner's plate takes the cards with a small bounce.
+      void juice(trick.winner === me ? (tray ?? null) : (felt?.querySelector(`[data-seat="${trick.winner}"] .seat`) ?? null), trick.winner === me ? 0.15 : 0.35);
       await land(
         after.plays,
         () => {
@@ -843,7 +845,12 @@
     <div class="trick" aria-label={resolving ? '끝난 라운드' : '이번 라운드'}>
       {#each onTable as p, i (`${trickKey}-${p.seat}`)}
         {@const r = relative(p.seat)}
-        <div class="slot" class:beaten={winner !== null && p.seat !== winner} data-slot={p.seat} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
+        <div
+          class="slot"
+          class:beaten={winner !== null && p.seat !== winner}
+          data-slot={p.seat}
+          style:--tilt="{((p.seat * 7 + trickNo * 3) % 5) - 2}deg"
+          style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
           <Card
             card={p.card}
             size="trick"
@@ -1259,8 +1266,10 @@
     position: absolute;
     transform: translate(calc(-50% + var(--x) * var(--tx)), calc(-50% + var(--y) * var(--ty)));
   }
+  /* Cards on the table lie a little crooked, each its own way. */
   .trick .slot :global(.card) {
     --w: var(--card-w);
+    rotate: var(--tilt, 0deg);
     transition: opacity var(--dur-quick) var(--ease-standard);
   }
   /* While a round resolves, the cards that lost step back. */
@@ -1365,6 +1374,22 @@
   }
   .result p {
     margin: 0;
+  }
+  /* Result rows come in one after another (Wordle's stats sheet). */
+  .result tbody tr {
+    animation: fade-up 260ms var(--ease-standard) both;
+  }
+  .result tbody tr:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .result tbody tr:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .result tbody tr:nth-child(4) {
+    animation-delay: 180ms;
+  }
+  .result tbody tr:nth-child(5) {
+    animation-delay: 240ms;
   }
   .ledger {
     display: grid;
@@ -1528,6 +1553,13 @@
     outline: 3px solid transparent;
     outline-offset: -3px;
     transition: outline-color var(--dur-quick) var(--ease-standard);
+  }
+  .tray :global(.hand) {
+    transition: translate 420ms var(--ease-settle);
+  }
+  /* Your turn: the hand rises a touch to meet you. */
+  .mine .tray :global(.hand) {
+    translate: 0 -4px;
   }
   .mine .tray {
     outline-color: var(--accent);

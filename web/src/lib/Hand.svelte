@@ -124,7 +124,7 @@
     {@const step = stepFor(row.length)}
     <div class="row" style:--overlap="{step - cardWidth}px">
       {#each row as card, i (JSON.stringify(card))}
-        <div class="spot" style:--i={i} animate:flip={{ duration: settings.speed === 'off' ? 0 : 240, easing: cubicOut }}>
+        <div class="spot" class:fresh={kitty.some((k) => sameCard(k, card))} style:--i={i} style:--rot="{((i * 37) % 7) - 3}deg" animate:flip={{ duration: settings.speed === 'off' ? 0 : 240, easing: cubicOut }}>
         <Card
           {card}
           width={cardWidth}
@@ -165,10 +165,25 @@
     animation: deal-in var(--dur-travel) var(--ease-settle) both;
     animation-delay: calc(var(--i) * 45ms);
   }
+  /* Dealt cards land a little crooked and straighten, as on a real table. */
+  /* Cards from the kitty drop into the hand once. */
+  .fresh {
+    animation: kitty-in 460ms var(--ease-settle) both;
+    animation-delay: calc(var(--i) * 30ms);
+  }
+  @keyframes kitty-in {
+    from {
+      opacity: 0;
+      transform: translateY(-28px) rotate(var(--rot));
+    }
+  }
   @keyframes deal-in {
     from {
       opacity: 0;
-      transform: translateY(-40px) scale(0.85);
+      transform: translateY(-40px) scale(0.85) rotate(var(--rot));
+    }
+    70% {
+      transform: rotate(calc(var(--rot) * -0.3));
     }
   }
   @media (prefers-reduced-motion: reduce) {

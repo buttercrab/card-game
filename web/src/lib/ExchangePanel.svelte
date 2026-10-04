@@ -134,9 +134,9 @@
 {:else}
   <div class="panel">
     <div class="discard">
-      <span class="count"><strong>{chosen}</strong>/{toDiscard}</span>
+      <span class="count">{#key chosen}<strong class="bump">{chosen}</strong>{/key}/{toDiscard}</span>
       <span class="muted">버릴 카드를 고르세요</span>
-      <button class="primary" disabled={chosen !== toDiscard} onclick={ondiscard}>버리기</button>
+      <button class="primary" class:ready={chosen === toDiscard} disabled={chosen !== toDiscard} onclick={ondiscard}>버리기</button>
     </div>
     {#if trumpChanges.length > 0}
       <div class="chips change">
@@ -204,5 +204,20 @@
   .change .muted {
     flex: none;
     font-size: 13px;
+  }
+  /* Enough cards chosen: the button wakes up once. */
+  .ready {
+    animation: ready 360ms var(--ease-settle);
+  }
+  @keyframes ready {
+    0% {
+      scale: 1;
+    }
+    40% {
+      scale: 1.07;
+    }
+    100% {
+      scale: 1;
+    }
   }
 </style>
