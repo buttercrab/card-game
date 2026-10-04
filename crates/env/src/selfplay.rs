@@ -372,7 +372,7 @@ pub fn run<G: EnvGame>(
     let mut by_style = vec![0u64; setup.bots.names().len()];
     let mut shards: Vec<Shard> = Vec::new();
     let shard_name = |i: usize| format!("shard-{i:05}.npz");
-    let new_spool = |i: usize| Spool::new(out.join(format!(".{}", shard_name(i)))).map_err(io(out));
+    let new_spool = |i: usize| Spool::new(out.join(format!(".spool-{i:05}"))).map_err(io(out));
     let mut spool = new_spool(0)?;
     // Shards are compressed on their own thread while the next games play.
     let mut writing: Option<std::thread::JoinHandle<Result<(), Error>>> = None;
