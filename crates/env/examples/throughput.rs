@@ -5,16 +5,52 @@
 //! cargo run --release -p env --example throughput -- [NUM_ENVS] [STEPS] [THREADS]
 //! ```
 //!
-//! Reports steps (decisions) and finished hands per second over varied
-//! rules, then the encoder's cost per observation on one thread.
+//! Reports decisions and finished hands per second over varied rules,
+//! stepping into one reused batch and into a fresh batch each step (as
+//! Python gets them), then the encoder's cost per observation on one
+//! thread.
 
 use engine::{Encode, Game, Turn, Viewer};
-use env::{BotPool, Config, Env, RuleSampler, RuleSource, Setup};
+use env::{Batch, BotPool, Config, Env, RuleSampler, RuleSource, Setup};
 use mighty::Mighty;
 use rand::seq::IteratorRandom;
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::time::Instant;
+
+/// Uniformly random legal actions for every slot of `batch`.
+fn random(batch: &Batch, actions: usize, rng: &mut ChaCha8Rng) -> Vec<usize> {
+    batch
+        .legal
+        .chunks(actions)
+        .map(|legal| (0..actions).filter(|&a| legal[a]).choose(rng).expect("a legal action"))
+        .collect()
+}
+
+/// Plays `steps` steps and prints the rates.
+fn measure(env: &mut Env<Mighty>, steps: usize, fresh: bool) {
+    let actions = env.spec().actions.len();
+    let mut rng = ChaCha8Rng::seed_from_u64(0);
+    let mut batch = env.reset(None).unwrap();
+    let (mut hands, start) = (0, Instant::now());
+    for _ in 0..steps {
+        let chosen = random(&batch, actions, &mut rng);
+        if fresh {
+            batch = env.step(&chosen).unwrap();
+        } else {
+            env.step_into(&chosen, &mut batch).unwrap();
+        }
+        hands += batch.done.iter().filter(|&&d| d).count();
+    }
+    let secs = start.elapsed().as_secs_f64();
+    println!(
+        "{} envs, {steps} steps, {} batches: {:.0} decisions/s, {:.0} hands/s",
+        env.num_envs(),
+        if fresh { "fresh" } else { "reused" },
+        (env.num_envs() * steps) as f64 / secs,
+        hands as f64 / secs
+    );
+}
 
 fn main() {
     let mut args = std::env::args().skip(1).map(|a| a.parse::<usize>().expect("a number"));
@@ -34,30 +70,11 @@ fn main() {
         threads,
     };
     let mut env = Env::new(setup, config).unwrap();
-    let actions = env.spec().actions.len();
-    let mut rng = ChaCha8Rng::seed_from_u64(0);
-    let mut batch = env.reset(Some(0)).unwrap();
-    let mut chosen = vec![0; num_envs];
-    let (mut hands, start) = (0, Instant::now());
-    for _ in 0..steps {
-        for (i, choice) in chosen.iter_mut().enumerate() {
-            let legal = &batch.legal[i * actions..(i + 1) * actions];
-            *choice = (0..actions)
-                .filter(|&a| legal[a])
-                .choose(&mut rng)
-                .expect("a legal action");
-        }
-        env.step_into(&chosen, &mut batch).unwrap();
-        hands += batch.done.iter().filter(|&&d| d).count();
-    }
-    let secs = start.elapsed().as_secs_f64();
-    println!(
-        "{num_envs} envs, {steps} steps: {:.0} decisions/s, {:.0} hands/s",
-        (num_envs * steps) as f64 / secs,
-        hands as f64 / secs
-    );
+    measure(&mut env, steps, false);
+    measure(&mut env, steps, true);
 
     // The encoder alone, on one thread, over positions of random games.
+    let mut rng = ChaCha8Rng::seed_from_u64(0);
     let mut positions = Vec::new();
     while positions.len() < 20_000 {
         let rules = mighty::rules::Preset::ALL[positions.len() % 9].rules().varied(&mut rng);
