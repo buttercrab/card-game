@@ -26,9 +26,11 @@ by commit, like the code. Results live next to it in `research/`.
 1. **Service:** one platform, many games. A game is a plugin: rules engine,
    presets, a rule schema, a table screen. Rooms, links, bots, stats, reports,
    the rulebook and the rule editor are shared.
-2. **AI:** one model family for any rules and any card game. The engine says
-   what is legal and what each card means right now; the model never encodes a
-   game's rules in its weights' assumptions.
+2. **AI:** one model per game that plays any rules of that game (one Mighty
+   model for 기본, the presets, custom sets and 3–7 players; its own model for
+   poker). The engine says what is legal and what each card means right now,
+   so the model needs no rules built in. Games share the code (environment,
+   evals, training library, architecture), not the weights.
 3. **Research setup** that keeps improving bots on its own: fixed evals, an
    RL environment, scaling studies, and an experiment loop, all reproducible
    from this repository.
@@ -192,7 +194,8 @@ model work for it unchanged.
 
 - Policy and value from search-guided self-play (model-guided 고수).
 - Search-free bots for 초보 and 보통, levels set by temperature.
-- One model across games, and whether it transfers to a new one.
+- Optional research question, nothing depends on it: whether one model
+  trained on several games transfers to a new one.
 - House rules written by AI: a group describes its rules, an agent turns
   them into a validated rule set using the simulator.
 
