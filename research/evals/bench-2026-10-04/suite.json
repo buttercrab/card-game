@@ -1,0 +1,13 @@
+{
+  "suite": "bench-2026-10-04",
+  "game": "mighty",
+  "about": "Not a scoreboard: the head-to-head runs and think-time setup of the 2026-10-04 benchmark, kept to check that the runner reproduces them. Run with --bot search:430:1:0 --baseline search:200:1:0.",
+  "matches": [
+    { "name": "gshs, seed 60000", "rules": "gshs", "field": "search:200:1:0", "seed": 60000, "deals": 1500, "quick_deals": 2 },
+    { "name": "gshs, seed 90000", "rules": "gshs", "field": "search:200:1:0", "seed": 90000, "deals": 1000, "quick_deals": 2 },
+    { "name": "default, seed 60000", "rules": "default", "field": "search:200:1:0", "seed": 60000, "deals": 1000, "quick_deals": 2 },
+    { "name": "default, seed 70000", "rules": "default", "field": "search:200:1:0", "seed": 70000, "deals": 1000, "quick_deals": 2 },
+    { "name": "default, seed 80000", "rules": "default", "field": "search:200:1:0", "seed": 80000, "deals": 1000, "quick_deals": 2 }
+  ],
+  "cost": { "rules": "gshs", "field": "search:200:1:0", "seed": 0, "deals": 40, "quick_deals": 1 }
+}

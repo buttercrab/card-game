@@ -11,6 +11,8 @@ license = "MIT"
 [workspace.dependencies]
 engine = { path = "crates/engine" }
 mighty = { path = "crates/mighty" }
+server = { path = "crates/server" }
+sim = { path = "crates/sim" }
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
