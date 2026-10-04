@@ -1,4 +1,6 @@
 //! The owner's stats page, `GET /stats`, and its data, `GET /api/stats`.
+//! The page also lists players' problem reports, each saved report readable
+//! in full at `GET /stats/reports/<file>`.
 //! Both need `STATS_TOKEN`: as `?token=` once, which leaves a cookie for
 //! this page only, or as `Authorization: Bearer`. Without the variable set,
 //! neither exists.
@@ -6,7 +8,7 @@
 use crate::AppState;
 use crate::site::escape;
 use crate::stats::{Summary, date, day, hex, now};
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use sha2::{Digest, Sha256};
@@ -103,8 +105,72 @@ pub async fn stats_page(State(app): State<AppState>, uri: Uri, headers: HeaderMa
     if let Some(denied) = gate(&app, &uri, &headers) {
         return denied;
     }
-    let html = page(&app.stats.summary(now()));
+    let reports = app
+        .data
+        .as_deref()
+        .map(|dir| recent_reports(&dir.join("reports")))
+        .unwrap_or_default();
+    let html = page_with(&app.stats.summary(now()), &reports);
     private(([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
+}
+
+/// One saved report, as the page lists it.
+pub struct ReportRow {
+    pub file: String,
+    pub time: u64,
+    pub text: String,
+    pub room_id: Option<String>,
+}
+
+/// A report's file name: the time it arrived, then six hex digits.
+fn report_name(name: &str) -> Option<u64> {
+    let (time, rest) = name.strip_suffix(".json")?.split_once('-')?;
+    (rest.len() == 6 && rest.bytes().all(|b| b.is_ascii_hexdigit())).then_some(())?;
+    time.parse().ok()
+}
+
+/// The newest saved reports first, at most 50.
+pub fn recent_reports(dir: &std::path::Path) -> Vec<ReportRow> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut rows: Vec<ReportRow> = entries
+        .flatten()
+        .filter_map(|e| {
+            let file = e.file_name().into_string().ok()?;
+            let time = report_name(&file)?;
+            let json: serde_json::Value = serde_json::from_slice(&std::fs::read(e.path()).ok()?).ok()?;
+            Some(ReportRow {
+                file,
+                time,
+                text: json["text"].as_str().unwrap_or_default().to_string(),
+                room_id: json["room_id"].as_str().map(str::to_string),
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| b.time.cmp(&a.time).then_with(|| b.file.cmp(&a.file)));
+    rows.truncate(50);
+    rows
+}
+
+/// One saved report in full, for replaying the hand it came from.
+pub async fn report_file(
+    State(app): State<AppState>,
+    Path(file): Path<String>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = gate(&app, &uri, &headers) {
+        return denied;
+    }
+    // Only names the server itself writes, so no path can leave the folder.
+    let (Some(dir), Some(_)) = (app.data.as_deref(), report_name(&file)) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match std::fs::read(dir.join("reports").join(&file)) {
+        Ok(body) => private(([(header::CONTENT_TYPE, "application/json")], body).into_response()),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// `t` in Korean time, to the minute.
@@ -197,6 +263,10 @@ fn rows<'a>(out: &mut String, items: impl IntoIterator<Item = (String, String)> 
 }
 
 pub fn page(s: &Summary) -> String {
+    page_with(s, &[])
+}
+
+pub fn page_with(s: &Summary, reports: &[ReportRow]) -> String {
     let t = &s.totals;
     let mut body = String::new();
     let _ = write!(
@@ -315,6 +385,31 @@ pub fn page(s: &Summary) -> String {
     );
     body.push_str("</table></section></div>");
 
+    body.push_str("<section><h2>문제 신고</h2>");
+    if reports.is_empty() {
+        body.push_str("<p class=\"muted\">서버에 남은 신고가 없어요. 신고는 14일 동안 둬요.</p>");
+    } else {
+        body.push_str(
+            "<div class=\"scroll\"><table class=\"errors\"><tr><th>내용</th><th>테이블</th><th>받은 때</th></tr>",
+        );
+        for r in reports {
+            let text = if r.text.is_empty() {
+                "(내용 없음)".to_string()
+            } else {
+                escape(&r.text)
+            };
+            let _ = write!(
+                body,
+                "<tr><td>{text}<br><a href=\"/stats/reports/{}\">전체 기록</a></td><td>{}</td><td class=\"when\">{}</td></tr>",
+                escape(&r.file),
+                r.room_id.as_deref().map(escape).unwrap_or_else(|| "–".into()),
+                time(r.time)
+            );
+        }
+        body.push_str("</table></div>");
+    }
+    body.push_str("</section>");
+
     body.push_str("<section><h2>클라이언트 오류</h2>");
     if s.errors.is_empty() {
         body.push_str("<p class=\"muted\">최근 30일 동안 없어요.</p>");
@@ -358,6 +453,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'Pretendard Va
 main{max-width:920px;margin:0 auto;padding:24px 16px 48px}
 h1{font-size:24px;margin:0;font-weight:800}
 h2{font-size:15px;margin:0 0 10px;font-weight:700}
+a{color:inherit;text-underline-offset:2px}
 header p{margin:2px 0 20px}
 section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:0 0 12px;min-width:0}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;background:none;border:0;padding:0}
@@ -454,5 +550,33 @@ mod tests {
         assert!(!html.contains("<script>"), "no scripts at all");
         assert!(!html.contains("http"), "no external assets");
         assert!(html.contains("prefers-color-scheme:dark"));
+    }
+
+    #[test]
+    fn report_names_are_only_the_servers_own() {
+        assert_eq!(report_name("1791105000-0a1b2c.json"), Some(1_791_105_000));
+        for bad in [
+            "../secret.json",
+            "1791105000-0a1b2c.json/..",
+            "x-0a1b2c.json",
+            "1791105000-0a1b2.json",
+            "1791105000-0a1b2c.txt",
+        ] {
+            assert_eq!(report_name(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_page_lists_reports_newest_first_and_escapes_them() {
+        let dir = std::env::temp_dir().join(format!("reports-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("100-000001.json"), r#"{"text":"첫 신고","room_id":"abc"}"#).unwrap();
+        std::fs::write(dir.join("200-000002.json"), r#"{"text":"<b>둘째</b>","room_id":null}"#).unwrap();
+        std::fs::write(dir.join("notes.txt"), "ignored").unwrap();
+        let rows = recent_reports(&dir);
+        assert_eq!(rows.iter().map(|r| r.time).collect::<Vec<_>>(), [200, 100]);
+        let html = page_with(&crate::stats::Stats::in_memory().summary(1_791_105_000), &rows);
+        assert!(html.contains("&lt;b&gt;둘째&lt;/b&gt;") && html.contains("/stats/reports/100-000001.json"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

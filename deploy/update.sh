@@ -13,9 +13,6 @@ set -euo pipefail
 main() {
   cd "$(dirname "$0")/.."
 
-  # Problem reports go out even when there is nothing to deploy.
-  deploy/reports.sh || echo "filing reports failed" >&2
-
   git fetch --quiet origin main
   if [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" && "${1:-}" != "--force" ]]; then
     exit 0

@@ -1,8 +1,8 @@
 //! Errors the web client hits, sent to `POST /api/errors`. Each is grouped
 //! by its message and the top frame of its stack and counted in the stats.
 //! A group seen for the first time (or the first time in a day) is also
-//! saved under `<data>/errors`, where the deploy host picks it up and files
-//! a GitHub issue labelled `error`, as it does for problem reports.
+//! saved under `<data>/errors` with its full stack, kept 14 days like
+//! problem reports.
 
 use crate::limit::{ClientIp, too_many};
 use crate::stats::{Event, hex, now};

@@ -120,7 +120,12 @@
     bidding: ['Pass', ...[15, 16, 17].map((count) => ({ Bid: { trump: 'Spade' as const, count } }))],
     exchange: [...hand, ...kittyCards].map((card) => ({ Discard: card })),
     friend: [
-      ...[{ Joker: 'Black' } as Card, n('Spade', 13), n('Heart', 14), ...hand.slice(0, 4)].map((card) => ({ CallFriend: { Card: card } })),
+      // Every card, as in a real hand: the picker must hold the whole deck.
+      ...[{ Joker: 'Black' } as Card, { Joker: 'Red' } as Card]
+        .concat((['Spade', 'Diamond', 'Heart', 'Club'] as const).flatMap((suit) => [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map((rank) => n(suit, rank))))
+        .map((card) => ({ CallFriend: { Card: card } })),
+      ...[0, 1, 2, 3, 4].filter((s) => s !== 0).map((seat) => ({ CallFriend: { Seat: seat } })),
+      { CallFriend: 'LastTrick' as const },
       { CallFriend: 'FirstTrick' as const },
       { CallFriend: 'Alone' as const },
     ],

@@ -282,6 +282,7 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         )
         .route("/api/stats", get(dashboard::stats_json))
         .route("/stats", get(dashboard::stats_page))
+        .route("/stats/reports/{file}", get(dashboard::report_file))
         .route("/robots.txt", get(site::robots_txt))
         .route("/sitemap.xml", get(site::sitemap_xml))
         .route("/internal/bots", get(bot_worker))
@@ -358,7 +359,7 @@ pub(crate) const REPORT_DAYS: u64 = 14;
 const REPORTS_PER_HOUR: usize = 30;
 
 /// Saves a player's problem report with the room's state and move log under
-/// `<data>/reports`, where the deploy host picks it up and files an issue.
+/// `<data>/reports`, where the owner reads it on `/stats`.
 async fn report(State(app): State<AppState>, ClientIp(ip): ClientIp, Json(r): Json<Report>) -> Response {
     if !app.limits.reports.allow(ip) {
         return too_many();

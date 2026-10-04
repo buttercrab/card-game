@@ -224,8 +224,13 @@
   }
   .picker {
     display: grid;
+    /* Rows keep their full height and the picker scrolls; a scrolling chip
+       row would otherwise be squeezed to half a chip. */
+    grid-auto-rows: max-content;
     gap: 8px;
-    max-height: 40vh;
+    /* What the window can spare above the tray and below the contract line;
+       on a short window the picker scrolls rather than covering it. */
+    max-height: min(40vh, max(120px, 100dvh - 560px));
     overflow-y: auto;
     padding: 12px 2px 2px;
   }
@@ -241,6 +246,12 @@
   .actions .primary {
     flex: 1;
     max-width: 280px;
+  }
+  /* Inside the picker every choice shows, wrapped, rather than scrolling
+     sideways in a box of its own. */
+  .picker .chips {
+    flex-wrap: wrap;
+    overflow: visible;
   }
   .own-head {
     margin: 4px 0 0;

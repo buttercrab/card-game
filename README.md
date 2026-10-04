@@ -32,10 +32,9 @@ A game is a deterministic state machine:
   on each turn, and an optional 💡 that shows what the bot would do.
 - **Comfort:** sound, optional background jazz (CC0, from Open Lo-Fi),
   installable to the home screen, screen kept awake during a hand.
-- **When something breaks:** 문제 신고 sends the table's move log; the deploy
-  host files it as a GitHub issue labelled `report`, and
-  [`report-fix`](.github/workflows/report-fix.yaml) has Claude propose a
-  fix as a pull request (needs the `ANTHROPIC_API_KEY` secret). An
+- **When something breaks:** 문제 신고 sends the table's move log, kept on
+  the server for 14 days and listed on the owner's `/stats` page, each
+  report readable in full for replaying the hand. An
   [uptime check](.github/workflows/uptime.yaml) opens an `outage` issue
   when cards.buttercrab.io stops answering.
 
@@ -109,10 +108,9 @@ chmod 600 ~/card-game/site.env
 cd ~/card-game && docker compose up --detach
 ```
 
-Browsers report uncaught errors to `/api/errors`; each new kind (by
-message and top stack frame, the first time in a day) is saved under
-`errors/` in the data volume, and [`deploy/reports.sh`](deploy/reports.sh)
-files it as a GitHub issue labelled `error`, beside player reports.
+Browsers report uncaught errors to `/api/errors`; `/stats` groups them by
+message and top stack frame. Nothing is filed on GitHub: the repository is
+public, and reports carry players' names and move logs.
 
 ## Test
 
