@@ -7,7 +7,7 @@ use mighty::{Action, Mighty, Options, View};
 use rand::RngCore;
 use sim::spec::Spec;
 use sim::{Checks, Failure};
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
 
@@ -34,8 +34,8 @@ struct Args {
     /// after `simple` or `search` changes the simple bot's weights, e.g.
     /// `simple@bid_base=7` or `search:80@draw_trumps=3`; for `search`,
     /// `read.NAME=value` changes how it reads the other players, e.g.
-    /// `search@read.on=false`, and `threads=N` splits each search across N
-    /// threads.
+    /// `search@read.on=false`, `threads=N` splits each search across N
+    /// threads, and `endgame=N` solves the last N tricks of each playout.
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.
@@ -72,7 +72,7 @@ fn table(
     seats: usize,
     game: u64,
     focus_bot: Spec,
-    clock: &Rc<Cell<Clock>>,
+    clock: &Rc<RefCell<Clock>>,
 ) -> (Vec<Box<dyn Bot<Mighty>>>, Option<usize>) {
     // The first bidder is `game % seats`; cycling this separately covers
     // every pairing of measured seat and first bidder equally.
@@ -92,35 +92,32 @@ fn table(
 }
 
 /// Thinking time of the focus bot.
-#[derive(Debug, Clone, Copy, Default)]
+/// How long each of the focus bot's decisions with a real choice took.
+#[derive(Debug, Clone, Default)]
 struct Clock {
-    total: Duration,
-    decisions: u32,
-    slowest: Duration,
+    times: Vec<Duration>,
 }
 
 /// Times every decision of the bot it wraps.
 struct Timed {
     bot: Box<dyn Bot<Mighty>>,
-    clock: Rc<Cell<Clock>>,
+    clock: Rc<RefCell<Clock>>,
 }
 
 impl Bot<Mighty> for Timed {
     fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
         let started = Instant::now();
         let action = self.bot.act(view, legal, rng);
-        let took = started.elapsed();
-        let mut clock = self.clock.get();
-        clock.total += took;
-        clock.decisions += 1;
-        clock.slowest = clock.slowest.max(took);
-        self.clock.set(clock);
+        if legal.len() > 1 {
+            self.clock.borrow_mut().times.push(started.elapsed());
+        }
         action
     }
 }
 
 struct Outcome {
     clock: Clock,
+    baseline_clock: Clock,
     steps: usize,
     focus_payoff: Option<f64>,
     baseline_payoff: Option<f64>,
@@ -153,10 +150,11 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                             first_bidder: game as usize % seats,
                         };
                         let one = |focus_bot: Spec| {
-                            let clock = Rc::new(Cell::new(Clock::default()));
+                            let clock = Rc::new(RefCell::new(Clock::default()));
                             let (mut bots, focus) = table(args, seats, game, focus_bot, &clock);
                             sim::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
-                                clock: clock.get(),
+                                clock: clock.take(),
+                                baseline_clock: Clock::default(),
                                 steps: report.steps,
                                 focus_payoff: focus.map(|seat| report.payoffs[seat] as f64),
                                 baseline_payoff: None,
@@ -164,7 +162,9 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                         };
                         let outcome = one(args.focus).and_then(|mut outcome| {
                             if let Some(baseline) = args.baseline {
-                                outcome.baseline_payoff = one(baseline)?.focus_payoff;
+                                let base = one(baseline)?;
+                                outcome.baseline_payoff = base.focus_payoff;
+                                outcome.baseline_clock = base.clock;
                             }
                             Ok(outcome)
                         });
@@ -180,6 +180,25 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
     });
     results.sort_by_key(|(game, _)| *game);
     results.into_iter().map(|(_, r)| r).collect()
+}
+
+/// Median, 99th percentile and slowest decision, in milliseconds.
+fn timing<'a>(clocks: impl Iterator<Item = &'a Clock>) -> String {
+    let mut ms: Vec<f64> = clocks
+        .flat_map(|c| &c.times)
+        .map(|t| t.as_secs_f64() * 1000.0)
+        .collect();
+    if ms.is_empty() {
+        return "nothing".into();
+    }
+    ms.sort_by(f64::total_cmp);
+    let at = |q: f64| ms[((ms.len() - 1) as f64 * q).round() as usize];
+    format!(
+        "median {:.1} ms, p99 {:.0} ms, at most {:.0} ms per decision",
+        at(0.5),
+        at(0.99),
+        ms[ms.len() - 1]
+    )
 }
 
 /// The mean, and the half-width of its 95% confidence interval.
@@ -219,15 +238,11 @@ fn main() -> ExitCode {
             print!(", {mean:+.3} ± {margin:.3} over the baseline");
         }
         if !focus.is_empty() {
-            let total: Duration = outcomes.iter().map(|o| o.clock.total).sum();
-            let decisions: u32 = outcomes.iter().map(|o| o.clock.decisions).sum();
-            let slowest = outcomes.iter().map(|o| o.clock.slowest).max().unwrap_or_default();
-            print!(
-                ", thinking {:.1} ms per decision, at most {:.0} ms ({:.0} s)",
-                total.as_secs_f64() * 1000.0 / f64::from(decisions.max(1)),
-                slowest.as_secs_f64() * 1000.0,
-                started.elapsed().as_secs_f64()
-            );
+            print!(", thinking {}", timing(outcomes.iter().map(|o| &o.clock)));
+            if args.baseline.is_some() {
+                print!(" (baseline {})", timing(outcomes.iter().map(|o| &o.baseline_clock)));
+            }
+            print!(" ({:.0} s)", started.elapsed().as_secs_f64());
         }
         println!();
     }
