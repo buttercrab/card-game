@@ -77,6 +77,11 @@ enum Command {
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// Count plays that look wasteful in hindsight in recorded hands.
+    Audit {
+        #[arg(long)]
+        records: PathBuf,
+    },
     /// Replay the declarer's exchange another way, then the card play
     /// with the recorded bot.
     Exchange {
@@ -195,6 +200,10 @@ fn main() {
             run(&records, threads, &args.out, |record| {
                 vec![lab::bid_experiment(&rules, record, bot, *worlds)]
             });
+        }
+        Command::Audit { records } => {
+            let records = load(records, None);
+            run(&records, threads, &args.out, |record| vec![lab::audit(&rules, record)]);
         }
         Command::Exchange {
             records,

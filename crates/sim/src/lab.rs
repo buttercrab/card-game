@@ -974,3 +974,137 @@ mod tests {
         assert_eq!(combinations(5, 2).len(), 10);
     }
 }
+
+/// Plays the recorded bots made that look wasteful in hindsight, from
+/// the true cards; for finding blind spots in the rules the bots share.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Audit {
+    pub deal: u64,
+    /// Joker calls, and those whose joker the caller held, lay in the
+    /// discards, was already played, or sat with the caller's own side.
+    pub joker_calls: u32,
+    pub call_own_hand: u32,
+    pub call_discarded: u32,
+    pub call_own_side: u32,
+    /// Jokers played on the first or last trick, where they have no power,
+    /// while the seat held something else it could play.
+    pub joker_powerless_by_choice: u32,
+    /// Jokers still held for the last trick.
+    pub joker_on_last_trick: u32,
+    /// The mighty played to a trick its own side was already winning.
+    pub mighty_on_partner: u32,
+    /// Jokers played to a trick its own side was already winning.
+    pub joker_on_partner: u32,
+    /// The mighty or a joker taking a trick with no point cards before
+    /// the last three tricks.
+    pub special_on_empty: u32,
+    /// Examples, as text.
+    pub examples: Vec<String>,
+}
+
+pub fn audit(rules: &Rules, record: &Record) -> Audit {
+    let mut a = Audit {
+        deal: record.deal,
+        ..Audit::default()
+    };
+    let mut state = replay(rules, record, record.play_at);
+    let side = |s: Seat| s == record.declarer || record.friend == Some(s);
+    for action in &record.log[record.play_at..] {
+        let Turn::Seat(seat) = Mighty::turn(&state) else { break };
+        let view = Mighty::view(&state, Viewer::Seat(seat));
+        let legal = Mighty::legal_actions(&state);
+        let PhaseView::Play {
+            trick_no,
+            plays,
+            leading,
+            contract,
+            discards: _,
+            ..
+        } = &view.phase
+        else {
+            break;
+        };
+        let (trick_no, leading) = (*trick_no, *leading);
+        let Action::Play { card, call_joker, .. } = action else {
+            break;
+        };
+        let card = *card;
+        let mighty = rules.mighty(contract.trump);
+        let points = plays.iter().filter(|p| p.card.is_point()).count();
+        let partner_winning = leading.is_some_and(|w| side(w) == side(seat) && w != seat);
+        let last = trick_no + 1 == rules.hand_size;
+        let others: Vec<Card> = legal
+            .iter()
+            .filter_map(|l| match l {
+                Action::Play { card: c, .. } if !c.is_joker() => Some(*c),
+                _ => None,
+            })
+            .collect();
+        let note = |what: &str, a: &mut Audit| {
+            if a.examples.len() < 3 {
+                a.examples.push(format!(
+                    "deal {} trick {} seat {seat} ({}) {what}: played {card}, hand {}",
+                    record.deal,
+                    trick_no + 1,
+                    if side(seat) { "attack" } else { "defence" },
+                    view.hand.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")
+                ));
+            }
+        };
+        let choice = legal.len() > 1;
+        if card.is_joker() && last {
+            a.joker_on_last_trick += 1;
+            note("joker kept to the last trick", &mut a);
+        }
+        if card.is_joker() && choice {
+            if trick_no == 0 && !others.is_empty() {
+                a.joker_powerless_by_choice += 1;
+                note("powerless joker on trick 1", &mut a);
+            }
+            if partner_winning && !last {
+                a.joker_on_partner += 1;
+                note("joker on partner's trick", &mut a);
+            }
+        }
+        if card == mighty && partner_winning && choice {
+            a.mighty_on_partner += 1;
+            note("mighty on partner's trick", &mut a);
+        }
+        if choice
+            && (card == mighty || card.is_joker())
+            && points == 0
+            && !plays.is_empty()
+            && trick_no + 3 < rules.hand_size
+        {
+            a.special_on_empty += 1;
+        }
+        let before = state.clone();
+        Mighty::apply(&mut state, action.clone()).expect("recorded");
+        if *call_joker {
+            a.joker_calls += 1;
+            if let PhaseView::Play {
+                called_joker: Some(joker),
+                ..
+            } = Mighty::view(&state, Viewer::Spectator).phase
+            {
+                let holder = (0..rules.players).find(|&s| Mighty::view(&before, Viewer::Seat(s)).hand.contains(&joker));
+                match holder {
+                    Some(h) if h == seat => {
+                        a.call_own_hand += 1;
+                        note("called own joker", &mut a);
+                    }
+                    Some(h) if side(h) == side(seat) => {
+                        a.call_own_side += 1;
+                        note("called partner's joker", &mut a);
+                    }
+                    Some(_) => {}
+                    None => {
+                        a.call_discarded += 1;
+                        note("called a joker already gone", &mut a);
+                    }
+                }
+            }
+        }
+    }
+    a
+}
