@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import Stamp from './Stamp.svelte';
   let {
     name,
     bot = false,
@@ -13,6 +14,7 @@
     turn = false,
     bubble = null,
     reaction = null,
+    stamp = null,
     dim = false,
     reveal = false,
   }: {
@@ -27,6 +29,8 @@
     bubble?: string | null;
     /** A reaction the player just sent; `id` replays it when repeated. */
     reaction?: { text: string; id: number } | null;
+    /** An ink seal for a big moment at this seat; `id` restamps it. */
+    stamp?: { text: string; gold: boolean; id: number } | null;
     /** Out of the current round, such as after passing. */
     dim?: boolean;
     /** Just revealed as the friend. */
@@ -45,6 +49,7 @@
     {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
   </div>
   {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
+  {#if stamp}{#key stamp.id}<Stamp text={stamp.text} gold={stamp.gold} />{/key}{/if}
   {#if reaction}
     {#key reaction.id}
       <span class="reaction" class:emoji={/^\p{Extended_Pictographic}/u.test(reaction.text)} aria-live="polite">{reaction.text}</span>

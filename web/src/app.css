@@ -21,6 +21,8 @@
   --team-defense: #3b4a6b;
   --on-team-defense: #ffffff;
   --seal: #c23b22;
+  /* The hand's one huge moment (런, a big win). */
+  --gold: #a77a12;
   --danger: #b3261e;
   --shadow-card: 0 2px 0 rgb(28 25 21 / 0.1);
   --shadow-raised: 0 6px 0 rgb(28 25 21 / 0.07);
@@ -69,6 +71,7 @@
     --card-edge: #cfc8ba;
     --card-back: #2a2622;
     --accent: #d27bb0;
+    --gold: #d9b04f;
     --accent-deep: #a2558a;
     --on-accent: #17191c;
     --team-defense: #8fa3c9;
@@ -91,6 +94,7 @@
   --card-edge: #cfc8ba;
   --card-back: #2a2622;
   --accent: #d27bb0;
+  --gold: #d9b04f;
   --accent-deep: #a2558a;
   --on-accent: #17191c;
   --team-defense: #8fa3c9;

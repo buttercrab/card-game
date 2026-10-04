@@ -101,9 +101,37 @@ export const sound = {
     note(0, 659, { level: 0.12, length: 0.25 });
     note(0.11, 880, { level: 0.12, length: 0.4 });
   },
-  /** A bid or a pass. */
-  bid() {
+  /** A bid or a pass. Each raise in a bidding war sounds a step higher. */
+  bid(raise = 0) {
     snap(0, { freq: 3200, length: 0.03, level: 0.3 });
+    if (raise > 0) note(0.01, SCALE[Math.min(raise - 1, SCALE.length - 1)] / 2, { level: 0.08, length: 0.22 });
+  },
+  /** A heavy card lands: the 마이티, a joker or a trump cutting the round. */
+  heavy(delay = 0) {
+    snap(delay, { freq: 700, length: 0.12, level: 0.55 });
+    note(delay, 110, { level: 0.22, length: 0.25, type: 'sine' });
+  },
+  /** An ink seal is stamped at a seat; each kind has its own motif. */
+  seal(kind: 'declarer' | 'friend' | 'mighty' | 'joker' | 'call' | 'misdeal' | 'run') {
+    snap(0, { freq: 500, length: 0.09, level: 0.5 });
+    const motifs: Record<typeof kind, number[]> = {
+      declarer: [330, 494],
+      friend: [554, 659, 880],
+      mighty: [220, 440, 659],
+      joker: [494, 466, 494],
+      call: [659, 494],
+      misdeal: [262, 247],
+      run: [440, 554, 659, 880, 1109],
+    };
+    motifs[kind].forEach((f, i) => note(0.05 + i * 0.08, f, { level: 0.13, length: 0.45 }));
+  },
+  /** A quiet label appears: 공약 확정, 런 찬스, 마지막 라운드. */
+  tag() {
+    note(0, 988, { level: 0.06, length: 0.3, type: 'sine' });
+  },
+  /** One step of the result being counted. */
+  tally(step: number) {
+    note(0, SCALE[Math.min(step, SCALE.length - 1)], { level: 0.09, length: 0.18 });
   },
   /** The friend is revealed. */
   friend() {

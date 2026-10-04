@@ -9,6 +9,7 @@
   import LeadTag from './LeadTag.svelte';
   import Reactions from './Reactions.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
+  import Stamp from './Stamp.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
@@ -108,6 +109,129 @@
     if (bidding.passed[seat]) return '패스';
     return null;
   }
+
+  // ---- Result ledger -----------------------------------------------------------
+  // The result is counted out step by step, as 맞고 and mahjong results are:
+  // the points, over or short, each ×2, then everyone's payoff.
+  type Done = Extract<PhaseView, { Done: unknown }>['Done'];
+  function ledger(d: Done) {
+    const made = d.team_points >= d.contract.count;
+    const lines: string[] = [];
+    let value: number;
+    if (made) {
+      const base = Math.max(d.team_points - 10, 1);
+      lines.push(`여당 ${d.team_points}점 − 10 = ${base}`);
+      value = base;
+      const doubles = [
+        d.contract.trump === null && '노기루다',
+        d.call === 'Alone' && '노프렌드',
+        d.team_points === 20 && '런',
+      ].filter((x): x is string => !!x);
+      for (const why of doubles) {
+        value *= 2;
+        lines.push(`${why} ×2 = ${value}`);
+      }
+    } else {
+      const short = d.contract.count - d.team_points;
+      lines.push(short === 1 ? `아깝게 1점 모자람` : `공약 ${d.contract.count}에서 ${short}점 모자람`);
+      value = short;
+      if (d.team_points <= 10) {
+        value *= 2;
+        lines.push(`10점 이하 ×2 = ${value}`);
+      }
+    }
+    const margin = d.team_points - d.contract.count;
+    return { made, lines, value, run: d.team_points === 20, margin };
+  }
+  const result = $derived(done ? ledger(done) : null);
+
+  /** Results already counted out, so a reopened one shows at once. */
+  const counted = new Set<string>();
+  let step = $state(99);
+  let shownPay = $state<number[]>([]);
+  let nudge = $state(false);
+  $effect(() => {
+    if (!done || !result) return;
+    const key = `${room?.id}-${room?.hands_played}-${JSON.stringify(done.payoffs)}`;
+    const instant = counted.has(key) || prefersReducedMotion.current || settings.speed === 'off';
+    counted.add(key);
+    const pays = done.payoffs;
+    const lines = result.lines.length;
+    if (instant) {
+      step = 99;
+      shownPay = pays;
+      return;
+    }
+    step = 0;
+    shownPay = pays.map(() => 0);
+    let cancelled = false;
+    const k = settings.speed === 'fast' ? 0.5 : 1;
+    (async () => {
+      await new Promise((r) => setTimeout(r, 450 * k));
+      for (let i = 1; i <= lines && !cancelled; i++) {
+        step = i;
+        sound.tally(i);
+        await new Promise((r) => setTimeout(r, 380 * k));
+      }
+      if (cancelled) return;
+      step = lines + 1;
+      const t0 = performance.now();
+      const span = 520 * k;
+      const frame = (now: number) => {
+        if (cancelled) return;
+        const f = Math.min((now - t0) / span, 1);
+        const ease = 1 - (1 - f) ** 3;
+        shownPay = pays.map((p) => Math.round(p * ease));
+        if (f < 1) requestAnimationFrame(frame);
+        else if (result.run && done) {
+          stamp(done.declarer, '런!', 'run', true);
+          nudge = true;
+          setTimeout(() => (nudge = false), 320);
+        }
+      };
+      requestAnimationFrame(frame);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+  function skipCount() {
+    if (step < 99 && done) {
+      step = 99;
+      shownPay = done.payoffs;
+    }
+  }
+
+  // ---- Contract meter and tags ----------------------------------------------
+  /** Points the defence has taken, once the teams are known. */
+  const defensePoints = $derived(
+    friendKnown ? view.points_taken.reduce((sum, _, s) => sum + (team(s) === 'defense' ? points(s) : 0), 0) : null,
+  );
+  /** Made: the 여당 has its points. Lost: too few points are left to make it. */
+  const contractState = $derived.by(() => {
+    if (!play || !contract) return null;
+    if (teamPoints >= contract.count) return 'made';
+    if (defensePoints !== null && 20 - defensePoints < contract.count) return 'lost';
+    return null;
+  });
+  const tags = $derived.by(() => {
+    const list: { text: string; tone: 'accent' | 'danger' | 'gold' | 'plain' }[] = [];
+    if (!play) return list;
+    if (contractState === 'made') list.push({ text: '공약 확정', tone: 'accent' });
+    if (contractState === 'lost') list.push({ text: '공약 불가', tone: 'danger' });
+    if (defensePoints === 0 && teamPoints > 0 && play.tricks.length >= 5 && trickNo <= view.rules.hand_size) {
+      list.push({ text: '런 찬스', tone: 'gold' });
+    }
+    if (trickNo === view.rules.hand_size && !resolving) list.push({ text: '마지막 라운드', tone: 'plain' });
+    return list;
+  });
+  // A soft chime whenever a new tag appears.
+  let shownTags = '';
+  $effect(() => {
+    const now = tags.map((t) => t.text);
+    if (now.some((t) => !shownTags.split('|').includes(t))) sound.tag();
+    shownTags = now.join('|');
+  });
 
   // ---- Tips for learners (초보 도움말) ---------------------------------------
   const tip = $derived.by(() => {
@@ -352,23 +476,62 @@
   }
 
   /** Shows `fresh` cards arriving from their players while `apply` updates the table. */
-  async function land(fresh: Played[], apply: () => void, k: number) {
+  async function land(fresh: Played[], apply: () => void, k: number, context?: { all: Played[]; lead: Lead | null; trump: Suit | null }) {
     const from = fresh.map((p) => anchor(p.seat, p.card));
     apply();
     await tick();
-    if (prefersReducedMotion.current) return;
-    await Promise.all(
-      fresh.map((p, i) => {
-        const origin = from[i];
-        const duration = (p.seat === me ? 220 : 320) * k;
-        sound.card((i * 60 * k + duration * 0.8) / 1000);
-        return origin && !hurry ? flyFrom(slotCard(p.seat), origin, duration, i * 60 * k) : undefined;
-      }),
+    const heavy = fresh.map((p) =>
+      context ? weight(p, context.all[0]?.seat === p.seat, context.lead, context.trump) : null,
     );
+    if (!prefersReducedMotion.current) {
+      await Promise.all(
+        fresh.map((p, i) => {
+          const origin = from[i];
+          const duration = (p.seat === me ? 220 : 320) * k;
+          if (!heavy[i]) sound.card((i * 60 * k + duration * 0.8) / 1000);
+          return origin && !hurry ? flyFrom(slotCard(p.seat), origin, duration, i * 60 * k) : undefined;
+        }),
+      );
+    }
+    // Heavy cards land with a thump and a beat's hold; the 마이티 and jokers
+    // are stamped at the seat that played them.
+    for (const [i, p] of fresh.entries()) {
+      const kind = heavy[i];
+      if (!kind) continue;
+      sound.heavy();
+      if (kind === 'mighty') stamp(p.seat, '마이티', 'mighty');
+      if (kind === 'joker') stamp(p.seat, '조커', 'joker');
+      if (!hurry) await pause(110 * k);
+    }
   }
 
   /** The latest thing that happened, for anyone who looked away. */
   let event = $state<string | null>(null);
+
+  // ---- Seals (도장) -----------------------------------------------------------
+  // Big moments are stamped at the seat that made them, never blocking play.
+  type SealKind = 'declarer' | 'friend' | 'mighty' | 'joker' | 'call' | 'misdeal' | 'run';
+  let stamps = $state<Record<number, { text: string; gold: boolean; id: number }>>({});
+  let stampId = 0;
+  function stamp(seat: number, text: string, kind: SealKind, gold = false) {
+    const id = ++stampId;
+    stamps[seat] = { text, gold, id };
+    sound.seal(kind);
+    setTimeout(() => {
+      if (stamps[seat]?.id === id) delete stamps[seat];
+    }, 1500);
+  }
+
+  /** How hard a card lands: the 마이티 and jokers stamp; a trump cutting the round thumps. */
+  function weight(p: Played, leader: boolean, lead: Lead | null, trump: Suit | null): 'mighty' | 'joker' | 'cut' | null {
+    if (!p.powered) return null;
+    if ('Joker' in p.card) return 'joker';
+    if (sameCard(p.card, mightyCard(trump))) return 'mighty';
+    const suit = p.card.Normal[0];
+    if (leader || trump === null || suit !== trump || !lead) return null;
+    const followsLead = 'Suit' in lead ? lead.Suit === trump : (['Spade', 'Club'].includes(trump) ? 'Black' : 'Red') === lead.Color;
+    return followsLead ? null : 'cut';
+  }
 
   /** A hand thrown in as 딜미스, shown face up for a while as at a real table. */
   let thrownIn = $state<{ seat: number; hand: CardT[] } | null>(null);
@@ -388,6 +551,14 @@
     const now = next.view.phase;
     event = describe(prev, next) ?? event;
     showThrownIn(next, prev);
+    const redeal = next.view.redealt;
+    if (redeal && redeal.why !== 'AllPassed' && JSON.stringify(redeal) !== JSON.stringify(prev.view.redealt)) {
+      stamp(redeal.why.Misdeal.seat, '딜미스', 'misdeal');
+    }
+    const calledBefore = roundOf(was)?.called_joker;
+    if (typeof now === 'object' && 'Play' in now && now.Play.called_joker && !calledBefore && now.Play.plays[0]) {
+      stamp(now.Play.plays[0].seat, '조커콜', 'call');
+    }
     const turnOf = (m: StateMsg) => (typeof m.turn === 'object' ? m.turn.Seat : null);
     if (me !== null && turnOf(next) === me && turnOf(prev) !== me) {
       sound.turn();
@@ -395,14 +566,18 @@
     }
     const kind = (p: PhaseView) => (typeof p === 'object' ? Object.keys(p)[0] : p);
     if (kind(now) !== kind(was)) {
-      if (kind(now) === 'Exchange') sound.contract();
+      if (kind(now) === 'Exchange' && typeof now === 'object' && 'Exchange' in now) stamp(now.Exchange.declarer, '주공', 'declarer');
       if (kind(now) === 'Play' && kind(was) === 'Exchange') sound.call();
       if (kind(now) === 'Bidding') sound.shuffle();
     }
     if (typeof was === 'object' && 'Bidding' in was && typeof now === 'object' && 'Bidding' in now) {
       const moved = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best) ||
         was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length;
-      if (moved) sound.bid();
+      if (moved) {
+        const raised = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best);
+        const raises = (next.view.bids ?? []).filter((b) => b.contract !== null).length;
+        sound.bid(raised ? raises : 0);
+      }
     }
     if (typeof now === 'object' && 'Done' in now && !(typeof was === 'object' && 'Done' in was)) {
       const d = now.Done;
@@ -434,8 +609,15 @@
       return;
     }
     const reduced = prefersReducedMotion.current;
+    const nowPhase = next.view.phase;
+    const trump = typeof nowPhase === 'object' && 'Play' in nowPhase ? nowPhase.Play.contract.trump : null;
+    const liveLead = typeof nowPhase === 'object' && 'Play' in nowPhase ? nowPhase.Play.lead : null;
     if (after.tricks.length === before.tricks.length) {
-      await land(after.plays.slice(before.plays.length), () => (shown = next), k);
+      await land(after.plays.slice(before.plays.length), () => (shown = next), k, {
+        all: after.plays,
+        lead: liveLead,
+        trump,
+      });
     } else if (after.tricks.length === before.tricks.length + 1) {
       const trick = after.tricks.at(-1)!;
       await land(
@@ -445,6 +627,7 @@
           shown = next;
         },
         k,
+        { all: trick.plays, lead: trick.lead, trump },
       );
       // The hero moment: a beat, the winning card pops, the trick sweeps to its winner.
       await pause(150 * k);
@@ -469,7 +652,7 @@
     }
     if (before.friend === null && after.friend !== null && after.friend !== undefined) {
       revealed = after.friend;
-      sound.friend();
+      stamp(after.friend, '프렌드', 'friend');
       await pause(700 * k);
       revealed = null;
     }
@@ -514,7 +697,7 @@
   const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
 </script>
 
-<section class="table" class:mine={myTurn}>
+<section class="table" class:mine={myTurn} class:nudge>
   <!-- 상황판: everything about the hand on one line. -->
   {#snippet hintTools()}
     {#if client.hint && myTurn}
@@ -543,7 +726,14 @@
       {#if callLabel}<span class="item">프렌드 <strong>{callLabel}</strong></span>{/if}
       {#if play}<span class="item">라운드 <strong>{trickNo}/{view.rules.hand_size}</strong></span>{/if}
       {#if play || done}
-        <span class="item">여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}</span>
+        <span class="item meter" class:made={contractState === 'made'} class:lost={contractState === 'lost'}>
+          여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}
+          <span class="bar" aria-hidden="true">
+            <span class="fill" style:width="{(Math.min(teamPoints, 20) / 20) * 100}%"></span>
+            <span class="goal" style:left="{(contract.count / 20) * 100}%"></span>
+          </span>
+        </span>
+        {#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}
       {/if}
       {#if lastTrick && !resolving}
         <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
@@ -583,6 +773,7 @@
           turn={turn === s}
           bubble={bubble(s)}
           reaction={client.reactions?.[s] ?? null}
+          stamp={stamps[s] ?? null}
           dim={bidding?.passed[s] ?? false}
           reveal={revealed === s}
         />
@@ -592,7 +783,7 @@
     <div class="trick" aria-label={resolving ? '끝난 라운드' : '이번 라운드'}>
       {#each onTable as p, i (`${trickKey}-${p.seat}`)}
         {@const r = relative(p.seat)}
-        <div class="slot" data-slot={p.seat} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
+        <div class="slot" class:beaten={winner !== null && p.seat !== winner} data-slot={p.seat} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
           <Card
             card={p.card}
             size="trick"
@@ -645,7 +836,9 @@
     {#if done}
       {@const won = done.team_points >= done.contract.count}
       {@const mineWon = me !== null && won === (me === done.declarer || me === done.friend)}
-      <div class="sheet result" role="status">
+      <!-- A tap anywhere on the result skips the count; keys need nothing to skip. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <div class="sheet result" class:big={result && result.made && result.margin >= 3} role="status" onclick={skipCount}>
         <p class="headline">
           {won ? '여당 승리' : '야당 승리'}
           {#if mineWon}
@@ -657,6 +850,13 @@
           {/if}
         </p>
         <p class="sub">여당 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
+        {#if result}
+          <ol class="ledger" aria-label="점수 계산">
+            {#each result.lines as line, i (i)}
+              <li class:shown={step > i} class:total={i === result.lines.length - 1}>{line}</li>
+            {/each}
+          </ol>
+        {/if}
         <table>
           <thead>
             <tr><th scope="col">이름</th><th scope="col">역할</th><th scope="col">점수</th><th scope="col">이번 판</th><th scope="col">누적</th></tr>
@@ -668,7 +868,7 @@
                 <td class="who">{seatName(s)}</td>
                 <td>{#if t}<span class="team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}</td>
                 <td class="num">{points(s)}</td>
-                <td class="num" class:neg={pay < 0}>{pay > 0 ? '+' : ''}{pay}</td>
+                <td class="num" class:neg={pay < 0}>{(shownPay[s] ?? pay) > 0 ? '+' : ''}{shownPay[s] ?? pay}</td>
                 <td class="num">{room?.scores[s] ?? ''}</td>
               </tr>
             {/each}
@@ -715,6 +915,7 @@
     </div>
 
     <div class="tray" class:reveal={revealed === me}>
+      {#if stamps[me]}{#key stamps[me].id}<Stamp text={stamps[me].text} gold={stamps[me].gold} />{/key}{/if}
       <div class="me-row">
         {#if team(me)}<span class="team {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/if}
         {#if points(me) > 0}<span class="my-points">{points(me)}점</span>{/if}
@@ -771,6 +972,62 @@
   }
   .event {
     grid-area: event;
+  }
+  /* 여당's points against the contract, on a 0–20 bar with the goal marked. */
+  .meter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .meter .bar {
+    position: relative;
+    width: 48px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--line);
+  }
+  .meter .fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 3px;
+    background: var(--ink-muted);
+    transition: width var(--dur-quick) var(--ease-standard);
+  }
+  .meter .goal {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 12px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--ink);
+  }
+  .meter.made .fill {
+    background: var(--accent);
+  }
+  .meter.lost .fill {
+    background: var(--danger);
+  }
+  .tag-chip {
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1.5px solid var(--ink-muted);
+    color: var(--ink-muted);
+  }
+  .tag-chip.accent {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .tag-chip.danger {
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .tag-chip.gold {
+    border-color: var(--gold);
+    color: var(--gold);
   }
   .event p {
     margin: 0;
@@ -940,6 +1197,11 @@
   }
   .trick .slot :global(.card) {
     --w: var(--card-w);
+    transition: opacity var(--dur-quick) var(--ease-standard);
+  }
+  /* While a round resolves, the cards that lost step back. */
+  .trick .slot.beaten :global(.card) {
+    opacity: 0.55;
   }
   .note {
     position: absolute;
@@ -1040,6 +1302,46 @@
   .result p {
     margin: 0;
   }
+  .ledger {
+    display: grid;
+    gap: 2px;
+    margin: 8px 0 10px;
+    padding: 0;
+    list-style: none;
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    color: var(--ink-muted);
+  }
+  .ledger li {
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+      opacity 200ms var(--ease-standard),
+      transform 200ms var(--ease-standard);
+  }
+  .ledger li.shown {
+    opacity: 1;
+    transform: none;
+  }
+  .ledger li.total {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .result.big .headline {
+    font-size: 36px;
+  }
+  /* 런: the table settles once under the gold seal. */
+  .table.nudge {
+    animation: nudge 300ms var(--ease-standard);
+  }
+  @keyframes nudge {
+    30% {
+      transform: translateY(2px);
+    }
+    60% {
+      transform: translateY(-1px);
+    }
+  }
   .headline {
     position: relative;
     font-family: var(--font-display);
@@ -1138,6 +1440,7 @@
   }
 
   .tray {
+    position: relative;
     padding: 8px 8px 12px;
     border-radius: 16px;
     outline: 3px solid transparent;

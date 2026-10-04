@@ -310,6 +310,22 @@ Everything else (deal, kitty pickup, discards, hand re-sort) is quick and plain.
 - `prefers-reduced-motion` and the in-game speed setting (보통 / 빠르게 / 끄기, multipliers 1, 0.5, 0) are both honoured. Reduced motion keeps fades and highlights and drops movement.
 - No screen shake, no particles, no idle wobble.
 
+## Moments
+
+Every event has one of four tiers, so loudness always means the same thing. The research behind this is in the [마이티 Moments](https://claude.ai/artifact/CJB4D1raoYrYSzLXygrF1p) page.
+
+| Tier | Events | Treatment |
+| --- | --- | --- |
+| 0 · routine | Card played, pass | Card motion and a paper sound. |
+| 1 · notable | Bid raised, points taken, trump cuts a round, tags (공약 확정·불가, 런 찬스, 마지막 라운드) | A label or tag, a rising note; trump cuts land with a thump. |
+| 2 · big | 주공, 프렌드 revealed, 마이티, 조커, 조커콜, 딜미스 | A red ink seal (도장) stamped at the seat for 1.5 s, with its own motif; the 마이티 and jokers also land heavy with a 110 ms hold. |
+| 3 · huge | The result; 런 | The result is counted out step by step; 런 gets the gold seal and a 2 px table nudge. At most once per hand. |
+
+- **Never block play.** Seals, tags and holds run over the table; a tap skips the counted result.
+- **At the seat.** Calls appear where they were made, so everyone sees who.
+- **Ink, not particles.** No screen shake below tier 3; no voice lines.
+- **Motion off or reduced** shows the same seals and results without movement.
+
 ## Sound
 
 Sound supplies the tactile feel that flat visuals lack. On by default at 70% volume, with a mute toggle always one tap away. Web Audio, one context unlocked on the first tap; on iOS the silent switch mutes it, which is accepted.
