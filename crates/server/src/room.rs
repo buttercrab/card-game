@@ -22,24 +22,13 @@ pub type ConnId = u64;
 /// answer before thinking itself.
 const REMOTE_GRACE: Duration = Duration::from_secs(2);
 
-/// How quickly the table's bots move, chosen by its players.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BotPace {
-    Fast,
-    #[default]
-    Normal,
-    Slow,
-}
-
-impl BotPace {
-    /// The share of the server's bot delay a move takes at this pace.
-    fn factor(self) -> f32 {
-        match self {
-            BotPace::Fast => 0.5,
-            BotPace::Normal => 1.0,
-            BotPace::Slow => 1.6,
-        }
+/// A bot's move time against the server's bot delay. Stronger bots take
+/// longer, as people do, and the 고수 bot spends it thinking.
+fn pace(level: BotLevel) -> f32 {
+    match level {
+        BotLevel::Easy => 0.75,
+        BotLevel::Normal => 1.0,
+        BotLevel::Hard => 1.6,
     }
 }
 
@@ -114,10 +103,6 @@ pub enum ClientMsg {
     },
     /// Ask what the bot would do in your place, on your turn.
     Hint,
-    /// Set how quickly the bots move.
-    SetPace {
-        pace: BotPace,
-    },
     /// Show a quick reaction from your seat to the whole table.
     React {
         text: String,
@@ -183,11 +168,10 @@ pub struct Room<G: SessionGame> {
     hands_played: u32,
     scores: Vec<i64>,
     rng: StdRng,
-    /// A bot move's time at normal pace; see [`BotPace`].
+    /// A 보통 bot's move time; see [`pace`].
     bot_delay: Duration,
     /// The most a 고수 bot may think on this server, if limited.
     think_cap: Option<Duration>,
-    pace: BotPace,
     /// Another machine that thinks for bots, when one is connected.
     remote: Option<Arc<RemoteBots>>,
     /// Bumped whenever the hand changes, so a bot's stale move is dropped.
@@ -213,7 +197,6 @@ impl<G: SessionGame> Room<G> {
             rng: StdRng::from_os_rng(),
             bot_delay,
             think_cap: None,
-            pace: BotPace::default(),
             remote: None,
             version: 0,
             thinking: false,
@@ -295,7 +278,6 @@ impl<G: SessionGame> Room<G> {
             "seats": self.seats,
             "scores": self.scores,
             "hands_played": self.hands_played,
-            "pace": self.pace,
             "hand": self.game.as_ref().map(|_| json!({ "number": self.hand_no, "actions": self.log })),
         })
     }
@@ -332,8 +314,6 @@ impl<G: SessionGame> Room<G> {
             seats: Vec<Occupant>,
             scores: Vec<i64>,
             hands_played: u32,
-            #[serde(default)]
-            pace: BotPace,
             hand: Option<Hand>,
         }
         let s: Snapshot<G::Settings> = serde_json::from_value(snapshot).map_err(|e| e.to_string())?;
@@ -347,7 +327,6 @@ impl<G: SessionGame> Room<G> {
         room.seats = s.seats;
         room.scores = s.scores;
         room.hands_played = s.hands_played;
-        room.pace = s.pace;
         if let Some(hand) = s.hand {
             let options = G::hand_options(&room.settings, hand.number);
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
@@ -458,11 +437,6 @@ impl<G: SessionGame> Room<G> {
                 }
                 tracing::info!(room = %self.id, settings = %log_action(&settings), "settings");
                 self.settings = settings;
-                Ok(())
-            }
-            ClientMsg::SetPace { pace } => {
-                my_seat.ok_or("only seated players can change the bots' pace")?;
-                self.pace = pace;
                 Ok(())
             }
             ClientMsg::Hint => {
@@ -620,7 +594,7 @@ impl<G: SessionGame> Room<G> {
         // forced move comes quicker, and every move varies a little.
         let forced = if legal.len() == 1 { 0.5 } else { 1.0 };
         let jitter = self.rng.random_range(0.8..1.2);
-        let delay = self.bot_delay.mul_f32(self.pace.factor() * forced * jitter);
+        let delay = self.bot_delay.mul_f32(pace(level) * forced * jitter);
         // Bots wait out the delay anyway so people can follow along; spend
         // most of it thinking, leaving a little for the move to travel.
         let think = delay.mul_f32(0.8);
@@ -732,7 +706,6 @@ impl<G: SessionGame> Room<G> {
             "scores": self.scores,
             "hands_played": self.hands_played,
             "in_hand": self.in_hand(),
-            "bot_pace": self.pace,
         })
     }
 

@@ -1,5 +1,5 @@
 import { sound } from './sound';
-import type { Action, BotLevel, BotPace, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
+import type { Action, BotLevel, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
 interface Saved {
   token: string;
@@ -182,10 +182,6 @@ export class RoomClient {
 
   setRules(preset: string, rules: Rules | null) {
     this.#send({ type: 'set_settings', settings: rules ? { preset, rules } : { preset } });
-  }
-
-  setPace(pace: BotPace) {
-    this.#send({ type: 'set_pace', pace });
   }
 
   askHint() {

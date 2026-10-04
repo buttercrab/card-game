@@ -13,9 +13,9 @@ struct Args {
     /// Directory with the built web client (`npm run build` in web/).
     #[arg(long, default_value = "web/dist")]
     web: PathBuf,
-    /// How long a bot move takes at normal pace, thinking included, in
-    /// milliseconds; tables pick faster or slower.
-    #[arg(long, default_value_t = 1400)]
+    /// How long a 보통 bot's move takes, in milliseconds; 초보 bots are
+    /// quicker and 고수 bots take longer, thinking all the while.
+    #[arg(long, default_value_t = 1000)]
     bot_delay_ms: u64,
     /// Cap on how long a 고수 bot thinks per move, in milliseconds. By
     /// default it uses most of the bot delay; lower it on small servers.

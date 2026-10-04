@@ -2,7 +2,6 @@
 // Rust types in crates/mighty and crates/server.
 
 export type BotLevel = 'easy' | 'normal' | 'hard';
-export type BotPace = 'fast' | 'normal' | 'slow';
 export type Suit = 'Spade' | 'Diamond' | 'Heart' | 'Club';
 export type Color = 'Black' | 'Red';
 export type Card = { Normal: [Suit, number] } | { Joker: Color };
@@ -152,7 +151,6 @@ export interface RoomMsg {
   scores: number[];
   hands_played: number;
   in_hand: boolean;
-  bot_pace?: BotPace;
 }
 
 export interface StateMsg {

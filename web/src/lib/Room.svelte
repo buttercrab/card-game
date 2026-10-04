@@ -9,7 +9,7 @@
   import { sound } from './sound';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
-  import type { BotLevel, BotPace } from './types';
+  import type { BotLevel } from './types';
 
   const LEVEL: Record<BotLevel, string> = { easy: '초보', normal: '보통', hard: '고수' };
 
@@ -144,16 +144,6 @@
           <button class="ghost small" onclick={() => (showRules = true)}>보기</button>
           {#if seated}<button class="ghost small" onclick={() => (editRules = true)}>바꾸기</button>{/if}
         </div>
-        {#if seated && room.seats.some((s) => s.kind === 'bot')}
-          <div class="rules-line">
-            <span>봇 속도</span>
-            <select class="level" aria-label="봇 속도" value={room.bot_pace ?? 'normal'} onchange={(e) => client.setPace(e.currentTarget.value as BotPace)}>
-              <option value="fast">빠르게</option>
-              <option value="normal">보통</option>
-              <option value="slow">느리게</option>
-            </select>
-          </div>
-        {/if}
 
         <ol class="seats">
           {#each room.seats as s, i (i)}
@@ -184,9 +174,9 @@
                     value={s.level ?? 'hard'}
                     onchange={(e) => client.addBot(i, e.currentTarget.value as BotLevel)}
                   >
-                    <option value="easy">초보</option>
+                    <option value="easy">초보 · 빨리 둬요</option>
                     <option value="normal">보통</option>
-                    <option value="hard">고수</option>
+                    <option value="hard">고수 · 오래 생각해요</option>
                   </select>
                   {#if !inHand}<button class="ghost" onclick={() => client.removeBot(i)}>빼기</button>{/if}
                 {:else if s.kind === 'human' && !s.connected && seated}
@@ -216,12 +206,7 @@
 </div>
 
 {#if showSettings}
-  <SettingsSheet
-    onclose={() => (showSettings = false)}
-    onreport={() => (reporting = true)}
-    pace={seated ? (room?.bot_pace ?? 'normal') : undefined}
-    onpace={(pace) => client.setPace(pace)}
-  />
+  <SettingsSheet onclose={() => (showSettings = false)} onreport={() => (reporting = true)} />
 {/if}
 {#if reporting}
   <ReportSheet room={id} seat={client.seat} onclose={() => (reporting = false)} />
