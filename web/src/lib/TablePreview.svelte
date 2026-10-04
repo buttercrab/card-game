@@ -1,6 +1,6 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
-  // /preview?state=bidding | waiting | misdeal | exchange | play | watch | late | sweep | done | won | run
+  // /preview?state=bidding | waiting | misdeal | exchange | friend | play | watch | late | sweep | done | won | run
   // (waiting and watch are the bidding and the play on someone else's turn).
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
@@ -88,6 +88,8 @@
   const phases: Record<string, PhaseView> = {
     bidding: { Bidding: { to_act: 0, best: [2, { trump: 'Heart', count: 15 }], passed: [false, true, false, true, false], has_bid: [false, false, true, false, false] } },
     exchange: { Exchange: { declarer: 0, contract, trump_changed: false, discards: [] } },
+    // The discards are down; the declarer names the friend.
+    friend: { Exchange: { declarer: 0, contract, trump_changed: false, discards: kittyCards } },
     play: playPhase(trickPlays, []),
     watch: playPhase(trickPlays.slice(0, 2), []),
     // Later in the hand: the 프렌드 is out and both sides have points.
@@ -117,6 +119,11 @@
   const legal: Record<string, StateMsg['legal']> = {
     bidding: ['Pass', ...[15, 16, 17].map((count) => ({ Bid: { trump: 'Spade' as const, count } }))],
     exchange: [...hand, ...kittyCards].map((card) => ({ Discard: card })),
+    friend: [
+      ...[{ Joker: 'Black' } as Card, n('Spade', 13), n('Heart', 14), ...hand.slice(0, 4)].map((card) => ({ CallFriend: { Card: card } })),
+      { CallFriend: 'FirstTrick' as const },
+      { CallFriend: 'Alone' as const },
+    ],
     play: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     late: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     done: [],

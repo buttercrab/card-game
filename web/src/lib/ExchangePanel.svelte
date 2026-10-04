@@ -56,12 +56,14 @@
     return out;
   });
 
-  const cardCalls: CardT[] = $derived(
-    calls
-      .flatMap((c) => (typeof c === 'object' && 'Card' in c ? [c.Card] : []))
-      .filter((card) => !hand.some((h) => sameCard(h, card)))
-      .sort((a, b) => order(a) - order(b)),
+  const allCardCalls: CardT[] = $derived(
+    calls.flatMap((c) => (typeof c === 'object' && 'Card' in c ? [c.Card] : [])).sort((a, b) => order(a) - order(b)),
   );
+  const isMine = (card: CardT) => hand.some((h) => sameCard(h, card));
+  const cardCalls = $derived(allCardCalls.filter((card) => !isMine(card)));
+  /** Your own cards, when the rules allow naming one: a 가짜 프렌드, playing
+   * alone while the table thinks you have a partner. */
+  const ownCalls = $derived(allCardCalls.filter(isMine));
   const otherCalls = $derived(calls.filter((c) => typeof c === 'string' || 'Seat' in c));
 
   function order(card: CardT): number {
@@ -73,6 +75,9 @@
   let call = $state<FriendCall | null>(null);
   let picking = $state(false);
   const chosenCall = $derived(call && calls.some((c) => sameCall(c, call!)) ? call : (shortcuts[0]?.call ?? calls[0] ?? null));
+  const callsMine = $derived(
+    chosenCall !== null && typeof chosenCall === 'object' && 'Card' in chosenCall && isMine(chosenCall.Card),
+  );
 
   function changedCount(t: Suit | null): number {
     const bonus = (x: Suit | null) => (x === null ? rules.bidding.no_trump_bonus : 0);
@@ -110,6 +115,21 @@
             />
           {/each}
         </div>
+        {#if ownCalls.length > 0}
+          <p class="own-head muted">내 카드 · 부르면 혼자 하지만, 아무도 몰라요</p>
+          <div class="grid">
+            {#each ownCalls as card (JSON.stringify(card))}
+              <Card
+                {card}
+                size="mini"
+                {twoJokers}
+                seal={sealOf(card, rules, contract.trump)}
+                raised={chosenCall !== null && sameCall(chosenCall, { Card: card })}
+                onclick={() => (call = { Card: card })}
+              />
+            {/each}
+          </div>
+        {/if}
         {#if otherCalls.length > 0}
           <div class="chips">
             {#each otherCalls as c (JSON.stringify(c))}
@@ -128,6 +148,7 @@
         {:else}
           프렌드 {chosenCall ? friendCallLabel(chosenCall, seatName, twoJokers) : ''}
         {/if}
+        {#if callsMine}<span class="sub">(내 카드)</span>{/if}
       </button>
     </div>
   </div>
@@ -182,6 +203,10 @@
   .actions .primary {
     flex: 1;
     max-width: 280px;
+  }
+  .own-head {
+    margin: 4px 0 0;
+    font-size: 13px;
   }
   .sub {
     font-weight: 400;
