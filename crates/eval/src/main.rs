@@ -45,6 +45,10 @@ enum Command {
         /// host names needed).
         #[arg(long)]
         machine: Option<String>,
+        /// The commit this was built from, when not run in a git checkout
+        /// (an exported tree on another machine); read from git otherwise.
+        #[arg(long)]
+        commit: Option<String>,
     },
 }
 
@@ -58,6 +62,7 @@ fn main() -> ExitCode {
         parts,
         threads,
         machine,
+        commit,
     } = Args::parse().command;
     let result = (|| {
         let loaded = Loaded::load(&suite)?;
@@ -70,6 +75,7 @@ fn main() -> ExitCode {
             parts: &parts,
             threads,
             machine,
+            commit,
             command: std::env::args().collect(),
         };
         let mut progress = |line: &str| eprintln!("{line}");

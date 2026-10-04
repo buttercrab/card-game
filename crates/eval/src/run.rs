@@ -24,6 +24,9 @@ pub struct Request<'a> {
     pub threads: Option<usize>,
     /// Which machine this is, for the record.
     pub machine: Option<String>,
+    /// The commit the runner was built from, when it does not run in a
+    /// git checkout (such as an exported tree on another machine).
+    pub commit: Option<String>,
     pub command: Vec<String>,
 }
 
@@ -37,7 +40,10 @@ pub fn run<G: EvalGame>(request: &Request, progress: &mut dyn FnMut(&str)) -> Re
     }
     let started = Instant::now();
     let machine = Machine::here(request.machine.clone());
-    let (commit, dirty) = machine::commit(&suite.dir).map_or((None, false), |(c, d)| (Some(c), d));
+    let (commit, dirty) = match &request.commit {
+        Some(commit) => (Some(commit.clone()), false),
+        None => machine::commit(&suite.dir).map_or((None, false), |(c, d)| (Some(c), d)),
+    };
     let mut runner = Runner::<G> {
         bot: (request.bot.to_string(), G::parse_bot(request.bot)?),
         baseline: match request.baseline {

@@ -128,10 +128,14 @@ folder (cargo is installed; nothing else is needed):
 
 ```sh
 git archive --format=tar HEAD | ssh home 'mkdir -p ~/bench/eval && tar -x -C ~/bench/eval'
-ssh home 'cd ~/bench/eval && nice -n 10 cargo build --release -p eval &&
-  nice -n 10 target/release/eval run --suite v1 --bot hard --parts cost --machine "home server" --out cost-home'
-scp -r home:~/bench/eval/cost-home <experiment folder>/
+ssh home "cd ~/bench/eval && nice -n 10 cargo +stable build --release -j 4 -p eval &&
+  nice -n 10 target/release/eval run --suite v1 --bot hard --parts cost \
+    --machine 'home server' --commit $(git rev-parse HEAD) --out cost-home"
+scp -r home:bench/eval/cost-home <experiment folder>/
 ```
+
+The exported tree is no git checkout, so `--commit` records the commit.
+Remove the folder afterwards.
 
 ## `results.json`
 

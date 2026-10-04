@@ -35,6 +35,7 @@ fn play(suite: &Loaded, threads: usize, quick: bool) -> Results {
         parts: &Part::ALL,
         threads: Some(threads),
         machine: None,
+        commit: None,
         command: Vec::new(),
     };
     run::<Mighty>(&request, &mut |_| {}).unwrap()
