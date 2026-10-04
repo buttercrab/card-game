@@ -40,7 +40,7 @@ fn check(loaded: &Loaded) {
     }
     for m in s.matches.iter().flatten() {
         bot(&m.field);
-        rules(&m.rules);
+        eval::rules::<Mighty>(&m.rules).unwrap_or_else(|e| panic!("{e}"));
     }
     if let Some(c) = &s.cost {
         bot(&c.field);
@@ -72,7 +72,20 @@ fn v1_is_whole() {
 
 #[test]
 fn the_benchmark_suite_is_whole() {
-    check(&load("bench-2026-10-04"));
+    let bench = load("bench-2026-10-04");
+    check(&bench);
+    // The benchmark's `default` was web-mighty's base, before 기본 became
+    // the owner's rules; the suite gives it in full.
+    for m in bench
+        .suite
+        .matches
+        .iter()
+        .flatten()
+        .filter(|m| m.name.starts_with("web-mighty"))
+    {
+        let (_, rules) = eval::rules::<Mighty>(&m.rules).unwrap();
+        assert_eq!(rules, Rules::default(), "{}", m.name);
+    }
 }
 
 /// The held-out sets: valid, distinct, none a preset, and exactly

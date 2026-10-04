@@ -60,6 +60,19 @@ pub trait EvalGame: JsonGame<Rules: Clone + Send + Sync, Options: Send + Sync> +
     fn describe(rules: &Self::Rules) -> String;
 }
 
+/// The rule set `rules` names, and a label for it: the preset's id, or a
+/// description of rules given in full (checked to be playable).
+pub fn rules<G: EvalGame>(rules: &suite::RulesRef) -> Result<(String, G::Rules), String> {
+    match rules {
+        suite::RulesRef::Preset(id) => Ok((id.clone(), preset::<G>(id)?)),
+        suite::RulesRef::Given(json) => {
+            let rules: G::Rules = serde_json::from_value(json.clone()).map_err(|e| format!("rules: {e}"))?;
+            G::validate(&rules)?;
+            Ok((G::describe(&rules), rules))
+        }
+    }
+}
+
 /// The rules of the preset `id`.
 pub fn preset<G: EvalGame>(id: &str) -> Result<G::Rules, String> {
     G::presets()

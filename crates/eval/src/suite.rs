@@ -92,12 +92,21 @@ pub struct Heldout {
 #[serde(deny_unknown_fields)]
 pub struct Match {
     pub name: String,
-    pub rules: String,
+    pub rules: RulesRef,
     pub field: String,
     pub seed: u64,
     pub deals: u64,
     /// Deals in a quick run.
     pub quick_deals: u64,
+}
+
+/// A rule set: a preset by id, or one given in full (the game's rules as
+/// JSON), such as a preset as it was when a past measurement ran.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RulesRef {
+    Preset(String),
+    Given(serde_json::Value),
 }
 
 /// Think time: deals played one at a time on one thread, so nothing else

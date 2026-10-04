@@ -9,7 +9,7 @@ use crate::results::{
 };
 use crate::stats::{Estimate, ThinkTime};
 use crate::suite::{Loaded, Part, deals};
-use crate::{EvalGame, preset};
+use crate::{EvalGame, preset, rules};
 use std::time::Instant;
 
 /// What to run.
@@ -242,13 +242,7 @@ impl<G: EvalGame> Runner<'_, G> {
         let tables = (matches.iter())
             .map(|m| {
                 let n = deals(m.deals, m.quick_deals, quick);
-                self.plan(
-                    m.name.clone(),
-                    (m.rules.clone(), preset::<G>(&m.rules)?),
-                    &m.field,
-                    m.seed,
-                    n,
-                )
+                self.plan(m.name.clone(), rules::<G>(&m.rules)?, &m.field, m.seed, n)
             })
             .collect::<Result<Vec<_>, _>>()?;
         self.play(tables)
