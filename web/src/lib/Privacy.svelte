@@ -1,0 +1,79 @@
+<script lang="ts">
+  // 개인정보 처리방침. Keep it true to the code: change this page with
+  // anything that stores or sends something new.
+  import Doc from './Doc.svelte';
+</script>
+
+<Doc title="개인정보 처리방침" here="/privacy">
+  {#snippet lead()}
+    <p class="muted">2026년 10월 4일 시행</p>
+    <p>
+      마이티(cards.buttercrab.io)에는 계정도 광고도 없어요. 게임에 필요한 것만 다루고, 무엇을 어디에 두는지 여기에 모두
+      적었어요.
+    </p>
+  {/snippet}
+
+  <section>
+    <h2>이 기기에 저장하는 것</h2>
+    <p>브라우저 저장소(localStorage)에 두고, 서버로 따로 보내지 않아요.</p>
+    <ul>
+      <li>설정: 소리, 음악, 애니메이션, 카드 뒷면 같은 것</li>
+      <li>내 기록: 끝난 판마다 맡은 역할, 공약, 승패와 점수 (최근 1000판)</li>
+      <li>업적과 그걸 얻은 때</li>
+      <li>마지막으로 쓴 이름, 그리고 테이블마다 내 자리를 다시 찾는 데 쓰는 접속 토큰</li>
+      <li>홈 화면에 추가하기 안내를 닫았는지</li>
+    </ul>
+    <p>연습 테이블인지는 탭을 닫으면 지워지는 세션 저장소에 둬요.</p>
+  </section>
+
+  <section>
+    <h2>서버가 다루는 것</h2>
+    <ul>
+      <li>
+        테이블: 자리에 앉은 이름, 규칙, 지금 판의 카드와 수 기록. 테이블이 있는 동안만 저장하고, 아무도 없이 30분이
+        지나 테이블이 닫히면 지워요.
+      </li>
+      <li>게임 통계: 판이 끝나면 규칙과 결과 같은 익명 통계를 남겨요. 이름과 IP 주소는 들어가지 않아요.</li>
+      <li>
+        오류 보고: 페이지에서 오류가 나면 오류 메시지와 코드 위치, 브라우저 정보(user agent), 페이지 주소를 자동으로
+        보내요. 주소에서 테이블 코드는 빼고, 이름이나 게임 내용은 보내지 않아요.
+      </li>
+      <li>
+        문제 신고: 직접 쓴 내용과 브라우저 정보, 화면 크기가 가요. 테이블에서 보내면 그 테이블의 자리 이름과 수 기록도
+        함께 가요. 신고는 서버에 14일 동안 두고, 비공개 GitHub 저장소의 이슈로 올려 고치는 데 써요. 고칠 때 AI 도구(Anthropic의
+        Claude)가 그 내용을 읽을 수 있어요.
+      </li>
+    </ul>
+    <p>서버는 접속 기록(IP 주소)을 따로 남기지 않아요.</p>
+  </section>
+
+  <section>
+    <h2>방문 통계</h2>
+    <p>
+      몇 명이 어떤 페이지를 보는지는 Cloudflare Web Analytics로 세요. 쿠키를 쓰지 않고, 다른 사이트를 넘나들며 따라다니지
+      않아요. 자세한 건 <a href="https://www.cloudflare.com/privacypolicy/" target="_blank" rel="noopener">Cloudflare 개인정보 처리방침</a>에
+      있어요.
+    </p>
+  </section>
+
+  <section>
+    <h2>하지 않는 것</h2>
+    <ul>
+      <li>광고, 계정, 쿠키가 없어요.</li>
+      <li>모은 것을 팔거나 다른 곳에 넘기지 않아요.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>지우기</h2>
+    <ul>
+      <li>이 기기에 있는 것은 브라우저 설정에서 이 사이트의 데이터를 지우면 모두 사라져요. 내 기록만 지우려면 처음 화면의 내 기록에서 지울 수 있어요.</li>
+      <li>서버에 있는 것을 지워 달라거나 궁금한 점이 있으면 <a href="/#report">문제 신고</a>로 알려 주세요.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>바뀔 때</h2>
+    <p>이 방침이 바뀌면 이 페이지에 새 시행일과 함께 올려요.</p>
+  </section>
+</Doc>

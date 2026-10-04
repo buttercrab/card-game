@@ -2,6 +2,8 @@
   import Card from './Card.svelte';
   import InstallHint from './InstallHint.svelte';
   import ReportSheet from './ReportSheet.svelte';
+  import SettingsSheet from './SettingsSheet.svelte';
+  import SiteLinks from './SiteLinks.svelte';
   import StatsSheet from './StatsSheet.svelte';
   import Tutorial from './Tutorial.svelte';
   import { settings } from './settings.svelte';
@@ -17,7 +19,15 @@
   let reporting = $state(false);
   let showStats = $state(false);
   let learning = $state(false);
+  let showSettings = $state(false);
   let error = $state<string | null>(null);
+
+  // Other pages link here with #learn (the guide) or #report (문제 신고).
+  if (location.hash === '#learn' || location.hash === '#report') {
+    if (location.hash === '#learn') learning = true;
+    else reporting = true;
+    history.replaceState(null, '', '/');
+  }
 
   /** With `practice`, the room seats you with easy bots and starts at once. */
   async function create(practice = false) {
@@ -97,16 +107,23 @@
   </section>
 
   <InstallHint />
-  <div class="footer">
-    <button class="ghost small" onclick={() => (showStats = true)}>내 기록</button>
-    <button class="ghost small" onclick={() => (reporting = true)}>문제 신고</button>
-  </div>
+  <footer>
+    <div class="tools">
+      <button class="ghost small" onclick={() => (showStats = true)}>내 기록</button>
+      <button class="ghost small" onclick={() => (showSettings = true)}>설정</button>
+      <button class="ghost small" onclick={() => (reporting = true)}>문제 신고</button>
+    </div>
+    <SiteLinks />
+  </footer>
 </main>
 {#if learning}
   <Tutorial onpractice={() => create(true)} onclose={() => (learning = false)} />
 {/if}
 {#if showStats}
   <StatsSheet onclose={() => (showStats = false)} />
+{/if}
+{#if showSettings}
+  <SettingsSheet onclose={() => (showSettings = false)} />
 {/if}
 {#if reporting}
   <ReportSheet onclose={() => (reporting = false)} />
@@ -177,6 +194,7 @@
   }
   .panel {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     padding: 20px;
     border-radius: 16px;
@@ -210,7 +228,12 @@
     font-size: 14px;
     font-weight: 500;
   }
-  .footer {
+  /* The table tools, then the site's own pages in a quieter line. */
+  footer {
+    display: grid;
+    gap: 4px;
+  }
+  .tools {
     display: flex;
     justify-content: center;
     gap: 8px;
