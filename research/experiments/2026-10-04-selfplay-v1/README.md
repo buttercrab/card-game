@@ -45,3 +45,17 @@ dataset against the new one (`Dataset.rules()` against the list).
 
 **Use.** `cardgame_ml.data.shards.Dataset.open(store / "selfplay/selfplay-v1")`.
 Regenerating from the commit and config gives the same bytes.
+
+## Throughput on an idle Mac (2026-10-05)
+
+Re-measured with the Mac otherwise idle (load ~3), random play, 4096 envs,
+varied rules, 15 s per setting:
+
+| Driver | Hands/s | Decisions/s |
+|---|---|---|
+| Python (`cardgame_env`), all threads | 5,846 | 329,946 |
+| Python, one thread | 1,113 | 68,459 |
+| Rust `--example throughput`, 1024 envs | 7,565 | 482,192 |
+
+Encoding takes 10.7 µs an observation on one thread. P2's exit target,
+thousands of games per second from Python, is met.
