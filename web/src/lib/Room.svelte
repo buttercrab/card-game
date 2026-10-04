@@ -87,7 +87,7 @@
   }
 </script>
 
-<div class="page">
+<div class="page" class:playing={showTable}>
   <header>
     <button class="ghost icon" onclick={onleave} aria-label="처음으로">←</button>
     <div class="title">
@@ -231,6 +231,11 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
+  }
+  /* At the table, the width follows the window's height: a tall desktop
+     window gets a wider table instead of a fixed column with empty felt. */
+  .page.playing {
+    max-width: max(1100px, calc((100dvh - 64px) * 1.7));
   }
 
   header {

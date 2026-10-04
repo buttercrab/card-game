@@ -100,6 +100,8 @@ export type PhaseView =
         leader: number;
         lead: Lead | null;
         plays: Played[];
+        /** Who is winning this trick so far; null before its first card. */
+        leading: number | null;
         called_joker: Card | null;
         /** Completed tricks, oldest first. */
         tricks: Trick[];

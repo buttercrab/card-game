@@ -431,6 +431,44 @@ fn card_friend_is_revealed_when_the_card_is_played() {
 }
 
 #[test]
+fn the_view_says_who_is_winning_the_trick_so_far() {
+    let mut state = start(
+        Rules::default(),
+        &[
+            DECLARER,
+            "D10 H2 H3 H4 H5 H6 H7 H8 H9 H10",
+            "DJ S2 S3 S4 S5 S6 S7 S8 S9 S10",
+        ],
+        KITTY,
+    );
+    to_play(&mut state, FriendCall::FirstTrick);
+    let leading = |state: &State| match Mighty::view(state, Viewer::Seat(3)).phase {
+        PhaseView::Play { leading, .. } => leading,
+        other => panic!("not playing: {other:?}"),
+    };
+    assert_eq!(leading(&state), None);
+    lead(&mut state, "D2");
+    assert_eq!(leading(&state), Some(0));
+    lead(&mut state, "D10");
+    assert_eq!(leading(&state), Some(1));
+    lead(&mut state, "DJ");
+    assert_eq!(leading(&state), Some(2));
+    // The trick closes; the next one has no cards and so no one ahead.
+    for _ in 0..2 {
+        let card = legal_cards(&state)[0];
+        act(
+            &mut state,
+            Action::Play {
+                card,
+                joker_lead: None,
+                call_joker: false,
+            },
+        );
+    }
+    assert_eq!(leading(&state), None);
+}
+
+#[test]
 fn illegal_actions_change_nothing() {
     let mut state = start(Rules::default(), &[DECLARER], KITTY);
     let before = state.clone();

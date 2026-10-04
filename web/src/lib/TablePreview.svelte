@@ -51,6 +51,8 @@
       leader: 1,
       lead: plays.length ? { Suit: 'Club' } : null,
       plays,
+      // Club K, the highest club so far; the preview has no rules engine.
+      leading: plays.length ? 2 : null,
       called_joker: null,
       tricks,
       discards: null,
