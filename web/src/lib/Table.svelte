@@ -9,6 +9,7 @@
   import HandReplay from './HandReplay.svelte';
   import Icon from './Icon.svelte';
   import LeadTag from './LeadTag.svelte';
+  import PlayerFigure from './PlayerFigure.svelte';
   import Reactions from './Reactions.svelte';
   import ShareCard from './ShareCard.svelte';
   import Seat, { TEAM_LABEL, subject, type Team } from './Seat.svelte';
@@ -97,6 +98,12 @@
     if (!info || info.kind === 'empty') return `${seat + 1}번 자리`;
     return info.kind === 'bot' ? botName(seat) : info.name;
   }
+
+  /** Your own name as the room knows it, for your seat on the tray. */
+  const myName = $derived.by(() => {
+    const info = me !== null ? room?.seats[me] : null;
+    return info?.kind === 'human' ? info.name : '나';
+  });
 
   // ---- Where everyone sits -------------------------------------------------
   // Play goes to the next seat number. Seen from the bottom, that runs
@@ -955,6 +962,66 @@
   let replay = $state(false);
   let sharing = $state(false);
   const lastTrick = $derived(play?.tricks.at(-1) ?? null);
+  /** The round before, for the side panel; the result keeps the last one. */
+  const prevTrick = $derived(play?.tricks.at(-1) ?? done?.tricks.at(-1) ?? null);
+
+  // ---- 기록: the hand so far, as a short log ---------------------------------
+  // Read from the state itself (bids, rounds, the friend), not from what
+  // happened to animate, so it is whole after a reconnect too.
+  type LogKind = 'bid' | 'pass' | 'declarer' | 'friend' | 'power' | 'take' | 'result' | 'plain';
+  const who = (seat: number) => (seat === me ? '내가' : seatName(seat));
+  const log = $derived.by(() => {
+    const out: { text: string; kind: LogKind; pts?: number }[] = [];
+    const redeal = view.redealt;
+    if (redeal) {
+      out.push({
+        text: redeal.why === 'AllPassed' ? '모두 패스 · 다시 나눠요' : `${seatName(redeal.why.Misdeal.seat)} 딜미스 · 다시 나눠요`,
+        kind: 'plain',
+      });
+    }
+    for (const b of view.bids ?? []) {
+      out.push(b.contract ? { text: `${seatName(b.seat)} · ${contractLabel(b.contract)}`, kind: 'bid' } : { text: `${seatName(b.seat)} · 패스`, kind: 'pass' });
+    }
+    if (declarer === null || !contract) return out;
+    out.push({ text: `${seatName(declarer)} 주공 · ${contractLabel(contract)}`, kind: 'declarer' });
+    if (call) {
+      const label = sameCallMighty(call, contract.trump) ? '마이티' : friendCallLabel(call, seatName, twoJokers);
+      out.push({ text: `프렌드 콜 · ${label}`, kind: 'plain' });
+    }
+    const tricks = play?.tricks ?? done?.tricks ?? [];
+    // When the 프렌드 came out: at once for a seat, else with the round that showed them.
+    let revealAt = -2;
+    if (friend !== null && call && typeof call === 'object') {
+      if ('Seat' in call) revealAt = -1;
+      else revealAt = tricks.findIndex((t) => t.plays.some((p) => p.seat === friend && sameCard(p.card, call.Card)));
+    } else if (friend !== null && call === 'FirstTrick') revealAt = 0;
+    if (revealAt === -1 && friend !== null) out.push({ text: `${seatName(friend)} 프렌드 공개`, kind: 'friend' });
+    const mighty = mightyCard(contract.trump);
+    const powers = (plays: Played[]) => {
+      for (const p of plays) {
+        if (!p.powered) continue;
+        if ('Joker' in p.card) out.push({ text: `${seatName(p.seat)} · 조커`, kind: 'power' });
+        else if (sameCard(p.card, mighty)) out.push({ text: `${seatName(p.seat)} · 마이티`, kind: 'power' });
+      }
+    };
+    tricks.forEach((t, i) => {
+      powers(t.plays);
+      const got = t.plays.filter((p) => isPoint(p.card)).length;
+      out.push({ text: `${who(t.winner)} 가져감`, kind: 'take', pts: got });
+      if (i === revealAt && friend !== null) out.push({ text: `${seatName(friend)} 프렌드 공개`, kind: 'friend' });
+    });
+    if (play) powers(play.plays);
+    if (done) {
+      const made = done.team_points >= done.contract.count;
+      out.push({ text: `${made ? '여당' : '야당'} 승리 · 여당 ${done.team_points}점`, kind: 'result' });
+    }
+    return out;
+  });
+  /** As many of the newest as the panel has room for (about 28px a line),
+   * newest first, keyed by their place in the hand. */
+  let logHeight = $state(0);
+  const logRows = $derived(Math.max(4, Math.floor((logHeight - 36) / 28)));
+  const recent = $derived(log.map((e, i) => ({ ...e, key: `${i}:${e.text}` })).slice(-logRows).reverse());
 
   const callLabel = $derived.by(() => {
     if (!call) return null;
@@ -985,6 +1052,23 @@
       <button class="hint-btn" aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}><Icon name="hint" /></button>
     {/if}
   {/snippet}
+  {#snippet ticks()}
+    {#if contract}
+      <!-- One tick per point card: 여당 from the left, 야당 from the right.
+           The line is the contract. (Where 야당 would break it is always the
+           tick just before, so it needs no mark of its own.) -->
+      <span class="tally" role="img" aria-label="점수 카드 20장 중 여당 {tallyDecl}장, 야당 {tallyDef}장" use:goLive>
+        {#each TICKS as i (i)}
+          {@const side = i < tallyDecl ? 'decl' : i >= 20 - tallyDef ? 'def' : ''}
+          <span
+            class="tick {side}"
+            style:--d="{Math.max(0, side === 'decl' ? i - tallyFrom.decl : side === 'def' ? 19 - i - tallyFrom.def : 0) * 40}ms"
+          ></span>
+        {/each}
+        <span class="goal" style:left={tickEdge(contract.count)}></span>
+      </span>
+    {/if}
+  {/snippet}
   <div class="status" aria-live="polite">
     {#if bidding}
       {#if bidding.best}
@@ -1007,24 +1091,7 @@
       {#if play || done}
         <span class="item meter">
           <span class="meter-label">여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}</span>
-          <!-- One tick per point card: 여당 from the left, 야당 from the right.
-               The line is the contract. (Where 야당 would break it is always the
-               tick just before, so it needs no mark of its own.) -->
-          <span
-            class="tally"
-            role="img"
-            aria-label="점수 카드 20장 중 여당 {tallyDecl}장, 야당 {tallyDef}장"
-            use:goLive
-          >
-            {#each TICKS as i (i)}
-              {@const side = i < tallyDecl ? 'decl' : i >= 20 - tallyDef ? 'def' : ''}
-              <span
-                class="tick {side}"
-                style:--d="{Math.max(0, side === 'decl' ? i - tallyFrom.decl : side === 'def' ? 19 - i - tallyFrom.def : 0) * 40}ms"
-              ></span>
-            {/each}
-            <span class="goal" style:left={tickEdge(contract.count)}></span>
-          </span>
+          {@render ticks()}
           {#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}
         </span>
       {/if}
@@ -1045,6 +1112,119 @@
       {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite">{tip}</p>{/key}{/if}
     </div>
   {/if}
+
+  <!-- Desktop: the hand at a glance, on stacked paper beside the felt. -->
+  <aside class="side" aria-label="게임 정보">
+    <section class="pane board" aria-label="상황판">
+      <h3 class="pane-title">
+        상황판
+        {#if play}<span class="round-no">라운드 <strong>{trickNo}</strong>/{view.rules.hand_size}</span>{/if}
+      </h3>
+      {#if bidding}
+        <div class="big-contract">
+          {#if bidding.best}
+            {@const best = bidding.best[1]}
+            <span class="glyph-box">
+              {#if best.trump}<SuitIcon suit={best.trump} class="suit-{best.trump}" />{:else}<span class="nt">노</span>{/if}
+            </span>
+            <span class="big-num">{best.count}</span>
+            <span class="big-sub">최고 공약<br /><strong>{seatName(bidding.best[0])}</strong></span>
+          {:else}
+            <span class="big-sub">공약 없음<br /><strong>최소 {view.rules.bidding.min}</strong></span>
+          {/if}
+        </div>
+      {:else if contract}
+        <div class="big-contract">
+          <span class="glyph-box">
+            {#if contract.trump}<SuitIcon suit={contract.trump} class="suit-{contract.trump}" />{:else}<span class="nt">노</span>{/if}
+          </span>
+          <span class="big-num">{contract.count}</span>
+          <dl class="facts">
+            {#if declarer !== null}<div><dt>주공</dt><dd><span class="clip">{seatName(declarer)}</span></dd></div>{/if}
+            {#if callLabel}
+              <div>
+                <dt>프렌드</dt>
+                <dd>
+                  {#if friend === null && call && typeof call === 'object' && 'Card' in call}
+                    <Card card={call.Card} size="mini" width={22} seal={seal(call.Card)} {twoJokers} />
+                  {/if}
+                  <span class="clip">{callLabel}</span>
+                </dd>
+              </div>
+            {/if}
+          </dl>
+        </div>
+        {#if play || done}
+          <div class="side-meter">
+            <span class="meter-row">
+              <span>여당 {#key teamPoints}<strong class="bump">{teamPoints}</strong>{/key}<span class="of">/{contract.count}</span></span>
+              <span>야당 <strong>{tallyDef}</strong></span>
+            </span>
+            {@render ticks()}
+            {#if tags.length}
+              <span class="side-tags">{#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}</span>
+            {/if}
+          </div>
+        {/if}
+      {:else}
+        <p class="pane-empty">패를 나누는 중</p>
+      {/if}
+    </section>
+
+    <section class="pane scores" aria-label="점수판">
+      <h3 class="pane-title">점수판 <span class="cols"><span>이번 판</span><span>누적</span></span></h3>
+      <ol class="score-rows">
+        {#each Array.from({ length: n }, (_, k) => seatAt(k)) as s (s)}
+          {@const info = room?.seats[s]}
+          {@const t = team(s)}
+          <li class:me={s === me} class:turn={turn === s}>
+            <span class="head" class:on={turn === s}>
+              <PlayerFigure still team={t} trumpSuit={contract?.trump ?? null} isBot={info?.kind === 'bot'} offline={info?.kind === 'human' && !info.connected} />
+            </span>
+            <span class="who-cell">
+              <span class="row-name">{s === me ? myName : seatName(s)}</span>
+              {#if t}<span class="team mini-team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}
+            </span>
+            <span class="num hand-pts">{play || done ? points(s) : '·'}</span>
+            <span class="num total" class:neg={(room?.scores[s] ?? 0) < 0}>{room?.scores[s] ?? 0}</span>
+          </li>
+        {/each}
+      </ol>
+    </section>
+
+    <section class="pane log-pane" aria-label="기록" bind:clientHeight={logHeight}>
+      <h3 class="pane-title">기록</h3>
+      {#if recent.length}
+        <ol class="log">
+          {#each recent as e (e.key)}
+            <li class="log-{e.kind}">
+              <span class="log-text">{e.text}</span>
+              {#if e.pts}<span class="log-pts">{e.pts}점</span>{/if}
+            </li>
+          {/each}
+        </ol>
+      {:else}
+        <p class="pane-empty">아직 아무 일도 없어요</p>
+      {/if}
+    </section>
+
+    {#if prevTrick}
+      <section class="pane last-pane" aria-label="직전 라운드">
+        <h3 class="pane-title">직전 라운드 <span class="cols">{who(prevTrick.winner)} 가져감</span></h3>
+        <div class="last-cards">
+          {#each prevTrick.plays as p, i (p.seat)}
+            <figure class:won={p.seat === prevTrick.winner}>
+              <span class="mini-slot">
+                <Card card={p.card} size="mini" width={38} seal={seal(p.card)} {twoJokers} won={p.seat === prevTrick.winner} />
+                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={prevTrick.lead} />{/if}
+              </span>
+              <figcaption>{seatName(p.seat)}</figcaption>
+            </figure>
+          {/each}
+        </div>
+      </section>
+    {/if}
+  </aside>
 
   <div class="felt" bind:this={felt}>
     {#if me !== null}
@@ -1077,6 +1257,9 @@
             mood={mood(s)}
             pointsOpen={peek?.seat === s && peek.anchor.closest('.spot') !== null}
             onpoints={canPeek ? (anchor) => togglePeek(s, anchor) : null}
+            taken={pointCards(s)}
+            {seal}
+            {twoJokers}
           />
         </div>
       {/each}
@@ -1265,6 +1448,27 @@
         {/key}
       {/if}
       {#if seatCues[me]?.text}{#key seatCues[me].id}<Callout text={seatCues[me].text!} below={false} />{/key}{/if}
+      <!-- Desktop: your own seat at the tray's left, your tools at its right. -->
+      <div class="me-seat">
+        <Seat
+          name={myName}
+          team={team(me)}
+          points={points(me)}
+          turn={myTurn}
+          trumpSuit={contract?.trump ?? null}
+          lookAt={lookAt(0)}
+          mood={mood(me)}
+          pointsOpen={peek?.seat === me && peek.own}
+          onpoints={canPeek ? (anchor) => togglePeek(me, anchor, true) : null}
+          taken={pointCards(me)}
+          {seal}
+          {twoJokers}
+        />
+      </div>
+      <div class="tray-tools">
+        {@render hintTools()}
+        <Reactions onreact={(text) => client.react(text)} />
+      </div>
       <div class="me-row">
         {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}{/if}
         {#if points(me) > 0}
@@ -1640,7 +1844,7 @@
     --seat-h: 64px;
     position: absolute;
     inset: 0;
-    max-width: calc(100cqh * 1.6);
+    max-width: calc(100cqh * 1.35);
     margin-inline: auto;
     container-type: size;
   }
@@ -2155,6 +2359,397 @@
   }
   .spectating {
     padding: 16px;
+  }
+
+  /* Desktop-only parts: the side panel, your seat and tools on the tray. */
+  .side,
+  .me-seat,
+  .tray-tools {
+    display: none;
+  }
+
+  /* Desktop: seats become plates with their won pile, and the tray carries
+     your own seat at its left and your tools at its right. */
+  @media (min-width: 1024px) and (min-height: 640px) {
+    .ring {
+      --seat-w: clamp(160px, 32cqh, 192px);
+      --seat-h: 96px;
+    }
+    .react-spot,
+    .me-row {
+      display: none;
+    }
+    .tray {
+      display: grid;
+      grid-template-columns: minmax(0, 170px) minmax(0, 1fr) minmax(0, 170px);
+      grid-template-areas: 'me hand tools';
+      align-items: center;
+      column-gap: 8px;
+      padding: 4px 10px 6px;
+    }
+    .strip.pill + .tray {
+      padding-top: 14px;
+    }
+    .tray > :global(.hand) {
+      grid-area: hand;
+      padding-top: 10px;
+    }
+    .me-seat {
+      grid-area: me;
+      display: block;
+      align-self: center;
+      --seat-w: 100%;
+      --seat-figure: 60px;
+    }
+    .tray-tools {
+      grid-area: tools;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      /* The hint's text opens leftwards, over the hand's edge. */
+      flex-direction: row-reverse;
+      flex-wrap: wrap-reverse;
+      justify-content: flex-start;
+    }
+  }
+
+  /* Wide desktop: a column of stacked paper beside the felt takes the
+     상황판, the scores, the log and the last round; the top line goes. */
+  @media (min-width: 1100px) and (orientation: landscape) and (min-height: 600px) {
+    .table {
+      grid-template-columns: minmax(0, 1fr) clamp(260px, 21vw, 300px);
+      grid-template-rows: auto minmax(0, 1fr) auto auto;
+      grid-template-areas: 'event side' 'felt side' 'strip side' 'tray side';
+      column-gap: 16px;
+    }
+    .status {
+      display: none;
+    }
+    /* The event line lives in 기록 here; tips for learners stay. */
+    .event > p:not(.tip) {
+      display: none;
+    }
+    .side {
+      grid-area: side;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+  .pane {
+    flex: none;
+    padding: 10px 12px 12px;
+    border-radius: 16px;
+    background: var(--panel);
+    font-size: 13px;
+  }
+  .pane-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-muted);
+  }
+  .round-no {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .pane-title .cols {
+    display: flex;
+    gap: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .round-no strong {
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-weight: 800;
+  }
+  .pane-empty {
+    margin: 0;
+    color: var(--ink-muted);
+  }
+  /* 상황판: the contract large, the facts beside it, the tally under. */
+  .big-contract {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 6px;
+  }
+  .glyph-box {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    color: var(--ink);
+  }
+  .glyph-box :global(svg) {
+    width: 30px;
+    height: 30px;
+  }
+  .glyph-box :global(.suit-Heart) {
+    color: var(--suit-heart);
+  }
+  .glyph-box :global(.suit-Diamond) {
+    color: var(--suit-diamond);
+  }
+  .glyph-box :global(.suit-Club) {
+    color: var(--suit-club);
+  }
+  .nt {
+    font-size: 18px;
+    font-weight: 800;
+  }
+  .big-num {
+    font-family: var(--font-display);
+    font-size: 38px;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .big-sub {
+    padding-left: 6px;
+    color: var(--ink-muted);
+    line-height: 1.35;
+  }
+  .big-sub strong {
+    color: var(--ink);
+  }
+  .facts {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    margin: 0 0 0 8px;
+    padding-left: 10px;
+    border-left: 1px solid var(--line);
+  }
+  .facts div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .facts dt {
+    flex: none;
+    width: 3em;
+    color: var(--ink-muted);
+  }
+  .facts dd {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-weight: 700;
+    color: var(--ink);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .clip {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .side-meter {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .meter-row {
+    display: flex;
+    justify-content: space-between;
+    color: var(--ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .meter-row strong {
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 800;
+  }
+  .meter-row .of {
+    color: var(--ink-muted);
+  }
+  .side-meter .tally {
+    width: 100%;
+  }
+  .side-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  /* 점수판: one row a player, in seat order from you. */
+  .score-rows {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .score-rows li {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) 40px 40px;
+    align-items: center;
+    column-gap: 8px;
+    min-height: 30px;
+    color: var(--ink-muted);
+  }
+  .score-rows li.turn,
+  .score-rows li.me {
+    color: var(--ink);
+  }
+  .head {
+    position: relative;
+    width: 26px;
+  }
+  /* The turn: the same plum ring the seat wears, in small. */
+  .head::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.85);
+    transition:
+      opacity var(--dur-quick) var(--ease-standard),
+      transform var(--dur-move) var(--ease-settle);
+  }
+  .head.on::after {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+  .who-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .row-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .mini-team {
+    flex: none;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 16px;
+  }
+  .score-rows .num {
+    text-align: right;
+    font-family: var(--font-display);
+    font-weight: 700;
+  }
+  .score-rows .total {
+    color: var(--ink);
+  }
+  .score-rows .total.neg {
+    color: var(--danger);
+  }
+  .scores .cols span {
+    width: 40px;
+    text-align: right;
+  }
+  /* 기록: newest on top; it takes what height is left. */
+  .log-pane {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .log {
+    display: grid;
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .log li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 0;
+    border-top: 1px solid var(--line);
+    line-height: 20px;
+    color: var(--ink-muted);
+    animation: fade-up 240ms var(--ease-standard) both;
+  }
+  .log li:first-child {
+    border-top: 0;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .log-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .log-pts {
+    flex: none;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .log-power .log-text,
+  .log-result .log-text {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  /* The friend's line carries a dot of the 여당 colour. */
+  .log-friend .log-text::before,
+  .log-declarer .log-text::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--team-declarer);
+    vertical-align: 1px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .log li {
+      animation: none;
+    }
+  }
+  /* 직전 라운드: its five cards, small, with who played each. */
+  .last-cards {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .last-cards figure {
+    gap: 2px;
+  }
+  .last-cards figcaption {
+    max-width: 44px;
+    font-size: 11px;
+  }
+  .last-cards figure.won figcaption {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .last-cards .mini-slot {
+    margin-bottom: 10px;
+  }
+  .last-pane .cols {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Phones on their side: the strip moves beside the felt, seats go down
