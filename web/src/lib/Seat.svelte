@@ -308,7 +308,8 @@
     padding: 4px 12px;
     border-radius: 16px;
     background: var(--card);
-    color: var(--ink);
+    /* The bubble is card paper in both themes, so its text is card ink. */
+    color: var(--card-ink);
     box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
     font-size: 15px;
     font-weight: 700;

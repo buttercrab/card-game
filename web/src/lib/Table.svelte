@@ -1238,7 +1238,7 @@
     padding: 6px 12px;
     border-radius: 999px;
     background: var(--card);
-    color: var(--ink);
+    color: var(--card-ink);
     box-shadow: 0 4px 14px rgb(0 0 0 / 0.14);
     font-size: 14px;
     white-space: nowrap;

@@ -90,7 +90,7 @@
     border: 1px solid var(--line);
     border-radius: 12px;
     background: var(--card);
-    color: var(--ink);
+    color: var(--card-ink);
     font: inherit;
     resize: vertical;
   }
