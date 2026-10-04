@@ -108,6 +108,16 @@ export function ring(el: Element | null, color = 'currentColor', duration = 420)
   );
 }
 
+/** A small hop straight up and back down: a figure noticing it is its turn. */
+export function hop(el: Element | null, height = 3, duration = 300): Promise<void> {
+  if (still()) return Promise.resolve();
+  return run(
+    el,
+    [{ transform: 'translateY(0)' }, { transform: `translateY(${-height}px)`, offset: 0.4 }, { transform: 'translateY(0)' }],
+    { duration, easing: EASE_STANDARD },
+  );
+}
+
 /** A heavy landing: one overshoot past full size, then settle. */
 export function settle(el: Element | null, duration = 320): Promise<void> {
   if (still()) return Promise.resolve();

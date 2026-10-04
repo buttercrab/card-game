@@ -3,6 +3,7 @@
   import { RoomClient, savedName } from './client.svelte';
   import { PRESET_NAME } from './presets';
   import ReportSheet from './ReportSheet.svelte';
+  import PlayerFigure from './PlayerFigure.svelte';
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import SettingsSheet from './SettingsSheet.svelte';
@@ -149,6 +150,9 @@
           {#each room.seats as s, i (i)}
             <li class:me={client.seat === i}>
               <span class="seat-no">{i + 1}</span>
+              <span class="seat-figure">
+                {#if s.kind !== 'empty'}<PlayerFigure still isBot={s.kind === 'bot'} offline={s.kind === 'human' && !s.connected} />{/if}
+              </span>
               {#key s.kind + ('name' in s ? s.name : '')}<span class="seat-name fade-up">
                 {#if s.kind === 'empty'}
                   <span class="muted">빈 자리</span>
@@ -340,6 +344,10 @@
     width: 18px;
     color: var(--ink-muted);
     font-variant-numeric: tabular-nums;
+  }
+  .seat-figure {
+    flex: none;
+    width: 36px;
   }
   .seat-name {
     flex: 1;
