@@ -748,7 +748,8 @@ impl Preset {
                     point_value: 2,
                     joker_value: -1,
                     card_values: vec![(Card::new(Suit::Spade, ACE), -2)],
-                    threshold: 1,
+                    // One point card or less, in halves (owner, 2026-10-05).
+                    threshold: 2,
                     ..r.misdeal
                 };
                 r.bidding.min = 14;
@@ -957,14 +958,15 @@ mod tests {
     #[test]
     fn misdeal_counts_card_values() {
         let r = Preset::Gshs.rules();
-        // ♠A (-2) + ♥K (2) = 0, at or below the threshold of 1.
+        // ♠A (-2) + ♥K (2) = 0, at or below the threshold of 2 (one point card).
         let hand = [
             Card::new(Suit::Spade, ACE),
             Card::new(Suit::Heart, 13),
             Card::new(Suit::Club, 4),
         ];
         assert!(r.is_misdeal(&hand));
-        assert!(!r.is_misdeal(&[Card::new(Suit::Heart, 13)]));
+        assert!(r.is_misdeal(&[Card::new(Suit::Heart, 13)]));
+        assert!(!r.is_misdeal(&[Card::new(Suit::Heart, 13), Card::new(Suit::Club, 10)]));
     }
 
     #[test]

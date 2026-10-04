@@ -569,7 +569,7 @@
             -2
           ]
         ],
-        "threshold": 1,
+        "threshold": 2,
         "all_points": false,
         "after_bidding": false,
         "declarer": false,

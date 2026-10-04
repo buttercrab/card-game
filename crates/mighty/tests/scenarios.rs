@@ -591,6 +591,22 @@ const WEAK: &str = "S2 S3 S4 S5 S6 S7 S8 H2 H3 C2";
 const SECOND: &str = "H4 H5 H6 H7 H8 H9 C8 C9 S9 D10";
 
 #[test]
+fn gshs_throws_in_a_hand_worth_one_point_card_or_less() {
+    // The hand the owner held on 2026-10-05: a lone ♣10.
+    let lone_ten = "S4 S7 D5 D8 D9 H4 H5 C4 C6 C10";
+    let lone_jack = "S4 S7 D5 D8 D9 H4 H5 C4 C6 CJ";
+    let two = "S4 S7 D5 D8 D9 H4 H5 C4 DJ C10";
+    for (hand, misdeal) in [(lone_ten, true), (lone_jack, true), (two, false)] {
+        let state = start(Preset::Gshs.rules(), &[hand], "");
+        assert_eq!(
+            Mighty::legal_actions(&state).contains(&Action::Misdeal),
+            misdeal,
+            "{hand}"
+        );
+    }
+}
+
+#[test]
 fn a_hand_of_only_point_cards_may_be_thrown_in_where_allowed() {
     let rich = "S10 SJ SQ SK D10 DJ DQ DK DA HA";
     let mut rules = Rules::default();

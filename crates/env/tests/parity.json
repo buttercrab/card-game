@@ -14,7 +14,7 @@
         "event_cards": "a97445652c91c7b1",
         "events": "ffabfcaf1404db26",
         "events_len": "15ec7bf0b50732b4",
-        "global": "19ad97d4345bc1af",
+        "global": "361bd44fc9d229b7",
         "legal": "9f5e78e80746c51e",
         "reward": "2ea9ab9198d16380",
         "seat": "1f91fc716ad664bd"
@@ -33,29 +33,29 @@
         "event_cards": "a97445652c91c7b1",
         "events": "cbde80af8d5c3f34",
         "events_len": "11047585fe102fbb",
-        "global": "c9248d7e4532868e",
-        "legal": "754acb09ea4413e1",
+        "global": "ac76be68fa22ccbd",
+        "legal": "75e7a45145acd423",
         "reward": "2ea9ab9198d16380",
         "seat": "7d450465ceb49083"
       }
     },
     {
       "actions": [
-        0,
+        1,
         21,
         0
       ],
       "hashes": {
-        "belief": "4fc1d783b43fa872",
-        "cards": "5be71cfeb87950e3",
+        "belief": "0b88db13a416a379",
+        "cards": "487f26a4078edd32",
         "done": "709e80c88487a241",
         "event_cards": "a97445652c91c7b1",
-        "events": "dcbebba8cacdaca7",
-        "events_len": "636952d3023d8cf5",
-        "global": "41495756547e2616",
+        "events": "35e6c2ad9e0e038a",
+        "events_len": "d081adce8c7a596f",
+        "global": "dd2f9a15e22f487d",
         "legal": "ebe52571dbc62538",
         "reward": "2ea9ab9198d16380",
-        "seat": "c17f23b1052241c6"
+        "seat": "d04468d46671f8bb"
       }
     },
     {
@@ -65,16 +65,16 @@
         0
       ],
       "hashes": {
-        "belief": "3246acfd7df59277",
-        "cards": "99218d9529bf5e03",
+        "belief": "c4ce758216435425",
+        "cards": "fe6dbaf91d4db734",
         "done": "709e80c88487a241",
         "event_cards": "a97445652c91c7b1",
-        "events": "bf43582febe4ae4d",
-        "events_len": "02433989dc22cf3b",
-        "global": "edbb851d991f2030",
+        "events": "6093d6e289dc05c9",
+        "events_len": "105ca179e176b2d6",
+        "global": "c59d98db6a9b14d2",
         "legal": "935337dcbbed9e97",
         "reward": "2ea9ab9198d16380",
-        "seat": "957d268396a16ffd"
+        "seat": "636952d3023d8cf5"
       }
     },
     {
@@ -84,16 +84,16 @@
         0
       ],
       "hashes": {
-        "belief": "f3afba24ae2d42c5",
-        "cards": "24815640e379fc75",
+        "belief": "7c2177f8724e2706",
+        "cards": "71376fca48fc4e1d",
         "done": "709e80c88487a241",
         "event_cards": "f142d92f63912904",
         "events": "e71f0d019a76ee45",
         "events_len": "9acfbf1c0241ad31",
-        "global": "2bff9b496e2b8b34",
+        "global": "1f4a3ab39acbe2c3",
         "legal": "4b4fe6e26af91b3d",
         "reward": "2ea9ab9198d16380",
-        "seat": "b1ffbb9a5f3a5cc5"
+        "seat": "79f2a4da15e31b93"
       }
     },
     {
@@ -103,35 +103,35 @@
         105
       ],
       "hashes": {
-        "belief": "c725686e8b0825a6",
-        "cards": "217ca022e93f92ef",
+        "belief": "f6baba5282412d64",
+        "cards": "d69165a104af468c",
         "done": "709e80c88487a241",
         "event_cards": "09c5622a444b388d",
         "events": "848b97580d43c2b5",
         "events_len": "4bf97f0b18b28f6c",
-        "global": "a196341d6937f64d",
-        "legal": "8d28d0af44e98af1",
+        "global": "d2df4121eadd832a",
+        "legal": "8048d8e8fda26318",
         "reward": "2ea9ab9198d16380",
-        "seat": "bd88f10a164eaa73"
+        "seat": "39e56dd82943e15f"
       }
     },
     {
       "actions": [
-        0,
+        1,
         327,
         20
       ],
       "hashes": {
-        "belief": "8098c4539455664d",
-        "cards": "3b842bf6c4570269",
+        "belief": "d5a85aa4ff9a0979",
+        "cards": "e326e60fa807351c",
         "done": "709e80c88487a241",
         "event_cards": "888e7aecc658fc1a",
-        "events": "a6ae8aa990a23d84",
-        "events_len": "356fdfbd8813e28f",
-        "global": "796184616c2ef3d7",
+        "events": "12a85e9500579dd6",
+        "events_len": "057b6140ede25c97",
+        "global": "b21acb2c1f6db976",
         "legal": "16738b4134e8f49d",
         "reward": "2ea9ab9198d16380",
-        "seat": "1d04df8b1f683cf7"
+        "seat": "9413299b9d7b8a24"
       }
     },
     {
@@ -141,35 +141,35 @@
         51
       ],
       "hashes": {
-        "belief": "1564eb52023f939c",
-        "cards": "499e6ca2cce10898",
+        "belief": "1a8afc9db3f68fb5",
+        "cards": "2a1722ed813811f2",
         "done": "709e80c88487a241",
         "event_cards": "888e7aecc658fc1a",
-        "events": "16e051b5e5a7dff1",
-        "events_len": "74901caa43194047",
-        "global": "cee1e8a95134d06e",
-        "legal": "2f153e365ab41838",
+        "events": "f64aa6dccdfeafbd",
+        "events_len": "55b74a94413e47ba",
+        "global": "b5e5337049413642",
+        "legal": "bbf8701b753ab191",
         "reward": "2ea9ab9198d16380",
-        "seat": "f65f58eda5e378c0"
+        "seat": "80be4e8795bd5a31"
       }
     },
     {
       "actions": [
-        1,
+        0,
         477,
         141
       ],
       "hashes": {
-        "belief": "3959fbeb76022ffd",
-        "cards": "6c8b62866934fc10",
+        "belief": "c497de8744387e02",
+        "cards": "84d69a24ccf72442",
         "done": "709e80c88487a241",
         "event_cards": "2b902b56a2ba5d62",
-        "events": "3e4237d7bcaf1c5a",
-        "events_len": "57da9d1b2a358106",
-        "global": "bf2548bf9124a6f7",
+        "events": "3683e19dfd675086",
+        "events_len": "d39ad1d823846609",
+        "global": "1976e4bf39c1bebf",
         "legal": "daaecd4b84c1e6bb",
         "reward": "2ea9ab9198d16380",
-        "seat": "94363920e1418bb2"
+        "seat": "ce123c4caada7f6c"
       }
     },
     {
@@ -179,35 +179,35 @@
         337
       ],
       "hashes": {
-        "belief": "27c6e2fc7e7d8d80",
-        "cards": "48787dc17ebb22e9",
+        "belief": "2c1680e51992f4ea",
+        "cards": "126989687fc59a12",
         "done": "709e80c88487a241",
         "event_cards": "cbd1460fa5a80799",
-        "events": "74b4e69fb4276e97",
-        "events_len": "ac793af4993f37da",
-        "global": "0c2e051484fa2e86",
-        "legal": "c98561fd48660cb1",
+        "events": "95fa75c39a2f9322",
+        "events_len": "2cf161a7e774a343",
+        "global": "dba4df7456d48f64",
+        "legal": "b5cc73255da357e6",
         "reward": "2ea9ab9198d16380",
-        "seat": "4a703711c368bb9e"
+        "seat": "6fd03406029da132"
       }
     },
     {
       "actions": [
-        0,
+        1,
         470,
         329
       ],
       "hashes": {
-        "belief": "9c1e8f0f85e6436f",
-        "cards": "30fdc1a6a4ffed30",
+        "belief": "248d0b1dfc9dd630",
+        "cards": "309ace1183bc9464",
         "done": "709e80c88487a241",
         "event_cards": "c92febc771c46587",
-        "events": "b42b4168ae866521",
-        "events_len": "49657c5d6e6d9e05",
-        "global": "79ed6d0cd98f0adc",
+        "events": "d1e65e4c82af03d9",
+        "events_len": "c0f5c2914c546945",
+        "global": "6650d8f6d5e43fd0",
         "legal": "6beafb756359ad27",
         "reward": "2ea9ab9198d16380",
-        "seat": "6262c97b9d5012bb"
+        "seat": "fd6eefe95d5b5edb"
       }
     },
     {
@@ -217,16 +217,16 @@
         347
       ],
       "hashes": {
-        "belief": "d7ff2eaa439befd1",
-        "cards": "96bfaea07b8d3613",
+        "belief": "a0aeeb3b85934127",
+        "cards": "9defd223826ea96a",
         "done": "709e80c88487a241",
         "event_cards": "3de291aa04163239",
-        "events": "ff2551d061a46d39",
-        "events_len": "ccaa1399ec16d9f9",
-        "global": "4bda453507f4e4b9",
+        "events": "dcd5add380f92f74",
+        "events_len": "db35a78931294aae",
+        "global": "eaf2e9b5bb0d15ff",
         "legal": "40238eca2691d589",
         "reward": "2ea9ab9198d16380",
-        "seat": "fa2111168ab8ae62"
+        "seat": "54568b6d133d182a"
       }
     },
     {
@@ -236,2068 +236,2068 @@
         399
       ],
       "hashes": {
-        "belief": "be296ca0b75dd889",
-        "cards": "c6ff7ea74521ab62",
+        "belief": "df3cb61b43606752",
+        "cards": "ce99b2294679a83a",
         "done": "709e80c88487a241",
         "event_cards": "1270c0d6cf25efdd",
-        "events": "0dd27814cb0ed217",
-        "events_len": "de5ca540cc7e240d",
-        "global": "8dc4353c877ae6aa",
-        "legal": "c4fe4cbe5d66aec6",
-        "reward": "2ea9ab9198d16380",
-        "seat": "76fa33b644e35f62"
-      }
-    },
-    {
-      "actions": [
-        0,
-        464,
-        457
-      ],
-      "hashes": {
-        "belief": "f7b2922324b85c58",
-        "cards": "5c77ca5c0655020e",
-        "done": "709e80c88487a241",
-        "event_cards": "9339c7995ee1ab41",
-        "events": "a4a73d01660d833a",
-        "events_len": "c94b3b4bfecc784f",
-        "global": "18692efb5b628d55",
-        "legal": "2e611e974f34286a",
-        "reward": "2ea9ab9198d16380",
-        "seat": "881a0bc1df6e3655"
-      }
-    },
-    {
-      "actions": [
-        0,
-        463,
-        459
-      ],
-      "hashes": {
-        "belief": "fad90c680bf19b52",
-        "cards": "5effde71472ef814",
-        "done": "709e80c88487a241",
-        "event_cards": "57561a1a5bc7574f",
-        "events": "294479d5313a634b",
-        "events_len": "92f0f974ff2ec3f5",
-        "global": "fddb30328720952d",
-        "legal": "9134a0815c344ee5",
-        "reward": "2ea9ab9198d16380",
-        "seat": "1b4475a2632b148c"
-      }
-    },
-    {
-      "actions": [
-        0,
-        455,
-        462
-      ],
-      "hashes": {
-        "belief": "fcce443e407a4e70",
-        "cards": "b330de102fce946a",
-        "done": "709e80c88487a241",
-        "event_cards": "7e72378f2e24d2f1",
-        "events": "91a1731b7070c2cb",
-        "events_len": "f5f66a189fb28e50",
-        "global": "7ce27253f5b8dce2",
-        "legal": "937bc5f804e12805",
-        "reward": "2ea9ab9198d16380",
-        "seat": "144ea3ce8a30ed4a"
-      }
-    },
-    {
-      "actions": [
-        136,
-        443,
-        464
-      ],
-      "hashes": {
-        "belief": "6f24476708e6369a",
-        "cards": "ef985eb2e65ee904",
-        "done": "709e80c88487a241",
-        "event_cards": "cf7e57ace40af6e7",
-        "events": "18ddeba38e9ae24f",
-        "events_len": "e2588d307b18e017",
-        "global": "dc0c310141ab53f8",
-        "legal": "844ba5fb4d6e8528",
-        "reward": "2ea9ab9198d16380",
-        "seat": "45adb8cb9992e0cb"
-      }
-    },
-    {
-      "actions": [
-        19,
-        450,
-        458
-      ],
-      "hashes": {
-        "belief": "cba4c9cff2a3c587",
-        "cards": "4a740ee29d0d54ce",
-        "done": "709e80c88487a241",
-        "event_cards": "259f59351475e8cc",
-        "events": "eac3fd0bcaa8cf7d",
-        "events_len": "4704272f67869f6e",
-        "global": "17d94c15b7b9afdc",
-        "legal": "7e9e26ad210aadbb",
-        "reward": "2ea9ab9198d16380",
-        "seat": "782486f75e626020"
-      }
-    },
-    {
-      "actions": [
-        141,
-        442,
-        445
-      ],
-      "hashes": {
-        "belief": "abaf69ce5a3459cf",
-        "cards": "ec5a900c38d4fa24",
-        "done": "709e80c88487a241",
-        "event_cards": "23d5d41ca3dbd3ac",
-        "events": "d9be5f16ba156aec",
-        "events_len": "27d6786df0cd31e6",
-        "global": "4bfc0595b7e432a4",
-        "legal": "be27a89bdcc377b4",
-        "reward": "2ea9ab9198d16380",
-        "seat": "105ca179e176b2d6"
-      }
-    },
-    {
-      "actions": [
-        332,
-        445,
-        461
-      ],
-      "hashes": {
-        "belief": "1779064b914d5deb",
-        "cards": "87cb0a4d6da57744",
-        "done": "709e80c88487a241",
-        "event_cards": "7fa83297a5974ccf",
-        "events": "d1a7e759d5ea9067",
-        "events_len": "a4dcc25c07dbcabf",
-        "global": "d23335867a89e7c9",
-        "legal": "f909bc12c8ce7946",
-        "reward": "2ea9ab9198d16380",
-        "seat": "7d450465ceb49083"
-      }
-    },
-    {
-      "actions": [
-        312,
-        433,
-        463
-      ],
-      "hashes": {
-        "belief": "56f196591b98a89d",
-        "cards": "9c29f8f64a9debe5",
-        "done": "709e80c88487a241",
-        "event_cards": "b2b3c488a33842c6",
-        "events": "ebb2f511390e6614",
-        "events_len": "341762962b046521",
-        "global": "e8e52322427e83d5",
-        "legal": "62e5ba7729bf9598",
-        "reward": "2ea9ab9198d16380",
-        "seat": "a7b5f185aee1c8e2"
-      }
-    },
-    {
-      "actions": [
-        310,
-        478,
-        474
-      ],
-      "hashes": {
-        "belief": "1a0d3dc374873bc3",
-        "cards": "a94dea395e99c2d6",
-        "done": "709e80c88487a241",
-        "event_cards": "af43a2f84a0e1487",
-        "events": "4ba80e6fad1d8bc2",
-        "events_len": "8e445e943bb18cf1",
-        "global": "0dd5d5a3c64b8bb9",
-        "legal": "4d825a38ee2ba918",
-        "reward": "2ea9ab9198d16380",
-        "seat": "675374dfbc4f633c"
-      }
-    },
-    {
-      "actions": [
-        330,
-        431,
-        477
-      ],
-      "hashes": {
-        "belief": "1f4568110bb38f1e",
-        "cards": "2a9e6791fd6a9f66",
-        "done": "709e80c88487a241",
-        "event_cards": "5559e0c9ec59788b",
-        "events": "83da59abf358fc33",
-        "events_len": "ca37c9eb94021c3b",
-        "global": "b4bc0c7983afc32e",
-        "legal": "09f72f37988bcef5",
+        "events": "cdac508c717ba66c",
+        "events_len": "0f790d51d6dcd5f4",
+        "global": "5b5950259040b7ac",
+        "legal": "8acab600f5851a63",
         "reward": "2ea9ab9198d16380",
         "seat": "a890adf674b36ba6"
       }
     },
     {
       "actions": [
-        323,
-        436,
-        471
+        0,
+        464,
+        457
       ],
       "hashes": {
-        "belief": "027f821b94698420",
-        "cards": "1a404421f940c6d0",
+        "belief": "bb840a29d99e0217",
+        "cards": "7e5fd8c8f27e9075",
         "done": "709e80c88487a241",
-        "event_cards": "24e03ada979dfdb1",
-        "events": "23898858560daa46",
-        "events_len": "e4a0548e098f99cb",
-        "global": "f98a190cde52f44f",
-        "legal": "a03d4ed7ebfce0c2",
+        "event_cards": "9339c7995ee1ab41",
+        "events": "904465337ee1009b",
+        "events_len": "bb6b5dc86e6e41fc",
+        "global": "0e40ace7c0b05a0a",
+        "legal": "87824d686d8b576f",
         "reward": "2ea9ab9198d16380",
-        "seat": "4636993d3e1da4e9"
+        "seat": "88a785e43f081433"
       }
     },
     {
       "actions": [
-        396,
-        430,
-        470
-      ],
-      "hashes": {
-        "belief": "3029086bfeaf0576",
-        "cards": "415d643c5b35bd38",
-        "done": "709e80c88487a241",
-        "event_cards": "bac1f87b896b1e22",
-        "events": "cb410eeb54252160",
-        "events_len": "b48638d90d0756cf",
-        "global": "238c9574ab65192f",
-        "legal": "f35851c5c2949237",
-        "reward": "2ea9ab9198d16380",
-        "seat": "675374dfbc4f633c"
-      }
-    },
-    {
-      "actions": [
-        534,
-        435,
-        434
-      ],
-      "hashes": {
-        "belief": "e16acb5398207b6f",
-        "cards": "aa1d5d3cdef5c984",
-        "done": "709e80c88487a241",
-        "event_cards": "bc26072cc26b80f1",
-        "events": "09d9e7e0a74b9023",
-        "events_len": "453fbbcbb089dee9",
-        "global": "09a0b0a71fafe22f",
-        "legal": "9fb09dbf1014278e",
-        "reward": "2ea9ab9198d16380",
-        "seat": "7e884a6b9b449b42"
-      }
-    },
-    {
-      "actions": [
-        479,
-        429,
-        435
-      ],
-      "hashes": {
-        "belief": "797af54a4a0b10ca",
-        "cards": "b2619b011e8d367d",
-        "done": "709e80c88487a241",
-        "event_cards": "e6101f7bb2b18c92",
-        "events": "92e221273227b8c8",
-        "events_len": "e6143cacb78d1fdb",
-        "global": "82143802ac6e6e84",
-        "legal": "8cc3d81b2f98317e",
-        "reward": "2ea9ab9198d16380",
-        "seat": "94d8967691a2a042"
-      }
-    },
-    {
-      "actions": [
-        428,
-        434,
-        432
-      ],
-      "hashes": {
-        "belief": "197e8e97257a9337",
-        "cards": "47098a57e410c1ff",
-        "done": "709e80c88487a241",
-        "event_cards": "19cd30de93dae926",
-        "events": "c4a14e5241341577",
-        "events_len": "fcebdaffa17e5093",
-        "global": "f99e09a91a8ed842",
-        "legal": "1a40898f6e442f42",
-        "reward": "2ea9ab9198d16380",
-        "seat": "d7f930d1f8f576c5"
-      }
-    },
-    {
-      "actions": [
-        435,
-        427,
-        433
-      ],
-      "hashes": {
-        "belief": "319f147e0d754214",
-        "cards": "154a96c6f6f30c01",
-        "done": "709e80c88487a241",
-        "event_cards": "43d117328b35c46b",
-        "events": "15575383814ae02f",
-        "events_len": "1ca48b48f5c46600",
-        "global": "427648b6c22589b0",
-        "legal": "ce3f03036182ebd9",
-        "reward": "2ea9ab9198d16380",
-        "seat": "f59657c448586a32"
-      }
-    },
-    {
-      "actions": [
-        432,
-        451,
-        427
-      ],
-      "hashes": {
-        "belief": "895cb874d474add4",
-        "cards": "98383d4f732b4305",
-        "done": "709e80c88487a241",
-        "event_cards": "c26a2460bdc49cb8",
-        "events": "6bf6a39ee3982dfa",
-        "events_len": "c04bbaf0ecac9f2a",
-        "global": "1d083237e6dd7f2e",
-        "legal": "d4868944641c77dc",
-        "reward": "2ea9ab9198d16380",
-        "seat": "8d45b9af21b8db60"
-      }
-    },
-    {
-      "actions": [
-        440,
-        432,
-        438
-      ],
-      "hashes": {
-        "belief": "23b99fce37243340",
-        "cards": "f093982f4d761b2c",
-        "done": "709e80c88487a241",
-        "event_cards": "2d2af193ba6c9d9d",
-        "events": "e7a30f0dd2047ed6",
-        "events_len": "0717f6bebbaffc76",
-        "global": "ae2d9b85d98a30d1",
-        "legal": "37ee8a19928f7cec",
-        "reward": "2ea9ab9198d16380",
-        "seat": "a261a65a31a7b4d0"
-      }
-    },
-    {
-      "actions": [
-        426,
-        458,
-        455
-      ],
-      "hashes": {
-        "belief": "cf04c25f1fa0542a",
-        "cards": "7bde572dd61d35f7",
-        "done": "709e80c88487a241",
-        "event_cards": "5a3480d72b5d88c4",
-        "events": "e1f0758647faf0ae",
-        "events_len": "77324cc01cadc66a",
-        "global": "8fe4f50df899c2e4",
-        "legal": "bfea3a8ed0d54588",
-        "reward": "2ea9ab9198d16380",
-        "seat": "e025c7bd135ed167"
-      }
-    },
-    {
-      "actions": [
-        437,
-        461,
-        429
-      ],
-      "hashes": {
-        "belief": "5aa36bd53ea61d8e",
-        "cards": "d85ac8de6db63b90",
-        "done": "709e80c88487a241",
-        "event_cards": "f00fb5ecde4520f0",
-        "events": "c3903966b7573357",
-        "events_len": "03467bc8d1f6d897",
-        "global": "46b97005369057e7",
-        "legal": "a0e180b1cd0144fb",
-        "reward": "2ea9ab9198d16380",
-        "seat": "bf47fff74aadb5ea"
-      }
-    },
-    {
-      "actions": [
-        430,
-        466,
-        443
-      ],
-      "hashes": {
-        "belief": "d4815335c82bb587",
-        "cards": "3315fcaab8255cd0",
-        "done": "709e80c88487a241",
-        "event_cards": "87c7ed3621aabc0d",
-        "events": "92648fd9ab197094",
-        "events_len": "fc4b21f67d16fd5a",
-        "global": "9d816a8af0f1d251",
-        "legal": "18169f235d4cd1b5",
-        "reward": "2ea9ab9198d16380",
-        "seat": "70d1698a3b9c53d1"
-      }
-    },
-    {
-      "actions": [
-        466,
-        456,
-        450
-      ],
-      "hashes": {
-        "belief": "a4a21eba3f5ff97e",
-        "cards": "d81ab9f647d51e98",
-        "done": "709e80c88487a241",
-        "event_cards": "51f139ed5400e387",
-        "events": "ea6d19c0cde3fbf3",
-        "events_len": "111667f05ed984c7",
-        "global": "fc9e1bcd1a0efae8",
-        "legal": "7166e23a41574b74",
-        "reward": "2ea9ab9198d16380",
-        "seat": "c3e42245ffdff31c"
-      }
-    },
-    {
-      "actions": [
+        1,
         463,
-        475,
-        447
+        459
       ],
       "hashes": {
-        "belief": "deb9b4a675991670",
-        "cards": "4b0758b6dd652581",
+        "belief": "f78b894c63048357",
+        "cards": "e63d789d0d040b01",
         "done": "709e80c88487a241",
-        "event_cards": "d6ec298f868e51f3",
-        "events": "88927a384e30218d",
-        "events_len": "1ed53051048446be",
-        "global": "e3d80ddf504c104d",
-        "legal": "8880c0c52788a0ac",
-        "reward": "2ea9ab9198d16380",
-        "seat": "6262c97b9d5012bb"
-      }
-    },
-    {
-      "actions": [
-        433,
-        449,
-        473
-      ],
-      "hashes": {
-        "belief": "9126c03a2e43580a",
-        "cards": "836ff7718923c5b2",
-        "done": "709e80c88487a241",
-        "event_cards": "be79f8d4ffa46bf1",
-        "events": "5d6590ef18d8cc8e",
-        "events_len": "54d9760a4287e76e",
-        "global": "5cff8db384118110",
-        "legal": "4856395277f96524",
+        "event_cards": "57561a1a5bc7574f",
+        "events": "49d2a01fd10fc6ef",
+        "events_len": "c3a36c99d98179ad",
+        "global": "ad95112fa26e1296",
+        "legal": "9134a0815c344ee5",
         "reward": "2ea9ab9198d16380",
         "seat": "a8dad088d9b94a2c"
       }
     },
     {
       "actions": [
-        427,
-        444,
-        472
-      ],
-      "hashes": {
-        "belief": "13089958e3d310d5",
-        "cards": "ca0093ab726589db",
-        "done": "709e80c88487a241",
-        "event_cards": "eadca173756460dc",
-        "events": "cfc7c3ac72458b8d",
-        "events_len": "9a89bfa8be3ac947",
-        "global": "288144b332153084",
-        "legal": "f8a84fad5372c830",
-        "reward": "2ea9ab9198d16380",
-        "seat": "ce1bf76234587ca6"
-      }
-    },
-    {
-      "actions": [
-        461,
-        474,
-        469
-      ],
-      "hashes": {
-        "belief": "47db69e8fcc6cc83",
-        "cards": "4ba277b6329c45ce",
-        "done": "709e80c88487a241",
-        "event_cards": "8b1a2a3a98f3035c",
-        "events": "0f5db1663d1ac32f",
-        "events_len": "027a3d0bb8383c4b",
-        "global": "b1e26578e97d7f95",
-        "legal": "acc2c8f37be763fb",
-        "reward": "2ea9ab9198d16380",
-        "seat": "e88c22f1d502be8a"
-      }
-    },
-    {
-      "actions": [
-        438,
-        448,
-        476
-      ],
-      "hashes": {
-        "belief": "186c9659d122ff2a",
-        "cards": "4c925e3023e9db99",
-        "done": "709e80c88487a241",
-        "event_cards": "c95fdb32052b686e",
-        "events": "6a4dfd75e7eb7234",
-        "events_len": "7c98ab9be4bd4f79",
-        "global": "c32295e6d1b348f2",
-        "legal": "3bbced8a1aa35946",
-        "reward": "2ea9ab9198d16380",
-        "seat": "96ed00d7405cf9f0"
-      }
-    },
-    {
-      "actions": [
-        436,
-        460,
-        460
-      ],
-      "hashes": {
-        "belief": "3dbf884f62ceaeb2",
-        "cards": "21fcbaba79991ae8",
-        "done": "709e80c88487a241",
-        "event_cards": "884b60c9b130de68",
-        "events": "a4f95b4683823963",
-        "events_len": "0bc45d242102aefa",
-        "global": "742dda33d8987fe4",
-        "legal": "c47f2f824172b807",
-        "reward": "2ea9ab9198d16380",
-        "seat": "f65f58eda5e378c0"
-      }
-    },
-    {
-      "actions": [
-        441,
-        472,
-        430
-      ],
-      "hashes": {
-        "belief": "e31cce25797cbc9f",
-        "cards": "b1bdd4cfaa2499ec",
-        "done": "709e80c88487a241",
-        "event_cards": "08c807d6c1c533cd",
-        "events": "0c33613eaa73739f",
-        "events_len": "3a8ffc70c947527f",
-        "global": "422b5c246c69b854",
-        "legal": "bfd7a8c0f7156892",
-        "reward": "2ea9ab9198d16380",
-        "seat": "b0de64b8b912f8c0"
-      }
-    },
-    {
-      "actions": [
-        457,
-        459,
-        446
-      ],
-      "hashes": {
-        "belief": "3708e6ef3aac9b56",
-        "cards": "ca414430f4fbb8f8",
-        "done": "709e80c88487a241",
-        "event_cards": "3756a0c840f2d8d5",
-        "events": "2e7b9a3b011e28c8",
-        "events_len": "ab63f5e020480284",
-        "global": "1fb9e836319f388e",
-        "legal": "6419819ce8d98e28",
-        "reward": "2ea9ab9198d16380",
-        "seat": "ca888f40c3caca80"
-      }
-    },
-    {
-      "actions": [
-        475,
-        468,
-        475
-      ],
-      "hashes": {
-        "belief": "9ae1af5fbeb407fc",
-        "cards": "22c99cf37d9b2e15",
-        "done": "709e80c88487a241",
-        "event_cards": "12db933aa6ab6187",
-        "events": "93b42a301f0592f0",
-        "events_len": "9382bade2b8ff679",
-        "global": "4baafb29ac8f713f",
-        "legal": "9f89abdaf6bec575",
-        "reward": "2ea9ab9198d16380",
-        "seat": "7a4401f07925a89f"
-      }
-    },
-    {
-      "actions": [
-        460,
-        469,
-        437
-      ],
-      "hashes": {
-        "belief": "34850bd0eea75084",
-        "cards": "775e22a7d79be879",
-        "done": "709e80c88487a241",
-        "event_cards": "bfadcf1bab341819",
-        "events": "915715253f77c21f",
-        "events_len": "5fa5a42348379df9",
-        "global": "bf312daf2558b09f",
-        "legal": "a23fa2b44f7089d9",
-        "reward": "2ea9ab9198d16380",
-        "seat": "9413299b9d7b8a24"
-      }
-    },
-    {
-      "actions": [
-        469,
-        471,
-        431
-      ],
-      "hashes": {
-        "belief": "5b78d586a4073424",
-        "cards": "39a443b119155644",
-        "done": "709e80c88487a241",
-        "event_cards": "4f691c14b9e4eb3b",
-        "events": "65c9e1f8b6ff41cc",
-        "events_len": "246c16effed2f629",
-        "global": "2db0a55701e98daf",
-        "legal": "fde31eae1566c839",
-        "reward": "2ea9ab9198d16380",
-        "seat": "fcfde5706f4d32f0"
-      }
-    },
-    {
-      "actions": [
-        464,
-        473,
-        478
-      ],
-      "hashes": {
-        "belief": "bfcbf5501cd5ecfe",
-        "cards": "62c7a01e1ffd2880",
-        "done": "709e80c88487a241",
-        "event_cards": "c119a875b4bb2450",
-        "events": "20dc2dede268e5f4",
-        "events_len": "84fbafa77c967963",
-        "global": "9e14792a39087576",
-        "legal": "8584d605cbfc1ee0",
-        "reward": "2ea9ab9198d16380",
-        "seat": "c4fde33cae1b85a1"
-      }
-    },
-    {
-      "actions": [
-        454,
-        447,
-        442
-      ],
-      "hashes": {
-        "belief": "c8529edacc3309e1",
-        "cards": "3a6220377288f1f5",
-        "done": "faee935763044f12",
-        "event_cards": "1baea76323409ba4",
-        "events": "da631263e69611a9",
-        "events_len": "d8934b9d01e1835b",
-        "global": "88324d537e29b078",
-        "legal": "8086089e50d15977",
-        "reward": "add71e80ea98499f",
-        "seat": "63d8ecd90b784067"
-      }
-    },
-    {
-      "actions": [
-        448,
-        139,
-        468
-      ],
-      "hashes": {
-        "belief": "aa94c494aab0dec3",
-        "cards": "e1f4f553e9f508d9",
-        "done": "709e80c88487a241",
-        "event_cards": "0fc4be4a9717fa2b",
-        "events": "530ca479870c9b0e",
-        "events_len": "fab6ac6d5fa44fb5",
-        "global": "4664997e755a7562",
-        "legal": "63ab94169508bca0",
-        "reward": "2ea9ab9198d16380",
-        "seat": "8f8a92c37d40a21c"
-      }
-    },
-    {
-      "actions": [
-        459,
-        21,
-        436
-      ],
-      "hashes": {
-        "belief": "cc499a48b065c007",
-        "cards": "1f2df6703bab2ca3",
-        "done": "709e80c88487a241",
-        "event_cards": "de9f67bcd6cf7377",
-        "events": "e18fe64bcd4c0084",
-        "events_len": "5f8291e935cb452a",
-        "global": "441912ebd90974b6",
-        "legal": "52515d4e47313a2d",
-        "reward": "2ea9ab9198d16380",
-        "seat": "08b4096762a2b6f9"
-      }
-    },
-    {
-      "actions": [
-        456,
         0,
-        449
+        455,
+        462
       ],
       "hashes": {
-        "belief": "dfb6ee20d6ae216b",
-        "cards": "89be01453f09f369",
+        "belief": "3054cd88bc719561",
+        "cards": "0c271042c03e2887",
         "done": "709e80c88487a241",
-        "event_cards": "ee583090c541e199",
-        "events": "77e2bf6542a8b8d5",
-        "events_len": "fad3b43600961001",
-        "global": "ff2c561d379b8371",
-        "legal": "a8757285040e8341",
-        "reward": "2ea9ab9198d16380",
-        "seat": "b76875c50ef704db"
-      }
-    },
-    {
-      "actions": [
-        452,
-        141,
-        444
-      ],
-      "hashes": {
-        "belief": "b91305f6137f35ca",
-        "cards": "0e2d604ada94ca0b",
-        "done": "709e80c88487a241",
-        "event_cards": "0e7517c50eb899c1",
-        "events": "c45b73ecaca1c0ea",
-        "events_len": "a59e62afbb2a2e3e",
-        "global": "b819521daa09f8f0",
-        "legal": "3f58b1af2de11f9e",
+        "event_cards": "7e72378f2e24d2f1",
+        "events": "5c58762d2faf7f4a",
+        "events_len": "484c7eee253b8873",
+        "global": "4bf729839009c48e",
+        "legal": "d60ccca2f9eac7ed",
         "reward": "2ea9ab9198d16380",
         "seat": "73c150fb3bb1a3de"
       }
     },
     {
       "actions": [
-        465,
-        333,
-        451
+        0,
+        443,
+        464
       ],
       "hashes": {
-        "belief": "b10b13acc9101486",
-        "cards": "ed04ae76d3cfe9bc",
-        "done": "cf7605ed1bc735f6",
-        "event_cards": "e14976c7ee24ec54",
-        "events": "a01a510c96ef72e8",
-        "events_len": "a476f2ab81f6f234",
-        "global": "54fe730d537ba55a",
-        "legal": "f10db3e45549300e",
-        "reward": "d84b5237fd94d40d",
-        "seat": "0865ca4013e5543a"
-      }
-    },
-    {
-      "actions": [
-        445,
-        332,
-        0
-      ],
-      "hashes": {
-        "belief": "14aac84e9e281985",
-        "cards": "8b7db4c9696ff873",
+        "belief": "7726376225f59c97",
+        "cards": "ecff60a67a3678da",
         "done": "709e80c88487a241",
-        "event_cards": "0cdbb5a6328b8330",
-        "events": "9e3c03da8e50cd9c",
-        "events_len": "894ccc6fbc1d3c5b",
-        "global": "9b7a99f712b7ed23",
-        "legal": "ddf9be3e5162c73c",
+        "event_cards": "cf7e57ace40af6e7",
+        "events": "c201d1a19583ceb8",
+        "events_len": "3c8b7f0d00e47bc7",
+        "global": "6b704c250addfe64",
+        "legal": "f88c0f2a06bcc993",
         "reward": "2ea9ab9198d16380",
-        "seat": "ed5af6289100c233"
+        "seat": "e025c7bd135ed167"
       }
     },
     {
       "actions": [
-        447,
-        316,
-        0
-      ],
-      "hashes": {
-        "belief": "8eba8e2aa09e7dd2",
-        "cards": "422d75239cedef6a",
-        "done": "709e80c88487a241",
-        "event_cards": "8c8b82c68bc41a77",
-        "events": "5698dbcc03f463f3",
-        "events_len": "5f90fa58c60a1e45",
-        "global": "2614c41ad3dced4c",
-        "legal": "95b7141d3568cacb",
-        "reward": "2ea9ab9198d16380",
-        "seat": "c734b40c3ccec944"
-      }
-    },
-    {
-      "actions": [
-        446,
-        324,
-        0
-      ],
-      "hashes": {
-        "belief": "020eb97341e5da7e",
-        "cards": "48156e57004bb97b",
-        "done": "709e80c88487a241",
-        "event_cards": "f335a9731b6af2cc",
-        "events": "55fd8ca47e2b5fc1",
-        "events_len": "a82b225b296af872",
-        "global": "fe3590e7aa4b5f50",
-        "legal": "2157aede5f29c185",
-        "reward": "2ea9ab9198d16380",
-        "seat": "15ec7bf0b50732b4"
-      }
-    },
-    {
-      "actions": [
+        0,
         450,
-        381,
-        0
+        458
       ],
       "hashes": {
-        "belief": "6d261b40f9426db1",
-        "cards": "0b1814fe5b4f861d",
+        "belief": "88c492f5158c9fe1",
+        "cards": "ff4c50b36adcf2a5",
         "done": "709e80c88487a241",
-        "event_cards": "7a51999edd6866c8",
-        "events": "c8cb7ede018df363",
-        "events_len": "cb23786da8171736",
-        "global": "e380bd6ce7919310",
-        "legal": "03f7887b864338b8",
+        "event_cards": "259f59351475e8cc",
+        "events": "6cb7502f9805a7f2",
+        "events_len": "7cdff0f4709f80b7",
+        "global": "dbc0ffcd83e44e1a",
+        "legal": "aeed8593498d7ea2",
         "reward": "2ea9ab9198d16380",
-        "seat": "d05796eb3a889d20"
+        "seat": "9b20047efe0bbf08"
       }
     },
     {
       "actions": [
-        439,
-        456,
-        0
+        0,
+        442,
+        445
       ],
       "hashes": {
-        "belief": "35997f5a576b4398",
-        "cards": "b76f53e3220b6710",
+        "belief": "76206c4346dcf969",
+        "cards": "f85d875307b21a93",
         "done": "709e80c88487a241",
-        "event_cards": "cdfb616546de1462",
-        "events": "3991786638bf1b36",
-        "events_len": "72b84ea1404b1f0d",
-        "global": "1b67f4b9cb043406",
-        "legal": "a3d64d405ca8e99a",
+        "event_cards": "23d5d41ca3dbd3ac",
+        "events": "409b168fa38bacdd",
+        "events_len": "2a66687b1b5ae2de",
+        "global": "ca3f450bb7bb8208",
+        "legal": "47f7958c5a111ab8",
         "reward": "2ea9ab9198d16380",
-        "seat": "604365608460d7f0"
+        "seat": "092cbdc48b6e21a0"
       }
     },
     {
       "actions": [
-        462,
-        438,
-        0
+        0,
+        445,
+        461
       ],
       "hashes": {
-        "belief": "ebefac11238f64c1",
-        "cards": "b801f36ff2d7a05e",
+        "belief": "d718914da6719d7e",
+        "cards": "751a0e4663e63ef5",
         "done": "709e80c88487a241",
-        "event_cards": "9c0a1ad572eadf9e",
-        "events": "b52001177600a6e7",
-        "events_len": "f4d165d78305ffc1",
-        "global": "4057494820c1891d",
-        "legal": "2ac527dd5de63fbe",
+        "event_cards": "20b8a3983e1d370c",
+        "events": "288631ed8b5f1d3f",
+        "events_len": "dec45b7ab10469ad",
+        "global": "708ddca4d93b7683",
+        "legal": "7ec2addfa9e0fe31",
+        "reward": "2ea9ab9198d16380",
+        "seat": "31190090408f837a"
+      }
+    },
+    {
+      "actions": [
+        1,
+        433,
+        463
+      ],
+      "hashes": {
+        "belief": "d2e464fa1d950cbd",
+        "cards": "521e7528ae283bf2",
+        "done": "709e80c88487a241",
+        "event_cards": "43bff3cb6befcd19",
+        "events": "930f3a1a9e81b6a1",
+        "events_len": "36396a51da25d902",
+        "global": "10d5dd784b760d10",
+        "legal": "ba54518235eff6ac",
+        "reward": "2ea9ab9198d16380",
+        "seat": "a261a65a31a7b4d0"
+      }
+    },
+    {
+      "actions": [
+        0,
+        478,
+        474
+      ],
+      "hashes": {
+        "belief": "67ab81109379ea6a",
+        "cards": "aec5ba86df605f59",
+        "done": "709e80c88487a241",
+        "event_cards": "7cbf5ef2e7ae78bc",
+        "events": "895851e68f226b1f",
+        "events_len": "ecf1b25f4f521360",
+        "global": "9311b7fa145788f2",
+        "legal": "00b072e8af006ebb",
+        "reward": "2ea9ab9198d16380",
+        "seat": "675374dfbc4f633c"
+      }
+    },
+    {
+      "actions": [
+        0,
+        431,
+        477
+      ],
+      "hashes": {
+        "belief": "53a3cfe0ac37b462",
+        "cards": "7e691fbe8dc4e147",
+        "done": "709e80c88487a241",
+        "event_cards": "3912c31981de1779",
+        "events": "1ff96ca82cfa8c1a",
+        "events_len": "36e6c40893ba66d7",
+        "global": "0283c15008c88ab7",
+        "legal": "164e0897735414ba",
+        "reward": "2ea9ab9198d16380",
+        "seat": "7e884a6b9b449b42"
+      }
+    },
+    {
+      "actions": [
+        0,
+        436,
+        471
+      ],
+      "hashes": {
+        "belief": "3cf3347d52839666",
+        "cards": "7c3f2abdcaa22460",
+        "done": "709e80c88487a241",
+        "event_cards": "0bb3805a3a9cc710",
+        "events": "2e163267e63fcd4f",
+        "events_len": "e6174c58f5a77a30",
+        "global": "ee253a19ff891259",
+        "legal": "49da96cce7f23627",
         "reward": "2ea9ab9198d16380",
         "seat": "b1ffbb9a5f3a5cc5"
       }
     },
     {
       "actions": [
-        443,
-        464,
-        23
-      ],
-      "hashes": {
-        "belief": "efae843f83e9e3ea",
-        "cards": "b386e7866d28878b",
-        "done": "709e80c88487a241",
-        "event_cards": "9f53a1fd5a671268",
-        "events": "7d2f3b327bd858a5",
-        "events_len": "3af771580e31f0ca",
-        "global": "30e9febc3a0a1d7f",
-        "legal": "47e5788c24f72135",
-        "reward": "2ea9ab9198d16380",
-        "seat": "98cc75a8e9bd50b5"
-      }
-    },
-    {
-      "actions": [
-        474,
-        460,
-        0
-      ],
-      "hashes": {
-        "belief": "98c2201aac8db3d7",
-        "cards": "48eaa1f7a59e1a0f",
-        "done": "709e80c88487a241",
-        "event_cards": "fccb1b472ba25c34",
-        "events": "4946235cc5e3e8b9",
-        "events_len": "5c32c49199d6349d",
-        "global": "8ad1134d9a2cafa7",
-        "legal": "eed25c08d2f8d007",
-        "reward": "2ea9ab9198d16380",
-        "seat": "f186f2262ae48f2a"
-      }
-    },
-    {
-      "actions": [
-        467,
-        432,
-        54
-      ],
-      "hashes": {
-        "belief": "1e16f7e635717608",
-        "cards": "498d86760f7e8834",
-        "done": "709e80c88487a241",
-        "event_cards": "270fe02602b2446b",
-        "events": "84f817926d83a2ea",
-        "events_len": "49c525a60aead56c",
-        "global": "1f9ee5f7c949f3fb",
-        "legal": "bee0ebb984b4c718",
-        "reward": "2ea9ab9198d16380",
-        "seat": "5dcbfd11a04b28e1"
-      }
-    },
-    {
-      "actions": [
-        477,
-        428,
-        312
-      ],
-      "hashes": {
-        "belief": "4253d6bbe32dbd8b",
-        "cards": "65f90022e1fa5d5d",
-        "done": "709e80c88487a241",
-        "event_cards": "5212fb1c132d1b5e",
-        "events": "15183072a9a5af51",
-        "events_len": "ea3f655f30949e01",
-        "global": "4eb27c503899d87a",
-        "legal": "59e0ae1bb3a1c089",
-        "reward": "2ea9ab9198d16380",
-        "seat": "7aa83dc042562c66"
-      }
-    },
-    {
-      "actions": [
-        468,
-        459,
-        335
-      ],
-      "hashes": {
-        "belief": "7b61f0f4f461d427",
-        "cards": "a0a2fce2b67fc3c5",
-        "done": "709e80c88487a241",
-        "event_cards": "316cbc8160a71869",
-        "events": "14496d6e2db13cff",
-        "events_len": "68859a2c67a743f0",
-        "global": "1bc10b13233192cb",
-        "legal": "40035f72ea93efb2",
-        "reward": "2ea9ab9198d16380",
-        "seat": "5bbd5f77399169d2"
-      }
-    },
-    {
-      "actions": [
-        453,
-        449,
-        326
-      ],
-      "hashes": {
-        "belief": "0e77db727fd6a053",
-        "cards": "bc1910ea1e1fe998",
-        "done": "709e80c88487a241",
-        "event_cards": "8d646ddf66948f5b",
-        "events": "1498d38d702a0a3f",
-        "events_len": "8079d55e00929633",
-        "global": "28eda369ec88e7d4",
-        "legal": "a55720a5bfc90b8e",
-        "reward": "2ea9ab9198d16380",
-        "seat": "9b1cfe634d1ea8ea"
-      }
-    },
-    {
-      "actions": [
-        471,
-        448,
-        319
-      ],
-      "hashes": {
-        "belief": "e421c7fa95a70e90",
-        "cards": "e0a11054347bdee9",
-        "done": "709e80c88487a241",
-        "event_cards": "123b2f34218b73db",
-        "events": "e37ec24b4cacb321",
-        "events_len": "b6b07b1b73e8688f",
-        "global": "2b3bbd1dca97911e",
-        "legal": "cb55b37414e0de98",
-        "reward": "2ea9ab9198d16380",
-        "seat": "2bceb6524e8166cd"
-      }
-    },
-    {
-      "actions": [
-        476,
-        447,
-        355
-      ],
-      "hashes": {
-        "belief": "0853148223052991",
-        "cards": "03b4391001ef28b8",
-        "done": "709e80c88487a241",
-        "event_cards": "b4c3ae453e0f662e",
-        "events": "09d974af04995c8c",
-        "events_len": "a19d190090daa564",
-        "global": "45a0ad0d2d207844",
-        "legal": "7bc88b7fb025ab59",
-        "reward": "2ea9ab9198d16380",
-        "seat": "d61a0564af283b12"
-      }
-    },
-    {
-      "actions": [
-        472,
-        444,
-        398
-      ],
-      "hashes": {
-        "belief": "1e7edeedb8cc1680",
-        "cards": "4ab71ec971c9ce1c",
-        "done": "709e80c88487a241",
-        "event_cards": "a4adb3f2338045d3",
-        "events": "df82554fd70bc9bd",
-        "events_len": "8dabd5dd12f403b8",
-        "global": "baf98192a0b875aa",
-        "legal": "3e10297241cc0b8c",
-        "reward": "2ea9ab9198d16380",
-        "seat": "29ca5b18e4ce8d35"
-      }
-    },
-    {
-      "actions": [
-        470,
-        442,
-        457
-      ],
-      "hashes": {
-        "belief": "65d569ef524cd043",
-        "cards": "6a52945297d7b7ee",
-        "done": "709e80c88487a241",
-        "event_cards": "4a571ed94fc20587",
-        "events": "89bdb132a78eceb6",
-        "events_len": "2a938d17acf21099",
-        "global": "71e691f171a93e78",
-        "legal": "07f173bb0b080906",
-        "reward": "2ea9ab9198d16380",
-        "seat": "e6620352dea467c2"
-      }
-    },
-    {
-      "actions": [
-        434,
-        446,
-        459
-      ],
-      "hashes": {
-        "belief": "e668522a0515cf31",
-        "cards": "8d5db620541e2f51",
-        "done": "709e80c88487a241",
-        "event_cards": "96770932cd095ac4",
-        "events": "3185dafdefa182b9",
-        "events_len": "d8e3f0fc76a03420",
-        "global": "8e2b484416a21adb",
-        "legal": "04e26cd800e60e0a",
-        "reward": "2ea9ab9198d16380",
-        "seat": "22c5bcddcce3ef61"
-      }
-    },
-    {
-      "actions": [
-        458,
-        461,
-        464
-      ],
-      "hashes": {
-        "belief": "eab11e9bcc420a01",
-        "cards": "4b3fabe7c703e7c3",
-        "done": "709e80c88487a241",
-        "event_cards": "9b6b61cedbf51366",
-        "events": "0a906b88e2c9cfc6",
-        "events_len": "3fc3401d51e3b0a3",
-        "global": "8842f6d3f3240f46",
-        "legal": "adb9d08e707471ae",
-        "reward": "2ea9ab9198d16380",
-        "seat": "fd6eefe95d5b5edb"
-      }
-    },
-    {
-      "actions": [
-        473,
-        520,
-        448
-      ],
-      "hashes": {
-        "belief": "8e32dc2302c945c2",
-        "cards": "8c2e25e10593998a",
-        "done": "709e80c88487a241",
-        "event_cards": "52551c2456d321ab",
-        "events": "d48a185162e08b9c",
-        "events_len": "f2d77b091f6b75f8",
-        "global": "b54036a21abbb969",
-        "legal": "1cae687d8ca761ed",
-        "reward": "2ea9ab9198d16380",
-        "seat": "e337c9e9a29ce870"
-      }
-    },
-    {
-      "actions": [
-        444,
-        470,
-        456
-      ],
-      "hashes": {
-        "belief": "9b6dc77eabd4426f",
-        "cards": "094535b534d4c769",
-        "done": "709e80c88487a241",
-        "event_cards": "b3619fbea762e37f",
-        "events": "0c4908bb7ad3548a",
-        "events_len": "4f23208ff7bc8795",
-        "global": "6a94b74ed012ffb9",
-        "legal": "fcda9a36b311d977",
-        "reward": "2ea9ab9198d16380",
-        "seat": "28b7693c3d769182"
-      }
-    },
-    {
-      "actions": [
-        455,
-        429,
-        452
-      ],
-      "hashes": {
-        "belief": "30a6eb117b53a40f",
-        "cards": "f1174d14a0f8e64a",
-        "done": "fb50dc0717ff266c",
-        "event_cards": "0bbf89a184dd5c71",
-        "events": "c2ed868e7c91a5d6",
-        "events_len": "1e76d813dd695682",
-        "global": "3eb3f765401a8a5c",
-        "legal": "ef6971a8bee46c99",
-        "reward": "3cf4dcd6b50c1ead",
-        "seat": "061ed5b39510c552"
-      }
-    },
-    {
-      "actions": [
-        106,
-        471,
-        443
-      ],
-      "hashes": {
-        "belief": "b68aefbeeb896a9e",
-        "cards": "b5c3dce5618ce544",
-        "done": "709e80c88487a241",
-        "event_cards": "140a7edf76593c00",
-        "events": "161ae7197274490a",
-        "events_len": "199eec4b6f1fbb3e",
-        "global": "9a5233885db784cd",
-        "legal": "80cbe7ca851aaf9c",
-        "reward": "2ea9ab9198d16380",
-        "seat": "fb003df0faa8532a"
-      }
-    },
-    {
-      "actions": [
-        83,
-        465,
-        437
-      ],
-      "hashes": {
-        "belief": "1593aabf6e28cd21",
-        "cards": "4d5fa9fb35e4323c",
-        "done": "709e80c88487a241",
-        "event_cards": "c271605fe110bfaf",
-        "events": "48c060735c958260",
-        "events_len": "d12ad4663ffd458c",
-        "global": "35e84cc83bdd2129",
-        "legal": "752b422ae07222f5",
-        "reward": "2ea9ab9198d16380",
-        "seat": "8671d2c8872d570c"
-      }
-    },
-    {
-      "actions": [
         0,
-        467,
-        451
-      ],
-      "hashes": {
-        "belief": "8b265ccc9cc59318",
-        "cards": "f84ba99adfc8bd35",
-        "done": "709e80c88487a241",
-        "event_cards": "c859361bdb0f1dac",
-        "events": "2dc2e283670ddd94",
-        "events_len": "0b45aba4e3c2ca96",
-        "global": "6f4524a12b6cf023",
-        "legal": "e69326cc6463ce75",
-        "reward": "2ea9ab9198d16380",
-        "seat": "6498e26e270afedc"
-      }
-    },
-    {
-      "actions": [
-        54,
-        478,
-        439
-      ],
-      "hashes": {
-        "belief": "396925db8c1dc5f0",
-        "cards": "7846e1910134e0ab",
-        "done": "709e80c88487a241",
-        "event_cards": "1c6dd2520a88dc86",
-        "events": "8f5da06775533862",
-        "events_len": "38b7ce0fb2add1ea",
-        "global": "0a86b2a68625e250",
-        "legal": "85bea975d1e64a81",
-        "reward": "2ea9ab9198d16380",
-        "seat": "76029fb05fff48cf"
-      }
-    },
-    {
-      "actions": [
-        313,
         430,
-        446
-      ],
-      "hashes": {
-        "belief": "cff17fa5c85eae76",
-        "cards": "6913e9d0287a4a9d",
-        "done": "709e80c88487a241",
-        "event_cards": "4fa5383b281900cd",
-        "events": "b0913d38e8fea93d",
-        "events_len": "23af33cd6c90218c",
-        "global": "ccdf1c1f68fe053c",
-        "legal": "361c326b1b9de635",
-        "reward": "2ea9ab9198d16380",
-        "seat": "f8d8ba60e25240e5"
-      }
-    },
-    {
-      "actions": [
-        345,
-        427,
-        435
-      ],
-      "hashes": {
-        "belief": "543132e647af9b7d",
-        "cards": "c8d3c187b546a7a4",
-        "done": "709e80c88487a241",
-        "event_cards": "53deb0f46535d4d2",
-        "events": "a64a882f5eca2ef8",
-        "events_len": "7b793d3a5c5e767b",
-        "global": "e8124034db510a60",
-        "legal": "a46f115166b7e0fa",
-        "reward": "2ea9ab9198d16380",
-        "seat": "330b77abfad6ee68"
-      }
-    },
-    {
-      "actions": [
-        341,
-        433,
-        449
-      ],
-      "hashes": {
-        "belief": "758112c7cfaaed3b",
-        "cards": "536bad9cd3bbd005",
-        "done": "709e80c88487a241",
-        "event_cards": "b21a3850039686d5",
-        "events": "8c8b34158396bfe6",
-        "events_len": "691496e449bf7d8f",
-        "global": "7a04d6d56540b004",
-        "legal": "38c8a25930fc6e9c",
-        "reward": "2ea9ab9198d16380",
-        "seat": "6498e26e270afedc"
-      }
-    },
-    {
-      "actions": [
-        317,
-        426,
-        442
-      ],
-      "hashes": {
-        "belief": "4e154c3e28f822f1",
-        "cards": "ee775eee02ad02e1",
-        "done": "709e80c88487a241",
-        "event_cards": "8ea028433e6ba300",
-        "events": "09a9d73f63506684",
-        "events_len": "5ceeb9a07db2d975",
-        "global": "c2e6d0138558bf88",
-        "legal": "59685a5e3b6c4e6e",
-        "reward": "2ea9ab9198d16380",
-        "seat": "02e6d00eac41da59"
-      }
-    },
-    {
-      "actions": [
-        370,
-        439,
-        440
-      ],
-      "hashes": {
-        "belief": "797105457dc278fe",
-        "cards": "a3c50fe144f544ba",
-        "done": "709e80c88487a241",
-        "event_cards": "e2b636c1f6ca20e4",
-        "events": "39b5e73a3d7b2b86",
-        "events_len": "f42984ef7a3f9606",
-        "global": "a1481b00041ff592",
-        "legal": "f894446f1553df94",
-        "reward": "2ea9ab9198d16380",
-        "seat": "9413299b9d7b8a24"
-      }
-    },
-    {
-      "actions": [
-        471,
-        474,
-        430
-      ],
-      "hashes": {
-        "belief": "0f806a22ec7d361c",
-        "cards": "7bdca7941da74c6a",
-        "done": "709e80c88487a241",
-        "event_cards": "c76067eb520e8656",
-        "events": "7681d730b53052b8",
-        "events_len": "2556177f01a95036",
-        "global": "00595c9e8ef9f7c4",
-        "legal": "8dd1382ad6c8844e",
-        "reward": "2ea9ab9198d16380",
-        "seat": "fcfde5706f4d32f0"
-      }
-    },
-    {
-      "actions": [
-        428,
-        458,
-        444
-      ],
-      "hashes": {
-        "belief": "5843e10fead92158",
-        "cards": "54b4e1ec6fca77d9",
-        "done": "709e80c88487a241",
-        "event_cards": "e40f604c08081305",
-        "events": "807f5c1d3cc5d29c",
-        "events_len": "3d8123203a896aed",
-        "global": "228710791b4a5df0",
-        "legal": "e6104281142cc1a8",
-        "reward": "2ea9ab9198d16380",
-        "seat": "ed3443ccac1e00d8"
-      }
-    },
-    {
-      "actions": [
-        466,
-        454,
-        453
-      ],
-      "hashes": {
-        "belief": "50a471ffc5dc16d5",
-        "cards": "1c13f02329a705ce",
-        "done": "709e80c88487a241",
-        "event_cards": "bc6a6dbaf79b482a",
-        "events": "130658fc9b9599dc",
-        "events_len": "8e3dc7136c2ce7e9",
-        "global": "d372c84541788fcb",
-        "legal": "f120d9517a7e64ed",
-        "reward": "2ea9ab9198d16380",
-        "seat": "576f01424743fd8c"
-      }
-    },
-    {
-      "actions": [
-        474,
-        457,
-        447
-      ],
-      "hashes": {
-        "belief": "1e5587125546b68a",
-        "cards": "a35ffc44b58d053d",
-        "done": "709e80c88487a241",
-        "event_cards": "d36b5c6435d07b3c",
-        "events": "ed3d255200d85a0c",
-        "events_len": "85fa4110ceeeb163",
-        "global": "193560d08ea769fa",
-        "legal": "dc05e098015dcc45",
-        "reward": "2ea9ab9198d16380",
-        "seat": "f7153f1c1a254448"
-      }
-    },
-    {
-      "actions": [
-        431,
-        453,
-        478
-      ],
-      "hashes": {
-        "belief": "5a942c234637c34e",
-        "cards": "e3d225313af6a85c",
-        "done": "709e80c88487a241",
-        "event_cards": "ae86f86265e473c4",
-        "events": "121125c8e526502b",
-        "events_len": "1c3c21dc71399864",
-        "global": "f43b8559e9e75d29",
-        "legal": "fab561a181983dc5",
-        "reward": "2ea9ab9198d16380",
-        "seat": "a7b5f185aee1c8e2"
-      }
-    },
-    {
-      "actions": [
-        475,
-        462,
-        428
-      ],
-      "hashes": {
-        "belief": "7951cc7c643ec5b8",
-        "cards": "85ae3d22e3edd1f1",
-        "done": "709e80c88487a241",
-        "event_cards": "7e0dd382d6986091",
-        "events": "20841d73a57fdb68",
-        "events_len": "8e4a46553fab0325",
-        "global": "a2749ca471bb775c",
-        "legal": "2046b52396940154",
-        "reward": "2ea9ab9198d16380",
-        "seat": "4965a29215157a56"
-      }
-    },
-    {
-      "actions": [
-        472,
-        463,
-        471
-      ],
-      "hashes": {
-        "belief": "009abac3746a30e5",
-        "cards": "e748b9c4304daa13",
-        "done": "709e80c88487a241",
-        "event_cards": "a25e554f1f3f537d",
-        "events": "f91f19c521d2cf2e",
-        "events_len": "579ec91edd4653c9",
-        "global": "364f3d95f0b35a26",
-        "legal": "7932cb493810b02a",
-        "reward": "2ea9ab9198d16380",
-        "seat": "0cf3731eacfebf9f"
-      }
-    },
-    {
-      "actions": [
-        457,
-        436,
-        441
-      ],
-      "hashes": {
-        "belief": "fc043b1a6214dc05",
-        "cards": "8cde6c63123c3216",
-        "done": "709e80c88487a241",
-        "event_cards": "8f93c2858094c8bc",
-        "events": "1c3dc119be42e213",
-        "events_len": "ad3f0eb01ca05bf8",
-        "global": "ae13fe7a5ffafb89",
-        "legal": "09a67aef370e5231",
-        "reward": "2ea9ab9198d16380",
-        "seat": "81e5ec0b76146b12"
-      }
-    },
-    {
-      "actions": [
-        459,
-        469,
-        463
-      ],
-      "hashes": {
-        "belief": "087d37a2d9169ff3",
-        "cards": "58bd92d115401d2e",
-        "done": "709e80c88487a241",
-        "event_cards": "00f44fd4c9e74e24",
-        "events": "e5a23cda27757f9f",
-        "events_len": "81f5c5745285c385",
-        "global": "904d22c087b3dfa2",
-        "legal": "6c5ab4bb2b14e404",
-        "reward": "2ea9ab9198d16380",
-        "seat": "52bd4197b18f9a40"
-      }
-    },
-    {
-      "actions": [
-        456,
-        450,
-        461
-      ],
-      "hashes": {
-        "belief": "2064ac370123d0f2",
-        "cards": "85e994a734d2133a",
-        "done": "709e80c88487a241",
-        "event_cards": "7bc34ca81cc77c5c",
-        "events": "100b9db196d4e07e",
-        "events_len": "1483d0168d199885",
-        "global": "e502295248b54060",
-        "legal": "bf9edeab3f35507a",
-        "reward": "2ea9ab9198d16380",
-        "seat": "7e64637ada716f7e"
-      }
-    },
-    {
-      "actions": [
-        452,
-        440,
-        472
-      ],
-      "hashes": {
-        "belief": "db314cc04749c86f",
-        "cards": "9d5f67d84194ea0f",
-        "done": "709e80c88487a241",
-        "event_cards": "b0b049b470452379",
-        "events": "c5fac2b48a9b5436",
-        "events_len": "46fd7a600e0b8920",
-        "global": "4f82c4377385829e",
-        "legal": "13d5ff09e49a0685",
-        "reward": "2ea9ab9198d16380",
-        "seat": "7a3c56bcb06889fd"
-      }
-    },
-    {
-      "actions": [
-        461,
-        445,
-        466
-      ],
-      "hashes": {
-        "belief": "d30a6b1c6c5487d8",
-        "cards": "4a40b60f0cbc8402",
-        "done": "709e80c88487a241",
-        "event_cards": "0bbf4af47c8dd357",
-        "events": "6bd7a2958b1d6229",
-        "events_len": "b7e0b4db7b4f1ab0",
-        "global": "39b76cbe11d2d78e",
-        "legal": "e2f5a2a8b6426fef",
-        "reward": "2ea9ab9198d16380",
-        "seat": "2ca84c21f6c3e58c"
-      }
-    },
-    {
-      "actions": [
-        469,
-        477,
-        429
-      ],
-      "hashes": {
-        "belief": "926b4b69536d0cc8",
-        "cards": "3a7fae7412d1ae6a",
-        "done": "709e80c88487a241",
-        "event_cards": "1b17b1a74d2c2221",
-        "events": "5536d976349efa89",
-        "events_len": "5958abb2b9aad7a4",
-        "global": "86418aae6cef70fb",
-        "legal": "3994d3ac994c19b0",
-        "reward": "2ea9ab9198d16380",
-        "seat": "1f91fc716ad664bd"
-      }
-    },
-    {
-      "actions": [
-        478,
-        431,
-        476
-      ],
-      "hashes": {
-        "belief": "54b8ff9812992826",
-        "cards": "e5780b2205c49469",
-        "done": "709e80c88487a241",
-        "event_cards": "9856741a187912bc",
-        "events": "e026a31cd31ff6bb",
-        "events_len": "6014af776a1f9847",
-        "global": "9936932ed2c51f44",
-        "legal": "7dc29d3b9d655656",
-        "reward": "2ea9ab9198d16380",
-        "seat": "e9df879ac2410b03"
-      }
-    },
-    {
-      "actions": [
-        446,
-        475,
-        462
-      ],
-      "hashes": {
-        "belief": "07a01984833e5121",
-        "cards": "e797f30dae8b0838",
-        "done": "709e80c88487a241",
-        "event_cards": "65a302eb17c6e622",
-        "events": "ed1d14c37cbc36d6",
-        "events_len": "00e32a774e5b2478",
-        "global": "1f7c79ca7cf34237",
-        "legal": "c2ae068b61f07b40",
-        "reward": "2ea9ab9198d16380",
-        "seat": "b6599d21ce74f24f"
-      }
-    },
-    {
-      "actions": [
-        443,
-        441,
-        426
-      ],
-      "hashes": {
-        "belief": "5dcb2cd5f6748ce8",
-        "cards": "36e19e7d17fe66af",
-        "done": "709e80c88487a241",
-        "event_cards": "73f7fadfcbfd00a0",
-        "events": "58822c014d9ceb20",
-        "events_len": "9b63e760a579755e",
-        "global": "7823f004f3da79a3",
-        "legal": "472d318107b05d71",
-        "reward": "2ea9ab9198d16380",
-        "seat": "9e5f20a47f51adf1"
-      }
-    },
-    {
-      "actions": [
-        442,
-        455,
-        458
-      ],
-      "hashes": {
-        "belief": "caa410bf82486da5",
-        "cards": "b777cafec6276593",
-        "done": "709e80c88487a241",
-        "event_cards": "07be158cfae0b1ff",
-        "events": "d019155a505ec95b",
-        "events_len": "ed5a242065ba95b8",
-        "global": "c726fc0b747e6601",
-        "legal": "129acc7aec65d76a",
-        "reward": "2ea9ab9198d16380",
-        "seat": "76029fb05fff48cf"
-      }
-    },
-    {
-      "actions": [
-        444,
-        473,
-        427
-      ],
-      "hashes": {
-        "belief": "df48c815fb69ebdc",
-        "cards": "9ef3e15620db48c0",
-        "done": "709e80c88487a241",
-        "event_cards": "61e855ddb1c66359",
-        "events": "c459ed9fcb9a253f",
-        "events_len": "6a1f184aedc71206",
-        "global": "4d9c2effbdd48611",
-        "legal": "d9c3e9912ab1f439",
-        "reward": "2ea9ab9198d16380",
-        "seat": "1a610ded9e91d36c"
-      }
-    },
-    {
-      "actions": [
-        440,
-        476,
-        434
-      ],
-      "hashes": {
-        "belief": "efe5cc3ac30f5860",
-        "cards": "e4acaf765f8c9bd7",
-        "done": "709e80c88487a241",
-        "event_cards": "eb27fff3981cb227",
-        "events": "a7fe565e75c55f9a",
-        "events_len": "81fd5c892ac8e88f",
-        "global": "125073b328355ae1",
-        "legal": "8630232618d48790",
-        "reward": "2ea9ab9198d16380",
-        "seat": "f8fed27769240726"
-      }
-    },
-    {
-      "actions": [
-        451,
-        437,
         470
       ],
       "hashes": {
-        "belief": "b699fe01d1b29cbd",
-        "cards": "938a7ed40d454ba1",
+        "belief": "e2c266b4f33bec05",
+        "cards": "c7c3c7f5e904ba02",
         "done": "709e80c88487a241",
-        "event_cards": "0762926f4e2943a9",
-        "events": "4cf109a60a28c316",
-        "events_len": "f918005f8ceca640",
-        "global": "204d08cf28a92902",
-        "legal": "fc6401619b413d98",
-        "reward": "2ea9ab9198d16380",
-        "seat": "9549278c1daffb09"
-      }
-    },
-    {
-      "actions": [
-        447,
-        434,
-        432
-      ],
-      "hashes": {
-        "belief": "823c6b565b63f2b3",
-        "cards": "1d6b154b47f69e27",
-        "done": "709e80c88487a241",
-        "event_cards": "f4304f28589751b8",
-        "events": "d83e8253131adb3d",
-        "events_len": "de0f0b6443a5b86c",
-        "global": "02a823c65e011211",
-        "legal": "7dc8389c5d10ef52",
-        "reward": "2ea9ab9198d16380",
-        "seat": "453ba91f898a805e"
-      }
-    },
-    {
-      "actions": [
-        437,
-        468,
-        477
-      ],
-      "hashes": {
-        "belief": "edc1133144c940c8",
-        "cards": "64a7abdae99dd2e6",
-        "done": "709e80c88487a241",
-        "event_cards": "dc1c155ec4f1a2d6",
-        "events": "0406f6e46e013e2c",
-        "events_len": "1f860221698b909f",
-        "global": "f106b2fabe645b52",
-        "legal": "0e8694375b55ac39",
-        "reward": "2ea9ab9198d16380",
-        "seat": "f65f58eda5e378c0"
-      }
-    },
-    {
-      "actions": [
-        427,
-        472,
-        468
-      ],
-      "hashes": {
-        "belief": "2c7fa6d1f7fbceb3",
-        "cards": "a798dbd92228ec96",
-        "done": "faee935763044f12",
-        "event_cards": "7e5a361fb3975cef",
-        "events": "c4f181878ef63930",
-        "events_len": "423d54235bd06eae",
-        "global": "d364c99bd17f3dbd",
-        "legal": "eaf2eaa4c577989f",
-        "reward": "20c55354413954e8",
-        "seat": "e337c9e9a29ce870"
-      }
-    },
-    {
-      "actions": [
-        438,
-        138,
-        465
-      ],
-      "hashes": {
-        "belief": "e7c4e6162073d60c",
-        "cards": "e7a16a5c6c48b102",
-        "done": "709e80c88487a241",
-        "event_cards": "0c38ec3a2c1d516d",
-        "events": "b8b5833d78a76bec",
-        "events_len": "e65a11701b3fad17",
-        "global": "e905b31ca2db691a",
-        "legal": "430a6d93ccd2ad75",
-        "reward": "2ea9ab9198d16380",
-        "seat": "28b7693c3d769182"
-      }
-    },
-    {
-      "actions": [
-        430,
-        141,
-        436
-      ],
-      "hashes": {
-        "belief": "7256f7010904e4ee",
-        "cards": "3810dbf917dbaca1",
-        "done": "709e80c88487a241",
-        "event_cards": "b62c7b4a3bcef936",
-        "events": "1c1f150652de9c85",
-        "events_len": "e228ab1b39c4ac19",
-        "global": "e1dc131243414af2",
-        "legal": "a2d7472556f27070",
-        "reward": "2ea9ab9198d16380",
-        "seat": "9e5f20a47f51adf1"
-      }
-    },
-    {
-      "actions": [
-        426,
-        336,
-        460
-      ],
-      "hashes": {
-        "belief": "e8bd5c1c7b071c22",
-        "cards": "db21f244c9b4922e",
-        "done": "709e80c88487a241",
-        "event_cards": "b11d097e77239a51",
-        "events": "a5e52a000922ee12",
-        "events_len": "c9add30aaf0a31e9",
-        "global": "f8f615ba6fc12770",
-        "legal": "5fc97ed540628891",
-        "reward": "2ea9ab9198d16380",
-        "seat": "aa6e75c1263e5cdf"
-      }
-    },
-    {
-      "actions": [
-        455,
-        320,
-        469
-      ],
-      "hashes": {
-        "belief": "eef52f818f8c79ec",
-        "cards": "a26a86f769b6b025",
-        "done": "709e80c88487a241",
-        "event_cards": "79b99fc44313c425",
-        "events": "6ebc48bc48a47c0f",
-        "events_len": "be96a099f30625e0",
-        "global": "6056ef6912841048",
-        "legal": "f8571c93bea33220",
+        "event_cards": "7c71df910f3ce65d",
+        "events": "078f6398d2af850f",
+        "events_len": "c32f523cb4758ca6",
+        "global": "5c1922607653664e",
+        "legal": "e35d11d89131016b",
         "reward": "2ea9ab9198d16380",
         "seat": "c722f9d933460bcd"
       }
     },
     {
       "actions": [
-        433,
-        340,
-        467
+        0,
+        435,
+        434
       ],
       "hashes": {
-        "belief": "5ee16e4ccf45200f",
-        "cards": "9d76e7f07712a4c4",
+        "belief": "32b4d97c281c257e",
+        "cards": "689c62f8be5c8a50",
         "done": "709e80c88487a241",
-        "event_cards": "94d4a18e129c7a08",
-        "events": "031da1bf97af26c5",
-        "events_len": "f1b611ff56515c41",
-        "global": "b104fdb937366315",
-        "legal": "1e7e1505b4c0fa88",
+        "event_cards": "a47a4f407a12fa57",
+        "events": "8436a8e03faf400d",
+        "events_len": "1ea8aef4080e6e3e",
+        "global": "0fabae39f0f4b8c4",
+        "legal": "0fa933e4daf1039f",
         "reward": "2ea9ab9198d16380",
-        "seat": "54568b6d133d182a"
+        "seat": "f59657c448586a32"
       }
     },
     {
       "actions": [
-        449,
-        318,
-        475
+        0,
+        429,
+        435
       ],
       "hashes": {
-        "belief": "be3456e95392f207",
-        "cards": "c52a1fbfba0ec290",
+        "belief": "0126f1873bc3981a",
+        "cards": "2b4e717c5e3c91a4",
         "done": "709e80c88487a241",
-        "event_cards": "4c00d4a3d2306b56",
-        "events": "76774e9ae9f00162",
-        "events_len": "26129fa073c53f08",
-        "global": "0dda5868159c0b60",
-        "legal": "8972fdf2a0d94b3b",
+        "event_cards": "d23cc596b8b63504",
+        "events": "f30545ee01e2ff6c",
+        "events_len": "79c622348b09ad8a",
+        "global": "cb0cae9c18beafc1",
+        "legal": "88c2285e7cf92b42",
         "reward": "2ea9ab9198d16380",
-        "seat": "105ca179e176b2d6"
+        "seat": "8d45b9af21b8db60"
       }
     },
     {
       "actions": [
-        439,
-        407,
+        0,
+        434,
+        432
+      ],
+      "hashes": {
+        "belief": "8e0bdf4cfc1a5183",
+        "cards": "a432017cb47efcab",
+        "done": "709e80c88487a241",
+        "event_cards": "eac2723b4c8752e0",
+        "events": "e9d0e1bc2288efed",
+        "events_len": "f25e22c7ac251c71",
+        "global": "550477b3347f2cda",
+        "legal": "6ab6249a5ef91184",
+        "reward": "2ea9ab9198d16380",
+        "seat": "d59eed54e596a24b"
+      }
+    },
+    {
+      "actions": [
+        18,
+        427,
         433
       ],
       "hashes": {
-        "belief": "e452f6c6f758708a",
-        "cards": "4abcf35bcc4fcfea",
+        "belief": "2c71ce7b1bfbc96a",
+        "cards": "4997406e68200fb2",
         "done": "709e80c88487a241",
-        "event_cards": "67934f8ecfe17ee7",
-        "events": "eaa04befd7eebf9b",
-        "events_len": "0a6a60ba5c7173c8",
-        "global": "49679700a92497ff",
-        "legal": "5bf64ec288f79e8e",
+        "event_cards": "8913a5a2c416ceb6",
+        "events": "c165fec9a240de42",
+        "events_len": "067286d8d2c063ae",
+        "global": "9de4122556d96d4d",
+        "legal": "e89ca6b3487ba3dc",
         "reward": "2ea9ab9198d16380",
-        "seat": "a10494d90314704e"
+        "seat": "a890adf674b36ba6"
+      }
+    },
+    {
+      "actions": [
+        81,
+        451,
+        427
+      ],
+      "hashes": {
+        "belief": "eb42c5f861d18812",
+        "cards": "2ff3257e2ed5d739",
+        "done": "709e80c88487a241",
+        "event_cards": "b5d2c62bba377c98",
+        "events": "ee4a4858102331a0",
+        "events_len": "f6f61e91d44c0a2d",
+        "global": "40efb537f83bdbf0",
+        "legal": "ec2db71fccd84078",
+        "reward": "2ea9ab9198d16380",
+        "seat": "88a785e43f081433"
+      }
+    },
+    {
+      "actions": [
+        141,
+        432,
+        438
+      ],
+      "hashes": {
+        "belief": "d909b372807cf218",
+        "cards": "61ffce45eaeac9f4",
+        "done": "709e80c88487a241",
+        "event_cards": "0fe69d0362112b22",
+        "events": "2370a43bbae04db2",
+        "events_len": "89182eed27d2dd20",
+        "global": "46b4216b5e69cefa",
+        "legal": "e41a9b63ee5e0c11",
+        "reward": "2ea9ab9198d16380",
+        "seat": "a8dad088d9b94a2c"
+      }
+    },
+    {
+      "actions": [
+        341,
+        458,
+        455
+      ],
+      "hashes": {
+        "belief": "34f38ef355402628",
+        "cards": "e165bcd70fc3def4",
+        "done": "709e80c88487a241",
+        "event_cards": "622409175979cc98",
+        "events": "806074b2a75a2c8e",
+        "events_len": "288c23863c4e0f13",
+        "global": "e850780992c7c214",
+        "legal": "3a4cb4109bb7800f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "7a4401f07925a89f"
+      }
+    },
+    {
+      "actions": [
+        347,
+        461,
+        429
+      ],
+      "hashes": {
+        "belief": "216283963f04b07e",
+        "cards": "8b35be981b22baa5",
+        "done": "709e80c88487a241",
+        "event_cards": "2687407de7937dd8",
+        "events": "63e660e9b05a0fad",
+        "events_len": "f952ac486ddafd25",
+        "global": "529a426ec99982db",
+        "legal": "21d591c8383b54af",
+        "reward": "2ea9ab9198d16380",
+        "seat": "79f2a4da15e31b93"
+      }
+    },
+    {
+      "actions": [
+        328,
+        466,
+        443
+      ],
+      "hashes": {
+        "belief": "072d00583fefe513",
+        "cards": "400c78d44df11cec",
+        "done": "709e80c88487a241",
+        "event_cards": "d8865a3645f4255e",
+        "events": "f2d2f2142e498f35",
+        "events_len": "f29729cc14f87a4d",
+        "global": "9b6a8d98e050b798",
+        "legal": "3feffac120beaf14",
+        "reward": "2ea9ab9198d16380",
+        "seat": "2f1a8c9bd0787478"
+      }
+    },
+    {
+      "actions": [
+        346,
+        456,
+        450
+      ],
+      "hashes": {
+        "belief": "b82d1685844a88c5",
+        "cards": "74ca65a69a6ee60a",
+        "done": "709e80c88487a241",
+        "event_cards": "9bbf3c9550d8754a",
+        "events": "ca926925a28c5cf1",
+        "events_len": "3b2220bdf381a2a0",
+        "global": "444e65a27576bada",
+        "legal": "54353f427bb4f571",
+        "reward": "2ea9ab9198d16380",
+        "seat": "0db201e8371010e5"
+      }
+    },
+    {
+      "actions": [
+        355,
+        475,
+        447
+      ],
+      "hashes": {
+        "belief": "d9543aebb744e34f",
+        "cards": "6c2fe0dc27242903",
+        "done": "709e80c88487a241",
+        "event_cards": "8f0052e48651a31e",
+        "events": "92e254c4eda5328c",
+        "events_len": "0035ef4fc6fe73e3",
+        "global": "4d3e1fa55a227a17",
+        "legal": "4342994a0533affb",
+        "reward": "2ea9ab9198d16380",
+        "seat": "604365608460d7f0"
+      }
+    },
+    {
+      "actions": [
+        418,
+        449,
+        473
+      ],
+      "hashes": {
+        "belief": "13f3a7c18da6df9f",
+        "cards": "dd7205f97876cea2",
+        "done": "709e80c88487a241",
+        "event_cards": "5e5345fda37f3cac",
+        "events": "4afd4ea9b9990b02",
+        "events_len": "3b36c322caa34ccc",
+        "global": "0043fb5c3213c79d",
+        "legal": "5cfd4353a6d11e02",
+        "reward": "2ea9ab9198d16380",
+        "seat": "a8dad088d9b94a2c"
+      }
+    },
+    {
+      "actions": [
+        426,
+        444,
+        472
+      ],
+      "hashes": {
+        "belief": "8c74677bb5f51fb4",
+        "cards": "8daf46f1c2f602ae",
+        "done": "709e80c88487a241",
+        "event_cards": "d663eb381ae0c46e",
+        "events": "acea946a7386d76d",
+        "events_len": "e24ca1e73ba5b5db",
+        "global": "25b8376a9eb108d8",
+        "legal": "abc1847cb275b621",
+        "reward": "2ea9ab9198d16380",
+        "seat": "ce1bf76234587ca6"
+      }
+    },
+    {
+      "actions": [
+        437,
+        474,
+        469
+      ],
+      "hashes": {
+        "belief": "3c47ce75896ec0dd",
+        "cards": "172a19b66f80d69f",
+        "done": "709e80c88487a241",
+        "event_cards": "cb8d18d1fd699a73",
+        "events": "88cdad01c18a37df",
+        "events_len": "eaceee52d34c270c",
+        "global": "ef41df93b493e988",
+        "legal": "fdc78b05a6ce9463",
+        "reward": "2ea9ab9198d16380",
+        "seat": "e88c22f1d502be8a"
+      }
+    },
+    {
+      "actions": [
+        432,
+        448,
+        476
+      ],
+      "hashes": {
+        "belief": "8df482757ccec390",
+        "cards": "de3a6639d863aee6",
+        "done": "709e80c88487a241",
+        "event_cards": "69c50ffe49232723",
+        "events": "5274db8be24dd52c",
+        "events_len": "9dc40bc6964dab0a",
+        "global": "7ad9034bad015c11",
+        "legal": "f5768cc4698431d2",
+        "reward": "2ea9ab9198d16380",
+        "seat": "96ed00d7405cf9f0"
+      }
+    },
+    {
+      "actions": [
+        429,
+        460,
+        460
+      ],
+      "hashes": {
+        "belief": "271a50b3d8057677",
+        "cards": "6c3bc3debf8de8a7",
+        "done": "709e80c88487a241",
+        "event_cards": "74b973d65a3c08aa",
+        "events": "2f7c9c521ae3a269",
+        "events_len": "29c1f9481d1a04d4",
+        "global": "25aaddb1b7205f70",
+        "legal": "4874d2a113df85a8",
+        "reward": "2ea9ab9198d16380",
+        "seat": "f65f58eda5e378c0"
+      }
+    },
+    {
+      "actions": [
+        438,
+        472,
+        430
+      ],
+      "hashes": {
+        "belief": "027f135848d46b0f",
+        "cards": "5d9c0131bebe9358",
+        "done": "709e80c88487a241",
+        "event_cards": "de226e18d708393f",
+        "events": "df13bcec60f1076d",
+        "events_len": "2afd7b09b740be39",
+        "global": "71cf3a1a506e5d95",
+        "legal": "0259bf585e38170d",
+        "reward": "2ea9ab9198d16380",
+        "seat": "b0de64b8b912f8c0"
+      }
+    },
+    {
+      "actions": [
+        478,
+        459,
+        446
+      ],
+      "hashes": {
+        "belief": "40a82e778dce43a1",
+        "cards": "26e2ebd4b21d5406",
+        "done": "709e80c88487a241",
+        "event_cards": "eabc1ca8f52754fb",
+        "events": "b0a629ffd3173cef",
+        "events_len": "18d7626262f4caf2",
+        "global": "c0ee8c101affe4c1",
+        "legal": "4411dd8a22bc66dd",
+        "reward": "2ea9ab9198d16380",
+        "seat": "ca888f40c3caca80"
+      }
+    },
+    {
+      "actions": [
+        428,
+        468,
+        475
+      ],
+      "hashes": {
+        "belief": "2dd32c92c2991f76",
+        "cards": "2c47721a4a14ebcd",
+        "done": "709e80c88487a241",
+        "event_cards": "2f3c299e9efe9b6a",
+        "events": "17c42422fe109edb",
+        "events_len": "0e5cff08d8d78e1b",
+        "global": "5a3e18cfd7322ac9",
+        "legal": "5d32107906d0680d",
+        "reward": "2ea9ab9198d16380",
+        "seat": "73d85d34b5aa7244"
+      }
+    },
+    {
+      "actions": [
+        443,
+        469,
+        437
+      ],
+      "hashes": {
+        "belief": "a8c9d3ef32e40a00",
+        "cards": "22e2f39c1b42bb75",
+        "done": "709e80c88487a241",
+        "event_cards": "b8c665968cb2f518",
+        "events": "accb2dc8dadce8d5",
+        "events_len": "a2331293fccca32b",
+        "global": "aa1cd677fce35f62",
+        "legal": "8f6acb9e2bec264e",
+        "reward": "2ea9ab9198d16380",
+        "seat": "be3e63ddb18e272d"
       }
     },
     {
       "actions": [
         445,
-        451,
-        450
+        471,
+        431
       ],
       "hashes": {
-        "belief": "693c025a8c8f5585",
-        "cards": "adafb07824e334c9",
+        "belief": "e2f582cb6265f470",
+        "cards": "38b45c0be24fb17e",
         "done": "709e80c88487a241",
-        "event_cards": "de0f3c1d812b6302",
-        "events": "f0e03920fecee953",
-        "events_len": "b7cf23c0ff64a2f3",
-        "global": "85d055b1ed62244c",
-        "legal": "6cb94a046e3b7d95",
+        "event_cards": "b9ab84a205dfaa25",
+        "events": "c1bbe4a0b6dfb844",
+        "events_len": "834161b26978f0d7",
+        "global": "4d32193499ec67a7",
+        "legal": "8e4d3893b3176a82",
         "reward": "2ea9ab9198d16380",
-        "seat": "ce99ae045c8b2a2a"
-      }
-    },
-    {
-      "actions": [
-        476,
-        440,
-        455
-      ],
-      "hashes": {
-        "belief": "0f65e7d891b1e0f9",
-        "cards": "81b37618795b2fb7",
-        "done": "709e80c88487a241",
-        "event_cards": "84cf80b196a02a1f",
-        "events": "df92cd43d533849b",
-        "events_len": "d6fdf83c05e201cd",
-        "global": "53aec8218e5db853",
-        "legal": "73c0255c9a4ab7a9",
-        "reward": "2ea9ab9198d16380",
-        "seat": "1acd855e4657b0c3"
-      }
-    },
-    {
-      "actions": [
-        453,
-        446,
-        473
-      ],
-      "hashes": {
-        "belief": "81823841ff593bf7",
-        "cards": "1dff71ef18e96543",
-        "done": "cf7605ed1bc735f6",
-        "event_cards": "68aa1e63e5b3404a",
-        "events": "70853dd5d8d99c3e",
-        "events_len": "13844e3776791d52",
-        "global": "f9148187652f1293",
-        "legal": "8f55ff09a9f16489",
-        "reward": "99d6d1216b329539",
-        "seat": "7bac135c329f2894"
-      }
-    },
-    {
-      "actions": [
-        458,
-        448,
-        0
-      ],
-      "hashes": {
-        "belief": "4c4d01254ed30b6d",
-        "cards": "f624b75edb2745cb",
-        "done": "709e80c88487a241",
-        "event_cards": "d3a2391e7e6219c5",
-        "events": "44a752fd742c881b",
-        "events_len": "e278363be3f85bbb",
-        "global": "e38569aefbbc6485",
-        "legal": "8ed429214100de9d",
-        "reward": "2ea9ab9198d16380",
-        "seat": "1f780da0654eeccf"
+        "seat": "e712069a78edaf3b"
       }
     },
     {
       "actions": [
         450,
-        460,
-        0
+        473,
+        478
       ],
       "hashes": {
-        "belief": "edf9d1104e44287f",
-        "cards": "27cdd780419bd011",
+        "belief": "01a0be42433718ad",
+        "cards": "529dac047679594a",
         "done": "709e80c88487a241",
-        "event_cards": "e1d6b3586a705524",
-        "events": "46fd199e83ce1887",
-        "events_len": "d61fa7b3fc0edd73",
-        "global": "f046afe714f09ee5",
-        "legal": "fac44479c9558e16",
+        "event_cards": "7592ac3410b37227",
+        "events": "f81f7b4b84a98988",
+        "events_len": "72082683887b117d",
+        "global": "acd6e661f2b33674",
+        "legal": "19c523774e393a6b",
         "reward": "2ea9ab9198d16380",
-        "seat": "94363920e1418bb2"
-      }
-    },
-    {
-      "actions": [
-        470,
-        438,
-        0
-      ],
-      "hashes": {
-        "belief": "a6210cf7430f57c5",
-        "cards": "e0f47be9cde17442",
-        "done": "709e80c88487a241",
-        "event_cards": "8f4d25a58faeb64f",
-        "events": "fb5424c42356c4a7",
-        "events_len": "f3ddde7b8bd107c7",
-        "global": "a90a4e26dca708da",
-        "legal": "615fdfb4eb18c777",
-        "reward": "2ea9ab9198d16380",
-        "seat": "10b10f7471aadc70"
+        "seat": "26c14907169e1b42"
       }
     },
     {
       "actions": [
         441,
+        447,
+        442
+      ],
+      "hashes": {
+        "belief": "11056de6398daaa8",
+        "cards": "358152c25c34cb06",
+        "done": "faee935763044f12",
+        "event_cards": "f5c1bbc613c3ffc6",
+        "events": "2f44c1dc33c170dc",
+        "events_len": "728a1607a6c38ab6",
+        "global": "fcd6f6a4a77c34a1",
+        "legal": "02baf4aba2506637",
+        "reward": "add71e80ea98499f",
+        "seat": "76029fb05fff48cf"
+      }
+    },
+    {
+      "actions": [
+        479,
+        139,
+        468
+      ],
+      "hashes": {
+        "belief": "53971d30974e02b7",
+        "cards": "e6cc87497d6329f3",
+        "done": "709e80c88487a241",
+        "event_cards": "c53825bf2f5b01c2",
+        "events": "73d139d26454c850",
+        "events_len": "b89c2183fbbd7e72",
+        "global": "46145da32d8b538e",
+        "legal": "07c42c28bdcf1c01",
+        "reward": "2ea9ab9198d16380",
+        "seat": "75749bd175f3312a"
+      }
+    },
+    {
+      "actions": [
+        439,
+        21,
+        436
+      ],
+      "hashes": {
+        "belief": "bf8cb0a4d1dfee24",
+        "cards": "17178113a95ab650",
+        "done": "709e80c88487a241",
+        "event_cards": "4a364f82f822aec3",
+        "events": "77ffa10296e56ba7",
+        "events_len": "1d6e915572594dd2",
+        "global": "6f3025f169f04931",
+        "legal": "f1eda864510f8fe1",
+        "reward": "2ea9ab9198d16380",
+        "seat": "ed3443ccac1e00d8"
+      }
+    },
+    {
+      "actions": [
+        440,
+        0,
+        449
+      ],
+      "hashes": {
+        "belief": "6429817045e66f79",
+        "cards": "77d2ba4559e14603",
+        "done": "709e80c88487a241",
+        "event_cards": "c664420e09219fab",
+        "events": "03f9cf56ee04aa2e",
+        "events_len": "66e3f2abfc8b2453",
+        "global": "4f3ede926b957eb6",
+        "legal": "9894c346ef4d1d74",
+        "reward": "2ea9ab9198d16380",
+        "seat": "82f63b935a385c7a"
+      }
+    },
+    {
+      "actions": [
         436,
+        141,
+        444
+      ],
+      "hashes": {
+        "belief": "e81071d31ed7f9bd",
+        "cards": "8b63f998171bb680",
+        "done": "709e80c88487a241",
+        "event_cards": "c6003a8fa9c34fda",
+        "events": "4d158a973f8a7da1",
+        "events_len": "dbe48e8dac7dafbb",
+        "global": "b0ea8aca71ea23c0",
+        "legal": "29d6912df1c5b5e6",
+        "reward": "2ea9ab9198d16380",
+        "seat": "5e1e6953392a7545"
+      }
+    },
+    {
+      "actions": [
+        467,
+        333,
+        451
+      ],
+      "hashes": {
+        "belief": "16deb5f627a63ec1",
+        "cards": "a134e8a16b6fa1c8",
+        "done": "cf7605ed1bc735f6",
+        "event_cards": "4a9c167372e98c4e",
+        "events": "da4a30d5bb4373dd",
+        "events_len": "abc0d4b9859a4d17",
+        "global": "0ebd06d7bdd9636e",
+        "legal": "6ae2a817085784f5",
+        "reward": "d84b5237fd94d40d",
+        "seat": "c4fde33cae1b85a1"
+      }
+    },
+    {
+      "actions": [
+        431,
+        332,
         0
       ],
       "hashes": {
-        "belief": "4e3dc868fb205bff",
-        "cards": "90e3ce9f2819371d",
+        "belief": "32a97603b3366f3a",
+        "cards": "09e6459fcc24d8ad",
         "done": "709e80c88487a241",
-        "event_cards": "5a8da4c7f57990f2",
-        "events": "2e342fa9d13b0979",
-        "events_len": "039415c1bac0f66a",
-        "global": "25d662c490e30770",
-        "legal": "bbe1ddb810f1733b",
+        "event_cards": "e70fc97d2178ea34",
+        "events": "509e7de30ef4b325",
+        "events_len": "63a349a6f3cd70cf",
+        "global": "88ca731635506d85",
+        "legal": "f480279feb75a70a",
         "reward": "2ea9ab9198d16380",
-        "seat": "50ffabdcd9b2c937"
+        "seat": "576f01424743fd8c"
+      }
+    },
+    {
+      "actions": [
+        454,
+        316,
+        0
+      ],
+      "hashes": {
+        "belief": "3771fad0d204730b",
+        "cards": "ce55e20817f27a57",
+        "done": "709e80c88487a241",
+        "event_cards": "93b994176f7a7317",
+        "events": "02f3001bc154021a",
+        "events_len": "28607851ecf8dac0",
+        "global": "79b7f0117ee2e588",
+        "legal": "19a735e2b94e3fcf",
+        "reward": "2ea9ab9198d16380",
+        "seat": "1c8ee443d232409a"
+      }
+    },
+    {
+      "actions": [
+        430,
+        324,
+        0
+      ],
+      "hashes": {
+        "belief": "c22521788ffd768b",
+        "cards": "67b68d87d10a8f31",
+        "done": "709e80c88487a241",
+        "event_cards": "243098f661508741",
+        "events": "5ae5d8640f85b001",
+        "events_len": "f8b2c0a2e552366f",
+        "global": "d0fc81f39f9a4717",
+        "legal": "98357306e73cfcc0",
+        "reward": "2ea9ab9198d16380",
+        "seat": "ca888f40c3caca80"
+      }
+    },
+    {
+      "actions": [
+        448,
+        381,
+        0
+      ],
+      "hashes": {
+        "belief": "16b2ffcbb3aa2ea1",
+        "cards": "05fd7476da26fbf9",
+        "done": "709e80c88487a241",
+        "event_cards": "8b162b65a5182d7e",
+        "events": "438c439410a3c928",
+        "events_len": "b18c0ff01ce72e02",
+        "global": "776300bd9706c323",
+        "legal": "80947e62c3fb319e",
+        "reward": "2ea9ab9198d16380",
+        "seat": "0db201e8371010e5"
+      }
+    },
+    {
+      "actions": [
+        433,
+        456,
+        0
+      ],
+      "hashes": {
+        "belief": "be2a7b064b00bbd3",
+        "cards": "fe6a3719b688494b",
+        "done": "709e80c88487a241",
+        "event_cards": "4f5fd9a1c6c2ddac",
+        "events": "1216e8dcbfbdb3b7",
+        "events_len": "76a66e75f0243074",
+        "global": "fab7ab390d906726",
+        "legal": "5c7e4243ccc205e1",
+        "reward": "2ea9ab9198d16380",
+        "seat": "dec2809e6e374a6f"
+      }
+    },
+    {
+      "actions": [
+        463,
+        438,
+        0
+      ],
+      "hashes": {
+        "belief": "43dbfe80ce51b128",
+        "cards": "7ca5615fd03f3eec",
+        "done": "709e80c88487a241",
+        "event_cards": "a0ccc6ce5860dabc",
+        "events": "f253d62b739d2138",
+        "events_len": "d930a8af2ef64010",
+        "global": "24f7d3b83581a453",
+        "legal": "9acff3810afa0fa5",
+        "reward": "2ea9ab9198d16380",
+        "seat": "a113fbb4601e462a"
+      }
+    },
+    {
+      "actions": [
+        458,
+        464,
+        23
+      ],
+      "hashes": {
+        "belief": "6b12aad7865011c7",
+        "cards": "bbfd9dd48fae0e11",
+        "done": "709e80c88487a241",
+        "event_cards": "921f8957b1224561",
+        "events": "bea5b2522a92764a",
+        "events_len": "2cdf714a3bc06a47",
+        "global": "f6f48db72c6473ce",
+        "legal": "185b14cd1bcb4058",
+        "reward": "2ea9ab9198d16380",
+        "seat": "bd62d5246f9fcbe9"
+      }
+    },
+    {
+      "actions": [
+        461,
+        460,
+        0
+      ],
+      "hashes": {
+        "belief": "7da88dc78811306b",
+        "cards": "486729425071ae37",
+        "done": "709e80c88487a241",
+        "event_cards": "6b041a4831ba5a28",
+        "events": "e605a3213c1b6b4a",
+        "events_len": "e67d91dcc93e6577",
+        "global": "dbaf3945853018f5",
+        "legal": "b36911817a7f93c9",
+        "reward": "2ea9ab9198d16380",
+        "seat": "668a07695e274599"
+      }
+    },
+    {
+      "actions": [
+        455,
+        432,
+        54
+      ],
+      "hashes": {
+        "belief": "a64f207413214554",
+        "cards": "c9abc3d407c33d41",
+        "done": "709e80c88487a241",
+        "event_cards": "2a40d317c3d70aae",
+        "events": "143e75960d1fd85b",
+        "events_len": "e029bd7aad7a3691",
+        "global": "981f8391d5151a1a",
+        "legal": "eedbd7ea5a8db198",
+        "reward": "2ea9ab9198d16380",
+        "seat": "ca0b96e6503b27a1"
+      }
+    },
+    {
+      "actions": [
+        469,
+        428,
+        312
+      ],
+      "hashes": {
+        "belief": "b2424d7074f601ff",
+        "cards": "d9d59d57d2a62415",
+        "done": "709e80c88487a241",
+        "event_cards": "69d730f76aaa6a57",
+        "events": "48cea605f05e4488",
+        "events_len": "3ac08446e615364a",
+        "global": "cd7604c26c67068a",
+        "legal": "af414f638b235463",
+        "reward": "2ea9ab9198d16380",
+        "seat": "6f8123cb29ae3332"
+      }
+    },
+    {
+      "actions": [
+        452,
+        459,
+        335
+      ],
+      "hashes": {
+        "belief": "c12f550e2a24ab79",
+        "cards": "2e8922f07738d3cd",
+        "done": "709e80c88487a241",
+        "event_cards": "556001447c4982c6",
+        "events": "0902dbaabe04d714",
+        "events_len": "2973a9b78d75232b",
+        "global": "b27c6452a3554f04",
+        "legal": "50d3bc596ad0d80f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "91d56a3b7f9ae3cf"
+      }
+    },
+    {
+      "actions": [
+        462,
+        449,
+        326
+      ],
+      "hashes": {
+        "belief": "5f2c1518b8b20212",
+        "cards": "f8de218a46e7f41d",
+        "done": "709e80c88487a241",
+        "event_cards": "c8d103f02dfaa103",
+        "events": "fde30377123840cf",
+        "events_len": "10992b2e9437dfad",
+        "global": "6e00650ce0ef9ba3",
+        "legal": "e32d54562d147453",
+        "reward": "2ea9ab9198d16380",
+        "seat": "e06aa8daad92fbfc"
+      }
+    },
+    {
+      "actions": [
+        453,
+        448,
+        319
+      ],
+      "hashes": {
+        "belief": "e38aed0ce3e9b3ae",
+        "cards": "f575825099492438",
+        "done": "709e80c88487a241",
+        "event_cards": "c12e18b1fbedee3a",
+        "events": "a1b96d81c5e2ebcd",
+        "events_len": "6ac36335c83ab551",
+        "global": "4ee45dd0884c49c4",
+        "legal": "c80c2b1d3ba0a2b5",
+        "reward": "2ea9ab9198d16380",
+        "seat": "21dca9070d10bfaa"
+      }
+    },
+    {
+      "actions": [
+        477,
+        447,
+        355
+      ],
+      "hashes": {
+        "belief": "80d10d724471d900",
+        "cards": "bbbaa45f1c156309",
+        "done": "709e80c88487a241",
+        "event_cards": "4ed1f6144d6ffcc1",
+        "events": "5a18156d45fb33b8",
+        "events_len": "b865c939012aae25",
+        "global": "0162999738f5176c",
+        "legal": "8a42c648ab3b2515",
+        "reward": "2ea9ab9198d16380",
+        "seat": "302ad6bb149d03b7"
+      }
+    },
+    {
+      "actions": [
+        427,
+        444,
+        398
+      ],
+      "hashes": {
+        "belief": "724197bc70529a58",
+        "cards": "533dcd53722ac524",
+        "done": "709e80c88487a241",
+        "event_cards": "74328a3cae2d5460",
+        "events": "c1dc0dfd106dabb5",
+        "events_len": "e01154f640f8119c",
+        "global": "3fb3b01e83758e74",
+        "legal": "c0bda8595a2f6ca0",
+        "reward": "2ea9ab9198d16380",
+        "seat": "6e849a7c48bcd132"
+      }
+    },
+    {
+      "actions": [
+        464,
+        442,
+        457
+      ],
+      "hashes": {
+        "belief": "fd6d1a7186f78d22",
+        "cards": "9177b8762dcb9a7f",
+        "done": "709e80c88487a241",
+        "event_cards": "dd938be1642b55d8",
+        "events": "2de93821596e39e5",
+        "events_len": "52d4b2e14aa63273",
+        "global": "9a4c9ac0ef9677c5",
+        "legal": "4f443ba6ed0ea232",
+        "reward": "2ea9ab9198d16380",
+        "seat": "d42a0f6be1f3d160"
+      }
+    },
+    {
+      "actions": [
+        468,
+        446,
+        459
+      ],
+      "hashes": {
+        "belief": "d22f30ea3218b8b5",
+        "cards": "ee44cad4a08db3b9",
+        "done": "709e80c88487a241",
+        "event_cards": "58990410b40e1a5a",
+        "events": "71fbe690a7145284",
+        "events_len": "1f26091fa71f2c05",
+        "global": "84f0eca4c1770303",
+        "legal": "5cfe76c2916ffd3d",
+        "reward": "2ea9ab9198d16380",
+        "seat": "d05796eb3a889d20"
+      }
+    },
+    {
+      "actions": [
+        457,
+        461,
+        464
+      ],
+      "hashes": {
+        "belief": "7dcc273216e0db72",
+        "cards": "4b1c3feb54e6a5f5",
+        "done": "709e80c88487a241",
+        "event_cards": "0dbe250455f8e2f9",
+        "events": "b39bdc47c164c9c7",
+        "events_len": "f3b130a6c9041720",
+        "global": "d7babe5299edbcdb",
+        "legal": "62e40b7502e3f5fa",
+        "reward": "2ea9ab9198d16380",
+        "seat": "604365608460d7f0"
+      }
+    },
+    {
+      "actions": [
+        459,
+        520,
+        448
+      ],
+      "hashes": {
+        "belief": "834ca189253c7ef9",
+        "cards": "df8c70fed766327c",
+        "done": "709e80c88487a241",
+        "event_cards": "2b6c87ab93ea73b5",
+        "events": "bacbf8dcafd59b6f",
+        "events_len": "1e0bd0b57f1cdb90",
+        "global": "ec543524536cf278",
+        "legal": "77d826dd4fce711f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "449a8874ce15655f"
+      }
+    },
+    {
+      "actions": [
+        472,
+        470,
+        456
+      ],
+      "hashes": {
+        "belief": "b274f0474350ff77",
+        "cards": "0f98ffd0e247f34c",
+        "done": "709e80c88487a241",
+        "event_cards": "db29c604cc42dc45",
+        "events": "0d7e7d80ee9d42a6",
+        "events_len": "d3d7bcc0c08cc6cd",
+        "global": "056e4301b9aa1d92",
+        "legal": "54a5401473de0d5a",
+        "reward": "2ea9ab9198d16380",
+        "seat": "98cc75a8e9bd50b5"
       }
     },
     {
       "actions": [
         434,
+        429,
+        452
+      ],
+      "hashes": {
+        "belief": "058d08cac863da18",
+        "cards": "9198d5aa43fca06b",
+        "done": "709e80c88487a241",
+        "event_cards": "bb239ed5ea0f0fd7",
+        "events": "46b52739cc9f2530",
+        "events_len": "01ee9ec6c72e44a3",
+        "global": "b2b35547c1c88af5",
+        "legal": "dfda0f470d0a50e1",
+        "reward": "2ea9ab9198d16380",
+        "seat": "0cf3731eacfebf9f"
+      }
+    },
+    {
+      "actions": [
+        471,
+        471,
+        443
+      ],
+      "hashes": {
+        "belief": "6b2aeeccc8625173",
+        "cards": "e0b2c39f025ef6c1",
+        "done": "709e80c88487a241",
+        "event_cards": "e16a0e255452ad7d",
+        "events": "780973367ad69f3c",
+        "events_len": "e5a3431af96a0294",
+        "global": "28c0844aef500677",
+        "legal": "e1c40c585865fc9f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "81e5ec0b76146b12"
+      }
+    },
+    {
+      "actions": [
+        475,
+        465,
+        437
+      ],
+      "hashes": {
+        "belief": "c7d7ca6610175217",
+        "cards": "def0228a7f971f18",
+        "done": "709e80c88487a241",
+        "event_cards": "dfc1f7baeac8456b",
+        "events": "b3a0dcc37b136495",
+        "events_len": "64c5395dedf905ce",
+        "global": "f9b211bea7d37706",
+        "legal": "198478c6d81604c5",
+        "reward": "2ea9ab9198d16380",
+        "seat": "330b77abfad6ee68"
+      }
+    },
+    {
+      "actions": [
+        456,
+        467,
+        451
+      ],
+      "hashes": {
+        "belief": "4328e1f4193f29f6",
+        "cards": "87e67e416a62170f",
+        "done": "709e80c88487a241",
+        "event_cards": "16213db2a8ba9eb4",
+        "events": "b96146b0950b6927",
+        "events_len": "0b6459aa92d40f35",
+        "global": "a98a0a824575e652",
+        "legal": "5300f0dec6a1581b",
+        "reward": "2ea9ab9198d16380",
+        "seat": "c3ee273daa75d921"
+      }
+    },
+    {
+      "actions": [
+        473,
+        478,
+        439
+      ],
+      "hashes": {
+        "belief": "439802b0b148ef03",
+        "cards": "801ec40da51b06d1",
+        "done": "709e80c88487a241",
+        "event_cards": "4bb6fcf5ecf9e4e4",
+        "events": "96f29645e6369afe",
+        "events_len": "098a4bc24f91f5cf",
+        "global": "db6fe3289797eb94",
+        "legal": "12e668ec97a7d217",
+        "reward": "2ea9ab9198d16380",
+        "seat": "19258db73b6e41d8"
+      }
+    },
+    {
+      "actions": [
+        476,
+        430,
+        446
+      ],
+      "hashes": {
+        "belief": "cce4e738bdcb5abe",
+        "cards": "5349d978463094f1",
+        "done": "709e80c88487a241",
+        "event_cards": "254e402fad85971c",
+        "events": "b29d956b56db94ae",
+        "events_len": "465984206ccb2bc8",
+        "global": "bdd21a411227e31a",
+        "legal": "dd08538fab6475e8",
+        "reward": "2ea9ab9198d16380",
+        "seat": "7a3c56bcb06889fd"
+      }
+    },
+    {
+      "actions": [
+        435,
+        427,
+        435
+      ],
+      "hashes": {
+        "belief": "0fdc9d65dfb0f9da",
+        "cards": "07db329a2b974649",
+        "done": "709e80c88487a241",
+        "event_cards": "17c39f9e6342022a",
+        "events": "edcac3b54e74e808",
+        "events_len": "f9159ff15f9e41d3",
+        "global": "7293b8f10d9932f4",
+        "legal": "e4fe8d8a578aca58",
+        "reward": "2ea9ab9198d16380",
+        "seat": "d9249c7d7cb7621e"
+      }
+    },
+    {
+      "actions": [
+        442,
         433,
+        449
+      ],
+      "hashes": {
+        "belief": "619ffbd0d9a4383b",
+        "cards": "3b2f75c6030da3cc",
+        "done": "709e80c88487a241",
+        "event_cards": "4a6cf12610dace59",
+        "events": "19278445a7051418",
+        "events_len": "fede4d8768090068",
+        "global": "079742319fba2e6f",
+        "legal": "131d8a14ab93fad9",
+        "reward": "2ea9ab9198d16380",
+        "seat": "1c8ee443d232409a"
+      }
+    },
+    {
+      "actions": [
+        446,
+        426,
+        442
+      ],
+      "hashes": {
+        "belief": "d3660b3284dd6015",
+        "cards": "3412b607c2f2e4b9",
+        "done": "709e80c88487a241",
+        "event_cards": "2de2fa47f7449530",
+        "events": "f51826e47a1d8781",
+        "events_len": "828be73480fec1cd",
+        "global": "df71c88a7603f35e",
+        "legal": "30334b56d78e6085",
+        "reward": "2ea9ab9198d16380",
+        "seat": "7d450465ceb49083"
+      }
+    },
+    {
+      "actions": [
+        470,
+        439,
+        440
+      ],
+      "hashes": {
+        "belief": "effec7090e21a4c2",
+        "cards": "866d577d3e2b8165",
+        "done": "709e80c88487a241",
+        "event_cards": "79802876a4c9ee2f",
+        "events": "eecdd3eca939aeb9",
+        "events_len": "996012dcb3fc8885",
+        "global": "8394d89461be75ef",
+        "legal": "a6ca7b23aced6e30",
+        "reward": "2ea9ab9198d16380",
+        "seat": "c17f23b1052241c6"
+      }
+    },
+    {
+      "actions": [
+        444,
+        474,
+        430
+      ],
+      "hashes": {
+        "belief": "00c935a712ba6e42",
+        "cards": "bab37ad2ac44335a",
+        "done": "709e80c88487a241",
+        "event_cards": "c6427cff12aad7f8",
+        "events": "d4b69ce257fd2a2b",
+        "events_len": "f63ddaf273d31959",
+        "global": "cbba47759480adf4",
+        "legal": "80d8da8440d15707",
+        "reward": "2ea9ab9198d16380",
+        "seat": "3f93f3a9838ed728"
+      }
+    },
+    {
+      "actions": [
+        451,
+        458,
+        444
+      ],
+      "hashes": {
+        "belief": "1c732c01a202e2a8",
+        "cards": "0eb8444d02dbf989",
+        "done": "709e80c88487a241",
+        "event_cards": "e476665c3d08153b",
+        "events": "47f2151769f6f968",
+        "events_len": "d5b7894369d7ce67",
+        "global": "e94ccf2ad40d5e38",
+        "legal": "28451f2360829e23",
+        "reward": "2ea9ab9198d16380",
+        "seat": "3902a097648ed564"
+      }
+    },
+    {
+      "actions": [
+        449,
+        454,
+        453
+      ],
+      "hashes": {
+        "belief": "c035a93a5d58afb1",
+        "cards": "f80ac8cc80077408",
+        "done": "fb50dc0717ff266c",
+        "event_cards": "5828b0c681cffd0e",
+        "events": "3533bd082e478b1a",
+        "events_len": "58f1d80309fe2a03",
+        "global": "2d40c04ef85ba4c8",
+        "legal": "977a1f8006e6750b",
+        "reward": "bcdef7c68146533e",
+        "seat": "b389a6884b289d4b"
+      }
+    },
+    {
+      "actions": [
+        110,
+        457,
+        447
+      ],
+      "hashes": {
+        "belief": "ffa6db76e8071751",
+        "cards": "edd705163b2a168d",
+        "done": "709e80c88487a241",
+        "event_cards": "f972fe374294c200",
+        "events": "8ca1bc83da5421d5",
+        "events_len": "9ff3d1a22855502e",
+        "global": "53ae867392554936",
+        "legal": "0284eed3ef33613a",
+        "reward": "2ea9ab9198d16380",
+        "seat": "da40a74e2d9fd4a2"
+      }
+    },
+    {
+      "actions": [
+        53,
+        453,
+        478
+      ],
+      "hashes": {
+        "belief": "1a9d58776e5f8c4b",
+        "cards": "6202ed89c6c4f698",
+        "done": "709e80c88487a241",
+        "event_cards": "89df041ab3336ad8",
+        "events": "b02632eecf7fb5b5",
+        "events_len": "883079652c3addd0",
+        "global": "28b8d9f02dbb336e",
+        "legal": "2b968b8fc4599208",
+        "reward": "2ea9ab9198d16380",
+        "seat": "a8dad088d9b94a2c"
+      }
+    },
+    {
+      "actions": [
+        114,
+        462,
+        428
+      ],
+      "hashes": {
+        "belief": "d9be16afe5bc5c55",
+        "cards": "cfc2391114a632ad",
+        "done": "709e80c88487a241",
+        "event_cards": "c5c0ba1d19a75cce",
+        "events": "6cebbbf3d6022553",
+        "events_len": "22f9c96bd0ad32dd",
+        "global": "e38cefac3a682f2c",
+        "legal": "8363db81c2eb5b37",
+        "reward": "2ea9ab9198d16380",
+        "seat": "4965a29215157a56"
+      }
+    },
+    {
+      "actions": [
+        307,
+        463,
+        471
+      ],
+      "hashes": {
+        "belief": "4ccfe10ff04713bc",
+        "cards": "e62f0cc93ee49422",
+        "done": "709e80c88487a241",
+        "event_cards": "74656522455e765a",
+        "events": "273c745f532e3118",
+        "events_len": "28c5e60dfc99c44c",
+        "global": "3b430ec17282b429",
+        "legal": "1683d21bbd49546f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "a12f94f13be64d7d"
+      }
+    },
+    {
+      "actions": [
+        325,
+        436,
+        441
+      ],
+      "hashes": {
+        "belief": "9e4031a1d068c3e5",
+        "cards": "660a91b7a631bd7f",
+        "done": "709e80c88487a241",
+        "event_cards": "d9466cad9887b8b2",
+        "events": "5604119421543734",
+        "events_len": "ef0ce682292680ef",
+        "global": "2548152fc4dd8732",
+        "legal": "0fd6c59a3d4b643b",
+        "reward": "2ea9ab9198d16380",
+        "seat": "81e5ec0b76146b12"
+      }
+    },
+    {
+      "actions": [
+        313,
+        469,
+        463
+      ],
+      "hashes": {
+        "belief": "6a3d879b490eb75d",
+        "cards": "d234c832e16b5ebc",
+        "done": "709e80c88487a241",
+        "event_cards": "909e6b87bc5b7e93",
+        "events": "4358160b4751b591",
+        "events_len": "ff2c0d862fdccf69",
+        "global": "fea8db911d567e91",
+        "legal": "9eee000fec49bff2",
+        "reward": "2ea9ab9198d16380",
+        "seat": "9e5f20a47f51adf1"
+      }
+    },
+    {
+      "actions": [
+        346,
+        450,
+        461
+      ],
+      "hashes": {
+        "belief": "6b611980f6024be8",
+        "cards": "6aea767967c7445e",
+        "done": "709e80c88487a241",
+        "event_cards": "3be852b5de011865",
+        "events": "8c3816297c41be74",
+        "events_len": "4a5e3b098ebbad87",
+        "global": "a3a154372828078c",
+        "legal": "d000363072f1531b",
+        "reward": "2ea9ab9198d16380",
+        "seat": "fab2f21b55393f76"
+      }
+    },
+    {
+      "actions": [
+        385,
+        440,
+        472
+      ],
+      "hashes": {
+        "belief": "527234d8cf6dbc92",
+        "cards": "80dea2c8c17c9165",
+        "done": "709e80c88487a241",
+        "event_cards": "c9c0c81086ea6647",
+        "events": "0ade7a302c84a99b",
+        "events_len": "3448ab6f2c48576d",
+        "global": "4666aa1194875963",
+        "legal": "e06b0999db0dae6f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "68d6862e1d350c06"
+      }
+    },
+    {
+      "actions": [
+        442,
+        445,
+        466
+      ],
+      "hashes": {
+        "belief": "fe32b82bd27b2670",
+        "cards": "b8bb344d875e7915",
+        "done": "709e80c88487a241",
+        "event_cards": "2756a8b029145ea5",
+        "events": "c06df3bcbf82ec1c",
+        "events_len": "406fefc7326076b1",
+        "global": "c229f2a507a53588",
+        "legal": "a2bef5681db5ce32",
+        "reward": "2ea9ab9198d16380",
+        "seat": "5436ee983b8da48a"
+      }
+    },
+    {
+      "actions": [
+        455,
+        477,
+        429
+      ],
+      "hashes": {
+        "belief": "421f7bc5e8d6171b",
+        "cards": "dd4c32eec5375cdb",
+        "done": "709e80c88487a241",
+        "event_cards": "2f01d540aa0fe3f5",
+        "events": "7eb0bcb5003ddb44",
+        "events_len": "89899626e48bb7a5",
+        "global": "6497016247c956bb",
+        "legal": "57ea13a411e49822",
+        "reward": "2ea9ab9198d16380",
+        "seat": "0865ca4013e5543a"
+      }
+    },
+    {
+      "actions": [
+        440,
+        431,
+        476
+      ],
+      "hashes": {
+        "belief": "e1e65ef76a26f2f3",
+        "cards": "7e05e193dbef6b04",
+        "done": "709e80c88487a241",
+        "event_cards": "a3634e718c157b5c",
+        "events": "ffd76f8e4926eb5c",
+        "events_len": "c4c7fb53970f1356",
+        "global": "a72b9343fc4f448e",
+        "legal": "9c777938eb01b67a",
+        "reward": "2ea9ab9198d16380",
+        "seat": "62144c2ea4f8a389"
+      }
+    },
+    {
+      "actions": [
+        451,
+        475,
+        462
+      ],
+      "hashes": {
+        "belief": "51332d5094aa9435",
+        "cards": "c5d7d054522b4ee2",
+        "done": "709e80c88487a241",
+        "event_cards": "d738b0941fc901e6",
+        "events": "a23e4a966e7cea3a",
+        "events_len": "287b74f085ae9364",
+        "global": "966966d831615f14",
+        "legal": "12ebfe04fa8ee12d",
+        "reward": "2ea9ab9198d16380",
+        "seat": "3192e9ae2c854a84"
+      }
+    },
+    {
+      "actions": [
+        450,
+        441,
+        426
+      ],
+      "hashes": {
+        "belief": "22c2592bb6908a6f",
+        "cards": "db4592174978a51c",
+        "done": "709e80c88487a241",
+        "event_cards": "37e2632e39dc5440",
+        "events": "baae5cb8d304d5e6",
+        "events_len": "1487f35958813bad",
+        "global": "c9b13359ddf17324",
+        "legal": "837142b87ea234e2",
+        "reward": "2ea9ab9198d16380",
+        "seat": "96506e6b75f711fc"
+      }
+    },
+    {
+      "actions": [
+        446,
+        455,
+        458
+      ],
+      "hashes": {
+        "belief": "588d7421ad68a809",
+        "cards": "5485e32526471ec5",
+        "done": "709e80c88487a241",
+        "event_cards": "016f7cac55a21756",
+        "events": "1457ef1438a84c15",
+        "events_len": "e56a295af0f55482",
+        "global": "43f0458333c6442d",
+        "legal": "605091cf21045123",
+        "reward": "2ea9ab9198d16380",
+        "seat": "26e932d7918278fb"
+      }
+    },
+    {
+      "actions": [
+        443,
+        473,
+        427
+      ],
+      "hashes": {
+        "belief": "398da6d6da04f94b",
+        "cards": "5c2a5c728ab080f6",
+        "done": "709e80c88487a241",
+        "event_cards": "4f4db06e1730503e",
+        "events": "a5ced9748f82a959",
+        "events_len": "0abcbb8de5de9c39",
+        "global": "36dc500e989ad1a3",
+        "legal": "47c1ea29be0c9fad",
+        "reward": "2ea9ab9198d16380",
+        "seat": "7a3c56bcb06889fd"
+      }
+    },
+    {
+      "actions": [
+        466,
+        476,
+        434
+      ],
+      "hashes": {
+        "belief": "5892992158756f7a",
+        "cards": "d26d1955ee3baacf",
+        "done": "709e80c88487a241",
+        "event_cards": "ceea783e635c2145",
+        "events": "800b257b59e5495d",
+        "events_len": "a45307f94b7f7c25",
+        "global": "f584136d64059e19",
+        "legal": "4c852f585924b49d",
+        "reward": "2ea9ab9198d16380",
+        "seat": "2ca84c21f6c3e58c"
+      }
+    },
+    {
+      "actions": [
+        474,
+        437,
+        470
+      ],
+      "hashes": {
+        "belief": "e38e8ab0791a5aae",
+        "cards": "54a45da8c6c8ce71",
+        "done": "709e80c88487a241",
+        "event_cards": "bd0721746a019afd",
+        "events": "c0119e8f1ca72ec4",
+        "events_len": "72c4df9f31ce52df",
+        "global": "a8c47dbab6d5a77a",
+        "legal": "22ab8defdb620687",
+        "reward": "2ea9ab9198d16380",
+        "seat": "1f91fc716ad664bd"
+      }
+    },
+    {
+      "actions": [
+        431,
+        434,
+        432
+      ],
+      "hashes": {
+        "belief": "76e6d82884cb7db2",
+        "cards": "7b8d77724f1f18b7",
+        "done": "709e80c88487a241",
+        "event_cards": "37d18b25e2bd8636",
+        "events": "45cb54f6f47e717a",
+        "events_len": "38b2c4fbdcbdb976",
+        "global": "f05569804aa5dc7f",
+        "legal": "72a02c6c18d9954f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "11047585fe102fbb"
+      }
+    },
+    {
+      "actions": [
+        475,
+        468,
+        477
+      ],
+      "hashes": {
+        "belief": "4e9ea27be827f546",
+        "cards": "1ca5c64122a30fec",
+        "done": "709e80c88487a241",
+        "event_cards": "078b1e52e618b52d",
+        "events": "b7496cb92a83abb3",
+        "events_len": "38b98a6f55c7542e",
+        "global": "f035b0cf0cf69dd0",
+        "legal": "876bef3131789bf8",
+        "reward": "2ea9ab9198d16380",
+        "seat": "636952d3023d8cf5"
+      }
+    },
+    {
+      "actions": [
+        472,
+        472,
+        468
+      ],
+      "hashes": {
+        "belief": "8c325c08e326b1b5",
+        "cards": "0280e7cf5c7f447c",
+        "done": "faee935763044f12",
+        "event_cards": "048c05a774c321ea",
+        "events": "6543ebec8af616ca",
+        "events_len": "334645c2905590db",
+        "global": "ef76da148461ccbb",
+        "legal": "7c3430762007fc80",
+        "reward": "20c55354413954e8",
+        "seat": "b1ffbb9a5f3a5cc5"
+      }
+    },
+    {
+      "actions": [
+        468,
+        138,
+        465
+      ],
+      "hashes": {
+        "belief": "e1b506da0bb901ad",
+        "cards": "9f676846a53daef5",
+        "done": "709e80c88487a241",
+        "event_cards": "7bbb7f25ddac1bee",
+        "events": "2de733529f4f654e",
+        "events_len": "070d94482f34bb57",
+        "global": "5b3c4b9158ea9af0",
+        "legal": "53c6f66fde799bcf",
+        "reward": "2ea9ab9198d16380",
+        "seat": "28f620f5c9be0bab"
+      }
+    },
+    {
+      "actions": [
+        454,
+        20,
+        436
+      ],
+      "hashes": {
+        "belief": "0d249e6941fda111",
+        "cards": "8f75f00af67d3f20",
+        "done": "709e80c88487a241",
+        "event_cards": "c9f9fc70e07cd757",
+        "events": "f0ae757eba5ef358",
+        "events_len": "d0479764034b881c",
+        "global": "581dda685b841e9e",
+        "legal": "3164f5baa5354968",
+        "reward": "2ea9ab9198d16380",
+        "seat": "f186f2262ae48f2a"
+      }
+    },
+    {
+      "actions": [
+        457,
+        21,
+        460
+      ],
+      "hashes": {
+        "belief": "2c9ec62bd31d236e",
+        "cards": "b4f50d4c80adcc40",
+        "done": "709e80c88487a241",
+        "event_cards": "eaa3387c06a1a51c",
+        "events": "119c87819a611e3f",
+        "events_len": "25c4194f707102c2",
+        "global": "b84dd516720f282b",
+        "legal": "9e888c6c0a33af81",
+        "reward": "2ea9ab9198d16380",
+        "seat": "b76875c50ef704db"
+      }
+    },
+    {
+      "actions": [
+        459,
+        141,
+        469
+      ],
+      "hashes": {
+        "belief": "ef4193c872d4aa02",
+        "cards": "9527e58c19aaac1c",
+        "done": "709e80c88487a241",
+        "event_cards": "0da36ea427147664",
+        "events": "71a685c85034746c",
+        "events_len": "15c0dec6fcaadc20",
+        "global": "e805a42ad75796f3",
+        "legal": "067a8e6c9d3e3b16",
+        "reward": "2ea9ab9198d16380",
+        "seat": "73c150fb3bb1a3de"
+      }
+    },
+    {
+      "actions": [
+        460,
+        344,
+        467
+      ],
+      "hashes": {
+        "belief": "05f7f2c4ebf21382",
+        "cards": "ed42f73cd1303104",
+        "done": "709e80c88487a241",
+        "event_cards": "8279ac04d0255178",
+        "events": "3b31c861ea4e09b1",
+        "events_len": "43b56411980f2ba1",
+        "global": "3897d9d9cd955e2c",
+        "legal": "fead74c734e0f95f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "e88c22f1d502be8a"
+      }
+    },
+    {
+      "actions": [
+        462,
+        327,
+        475
+      ],
+      "hashes": {
+        "belief": "31e3603a6d0fc033",
+        "cards": "b363df01b8b3229b",
+        "done": "709e80c88487a241",
+        "event_cards": "1cb1ff5c5f7f5a05",
+        "events": "9aadc7c28aab9df5",
+        "events_len": "19f97d405965179c",
+        "global": "3eeb5b6681c520e6",
+        "legal": "0caefef0796c4040",
+        "reward": "2ea9ab9198d16380",
+        "seat": "c4fde33cae1b85a1"
+      }
+    },
+    {
+      "actions": [
+        461,
+        354,
+        433
+      ],
+      "hashes": {
+        "belief": "2dbbe9e4cc4a0345",
+        "cards": "b061a26c2175ad97",
+        "done": "709e80c88487a241",
+        "event_cards": "a91d163fec05e810",
+        "events": "eafab958f57af3fa",
+        "events_len": "8f7317cc83f77668",
+        "global": "1ae521124d0114a7",
+        "legal": "b268b391257290b7",
+        "reward": "2ea9ab9198d16380",
+        "seat": "576f01424743fd8c"
+      }
+    },
+    {
+      "actions": [
+        470,
+        330,
+        450
+      ],
+      "hashes": {
+        "belief": "722b5f9a4c8795a0",
+        "cards": "ac8153f2f9dc13cd",
+        "done": "709e80c88487a241",
+        "event_cards": "61844a758a341b4d",
+        "events": "2f8148f1df351c08",
+        "events_len": "efe2aa4531726772",
+        "global": "3b0e8e2f0e4152f4",
+        "legal": "e9c0e5541c95cbcd",
+        "reward": "2ea9ab9198d16380",
+        "seat": "1c8ee443d232409a"
+      }
+    },
+    {
+      "actions": [
+        441,
+        425,
+        455
+      ],
+      "hashes": {
+        "belief": "fb433cfb4fffec73",
+        "cards": "12fe808ad0fcf4cc",
+        "done": "709e80c88487a241",
+        "event_cards": "4594e1491456ac9f",
+        "events": "7f2415de863a9097",
+        "events_len": "6a1193465e7cebd3",
+        "global": "921b3a31eed5f46d",
+        "legal": "584eb5d6a955cd3f",
+        "reward": "2ea9ab9198d16380",
+        "seat": "8be77d9aea1fa1f7"
+      }
+    },
+    {
+      "actions": [
+        469,
+        475,
+        473
+      ],
+      "hashes": {
+        "belief": "c812e58ab774ab7f",
+        "cards": "fdce9a2a728aa8d8",
+        "done": "cf7605ed1bc735f6",
+        "event_cards": "f28361ee5a9a3684",
+        "events": "6c07c5f509efe534",
+        "events_len": "2f7ae2e0e19a67b6",
+        "global": "d38665aca4d33be3",
+        "legal": "fe25f0c92dcd369e",
+        "reward": "99d6d1216b329539",
+        "seat": "31190090408f837a"
+      }
+    },
+    {
+      "actions": [
+        448,
+        474,
         0
       ],
       "hashes": {
-        "belief": "49a5eac55123d1e9",
-        "cards": "6d169a0796dfb832",
+        "belief": "3bd423524a822831",
+        "cards": "bcd7d6a7ce036628",
         "done": "709e80c88487a241",
-        "event_cards": "525dff616a364a47",
-        "events": "f493be3344b3c928",
-        "events_len": "b9e5b90411be26e6",
-        "global": "6e184079ce2b2f56",
-        "legal": "dbf20da66423e170",
+        "event_cards": "e7cc8e7ef708d824",
+        "events": "736a66e9f51377a4",
+        "events_len": "9fe6b98f80307995",
+        "global": "2d55cfed4a6319d3",
+        "legal": "8818e3d852c4c5bc",
         "reward": "2ea9ab9198d16380",
-        "seat": "91d56a3b7f9ae3cf"
+        "seat": "d04468d46671f8bb"
+      }
+    },
+    {
+      "actions": [
+        429,
+        477,
+        0
+      ],
+      "hashes": {
+        "belief": "f5b07c614e3f0552",
+        "cards": "acca18a81e39e573",
+        "done": "709e80c88487a241",
+        "event_cards": "e71cfedeae8ebd72",
+        "events": "b263c5871a46b9dd",
+        "events_len": "9048fc24838f009c",
+        "global": "d6e97beb9f6bd626",
+        "legal": "c5df558763968766",
+        "reward": "2ea9ab9198d16380",
+        "seat": "fa2111168ab8ae62"
+      }
+    },
+    {
+      "actions": [
+        473,
+        465,
+        0
+      ],
+      "hashes": {
+        "belief": "7936ddc8515d38cb",
+        "cards": "f449bcac45c2d1b5",
+        "done": "709e80c88487a241",
+        "event_cards": "fe5cd43f3d400ece",
+        "events": "9120adcb38c4a26a",
+        "events_len": "7bd23034bcba07e4",
+        "global": "9c0988fcba5c9dbc",
+        "legal": "b6ba30695ade55f9",
+        "reward": "2ea9ab9198d16380",
+        "seat": "8cfa3b52b2b4d520"
+      }
+    },
+    {
+      "actions": [
+        471,
+        476,
+        0
+      ],
+      "hashes": {
+        "belief": "bf37f5671d421527",
+        "cards": "cf001f822ad99e0d",
+        "done": "709e80c88487a241",
+        "event_cards": "dbfa3ba4ceedbc87",
+        "events": "4c24512a1d0be908",
+        "events_len": "f88586cae2d889c7",
+        "global": "2a2d08687cbfa9b3",
+        "legal": "161ca69a9b9502f7",
+        "reward": "2ea9ab9198d16380",
+        "seat": "56452094781a9653"
+      }
+    },
+    {
+      "actions": [
+        433,
+        469,
+        0
+      ],
+      "hashes": {
+        "belief": "7d0c45165261857a",
+        "cards": "8300b36201628b0c",
+        "done": "709e80c88487a241",
+        "event_cards": "0472d22125356f10",
+        "events": "1d2a72fd5de52805",
+        "events_len": "a1aa382770e25054",
+        "global": "0e66919d061a9504",
+        "legal": "0033d2e7637a397a",
+        "reward": "2ea9ab9198d16380",
+        "seat": "32681646214c030f"
       }
     }
   ]

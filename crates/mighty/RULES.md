@@ -177,6 +177,8 @@ Not expressible or left to others:
   your only card of it, you must play the mighty.
 - Jokers have no power on the first and last trick.
 - Trump may not lead the first trick; the other four may play it there.
+- Misdeal: a hand worth one point card or less (point cards 1, joker −½,
+  ♠A −1) may be thrown in (owner, 2026-10-05; it was ½ or less).
 - Trick order: the mighty, the joker of trump's colour, trump, the other
   joker, then everything else. With ♠ trump, 홍조커 beats a ♣ lead but
   loses to a ♠ lead, which is trump.

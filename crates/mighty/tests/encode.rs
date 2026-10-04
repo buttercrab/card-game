@@ -159,7 +159,8 @@ impl Fingerprint {
 }
 
 /// What every seat sees at every position of a fixed set of random games,
-/// bit for bit. Like the spec, the values change only with `VERSION`;
+/// bit for bit. The values change with `VERSION`, or when a preset these
+/// games are drawn from changes its rules (then re-pin, keeping `VERSION`);
 /// faster encoders must reproduce this exactly.
 #[test]
 fn encodings_are_pinned() {
@@ -176,8 +177,8 @@ fn encodings_are_pinned() {
     }
     assert_eq!(positions, 7833);
     assert_eq!(
-        fingerprint.0, 0x399c_baa2_fc25_9c4d,
-        "the encoding changed; bump VERSION and pin the new fingerprint"
+        fingerprint.0, 0xd307_7bb1_4d77_944e,
+        "the encoding changed: bump VERSION and pin the new fingerprint (only re-pin if a preset's rules changed)"
     );
 }
 
