@@ -1277,18 +1277,17 @@
 
   /* The felt: four seats in fixed bands (two on top, one each side), the
      trick in the middle, each card between its player and the centre. */
-  /* A deciding round: the edges of the table darken a little, drawing the
-     eye to the cards in the middle. */
+  /* A deciding round: a soft light gathers on the middle of the table,
+     fading to nothing before any edge, so it never draws a box. */
   .felt::before {
     content: '';
     position: absolute;
-    inset: -8px;
+    inset: 0;
     z-index: 0;
-    border-radius: 24px;
-    background: radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 0.14) 100%);
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--card) 14%, transparent), transparent);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 500ms var(--ease-standard);
+    transition: opacity 600ms var(--ease-standard);
   }
   .felt.tense::before {
     opacity: 1;
