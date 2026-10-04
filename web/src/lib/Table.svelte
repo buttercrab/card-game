@@ -17,6 +17,7 @@
   import SuitIcon from './SuitIcon.svelte';
   import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
+  import { after, later } from './clock';
   import { flyFrom, flyTo, juice, pop, ring, settle } from './motion';
   import { setMood } from './music.svelte';
   import { settings } from './settings.svelte';
@@ -213,11 +214,11 @@
     let cancelled = false;
     const k = settings.speed === 'fast' ? 0.5 : 1;
     (async () => {
-      await new Promise((r) => setTimeout(r, 450 * k));
+      await after(450 * k);
       for (let i = 1; i <= lines && !cancelled; i++) {
         step = i;
         sound.tally(i);
-        await new Promise((r) => setTimeout(r, 380 * k));
+        await after(380 * k);
       }
       if (cancelled) return;
       step = lines + 1;
@@ -228,7 +229,8 @@
         const f = Math.min((now - t0) / span, 1);
         const ease = 1 - (1 - f) ** 3;
         shownPay = pays.map((p) => Math.round(p * ease));
-        if (f < 1) requestAnimationFrame(frame);
+        // A hidden tab draws no frames: the count steps on the worker clock.
+        if (f < 1) (document.hidden ? later(() => frame(performance.now()), 50) : requestAnimationFrame(frame));
         else {
           tallied = true;
           if (result.run) {
@@ -238,7 +240,7 @@
           }
         }
       };
-      requestAnimationFrame(frame);
+      frame(t0);
     })();
     return () => {
       cancelled = true;
@@ -490,10 +492,10 @@
     return new Promise((resolve) => {
       const done = () => {
         pauses.delete(done);
-        clearTimeout(timer);
+        cancel();
         resolve();
       };
-      const timer = setTimeout(done, ms);
+      const cancel = later(done, ms);
       pauses.add(done);
     });
   }
@@ -531,9 +533,11 @@
       while (queue.length > 0) {
         const next = queue.shift()!;
         const k = pace();
-        // Too far behind or not being watched: catch up at once.
+        // Too far behind: catch up at once. A hidden tab plays on as if
+        // watched, on the worker clock, so coming back finds the hand where
+        // it would be.
         cues(shown, next);
-        if (k === 0 || document.hidden || queue.length > 3) {
+        if (k === 0 || queue.length > 3) {
           for (const a of felt?.getAnimations({ subtree: true }) ?? []) a.finish();
           resolving = null;
           winner = null;
@@ -678,7 +682,7 @@
     seatCues[seat] = { text, id };
     sound.cue(kind);
     if (seat === me) juice(tray ?? null, 0.25);
-    setTimeout(() => {
+    later(() => {
       if (seatCues[seat]?.id === id) delete seatCues[seat];
     }, 1500);
   }
@@ -843,7 +847,7 @@
       cueAt(after.friend, null, 'friend');
       // The 주공's seat answers, linking the two.
       const partner = typeof next.view.phase === 'object' && 'Play' in next.view.phase ? next.view.phase.Play.declarer : null;
-      if (partner !== null) setTimeout(() => cueAt(partner, null, 'answer'), 260 * k);
+      if (partner !== null) later(() => cueAt(partner, null, 'answer'), 260 * k);
       await pause(700 * k);
       revealed = null;
     }

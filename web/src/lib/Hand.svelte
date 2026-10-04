@@ -192,16 +192,12 @@
   .spot:not(:first-child) {
     margin-left: var(--overlap);
   }
-  .spot:has(:global(.raised)) {
-    z-index: 1;
-  }
+  /* A raised card keeps its place in the fan: it lifts, but never comes
+     forward over the card after it. */
   /* Choosing discards: a chosen card lifts clear of the row, as far as the
      tray's top padding allows (the exchange controls sit just above its
-     rim). It keeps its place in the fan and casts no raised shadow, which
-     would show under it as a second edge; the lift alone says it is picked. */
-  .choose .spot:has(:global(.raised)) {
-    z-index: auto;
-  }
+     rim). It casts no raised shadow, which would show under it as a second
+     edge; the lift alone says it is picked. */
   .choose :global(.card.raised) {
     translate: 0 -18px;
     box-shadow: var(--shadow-card);

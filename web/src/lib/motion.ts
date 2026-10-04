@@ -3,6 +3,8 @@
 // element is gone or the browser lacks the API, so motion can never block
 // the game.
 
+import { after } from './clock';
+
 export const EASE_STANDARD = 'cubic-bezier(0.2, 0, 0, 1)';
 export const EASE_SETTLE = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
 
@@ -10,13 +12,26 @@ export function centre(rect: DOMRect): { x: number; y: number } {
   return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
-function finished(animation: Animation | undefined): Promise<void> {
-  return animation ? animation.finished.then(() => undefined, () => undefined) : Promise.resolve();
+/**
+ * Resolves when the animation ends, or once its time is up: a hidden tab
+ * draws no frames, so its animations never finish on their own, and the
+ * table must not wait on them. Past its time it is finished by hand.
+ */
+function finished(animation: Animation | undefined, ms: number): Promise<void> {
+  if (!animation) return Promise.resolve();
+  const done = animation.finished.then(
+    () => undefined,
+    () => undefined,
+  );
+  const due = after(ms + 50).then(() => {
+    if (animation.playState === 'running') animation.finish();
+  });
+  return Promise.race([done, due]);
 }
 
 function run(el: Element | null, keyframes: Keyframe[], options: KeyframeAnimationOptions): Promise<void> {
   if (!el || typeof el.animate !== 'function' || !options.duration) return Promise.resolve();
-  return finished(el.animate(keyframes, options));
+  return finished(el.animate(keyframes, options), Number(options.duration) + (options.delay ?? 0));
 }
 
 /** Plays `el` in from where `from` was, so it looks like it travelled. */
@@ -64,7 +79,7 @@ export function pop(el: Element | null, duration: number): Promise<void> {
 }
 
 export function wait(ms: number): Promise<void> {
-  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+  return after(ms);
 }
 
 /** Whether motion is wanted at all: off in settings or by the system. */
