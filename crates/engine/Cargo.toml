@@ -1,6 +1,6 @@
 [package]
 name = "engine"
-description = "Game-agnostic core: the interface every card game implements, bots and model encodings"
+description = "Game-agnostic core: the interface every card game implements, bots, model encodings and a JSON boundary"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,6 +9,8 @@ license.workspace = true
 [dependencies]
 rand.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

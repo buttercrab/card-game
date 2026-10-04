@@ -6,10 +6,13 @@
 //! action log.
 //!
 //! Above the game itself: [`Encode`] turns what a seat sees into model
-//! inputs.
+//! inputs, and [`DynGame`] drives any game through JSON, for code that
+//! should not know which game it runs.
 
+pub mod dynamic;
 pub mod encode;
 
+pub use dynamic::{DynError, DynGame, DynState, Erased, JsonGame, PresetInfo, Registry};
 pub use encode::{Encode, Features, Observation, Spec, Unsupported};
 
 use rand::RngCore;

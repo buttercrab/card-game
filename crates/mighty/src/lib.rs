@@ -16,8 +16,9 @@ pub use state::{Action, Bid, Error, FriendCall, HandSummary, Options, Redeal, Re
 pub use trick::Lead;
 pub use view::{PhaseView, View};
 
-use engine::{Game, Turn, Viewer};
+use engine::{Game, JsonGame, Turn, Viewer};
 use rand::RngCore;
+use rules::{Preset, Rules};
 
 /// The [`Game`] implementation for Mighty.
 #[derive(Debug, Clone, Copy, Default)]
@@ -68,5 +69,25 @@ impl Game for Mighty {
 
     fn check_invariants(state: &State) -> Result<(), String> {
         state.check_invariants()
+    }
+}
+
+/// Mighty behind [`engine::DynGame`]: options are [`Options`] and rules
+/// are [`Rules`], as JSON.
+impl JsonGame for Mighty {
+    type Rules = Rules;
+
+    const ID: &'static str = "mighty";
+    const NAME: &'static str = "마이티";
+
+    fn presets() -> Vec<(&'static str, &'static str, Rules)> {
+        Preset::ALL
+            .into_iter()
+            .map(|p| (p.name(), p.title(), p.rules()))
+            .collect()
+    }
+
+    fn validate(rules: &Rules) -> Result<(), String> {
+        rules.validate().map_err(|e| e.to_string())
     }
 }

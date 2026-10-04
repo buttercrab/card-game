@@ -693,6 +693,21 @@ impl Preset {
         }
     }
 
+    /// The short name players know it by, as the table shows it.
+    pub fn title(self) -> &'static str {
+        match self {
+            Preset::Default => "기본",
+            Preset::Ddshs => "대전동신과고",
+            Preset::Dshs => "대구과고",
+            Preset::Kmla => "민사고",
+            Preset::Gsa => "광주과고",
+            Preset::Gshs => "경기과고",
+            Preset::Skku => "성균관대",
+            Preset::Sshs => "서울과고",
+            Preset::Yonsei => "연세대",
+        }
+    }
+
     pub fn rules(self) -> Rules {
         use CardPolicy::*;
         let mut r = Rules::default();
