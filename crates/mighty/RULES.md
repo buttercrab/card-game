@@ -43,8 +43,9 @@ rewritten.
      trump suit on the first trick, holding trump means following with it.
      By default jokers have no power on the first and last trick (confirmed
      for 경기과고).
-   - A held-back card may also be played when the only other choice is a
-     joker: holding only trump and a joker on the first trick forces trump.
+   - A held-back card may also be played when the only other choices are
+     jokers and the mighty: holding only trump, jokers and the mighty on
+     the first trick lets trump be played too.
 5. **Trick winner.** The highest of these wins:
    1. the mighty
    2. the joker (with two jokers: the joker of the trump colour, or of the

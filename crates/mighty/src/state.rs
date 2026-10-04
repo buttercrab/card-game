@@ -358,9 +358,10 @@ impl State {
         let leading = p.plays.is_empty();
 
         // A card held back by policy may still be played when nothing else
-        // is left but jokers: holding only trump and a joker forces trump.
+        // is left but jokers and the mighty: holding only trump and those
+        // means trump may be played too.
         let or_forced = |allowed: Vec<Card>, all: &[Card]| {
-            if allowed.iter().all(|c| c.is_joker()) {
+            if allowed.iter().all(|c| c.is_joker() || *c == mighty) {
                 all.to_vec()
             } else {
                 allowed

@@ -315,6 +315,40 @@ fn only_trump_and_a_joker_left_forces_trump() {
 }
 
 #[test]
+fn trump_may_lead_the_first_trick_when_only_specials_are_left() {
+    // Leading the first trick with nothing but trump, the mighty and jokers:
+    // the specials are no real choice, so trump may be led too.
+    let declarer = "SA BJ RJ H2 H3 H4 H5 H6 H7 H8";
+    let mut rules = Preset::Gshs.rules();
+    rules.policy.trump.first = mighty::rules::CardPolicy::Invalid;
+    let mut state = start(rules, &[declarer], "C2 C3 C4 C5");
+    act(
+        &mut state,
+        Action::Bid(Contract {
+            trump: Some(Suit::Heart),
+            count: 14,
+        }),
+    );
+    for _ in 1..5 {
+        act(&mut state, Action::Pass);
+    }
+    for card in cards("C2 C3 C4 C5") {
+        act(&mut state, Action::Discard(card));
+    }
+    act(&mut state, Action::CallFriend(FriendCall::FirstTrick));
+    assert_eq!(legal_cards(&state), sorted(declarer));
+}
+
+#[test]
+fn trump_may_follow_the_first_trick_when_only_specials_are_left() {
+    let hand = "SA BJ H2 H3 H4 H5 H6 H7 H8 H9";
+    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    to_play(&mut state, FriendCall::FirstTrick);
+    lead(&mut state, "D2");
+    assert_eq!(legal_cards(&state), sorted(hand));
+}
+
+#[test]
 fn a_joker_may_lead_its_colour_where_allowed() {
     let mut rules = Rules::default();
     rules.joker_lead.by_color = true;
