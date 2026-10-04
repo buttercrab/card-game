@@ -500,10 +500,18 @@
     });
   }
 
+  /** Ends every motion on the table at once, except the endless ones (a
+   * figure's blink, a raised card's sway), which have no end to jump to. */
+  function finishAll() {
+    for (const a of felt?.getAnimations({ subtree: true }) ?? []) {
+      if (a.effect?.getComputedTiming().endTime !== Infinity) a.finish();
+    }
+  }
+
   function skipAhead() {
     if (!running) return;
     hurry = true;
-    for (const a of felt?.getAnimations({ subtree: true }) ?? []) a.finish();
+    finishAll();
     for (const done of [...pauses]) done();
   }
 
@@ -538,7 +546,7 @@
         // it would be.
         cues(shown, next);
         if (k === 0 || queue.length > 3) {
-          for (const a of felt?.getAnimations({ subtree: true }) ?? []) a.finish();
+          finishAll();
           resolving = null;
           winner = null;
           shown = next;

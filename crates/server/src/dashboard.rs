@@ -275,7 +275,7 @@ pub fn page(s: &Summary) -> String {
         ],
     );
     body.push_str(
-        "</table><p class=\"note\">브라우저가 자리를 되찾을 때 쓰는 값을 소금 친 해시로만 셉니다.</p></section>",
+        "</table><p class=\"note\">브라우저마다 무작위로 만든 기기 번호를 소금 친 해시로만 셉니다. 기기 번호가 없는 옛 접속은 테이블 자리 토큰으로 셉니다.</p></section>",
     );
 
     body.push_str("<section><h2>사람과 봇</h2><table>");

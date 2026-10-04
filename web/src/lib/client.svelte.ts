@@ -8,6 +8,18 @@ interface Saved {
 
 const NAME_KEY = 'name';
 
+/** A random id for this browser, so the anonymous stats can tell a player
+ * who comes back to a new table. The server keeps only a salted hash. */
+function device(): string | null {
+  try {
+    let id = localStorage.getItem('mighty.device');
+    if (!id) localStorage.setItem('mighty.device', (id = crypto.randomUUID()));
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 function load<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
@@ -91,7 +103,7 @@ export class RoomClient {
       this.status = 'open';
       this.#retry = 500;
       const saved = load<Saved>(this.#key);
-      if (saved) this.#send({ type: 'join', name: saved.name, token: saved.token });
+      if (saved) this.#send({ type: 'join', name: saved.name, token: saved.token, device: device() });
     };
     ws.onmessage = (event) => this.#receive(JSON.parse(event.data) as ServerMsg);
     ws.onclose = async () => {
@@ -158,7 +170,7 @@ export class RoomClient {
     store(NAME_KEY, name);
     const saved = load<Saved>(this.#key);
     store(this.#key, { token: saved?.token ?? '', name });
-    this.#send({ type: 'join', name, token: saved?.token || null, seat: seat ?? null });
+    this.#send({ type: 'join', name, token: saved?.token || null, seat: seat ?? null, device: device() });
   }
 
   leave() {
