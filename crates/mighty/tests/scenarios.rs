@@ -493,3 +493,42 @@ fn others_never_see_the_discards() {
     assert_eq!(discards(Viewer::Seat(1)), None);
     assert_eq!(discards(Viewer::Spectator), None);
 }
+
+#[test]
+fn a_finished_hand_sums_up_every_trick() {
+    use rand::SeedableRng;
+    use rand::seq::IndexedRandom;
+    for seed in 0..40 {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        let mut state = Mighty::new_game(&Options {
+            rules: Rules::default(),
+            first_bidder: 0,
+        })
+        .unwrap();
+        loop {
+            match Mighty::turn(&state) {
+                Turn::Over => break,
+                _ if state.summary().is_some() => panic!("summed up before the end"),
+                Turn::Chance => {
+                    let deal = Mighty::sample_chance(&state, &mut rng);
+                    act(&mut state, deal);
+                }
+                Turn::Seat(_) => {
+                    let action = Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone();
+                    act(&mut state, action);
+                }
+            }
+        }
+        let s = state.summary().expect("the hand is over");
+        assert_eq!(s.rounds.len(), 10);
+        let won: i32 = s.rounds.iter().filter(|&&r| r > 0).map(|&r| i32::from(r)).sum();
+        let in_tricks: i32 = s.rounds.iter().map(|&r| i32::from(r.abs())).sum();
+        // Whatever the tricks did not take was discarded, and counts for the declarer.
+        let discarded = i32::from(s.team_points) - won;
+        assert!((0..=3).contains(&discarded), "seed {seed}: {s:?}");
+        assert_eq!(in_tricks + discarded, 20, "seed {seed}: {s:?}");
+        assert_eq!(s.made, s.team_points >= s.contract.count);
+        assert_eq!(s.friend.is_some(), s.friend_revealed.is_some(), "seed {seed}: {s:?}");
+        assert!(s.friend_revealed.is_none_or(|r| r < 10));
+    }
+}

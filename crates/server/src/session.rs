@@ -36,6 +36,12 @@ pub trait SessionGame:
     /// (zero for its own default) on `threads` threads. Seats differ a
     /// little in temperament so a table of bots does not play as one.
     fn bot(level: BotLevel, seat: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
+
+    /// A finished hand in brief, for the session's story.
+    type Summary: Clone + Serialize + DeserializeOwned + Send + 'static;
+
+    /// The hand in brief, once it is over.
+    fn summary(state: &Self::State) -> Option<Self::Summary>;
 }
 
 /// How well a seated bot plays.
@@ -76,6 +82,7 @@ impl Default for MightySettings {
 
 impl SessionGame for Mighty {
     type Settings = MightySettings;
+    type Summary = mighty::HandSummary;
 
     const NAME: &'static str = "mighty";
 
@@ -119,6 +126,10 @@ impl SessionGame for Mighty {
                 ..SearchBot::default()
             }),
         }
+    }
+
+    fn summary(state: &mighty::State) -> Option<mighty::HandSummary> {
+        state.summary()
     }
 }
 

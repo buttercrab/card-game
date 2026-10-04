@@ -163,6 +163,23 @@ export interface RoomMsg {
   in_hand: boolean;
   /** Each finished hand's payoffs, in order. Older servers leave this out. */
   history?: number[][];
+  /** Each finished hand in brief, in order. Older servers leave this out,
+   * and rooms saved before it may hold fewer of these than `history`. */
+  hands?: HandSummary[];
+}
+
+/** A finished hand in brief, for the session's share card. */
+export interface HandSummary {
+  contract: Contract;
+  declarer: number;
+  friend: number | null;
+  made: boolean;
+  team_points: number;
+  /** Point cards each trick took, oldest first: positive for the declarer's
+   * side (여당), negative for the defence (야당), 0 for none. */
+  rounds: number[];
+  /** The trick during which the friend became known. */
+  friend_revealed: number | null;
 }
 
 export interface StateMsg {

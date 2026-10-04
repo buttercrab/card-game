@@ -1,6 +1,7 @@
 <script lang="ts">
   import DeckPreview from './lib/DeckPreview.svelte';
   import TablePreview from './lib/TablePreview.svelte';
+  import SharePreview from './lib/SharePreview.svelte';
   import Home from './lib/Home.svelte';
   import Room from './lib/Room.svelte';
   import Rulebook from './lib/Rulebook.svelte';
@@ -22,6 +23,8 @@
   <DeckPreview />
 {:else if path === '/preview'}
   <TablePreview />
+{:else if path === '/share'}
+  <SharePreview />
 {:else if rulesFor}
   <main class="rules-page"><Rulebook preset={rulesFor} /></main>
 {:else if roomId}

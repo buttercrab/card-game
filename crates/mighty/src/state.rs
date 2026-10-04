@@ -158,6 +158,23 @@ pub(crate) struct Done {
     pub tricks: Vec<Trick>,
 }
 
+/// A finished hand in brief, for the session's story.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandSummary {
+    pub contract: Contract,
+    pub declarer: Seat,
+    pub friend: Option<Seat>,
+    pub made: bool,
+    pub team_points: u8,
+    /// The point cards each trick took, oldest first: positive when the
+    /// declarer's side won the trick, negative for the defence, 0 for none.
+    /// Points in the discards count in `team_points` only.
+    pub rounds: Vec<i8>,
+    /// The trick during which the friend became known; 0 for a friend
+    /// called by seat, who is known from the start.
+    pub friend_revealed: Option<usize>,
+}
+
 impl State {
     pub(crate) fn new(options: &Options) -> Result<State, Error> {
         let rules = options.rules.clone();
@@ -671,6 +688,38 @@ impl State {
             Phase::Done(d) => Some(&mut d.discards),
             Phase::Dealing | Phase::Bidding(_) => None,
         }
+    }
+
+    /// The finished hand in brief, once it is over.
+    pub fn summary(&self) -> Option<HandSummary> {
+        let Phase::Done(d) = &self.phase else { return None };
+        let team = |s: Seat| s == d.declarer || Some(s) == d.friend;
+        let rounds = d
+            .tricks
+            .iter()
+            .map(|t| {
+                let points = t.plays.iter().filter(|p| p.card.is_point()).count() as i8;
+                if team(t.winner) { points } else { -points }
+            })
+            .collect();
+        let friend_revealed = d.friend.and_then(|friend| match d.call {
+            FriendCall::Seat(_) | FriendCall::FirstTrick => Some(0),
+            FriendCall::Card(card) => d
+                .tricks
+                .iter()
+                .position(|t| t.plays.iter().any(|p| p.seat == friend && p.card == card)),
+            FriendCall::LastTrick => Some(d.tricks.len().saturating_sub(1)),
+            FriendCall::Alone => None,
+        });
+        Some(HandSummary {
+            contract: d.contract,
+            declarer: d.declarer,
+            friend: d.friend,
+            made: d.team_points >= d.contract.count,
+            team_points: d.team_points,
+            rounds,
+            friend_revealed,
+        })
     }
 
     pub(crate) fn payoffs(&self) -> Option<Vec<i64>> {
