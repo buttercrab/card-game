@@ -1,0 +1,23 @@
+{
+  "bytes": 63221324,
+  "decisions": 119057,
+  "decisions_by_bot": {
+    "hard": 11256,
+    "hard:50": 34582,
+    "random": 15100,
+    "보통": 34866,
+    "초보": 23253
+  },
+  "decisions_per_second": 500.0,
+  "games": 2000,
+  "players": {
+    "3": 487,
+    "4": 198,
+    "5": 390,
+    "6": 265,
+    "7": 660
+  },
+  "rule_sets": 40,
+  "seconds": 238.0,
+  "threads": 12
+}
