@@ -7,12 +7,23 @@
   import StatsSheet from './StatsSheet.svelte';
   import Tutorial from './Tutorial.svelte';
   import { settings } from './settings.svelte';
+  import CompareSheet from './CompareSheet.svelte';
+  import PresetPicker from './PresetPicker.svelte';
+  import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
-  import { PRESETS } from './presets';
+  import { PRESET_NAME } from './presets';
+  import { customName, loadCustom, setPending } from './rulesets';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
-  let preset = $state('gshs');
+  /** A preset id, or `custom:<id>` for rules saved on this device. */
+  let choice = $state('gshs');
+  let customs = $state(loadCustom());
+  const chosen = $derived(choice.startsWith('custom:') ? (customs.find((c) => `custom:${c.id}` === choice) ?? null) : null);
+  const preset = $derived(chosen?.base ?? choice);
+  const chosenName = $derived(chosen ? customName(chosen) : (PRESET_NAME[preset] ?? preset));
+  let comparing = $state(false);
+  let editing = $state(false);
   let code = $state('');
   let busy = $state(false);
   let showRules = $state(false);
@@ -41,6 +52,7 @@
       });
       if (!res.ok) throw new Error(String(res.status));
       const id: string = (await res.json()).id;
+      if (!practice && chosen) setPending(id, chosen.base, chosen.rules);
       if (practice) {
         settings.tips = true;
         settings.hints = true;
@@ -80,14 +92,13 @@
   <section class="panel">
     <div class="panel-head">
       <h2>새 테이블</h2>
-      <button class="ghost small" onclick={() => (showRules = true)}>규칙 보기</button>
+      <span class="muted head-note">어떤 규칙으로 할까요?</span>
     </div>
-    <div class="presets" role="radiogroup" aria-label="규칙">
-      {#each PRESETS as p (p.id)}
-        <button class="chip" role="radio" aria-checked={preset === p.id} onclick={() => (preset = p.id)}>
-          {p.name}{#if p.note}<span class="note">{p.note}</span>{/if}
-        </button>
-      {/each}
+    <PresetPicker selected={choice} {customs} onselect={(c) => (choice = c)} />
+    <div class="rule-tools">
+      <button class="ghost small" onclick={() => (showRules = true)}>규칙 보기</button>
+      <button class="ghost small" onclick={() => (comparing = true)}>비교</button>
+      <button class="ghost small" onclick={() => (editing = true)}>고쳐서 쓰기</button>
     </div>
     <button class="primary" onclick={() => create()} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</button>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -130,7 +141,31 @@
 {/if}
 
 {#if showRules}
-  <RulebookSheet {preset} onclose={() => (showRules = false)} />
+  <RulebookSheet {preset} rules={chosen?.rules ?? null} title={chosen ? chosenName : undefined} onclose={() => (showRules = false)} />
+{/if}
+{#if comparing}
+  <CompareSheet
+    name={chosenName}
+    rules={chosen?.rules ?? null}
+    {preset}
+    against={chosen ? chosen.base : preset === 'default' ? 'gshs' : 'default'}
+    {customs}
+    onclose={() => (comparing = false)}
+  />
+{/if}
+{#if editing}
+  <RuleEditor
+    {preset}
+    rules={chosen?.rules ?? null}
+    name={chosen?.name ?? ''}
+    applyLabel="이 규칙으로"
+    note="테이블을 만들면 이 규칙으로 시작해요."
+    onsave={(base, _rules, saved) => {
+      customs = loadCustom();
+      choice = saved ? `custom:${saved.id}` : base;
+    }}
+    onclose={() => (editing = false)}
+  />
 {/if}
 
 <style>
@@ -243,24 +278,19 @@
     align-items: center;
     justify-content: space-between;
   }
-  /* The ghost's label ends at the panel's text edge, not 10px inside it. */
-  .panel-head .small {
-    margin-right: -10px;
-  }
   h2 {
     margin: 0;
     font-size: 17px;
   }
-  .presets {
+  .head-note {
+    font-size: 13px;
+  }
+  /* Quiet tools under the list; the panel's one loud button is below. */
+  .rule-tools {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 6px;
-  }
-  .note {
-    margin-left: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    opacity: 0.7;
+    gap: 0 4px;
+    margin: -4px 0 0 -10px;
   }
   form {
     display: flex;
