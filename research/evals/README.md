@@ -30,6 +30,9 @@ table's levels `easy` (초보), `normal` (보통) and `hard` (고수). The level
 are the server's bots, per-seat bidding temper included, except that
 `hard` deals a fixed 200 times (`search:200:1:0`) where the table deals
 until a time budget runs out: that keeps every run reproducible.
+`belief:MODEL_DIR:SAMPLES` is `hard` at `SAMPLES` deals, dealing the
+cards it cannot see by the belief model in `MODEL_DIR` (an exported run,
+`ml/`'s `cardgame_ml.export`) instead of uniformly.
 
 ## Suites
 

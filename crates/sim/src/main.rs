@@ -39,6 +39,9 @@ struct Args {
     /// `easy`, `normal` and `hard` are the table's 초보, 보통 and 고수
     /// (`hard` is `search:200:1:0`, without the table's time limit), each
     /// bidding a little bolder or more carefully by seat as at the table.
+    /// `belief:MODEL_DIR:SAMPLES` is `hard` at SAMPLES deals, dealing the
+    /// unseen cards by the belief model in MODEL_DIR (built with
+    /// `--features belief`).
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.

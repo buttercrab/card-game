@@ -31,15 +31,17 @@ Rust they are made of changes. CI runs the same:
 
 ```sh
 cd ml
-uv sync --locked            # without PyTorch: lint, types and tests need none
+uv sync --locked --extra torch
 uv run ruff check . ../crates/env-py/python
 uv run ruff format --check . ../crates/env-py/python
 uv run pyright              # strict, the bindings' Python included
 uv run pytest
 ```
 
-Training needs PyTorch, an optional extra so CI stays light:
-`uv sync --extra torch`. On the Mac it runs on MPS
+PyTorch (with `onnx` and `onnxscript` for export) is the optional
+`torch` extra; on Linux it comes from PyTorch's CPU-only index, which
+keeps CI light. Without it the model tests are skipped, but pyright
+needs it. On the Mac training runs on MPS
 (`torch.backends.mps.is_available()`).
 
 ### Change what a model sees
@@ -92,6 +94,38 @@ Shards go to `$CARDGAME_ARTIFACTS/selfplay/<name>/` (by default
 `~/card-game-artifacts`) and the manifest to `research/manifests/`; commit
 the manifest. The same config and commit give the same bytes.
 `cardgame_ml.data.shards.Dataset.open(path).batches(...)` reads it.
+
+A config with `eval_only = true` and `rules = "file:<rule sets>.json"`
+makes data to measure with on a fixed list of rule sets (the evals'
+held-out ones): its manifest's kind is `eval` and training refuses it.
+
+### Train a belief model and play with it
+
+A run is a config in an experiment folder (see
+`research/experiments/2026-10-05-belief-v1/config.toml`). From a clean
+checkout, in `ml/` with the torch extra:
+
+```sh
+nice -n 10 uv run python -m cardgame_ml.train --config ../research/experiments/<folder>/config.toml
+uv run python -m cardgame_ml.train.score --run <name> --dataset selfplay/<data> --out <json>
+uv run python -m cardgame_ml.export --run <name>
+cargo run --release -p infer -- check ~/card-game-artifacts/models/<name>
+```
+
+Training writes `models/<name>/` in the artifact store (it resumes from
+the last epoch if stopped) and the manifest; `score` compares the model
+with the baseline that knows only how many hidden cards each place holds,
+by phase of the hand; `export` adds `model.onnx` and `parity.json`, and
+`infer check` runs them from Rust, compares the logits with PyTorch's and
+times a call. The search then deals by the model as the bot
+`belief:<model dir>:<samples>` in `eval` and in `sim` (built with
+`--features belief`); `SearchBot::sampler` is the setting, off (uniform)
+by default and at the table.
+
+The model's architecture is pinned by a tiny fixture both test suites
+check (`crates/infer/tests/tiny`); rewrite it with
+`uv run python -m cardgame_ml.export.fixture` when the architecture
+changes.
 
 ### Record an artifact kept outside git
 

@@ -14,6 +14,7 @@ before anyone plays it.
 | [`env`](crates/env) | The batched RL environment over any game with an encoding, and the self-play data generator |
 | [`env-py`](crates/env-py) | The environment in Python (`cardgame_env`, PyO3), which `ml` depends on |
 | [`eval`](crates/eval) | Runs the eval suites in [`research/evals`](research/evals): bots measured on fixed deals, with a JSON record and a report |
+| [`infer`](crates/infer) | Runs models trained in `ml` from Rust (ONNX, through the pure-Rust runtime tract): the belief model a search can deal hidden cards by |
 | [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats |
 | [`web`](web) | The table in the browser (Svelte 5 + Vite), in Korean; its look is specified in [DESIGN.md](docs/DESIGN.md) |
 | [`ml`](ml) | Python training for learned bots (uv, PyTorch as an extra) |
@@ -131,7 +132,7 @@ cargo run --release -p sim -- --preset gshs --bots search --focus search:100 --f
 cargo run --release -p eval -- run --suite v1 --bot hard --quick   # the eval suite, a few deals of each part
 (cd web && npm run check)
 cargo run --release -p env --example throughput     # the RL environment's speed
-(cd ml && uv sync --locked && uv run ruff check && uv run pyright && uv run pytest)  # builds env-py too
+(cd ml && uv sync --locked --extra torch && uv run ruff check && uv run pyright && uv run pytest)  # builds env-py too
 ```
 
 After every step the simulator checks that:
