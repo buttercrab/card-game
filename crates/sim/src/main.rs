@@ -2,15 +2,14 @@ use clap::{Parser, ValueEnum};
 use engine::{Bot, RandomBot};
 use mighty::bot::SimpleBot;
 use mighty::rules::{BackRun, Doubling, Preset, Rules, Scoring, WinScore};
-use mighty::search::{Reading, SearchBot};
 use mighty::{Action, Mighty, Options, View};
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use sim::spec::Spec;
 use sim::{Checks, Failure};
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -34,8 +33,8 @@ struct Args {
     /// after `simple` or `search` changes the simple bot's weights, e.g.
     /// `simple@bid_base=7` or `search:80@draw_trumps=3`; for `search`,
     /// `read.NAME=value` changes how it reads the other players, e.g.
-    /// `search@read.on=false`, and `threads=N` splits each search across N
-    /// threads.
+    /// `search@read.on=false`, `threads=N` splits each search across N
+    /// threads, and `endgame=N` solves the last N tricks of each playout.
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.
@@ -115,123 +114,13 @@ enum Bots {
     Search,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Spec {
-    Random,
-    Simple(SimpleBot),
-    Search(SearchBot),
-}
-
-impl FromStr for Spec {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Spec, String> {
-        let (name, weights) = s.split_once('@').unwrap_or((s, ""));
-        let mut policy = SimpleBot::default();
-        let mut reading = Reading::default();
-        let mut search_threads = 1;
-        for setting in weights.split(',').filter(|w| !w.is_empty()) {
-            let (key, value) = setting.split_once('=').ok_or(format!("bad weight {setting:?}"))?;
-            match key.strip_prefix("read.") {
-                Some(key) if name.starts_with("search") => set_reading(&mut reading, key, value)?,
-                None if key == "threads" && name.starts_with("search") => {
-                    search_threads = value.parse().map_err(|_| format!("bad value {value:?} for threads"))?;
-                }
-                _ => set_weight(&mut policy, key, value)?,
-            }
-        }
-        match name {
-            "random" => return Ok(Spec::Random),
-            "simple" => return Ok(Spec::Simple(policy)),
-            _ => {}
-        }
-        let mut parts = name.split(':');
-        if parts.next() != Some("search") {
-            return Err(format!("unknown bot {s:?}"));
-        }
-        let mut bot = SearchBot {
-            policy,
-            reading,
-            threads: search_threads,
-            ..SearchBot::default()
-        };
-        if let Some(samples) = parts.next() {
-            bot.samples = samples.parse().map_err(|_| format!("bad sample count in {s:?}"))?;
-        }
-        if let Some(confidence) = parts.next() {
-            bot.confidence = confidence.parse().map_err(|_| format!("bad confidence in {s:?}"))?;
-        }
-        if let Some(budget) = parts.next() {
-            let ms: u64 = budget.parse().map_err(|_| format!("bad budget in {s:?}"))?;
-            bot.budget = (ms > 0).then(|| Duration::from_millis(ms));
-        }
-        Ok(Spec::Search(bot))
-    }
-}
-
-impl Spec {
-    fn build(self) -> Box<dyn Bot<Mighty>> {
-        match self {
-            Spec::Random => Box::new(RandomBot),
-            Spec::Simple(bot) => Box::new(bot),
-            Spec::Search(bot) => Box::new(bot),
-        }
-    }
-}
-
-/// Sets one of the simple bot's weights by name, for tuning from the
-/// command line.
-fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String> {
-    let bad = || format!("bad value {value:?} for {key}");
-    let float = || value.parse::<f32>().map_err(|_| bad());
-    let int = || value.parse::<i32>().map_err(|_| bad());
-    let count = || value.parse::<usize>().map_err(|_| bad());
-    match key {
-        "bid_base" => bot.bid_base = float()?,
-        "bid_trump" => bot.bid_trump = float()?,
-        "bid_trump_honor" => bot.bid_trump_honor = float()?,
-        "bid_mighty" => bot.bid_mighty = float()?,
-        "bid_joker" => bot.bid_joker = float()?,
-        "bid_sub_joker" => bot.bid_sub_joker = float()?,
-        "bid_ace" => bot.bid_ace = float()?,
-        "bid_king" => bot.bid_king = float()?,
-        "change_trump" => bot.change_trump = float()?,
-        "draw_trumps" => bot.draw_trumps = count()?,
-        "late_tricks" => bot.late_tricks = count()?,
-        "special_worth" => bot.special_worth = count()?,
-        "lead_point_penalty" => bot.lead_point_penalty = int()?,
-        "lead_joker" => bot.lead_joker = int()?,
-        "lead_mighty" => bot.lead_mighty = int()?,
-        "defend_trump" => bot.defend_trump = int()?,
-        "plan_last_trick" => bot.plan_last_trick = value.parse().map_err(|_| bad())?,
-        _ => return Err(format!("unknown weight {key:?}")),
-    }
-    Ok(())
-}
-
-/// Sets how the search bot reads the other players, for tuning from the
-/// command line: `read.on`, `read.slip`, `read.bid_scale`, `read.min_share`, `read.draws`.
-fn set_reading(reading: &mut Reading, key: &str, value: &str) -> Result<(), String> {
-    let bad = || format!("bad value {value:?} for read.{key}");
-    let float = || value.parse::<f64>().map_err(|_| bad());
-    match key {
-        "on" => reading.on = value.parse().map_err(|_| bad())?,
-        "slip" => reading.slip = float()?,
-        "bid_scale" => reading.bid_scale = float()?,
-        "min_share" => reading.min_share = float()?,
-        "draws" => reading.draws = value.parse().map_err(|_| bad())?,
-        _ => return Err(format!("unknown setting read.{key}")),
-    }
-    Ok(())
-}
-
 /// The bots for one game, and the seat whose payoff is being measured.
 fn table(
     args: &Args,
     seats: usize,
     game: u64,
     focus_bot: Spec,
-    clock: &Rc<Cell<Clock>>,
+    clock: &Rc<RefCell<Clock>>,
 ) -> (Vec<Box<dyn Bot<Mighty>>>, Option<usize>) {
     // The first bidder is `game % seats`; cycling this separately covers
     // every pairing of measured seat and first bidder equally.
@@ -250,36 +139,32 @@ fn table(
     (bots, focus)
 }
 
-/// Thinking time of the focus bot.
-#[derive(Debug, Clone, Copy, Default)]
+/// How long each of the focus bot's decisions with a real choice took.
+#[derive(Debug, Clone, Default)]
 struct Clock {
-    total: Duration,
-    decisions: u32,
-    slowest: Duration,
+    times: Vec<Duration>,
 }
 
 /// Times every decision of the bot it wraps.
 struct Timed {
     bot: Box<dyn Bot<Mighty>>,
-    clock: Rc<Cell<Clock>>,
+    clock: Rc<RefCell<Clock>>,
 }
 
 impl Bot<Mighty> for Timed {
     fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
         let started = Instant::now();
         let action = self.bot.act(view, legal, rng);
-        let took = started.elapsed();
-        let mut clock = self.clock.get();
-        clock.total += took;
-        clock.decisions += 1;
-        clock.slowest = clock.slowest.max(took);
-        self.clock.set(clock);
+        if legal.len() > 1 {
+            self.clock.borrow_mut().times.push(started.elapsed());
+        }
         action
     }
 }
 
 struct Outcome {
     clock: Clock,
+    baseline_clock: Clock,
     steps: usize,
     focus_payoff: Option<f64>,
     baseline_payoff: Option<f64>,
@@ -325,10 +210,11 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                             first_bidder: game as usize % seats,
                         };
                         let one = |focus_bot: Spec| {
-                            let clock = Rc::new(Cell::new(Clock::default()));
+                            let clock = Rc::new(RefCell::new(Clock::default()));
                             let (mut bots, focus) = table(args, seats, game, focus_bot, &clock);
                             sim::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
-                                clock: clock.get(),
+                                clock: clock.take(),
+                                baseline_clock: Clock::default(),
                                 steps: report.steps,
                                 focus_payoff: focus.map(|seat| report.payoffs[seat] as f64),
                                 baseline_payoff: None,
@@ -336,7 +222,9 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                         };
                         let outcome = one(args.focus).and_then(|mut outcome| {
                             if let Some(baseline) = args.baseline {
-                                outcome.baseline_payoff = one(baseline)?.focus_payoff;
+                                let base = one(baseline)?;
+                                outcome.baseline_payoff = base.focus_payoff;
+                                outcome.baseline_clock = base.clock;
                             }
                             Ok(outcome)
                         });
@@ -352,6 +240,25 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
     });
     results.sort_by_key(|(game, _)| *game);
     results.into_iter().map(|(_, r)| r).collect()
+}
+
+/// Median, 99th percentile and slowest decision, in milliseconds.
+fn timing<'a>(clocks: impl Iterator<Item = &'a Clock>) -> String {
+    let mut ms: Vec<f64> = clocks
+        .flat_map(|c| &c.times)
+        .map(|t| t.as_secs_f64() * 1000.0)
+        .collect();
+    if ms.is_empty() {
+        return "nothing".into();
+    }
+    ms.sort_by(f64::total_cmp);
+    let at = |q: f64| ms[((ms.len() - 1) as f64 * q).round() as usize];
+    format!(
+        "median {:.1} ms, p99 {:.0} ms, at most {:.0} ms per decision",
+        at(0.5),
+        at(0.99),
+        ms[ms.len() - 1]
+    )
 }
 
 /// The mean, and the half-width of its 95% confidence interval.
@@ -391,15 +298,11 @@ fn main() -> ExitCode {
             print!(", {mean:+.3} ± {margin:.3} over the baseline");
         }
         if !focus.is_empty() {
-            let total: Duration = outcomes.iter().map(|o| o.clock.total).sum();
-            let decisions: u32 = outcomes.iter().map(|o| o.clock.decisions).sum();
-            let slowest = outcomes.iter().map(|o| o.clock.slowest).max().unwrap_or_default();
-            print!(
-                ", thinking {:.1} ms per decision, at most {:.0} ms ({:.0} s)",
-                total.as_secs_f64() * 1000.0 / f64::from(decisions.max(1)),
-                slowest.as_secs_f64() * 1000.0,
-                started.elapsed().as_secs_f64()
-            );
+            print!(", thinking {}", timing(outcomes.iter().map(|o| &o.clock)));
+            if args.baseline.is_some() {
+                print!(" (baseline {})", timing(outcomes.iter().map(|o| &o.baseline_clock)));
+            }
+            print!(" ({:.0} s)", started.elapsed().as_secs_f64());
         }
         println!();
     }

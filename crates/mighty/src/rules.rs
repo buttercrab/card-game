@@ -364,7 +364,21 @@ pub struct InvalidRules(pub &'static str);
 
 impl Rules {
     pub fn kitty_size(&self) -> usize {
-        self.cards().len().saturating_sub(self.players * self.hand_size)
+        self.deck_size().saturating_sub(self.players * self.hand_size)
+    }
+
+    /// How many cards [`Rules::cards`] holds, without listing them: the
+    /// game and its searches ask this often.
+    pub fn deck_size(&self) -> usize {
+        let low = self.lowest_rank.max(2);
+        let ranks = usize::from((ACE + 1).saturating_sub(low));
+        let extra = self
+            .extra_cards
+            .iter()
+            .enumerate()
+            .filter(|&(i, c)| c.rank().is_some_and(|r| (2..low).contains(&r)) && !self.extra_cards[..i].contains(c))
+            .count();
+        4 * ranks + extra + self.deck.jokers().len()
     }
 
     /// Every card dealt: the deck from `lowest_rank` up, the jokers, and
@@ -833,6 +847,25 @@ mod tests {
     fn kitty_sizes() {
         assert_eq!(Preset::Default.rules().kitty_size(), 3);
         assert_eq!(Preset::Gshs.rules().kitty_size(), 4);
+    }
+
+    /// The counted deck size agrees with the cards listed, for every
+    /// preset at every table size, and for odd extra cards.
+    #[test]
+    fn deck_size_counts_the_cards() {
+        for preset in Preset::ALL {
+            for players in 3..=7 {
+                let r = preset.rules().for_players(players).unwrap();
+                assert_eq!(r.deck_size(), r.cards().len(), "{preset} for {players}");
+            }
+        }
+        let mut r = Rules::default().for_players(4).unwrap();
+        r.extra_cards.extend([
+            Card::new(Suit::Club, 3),
+            Card::new(Suit::Heart, 9),
+            Card::Joker(crate::card::Color::Red),
+        ]);
+        assert_eq!(r.deck_size(), r.cards().len());
     }
 
     #[test]

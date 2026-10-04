@@ -1107,6 +1107,8 @@ dependencies = [
  "mighty",
  "rand 0.9.5",
  "rand_chacha",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

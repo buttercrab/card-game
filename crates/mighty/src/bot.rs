@@ -3,7 +3,7 @@
 //! these rules.
 
 use crate::Mighty;
-use crate::card::{ACE, Card, Suit};
+use crate::card::{ACE, Card, Color, DeckKind, Suit};
 use crate::rules::{CardPolicy, Rules};
 use crate::state::{Action, FriendCall};
 use crate::trick::{self, Lead, Played, TrickContext};
@@ -51,6 +51,10 @@ pub struct SimpleBot {
     /// Spend a joker on the second-to-last trick when the rules strip its
     /// power on the last one, instead of holding it to be wasted there.
     pub plan_last_trick: bool,
+    /// Call a joker only when the joker that card calls is still out and
+    /// not the friend, rather than when any joker is. Off keeps the old
+    /// play; on measured even (+0.01 ± 0.02 a hand, simple bots, gshs).
+    pub aim_joker_call: bool,
 }
 
 impl Default for SimpleBot {
@@ -73,6 +77,7 @@ impl Default for SimpleBot {
             lead_mighty: -100,
             defend_trump: -100,
             plan_last_trick: true,
+            aim_joker_call: false,
         }
     }
 }
@@ -98,7 +103,7 @@ impl SimpleBot {
     /// Rough number of points a hand could promise with `trump`: long and
     /// high trump, the mighty, jokers and side aces. No-trump is never
     /// bid; these rules play it badly.
-    pub(crate) fn estimate(&self, rules: &Rules, hand: &[Card], trump: Option<Suit>) -> f32 {
+    pub fn estimate(&self, rules: &Rules, hand: &[Card], trump: Option<Suit>) -> f32 {
         let mighty = rules.mighty(trump);
         let count = |f: &dyn Fn(&Card) -> bool| hand.iter().filter(|c| f(c)).count() as f32;
         let trumps = count(&|c| c.suit() == trump && trump.is_some() && *c != mighty);
@@ -231,22 +236,31 @@ struct Table<'a> {
     trump: Option<Suit>,
     mighty: Card,
     trick_no: usize,
-    /// Every card not in my hand and not yet played.
-    unseen: Vec<Card>,
+    /// Every card not in my hand and not yet played, as [`bit`]s.
+    unseen: u64,
     /// Summaries of `unseen` for [`Table::sure_lead`], which runs often:
     /// whether a joker or the mighty is out, whether a trump is, and the
     /// highest rank out in each suit (the mighty aside).
     specials_out: bool,
     trumps_out: bool,
     top_out: [u8; 4],
-    /// Seats known to be on my side, and known to be against me.
-    friends: Vec<Seat>,
+    /// Seats known to be on my side, a bit each.
+    friends: u32,
     attacking: bool,
     /// The card the declarer called, while its holder is unknown.
     called: Option<Card>,
 }
 
 impl Table<'_> {
+    /// The cards in `unseen`.
+    fn unseen(&self) -> impl Iterator<Item = Card> {
+        cards(self.unseen)
+    }
+
+    fn is_friend(&self, seat: Seat) -> bool {
+        self.friends & (1 << seat) != 0
+    }
+
     fn power(&self, card: Card) -> u8 {
         power(self.view, self.trump, card)
     }
@@ -293,6 +307,29 @@ impl Table<'_> {
     }
 }
 
+/// Every card of `deck`, as [`bit`]s.
+fn deck(deck: DeckKind) -> u64 {
+    // Ranks 2 to the ace of each suit, then the jokers.
+    let suits = (0..4).fold(0, |m, suit| m | (0x7ffc << (suit * 15)));
+    deck.jokers().iter().fold(suits, |m, &j| m | bit(j))
+}
+
+/// The cards in a set of [`bit`]s, in card order.
+pub(crate) fn cards(mut set: u64) -> impl Iterator<Item = Card> {
+    std::iter::from_fn(move || {
+        let index = set.trailing_zeros();
+        if index >= 64 {
+            return None;
+        }
+        set &= set - 1;
+        Some(match index {
+            60 => Card::Joker(Color::Black),
+            61 => Card::Joker(Color::Red),
+            _ => Card::new(Suit::ALL[index as usize / 15], (index % 15) as u8),
+        })
+    })
+}
+
 /// A card's own bit, for sets of cards.
 pub(crate) fn bit(card: Card) -> u64 {
     match card {
@@ -332,35 +369,30 @@ fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
     // Seats known to be on my side. A defender learns who the other
     // defenders are once the friend is out, or at once when the
     // declarer plays alone.
-    let friends: Vec<Seat> = (0..seats)
+    let friends = (0..seats)
         .filter(|&s| s != me)
         .filter(|&s| {
             let on_attack = s == *declarer || *friend == Some(s);
             let known = s == *declarer || friend.is_some() || attacking || *call == FriendCall::Alone;
             known && on_attack == attacking
         })
-        .collect();
+        .fold(0, |m, s| m | 1 << s);
     let played = tricks.iter().flat_map(|t| &t.plays).chain(plays).map(|p| p.card);
     let seen = played
         .chain(view.hand.iter().copied())
         .fold(0u64, |seen, c| seen | bit(c));
-    let unseen: Vec<Card> = view
-        .rules
-        .deck
-        .cards()
-        .into_iter()
-        .filter(|&c| seen & bit(c) == 0)
-        .collect();
+    let unseen = deck(view.rules.deck) & !seen;
+    let out = || cards(unseen);
     let mighty = view.rules.mighty(trump);
     let mut top_out = [0; 4];
-    for c in unseen.iter().filter(|&&c| c != mighty) {
+    for c in out().filter(|&c| c != mighty) {
         if let (Some(suit), Some(rank)) = (c.suit(), c.rank()) {
             top_out[suit as usize] = top_out[suit as usize].max(rank);
         }
     }
     let t = Table {
-        specials_out: unseen.iter().any(|c| c.is_joker() || *c == mighty),
-        trumps_out: unseen.iter().any(|c| *c != mighty && c.suit() == trump),
+        specials_out: out().any(|c| c.is_joker() || c == mighty),
+        trumps_out: out().any(|c| c != mighty && c.suit() == trump),
         top_out,
         bot,
         view,
@@ -385,12 +417,8 @@ fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
 
 /// Choosing what to lead.
 fn lead_card(t: &Table, legal: &[Action]) -> Action {
-    let joker_out = t.unseen.iter().any(|c| c.is_joker());
-    let trumps_out = t
-        .unseen
-        .iter()
-        .filter(|c| **c != t.mighty && c.suit() == t.trump)
-        .count();
+    let joker_out = t.unseen().any(|c| c.is_joker());
+    let trumps_out = t.unseen().filter(|c| *c != t.mighty && c.suit() == t.trump).count();
     let my_trumps = t
         .view
         .hand
@@ -411,8 +439,20 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
         if *call_joker {
             // Killing a joker that is probably against us is worth a lot,
             // unless it is the friend the declarer called.
-            let ours = t.attacking && t.called.is_some_and(|c| c.is_joker());
-            return if joker_out && !ours { 300 } else { -50 };
+            if !t.bot.aim_joker_call {
+                let ours = t.attacking && t.called.is_some_and(|c| c.is_joker());
+                return if joker_out && !ours { 300 } else { -50 };
+            }
+            let rules = &t.view.rules;
+            let target = rules
+                .deck
+                .jokers()
+                .iter()
+                .copied()
+                .find(|&j| rules.joker_call_card(j, t.trump) == Some(card));
+            let out = target.is_some_and(|j| t.unseen & bit(j) != 0);
+            let ours = t.attacking && t.called.is_some() && t.called == target;
+            return if out && !ours { 300 } else { -50 };
         }
         if card.is_joker() {
             // Save the joker for a trick worth taking, unless it cannot wait.
@@ -467,21 +507,22 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
     let winner_seat = plays[trick::winner(&ctx, plays)].seat;
     let points = plays.iter().filter(|p| p.card.is_point()).count();
     let seats = t.view.rules.players;
-    let still_to_play: Vec<Seat> = (1..seats - plays.len()).map(|i| (t.me + i) % seats).collect();
-    let last = still_to_play.is_empty();
-    let friend_winning = t.friends.contains(&winner_seat);
-    let foes_after = still_to_play.iter().any(|s| !t.friends.contains(s));
+    let mut still_to_play = (1..seats - plays.len()).map(|i| (t.me + i) % seats);
+    let last = plays.len() + 1 == seats;
+    let friend_winning = t.is_friend(winner_seat);
+    let foes_after = still_to_play.any(|s| !t.is_friend(s));
 
-    let after = |card: Card| {
-        let mut next = plays.to_vec();
-        next.push(Played {
+    // The trick with my card added, on the stack: this runs for every card.
+    let wins = |card: Card| {
+        let mut next = [plays[0]; 8];
+        next[..plays.len()].copy_from_slice(plays);
+        next[plays.len()] = Played {
             seat: t.me,
             card,
             powered: t.powered(card, called),
-        });
-        next
+        };
+        trick::winner(&ctx, &next[..=plays.len()]) == plays.len()
     };
-    let wins = |card: Card| trick::winner(&ctx, &after(card)) == plays.len();
     let cards: Vec<Card> = legal.iter().map(card_of).collect();
     let pick = |card: Card| {
         legal
@@ -538,4 +579,22 @@ fn cheapest_dump(t: &Table, cards: &[Card]) -> Card {
             (special, c.is_point(), t.keep(c))
         })
         .expect("a legal play exists")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Sets of cards as bits give back the same cards, in card order.
+    #[test]
+    fn card_sets_round_trip() {
+        for kind in [DeckKind::OneJoker, DeckKind::TwoJokers] {
+            let mut all = kind.cards();
+            all.sort();
+            assert_eq!(cards(deck(kind)).collect::<Vec<_>>(), all);
+            for c in all {
+                assert_eq!(cards(bit(c)).collect::<Vec<_>>(), vec![c]);
+            }
+        }
+    }
 }
