@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Files a GitHub issue, labelled `report`, for each new problem report that
-# players sent from either server. The servers save reports in their data
+# players sent to the Seoul server. The servers save reports in their data
 # volume (see `/api/reports`); this copies them out and remembers which it
 # has filed. The `report` label starts the AI fix workflow
 # (.github/workflows/report-fix.yaml), which opens a pull request for review.
@@ -27,7 +27,6 @@ fetch() {
     ssh "$ssh_host" 'docker cp card-game:/data/reports - 2>/dev/null' | tar -x -C "$tmp/$site" 2>/dev/null || true
   fi
 }
-fetch cards.buttercrab.net ""
 fetch cards.buttercrab.io cards-seoul
 
 shopt -s nullglob

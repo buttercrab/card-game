@@ -1,4 +1,4 @@
-# Checks both sites from outside every 10 minutes. When one stops
+# Checks the site from outside every 10 minutes. When it stops
 # answering, it opens an issue labelled `outage` and assigns the owner, so
 # GitHub notifies their phone; when the site answers again, it closes it.
 # GitHub may delay scheduled runs by a few minutes, and pauses them after
@@ -19,8 +19,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # cards.buttercrab.net sits behind Cloudflare, which answers 403 to
-        # GitHub's runners, so only the Seoul site can be checked from here.
         site: [cards.buttercrab.io]
     steps:
       - name: Check ${{ matrix.site }}

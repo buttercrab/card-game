@@ -60,15 +60,15 @@ state in both themes. Visual changes follow [DESIGN.md](DESIGN.md).
 [cards.buttercrab.io](https://cards.buttercrab.io) runs on a small AWS
 Lightsail instance in Seoul (`cards-seoul`), reached directly: through
 Cloudflare's free plan, Korean ISPs are routed via Los Angeles (about
-500 ms a round trip). [cards.buttercrab.net](https://cards.buttercrab.net)
-is the same build on the home server through the Cloudflare tunnel.
+500 ms a round trip). The home server builds the image and runs the bot
+worker that thinks for its bots.
 
 [`Dockerfile`](Dockerfile) builds the web client and the server into one
 image serving port 3030. On the home server, a systemd timer runs
 [`deploy/update.sh`](deploy/update.sh) every two minutes: when `main`
-moves it rebuilds, restarts the home container
-([`deploy/compose.yaml`](deploy/compose.yaml), behind Traefik) and ships
-the image to Seoul, where [`deploy/seoul/`](deploy/seoul) runs it behind
+moves it rebuilds, restarts the bot worker
+([`deploy/compose.yaml`](deploy/compose.yaml)) and ships the image to
+Seoul, where [`deploy/seoul/`](deploy/seoul) runs it behind
 Caddy with an automatic certificate. Tables are saved in a `tables`
 volume, so a deploy only drops connections for a moment.
 

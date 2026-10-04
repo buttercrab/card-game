@@ -1,36 +1,15 @@
-# Runs the card game behind the homelab's Traefik (network traefik-proxy),
-# which the Cloudflare tunnel reaches. Started by deploy/update.sh.
+# The home server's part of the card game: it builds the image (the Seoul
+# instance is too small to compile Rust) and thinks for the Seoul server's
+# bots. Players only ever reach Seoul (cards.buttercrab.io). Started by
+# deploy/update.sh.
 name: card-game
 
 services:
-  cards:
-    build: ..
-    image: card-game:latest
-    container_name: card-game
-    restart: unless-stopped
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    environment:
-      RUST_LOG: info
-    volumes:
-      - tables:/data
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
-    networks:
-      traefik-proxy:
-        aliases:
-          - cards-origin
-
   # Thinks for the bots of the Seoul server (cards.buttercrab.io), which is
   # too small to search deeply. It dials out, so no port is opened here.
   # The shared secret lives outside the repository.
   bots:
+    build: ..
     image: card-game:latest
     container_name: card-game-bots
     restart: unless-stopped
@@ -53,10 +32,3 @@ services:
       options:
         max-size: 10m
         max-file: "3"
-
-networks:
-  traefik-proxy:
-    external: true
-
-volumes:
-  tables:
