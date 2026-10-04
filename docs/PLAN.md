@@ -161,6 +161,34 @@ Exit: Python runs thousands of games per second with random play; Python and
 Rust encodings match on recorded positions; a shard set of ≥1M decisions with
 a committed manifest.
 
+Done (2026-10-04), pending CI on the branch:
+- `crates/env`: `Env` steps a batch of hands for a caller playing any
+  seats, bots (by level or `sim` spec) in the rest; one contiguous buffer
+  per field per step; auto-reset, with every seat's payoff (times a
+  scale) as the reward on the step that ends a hand. Each slot draws its
+  hands' seeds from its own stream, so trajectories depend on neither
+  batch size nor threads. Rules: a preset, a pool, or `varied` draws,
+  never one of an excluded list (the evals' held-out sets), compared by
+  equality. Per-game choices sit behind a small `EnvGame` trait.
+- `crates/env-py` (`cardgame_env`, PyO3 and maturin, abi3) is a path
+  dependency of `ml/`, so `uv sync` builds it; numpy arrays take over the
+  Rust buffers. The parity test replays a run the Rust side records
+  (`crates/env/tests/parity.json`), every field of every step.
+- The encoder is 3.5× faster (about 11 µs), bit for bit the same: a pinned
+  fingerprint of every seat's encoding over random games proves it.
+  Encoding is still most of a step.
+- Throughput with random play in every seat: the Rust example reached
+  5 700 hands (464 000 decisions) a second on the Mac's 14 cores; from
+  Python, 312 hands a second a thread, and 1 280 on all cores while eval
+  runs held about 13 of them.
+- `selfplay` writes deflated `.npz` shards (numpy alone reads them; events
+  stored ragged) with `meta.json`, the rule sets played and a manifest,
+  byte-for-byte reproducible; `cardgame_ml.data.shards` reads them in
+  batches. [Self-play v1](../research/experiments/2026-10-04-selfplay-v1):
+  1.19M decisions, 633 MB in six shards, 20 000 varied rule sets.
+- Deviation: the held-out list came from the P1 branch before it was
+  committed; the dataset records its SHA-256.
+
 ### P3 — Baseline belief model
 
 - `ml/`: a small transformer over the event sequence with per-card features;

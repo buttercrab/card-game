@@ -31,3 +31,8 @@ Each phase ends with a short entry here.
 - **P0, foundations (2026-10):** `engine::Encode` (encoding spec
   `mighty-1`, pinned in `crates/mighty/tests/encoding.json`),
   `engine::DynGame`, the `ml/` project and these folders. No results yet.
+- **P2, environment and data (2026-10):** `crates/env` and its Python
+  bindings `cardgame_env`, with a Rust–Python parity test; the first
+  dataset, [self-play v1](experiments/2026-10-04-selfplay-v1): 1.19
+  million decisions by mixed bots over varied rules, manifest
+  `manifests/selfplay-v1.json`.
