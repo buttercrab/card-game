@@ -127,7 +127,7 @@ components:
 
 # Design System: Mighty
 
-The brief for every change to the web table. Research and decisions behind it: [Design References](https://claude.ai/code/artifact/d3f60eeb-449e-4306-a61d-58006d90ac72).
+The brief for every change to the web table. Research and decisions behind it: [Design References](https://claude.ai/code/artifact/d3f60eeb-449e-4306-a61d-58006d90ac72). Tokens, components and card art as a browsable system: [마이티 Design System](https://claude.ai/artifact/RZQ4Jsz4xRrLb4LwQsVBoF).
 
 ## Overview
 
@@ -254,7 +254,8 @@ Rounded, friendly UI; crisp card faces.
 
 ### Card
 - **Face.** Corner index top-left (rank above suit glyph), mirrored bottom-right. Number cards show pips only at desktop hand size and above; J, Q, K show a large letter and no portrait. At phone sizes only the index is drawn.
-- **Jokers.** Two must differ three ways at once: ink colour (흑 ink / 홍 red), corner label (`흑` / `홍` under a star), and centre motif. Never rely on colour alone.
+- **Court figures.** J, Q and K are flat figures built from circles and triangles (`CourtArt.svelte`), robed in the suit colour; each suit has its own crown, tiara and hat, and the suit sits on the chest. The 마이티 is its spade in a dotted gold ring.
+- **Jokers.** Jesters with three bells. The two must differ three ways at once: ink colour (흑 ink / 홍 red), corner label (`흑` / `홍` under a star), and the red one's dashed ring. Never rely on colour alone.
 - **Seal stamps.** Top-right square seal: `마` on the mighty, `조` on each joker, `콜` on the joker-call cards, for the current rules and trump.
 - **Back.** Charcoal ink (#2A2622) with a fine chilbo (interlocking circles) pattern in Card Edge lines, drawn in CSS or a small SVG. Neutral on purpose: plum is reserved for "act now".
 - **States.** Rest; raised (first tap); playable vs unplayable (40% opacity, not tappable); won-trick highlight (accent outline for one beat); kitty tag (`키티` pill) during the exchange.
@@ -318,8 +319,8 @@ Every event has one of four tiers, so loudness always means the same thing. The 
 | --- | --- | --- |
 | 0 · routine | Card played, pass | Card motion and a paper sound. |
 | 1 · notable | Bid raised, points taken, trump cuts a round, tags (공약 확정·불가, 런 찬스, 마지막 라운드) | A label or tag, a rising note; trump cuts land with a thump. |
-| 2 · big | 주공, 프렌드 revealed, 마이티, 조커, 조커콜, 딜미스 | A red ink seal (도장) stamped at the seat for 1.5 s, with its own motif; the 마이티 and jokers also land heavy with a 110 ms hold. |
-| 3 · huge | The result; 런 | The result is counted out step by step; 런 gets the gold seal and a 2 px table nudge. At most once per hand. |
+| 2 · big | 주공, 프렌드 revealed, 마이티, 조커, 조커콜, 딜미스 | The seat wiggles (squash and fading wobble, 0.4 s) and a short ink label pops in under it for 1.5 s, with its own motif; no label where a badge already says it (주공, 프렌드); the friend's plate turns over; the 마이티 and jokers land heavy with a 110 ms hold and a fading outline. |
+| 3 · huge | The result; 런 | The result is counted out step by step; 런 turns the headline into one large gold word with a 2 px table nudge. At most once per hand. |
 
 - **Never block play.** Seals, tags and holds run over the table; a tap skips the counted result.
 - **At the seat.** Calls appear where they were made, so everyone sees who.
