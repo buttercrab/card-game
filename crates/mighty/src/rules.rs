@@ -535,23 +535,23 @@ impl Rules {
     /// Whether `hand` lets its holder ask for a redeal.
     pub fn is_misdeal(&self, hand: &[Card]) -> bool {
         let m = &self.misdeal;
-        let total: i32 = hand
-            .iter()
-            .map(|card| {
-                let value = if let Some((_, v)) = m.card_values.iter().find(|(c, _)| c == card) {
-                    *v
-                } else if card.is_joker() {
-                    m.joker_value
-                } else if card.is_point() {
-                    m.point_value
-                } else {
-                    0
-                };
-                i32::from(value)
-            })
-            .sum();
+        let total: i32 = hand.iter().map(|&card| i32::from(self.misdeal_value(card))).sum();
         let all_points = m.all_points && !hand.is_empty() && hand.iter().all(|c| c.is_point());
         total <= i32::from(m.threshold) || all_points
+    }
+
+    /// What `card` adds to a hand's total for [`Rules::is_misdeal`].
+    pub fn misdeal_value(&self, card: Card) -> i8 {
+        let m = &self.misdeal;
+        if let Some((_, v)) = m.card_values.iter().find(|(c, _)| *c == card) {
+            *v
+        } else if card.is_joker() {
+            m.joker_value
+        } else if card.is_point() {
+            m.point_value
+        } else {
+            0
+        }
     }
 
     /// The contract after changing trump to `trump` once the kitty is seen.

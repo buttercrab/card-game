@@ -4,6 +4,13 @@
 //! [`Game::apply`]: the server draws it with [`Game::sample_chance`] and feeds
 //! it back as an ordinary action, so a game is fully reproducible from its
 //! action log.
+//!
+//! Above the game itself: [`Encode`] turns what a seat sees into model
+//! inputs.
+
+pub mod encode;
+
+pub use encode::{Encode, Features, Observation, Spec, Unsupported};
 
 use rand::RngCore;
 use rand::seq::IndexedRandom;
