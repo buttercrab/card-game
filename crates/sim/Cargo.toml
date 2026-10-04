@@ -1,6 +1,7 @@
 [package]
 name = "sim"
 description = "Plays many games with bots and checks engine invariants after every step"
+default-run = "sim"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,6 +13,8 @@ engine.workspace = true
 mighty.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

@@ -7,6 +7,9 @@
 //! - the game ends within a step budget, with payoffs
 //! - replaying the action log reproduces the final state exactly
 
+pub mod lab;
+pub mod spec;
+
 use engine::{Bot, Game, Turn, Viewer};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;

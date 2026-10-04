@@ -98,7 +98,7 @@ impl SimpleBot {
     /// Rough number of points a hand could promise with `trump`: long and
     /// high trump, the mighty, jokers and side aces. No-trump is never
     /// bid; these rules play it badly.
-    pub(crate) fn estimate(&self, rules: &Rules, hand: &[Card], trump: Option<Suit>) -> f32 {
+    pub fn estimate(&self, rules: &Rules, hand: &[Card], trump: Option<Suit>) -> f32 {
         let mighty = rules.mighty(trump);
         let count = |f: &dyn Fn(&Card) -> bool| hand.iter().filter(|c| f(c)).count() as f32;
         let trumps = count(&|c| c.suit() == trump && trump.is_some() && *c != mighty);

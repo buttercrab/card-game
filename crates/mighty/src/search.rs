@@ -121,6 +121,21 @@ impl Bot<Mighty> for SearchBot {
 }
 
 impl SearchBot {
+    /// Up to `n` worlds `view` cannot tell from the real one, each with its
+    /// weight by [`Reading`] (the weights sum to 1). For experiments that
+    /// search choices this bot does not, such as whole sets of discards.
+    pub fn worlds(&self, view: &View, n: usize, rng: &mut dyn RngCore) -> Vec<(State, f64)> {
+        let mut memo = Memo::default();
+        let me = match view.viewer {
+            Viewer::Seat(me) => me,
+            Viewer::Spectator => return Vec::new(),
+        };
+        let drawn: Vec<(State, f64)> = (0..n).filter_map(|_| self.draw(view, me, rng, &mut memo)).collect();
+        let log_weights: Vec<f64> = drawn.iter().map(|(_, w)| *w).collect();
+        let weights = self.reading.weights(&log_weights);
+        drawn.into_iter().map(|(s, _)| s).zip(weights).collect()
+    }
+
     /// Deals up to `samples` worlds, until the budget runs out, and plays
     /// every candidate out on each: the payoffs per candidate, deal by deal,
     /// and each deal's log weight.
@@ -310,9 +325,17 @@ fn bid_candidates(legal: &[Action]) -> Vec<Action> {
 
 /// Plays `action` in `world`, then plays the hand out with simple bots,
 /// redealing if the hand is thrown in.
-fn rollout(mut policy: SimpleBot, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
+fn rollout(policy: SimpleBot, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
     let mut state = world.clone();
     state.step(me, action.clone());
+    playout(policy, state, me, rng)
+}
+
+/// Plays `state` to the end of the hand with `policy` in every seat,
+/// redealing if the hand is thrown in: `me`'s payoff. Public for
+/// experiments (`sim`'s `lab`), which use it as a perfect-information
+/// player and as an oracle.
+pub fn playout(mut policy: SimpleBot, mut state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
     // Redeals could in principle repeat forever; give up and call it even.
     for _ in 0..2000 {
         match state.turn() {
