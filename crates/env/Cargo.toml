@@ -1,0 +1,30 @@
+[package]
+name = "env"
+description = "Batched, deterministic RL environment over any game with a model encoding, and the self-play data generator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+clap.workspace = true
+engine.workspace = true
+flate2.workspace = true
+mighty.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sim.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+# Only to check that the production bot levels here match the server's.
+server.workspace = true
+
+[lints]
+workspace = true
