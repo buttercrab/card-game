@@ -19,10 +19,8 @@
   import { untrack } from 'svelte';
   import Callout from './Callout.svelte';
   import { juice } from './motion';
-  import Card from './Card.svelte';
-  import type { Seal } from './cards';
   import PlayerFigure from './PlayerFigure.svelte';
-  import type { Card as CardT, Suit } from './types';
+  import type { Suit } from './types';
   let {
     name,
     bot = false,
@@ -39,11 +37,6 @@
     trumpSuit = null,
     lookAt = null,
     mood = null,
-    pointsOpen = false,
-    onpoints = null,
-    taken = [],
-    seal = () => null,
-    twoJokers = true,
   }: {
     name: string;
     bot?: boolean;
@@ -71,20 +64,8 @@
     /** Where the figure's eyes glance, as a screen-direction vector. */
     lookAt?: { x: number; y: number } | null;
     mood?: 'happy' | 'down' | null;
-    /** The point cards this seat took are showing. */
-    pointsOpen?: boolean;
-    /** Makes the points a button that shows the point cards taken. */
-    onpoints?: ((anchor: HTMLElement) => void) | null;
-    /** The point cards won, drawn as a small fan beside the seat on desktop. */
-    taken?: CardT[];
-    seal?: (card: CardT) => Seal | null;
-    twoJokers?: boolean;
   } = $props();
 
-  /** The fan stays within about 112px however many cards it holds. */
-  const FAN_CARD = 30;
-  const fanStep = $derived(taken.length <= 1 ? 0 : Math.min(15, (112 - FAN_CARD) / (taken.length - 1)));
-  let pill = $state<HTMLElement>();
 
   let el: HTMLElement;
   $effect(() => {
@@ -128,38 +109,9 @@
     <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
     {#if team}{#key team}<span class="team pop {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/key}{/if}
     {#if points > 0}
-      {#if onpoints}
-        <button
-          bind:this={pill}
-          type="button"
-          class="points peek-btn"
-          aria-expanded={pointsOpen}
-          aria-haspopup="dialog"
-          aria-label="{subject(name)} 가져온 점수 카드 {points}장 보기"
-          onclick={(e) => onpoints(e.currentTarget)}
-        >{#key points}<span class="bump">{points}점</span>{/key}</button>
-      {:else}
-        {#key points}<span class="points bump">{points}점</span>{/key}
-      {/if}
+      {#key points}<span class="points bump">{points}점</span>{/key}
     {/if}
   </div>
-  <!-- The cards themselves, fanned like a won pile (its place is kept while
-       empty, so the plate never changes height). The pill beside the badge
-       is the button for keys and screen readers; this is the same thing for
-       a pointer. -->
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div
-      class="fan"
-      class:open={pointsOpen}
-      class:live={!!onpoints}
-      aria-hidden="true"
-      style:--step="{fanStep}px"
-      onclick={() => pill && onpoints?.(pill)}
-    >
-      {#each taken as c, i (JSON.stringify(c))}
-        <span class="fan-card" style:--i={i} style:--tilt="{((i * 5) % 7) - 3}deg"><Card card={c} size="mini" width={FAN_CARD} seal={seal(c)} {twoJokers} /></span>
-      {/each}
-    </div>
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
     <span class="name">{name}</span>
@@ -353,7 +305,7 @@
     background: var(--team-defense);
     color: var(--on-team-defense);
   }
-  /* Points won: always the same small pill, a button or not. */
+  /* Points won: a small pill; the count only, never the cards. */
   .points {
     padding: 0 6px;
     border-radius: 999px;
@@ -361,31 +313,6 @@
     color: var(--ink);
     line-height: 18px;
     box-shadow: 0 0 0 1px var(--line);
-  }
-  /* A button only by its hit area: it looks like the pill beside it. */
-  .peek-btn {
-    position: relative;
-    display: inline-block;
-    min-height: 0;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--table);
-    color: var(--ink);
-    font-size: 13px;
-    line-height: 18px;
-    /* A hairline says it opens; no lip, it is a label first. */
-    box-shadow: 0 0 0 1px var(--line);
-  }
-  /* A 44px target round an 18px pill. */
-  .peek-btn::before {
-    content: '';
-    position: absolute;
-    inset: -13px -8px;
-  }
-  .peek-btn[aria-expanded='true'] {
-    background: var(--ink);
-    color: var(--table);
-    box-shadow: none;
   }
   /* Rises above the seat, holds, then fades; the client drops it after 2.8 s. */
   .reaction {
@@ -485,99 +412,20 @@
       font-size: clamp(13px, 1.8cqw, 15px);
     }
   }
-  /* The won pile: hidden on phones, where the pill says the same. */
-  .fan {
-    display: none;
-  }
   @media (min-width: 1024px) and (min-height: 640px) {
-    /* Desktop: a plate with the name across its top, the figure on the left
-       and the badges and won pile stacked beside it, so a seat carries more
-       at a glance and a long name has the plate's whole width. */
+    /* Desktop: the same stacked character as on phones (figure, badge on
+       its chest, name tag below), just larger. */
     .seat {
       --figure-w: var(--seat-figure, clamp(56px, 14cqh, 80px));
-      grid-template-columns: auto minmax(0, 1fr);
-      grid-template-areas:
-        'name name'
-        'stand meta'
-        'stand fan';
-      align-content: center;
-      justify-items: start;
-      column-gap: 10px;
-      row-gap: 3px;
-      padding: 4px 6px;
-      text-align: left;
-    }
-    .stand {
-      grid-area: stand;
-      align-self: center;
-    }
-    .name-row {
-      grid-area: name;
-      align-self: end;
     }
     .name {
       font-size: 16px;
     }
-    .meta {
-      grid-area: meta;
-      margin-top: 0;
-      flex-wrap: nowrap;
-      justify-content: flex-start;
-    }
-    .meta {
-      min-height: 20px;
-    }
-    .fan {
-      grid-area: fan;
-      display: flex;
-      align-self: start;
-      height: 44px;
-      padding-top: 2px;
-    }
-    .fan.live {
-      cursor: pointer;
-    }
-    .fan-card {
-      display: block;
-      rotate: var(--tilt);
-      transition: translate var(--dur-quick) var(--ease-standard);
-      animation: fan-in var(--dur-move) var(--ease-settle) both;
-    }
-    .fan-card + .fan-card {
-      margin-left: calc(var(--step) - 30px);
-    }
-    /* Pointing at the pile lifts it a little, as the cards in hand do. */
-    .fan.live:hover .fan-card,
-    .fan.open .fan-card {
-      translate: 0 -3px;
-    }
-    .fan-card :global(.card) {
-      box-shadow: 0 1px 0 rgb(28 25 21 / 0.12);
-    }
-    @keyframes fan-in {
-      from {
-        opacity: 0;
-        translate: 0 -8px;
-      }
-    }
-    /* Plates: beside the whole plate, not over the name. */
     .reaction.side-right {
       left: calc(100% + 4px);
     }
     .reaction.side-left {
       right: calc(100% + 4px);
-    }
-    /* On a plate the name is beside the figure: the bubble hangs under it. */
-    .bubble {
-      left: 50%;
-      top: auto;
-      bottom: -10px;
-      transform: translate(-50%, 50%);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .fan-card {
-      animation: none;
     }
   }
 </style>

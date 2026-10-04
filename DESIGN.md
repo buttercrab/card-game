@@ -209,7 +209,8 @@ Phone portrait is the primary layout; desktop is the same table with more room.
 - **Top display (상황판).** Top centre, one line: `공약 15 ♠` · `프렌드 ♠A` or `?` · `라운드 4/10` · `여당 10/15`.
 - **Action strip.** One fixed 64px slot between the table and the hand. Its content changes by phase: bid chips and 패스; the exchange counter `3장 선택` with 기루다 변경; friend shortcuts; `내 차례` hints during play. No dropdowns, no modals except the result sheet and settings.
 - **Hand tray.** Docked at the bottom, about 30% of the viewport height on phones including the strip. One flat row of 10 cards, overlapping so each corner index stays visible; the declarer's 13 cards wrap to two rows. Sorted by suit with trump first.
-- **Breakpoints.** Phone below 600px; tablet 600–1023px; desktop 1024px and up turns seats into plates (figure up to 80px, name, badges and a small fan of the point cards won) and puts your own seat at the tray's left and your tools at its right; from 1100px wide in landscape a 260–300px column of stacked panels (상황판, 점수판, 기록, 직전 라운드) replaces the top line.
+- **Breakpoints.** Phone below 600px; tablet 600–1023px; desktop 1024px and up keeps the same stacked seat figures, larger (up to 80px), and puts your own seat at the tray's left and your tools at its right; from 1100px wide in landscape a 260–300px column with 상황판 and 점수판 replaces the top line.
+- **Players remember, the table does not.** Seats show how many points each player has, never which cards; there is no log of the hand and no look back at the last round. Remembering what was played is part of the game.
 - **Spacing.** A 4px base: 4, 8, 12, 16, 24, 32. Page gutter 16px on phones.
 - **Touch targets.** At least 44×44px; hand cards on phones are at least 56px wide.
 
@@ -278,8 +279,8 @@ A row of number chips (13–20, respecting the preset's minimum) and a row of su
 ### Result sheet
 Headline (`여당 승리` / `야당 승리`), `여당 18 / 공약 15`, a table of player, role, points won, change and running total, then each multiplier on its own line. Buttons: 다음 판 (primary), 나가기.
 
-### Event log
-Desktop side column, or a two-line ticker under the top display on phones: `철수 · 패스`, `영희 · 공약 ♠ 14`.
+### Event line
+One transient line under the top display for what just happened (`철수 · 패스`, `영희 가져감 · 3점`); it is replaced by the next event and never kept as a log.
 
 ## Motion
 

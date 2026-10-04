@@ -305,86 +305,6 @@
     return { destroy: () => cancelAnimationFrame(id) };
   }
 
-  // ---- Point cards a seat took (tap its points) ------------------------------
-  let peek = $state<{ seat: number; anchor: HTMLElement; own: boolean } | null>(null);
-  let peekEl = $state<HTMLElement>();
-  const canPeek = $derived(play !== null || done !== null);
-  function togglePeek(seat: number, anchor: HTMLElement, own = false) {
-    peek = peek && peek.seat === seat && peek.anchor === anchor ? null : { seat, anchor, own };
-  }
-  $effect(() => {
-    if (!canPeek) peek = null;
-  });
-  const SUIT_ORDER: Suit[] = ['Spade', 'Diamond', 'Heart', 'Club'];
-  /** A seat's point cards, trump first, then by suit and rank. */
-  function pointCards(seat: number): CardT[] {
-    const trump = contract?.trump ?? null;
-    const order = (c: CardT) => {
-      if (!('Normal' in c)) return 0;
-      const [suit, rank] = c.Normal;
-      return (suit === trump ? 0 : 1 + SUIT_ORDER.indexOf(suit)) * 100 + (100 - rank);
-    };
-    return [...(view.points_taken[seat] ?? [])].filter(isPoint).sort((a, b) => order(a) - order(b));
-  }
-  function peekOutside(e: PointerEvent) {
-    const t = e.target as Node;
-    if (!peek || peekEl?.contains(t) || peek.anchor.contains(t)) return;
-    peek = null;
-  }
-  function peekKey(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || !peek) return;
-    const back = peek.anchor;
-    peek = null;
-    back.focus();
-  }
-  /** Places the popover beside its anchor: above for your own points; below
-   * (or else above) a seat, never over your hand, always on screen. */
-  function placePeek(el: HTMLElement, at: { anchor: HTMLElement; own: boolean }) {
-    let current = at;
-    const m = 8;
-    const update = () => {
-      // A seat's cards sit clear of the whole seat, so its name stays readable.
-      const a = (current.anchor.closest('.seat') ?? current.anchor).getBoundingClientRect();
-      const w = el.offsetWidth;
-      const h = el.offsetHeight;
-      const vw = document.documentElement.clientWidth;
-      const vh = window.innerHeight;
-      const floor = current.own || !tray ? vh : Math.min(vh, tray.getBoundingClientRect().top);
-      const above = a.top - 6 - h;
-      const below = a.bottom + 6;
-      let top: number;
-      if (current.own) top = above;
-      else if (below + h <= floor - m) top = below;
-      else if (above >= m) top = above;
-      else top = Math.min(below, floor - m - h);
-      top = Math.max(m, Math.min(top, vh - m - h));
-      const left = Math.max(m, Math.min(a.left + a.width / 2 - w / 2, vw - m - w));
-      el.style.left = `${left}px`;
-      el.style.top = `${top}px`;
-    };
-    try {
-      el.showPopover?.();
-    } catch {
-      // Already open, or drawn in place by an older browser: placing still works.
-    }
-    update();
-    const watch = new ResizeObserver(update);
-    watch.observe(el);
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return {
-      update(next: { anchor: HTMLElement; own: boolean }) {
-        current = next;
-        update();
-      },
-      destroy() {
-        watch.disconnect();
-        window.removeEventListener('resize', update);
-        window.removeEventListener('scroll', update, true);
-      },
-    };
-  }
-
   // The music follows the hand; see music.svelte.ts.
   $effect(() => {
     setMood(done ? 'result' : play ? 'play' : bidding || exchange ? 'bidding' : 'lobby');
@@ -967,70 +887,8 @@
     }
     return notes;
   });
-  let review = $state(false);
   let replay = $state(false);
   let sharing = $state(false);
-  const lastTrick = $derived(play?.tricks.at(-1) ?? null);
-  /** The round before, for the side panel; the result keeps the last one. */
-  const prevTrick = $derived(play?.tricks.at(-1) ?? done?.tricks.at(-1) ?? null);
-
-  // ---- 기록: the hand so far, as a short log ---------------------------------
-  // Read from the state itself (bids, rounds, the friend), not from what
-  // happened to animate, so it is whole after a reconnect too.
-  type LogKind = 'bid' | 'pass' | 'declarer' | 'friend' | 'power' | 'take' | 'result' | 'plain';
-  const who = (seat: number) => (seat === me ? '내가' : seatName(seat));
-  const log = $derived.by(() => {
-    const out: { text: string; kind: LogKind; pts?: number }[] = [];
-    const redeal = view.redealt;
-    if (redeal) {
-      out.push({
-        text: redeal.why === 'AllPassed' ? '모두 패스 · 다시 나눠요' : `${seatName(redeal.why.Misdeal.seat)} 딜미스 · 다시 나눠요`,
-        kind: 'plain',
-      });
-    }
-    for (const b of view.bids ?? []) {
-      out.push(b.contract ? { text: `${seatName(b.seat)} · ${contractLabel(b.contract)}`, kind: 'bid' } : { text: `${seatName(b.seat)} · 패스`, kind: 'pass' });
-    }
-    if (declarer === null || !contract) return out;
-    out.push({ text: `${seatName(declarer)} 주공 · ${contractLabel(contract)}`, kind: 'declarer' });
-    if (call) {
-      const label = sameCallMighty(call, contract.trump) ? '마이티' : friendCallLabel(call, seatName, twoJokers);
-      out.push({ text: `프렌드 콜 · ${label}`, kind: 'plain' });
-    }
-    const tricks = play?.tricks ?? done?.tricks ?? [];
-    // When the 프렌드 came out: at once for a seat, else with the round that showed them.
-    let revealAt = -2;
-    if (friend !== null && call && typeof call === 'object') {
-      if ('Seat' in call) revealAt = -1;
-      else revealAt = tricks.findIndex((t) => t.plays.some((p) => p.seat === friend && sameCard(p.card, call.Card)));
-    } else if (friend !== null && call === 'FirstTrick') revealAt = 0;
-    if (revealAt === -1 && friend !== null) out.push({ text: `${seatName(friend)} 프렌드 공개`, kind: 'friend' });
-    const mighty = mightyCard(contract.trump);
-    const powers = (plays: Played[]) => {
-      for (const p of plays) {
-        if (!p.powered) continue;
-        if ('Joker' in p.card) out.push({ text: `${seatName(p.seat)} · 조커`, kind: 'power' });
-        else if (sameCard(p.card, mighty)) out.push({ text: `${seatName(p.seat)} · 마이티`, kind: 'power' });
-      }
-    };
-    tricks.forEach((t, i) => {
-      powers(t.plays);
-      const got = t.plays.filter((p) => isPoint(p.card)).length;
-      out.push({ text: `${who(t.winner)} 가져감`, kind: 'take', pts: got });
-      if (i === revealAt && friend !== null) out.push({ text: `${seatName(friend)} 프렌드 공개`, kind: 'friend' });
-    });
-    if (play) powers(play.plays);
-    if (done) {
-      const made = done.team_points >= done.contract.count;
-      out.push({ text: `${made ? '여당' : '야당'} 승리 · 여당 ${done.team_points}점`, kind: 'result' });
-    }
-    return out;
-  });
-  /** As many of the newest as the panel has room for (about 28px a line),
-   * newest first, keyed by their place in the hand. */
-  let logHeight = $state(0);
-  const logRows = $derived(Math.max(4, Math.floor((logHeight - 36) / 28)));
-  const recent = $derived(log.map((e, i) => ({ ...e, key: `${i}:${e.text}` })).slice(-logRows).reverse());
 
   const callLabel = $derived.by(() => {
     if (!call) return null;
@@ -1230,38 +1088,7 @@
       </ol>
     </section>
 
-    <section class="pane log-pane" class:short={log.length <= 4} aria-label="기록" bind:clientHeight={logHeight}>
-      <h3 class="pane-title">기록</h3>
-      {#if recent.length}
-        <ol class="log">
-          {#each recent as e (e.key)}
-            <li class="log-{e.kind}">
-              <span class="log-text">{e.text}</span>
-              {#if e.pts}<span class="log-pts">{e.pts}점</span>{/if}
-            </li>
-          {/each}
-        </ol>
-      {:else}
-        <p class="pane-empty">아직 아무 일도 없어요</p>
-      {/if}
-    </section>
 
-    {#if prevTrick}
-      <section class="pane last-pane" aria-label="직전 라운드">
-        <h3 class="pane-title">직전 라운드 <span class="cols">{who(prevTrick.winner)} 가져감</span></h3>
-        <div class="last-cards">
-          {#each prevTrick.plays as p, i (p.seat)}
-            <figure class:won={p.seat === prevTrick.winner}>
-              <span class="mini-slot">
-                <Card card={p.card} size="mini" width={38} seal={seal(p.card)} {twoJokers} />
-                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={prevTrick.lead} compact />{/if}
-              </span>
-              <figcaption>{seatName(p.seat)}</figcaption>
-            </figure>
-          {/each}
-        </div>
-      </section>
-    {/if}
   </aside>
 
   <div class="felt" bind:this={felt} style:--over="{controls ? controlsHeight : 0}px">
@@ -1270,9 +1097,6 @@
         {@render hintTools()}
         <Reactions onreact={(text) => client.react(text)} />
       </span>
-    {/if}
-    {#if lastTrick && !resolving}
-      <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
     {/if}
     <!-- The seats and the trick sit in a ring no wider than the felt is tall,
          so on a wide screen the seats stay near their cards. -->
@@ -1297,11 +1121,6 @@
             trumpSuit={contract?.trump ?? null}
             lookAt={lookAt(r)}
             mood={mood(s)}
-            pointsOpen={peek?.seat === s && peek.anchor.closest('.spot') !== null}
-            onpoints={canPeek ? (anchor) => togglePeek(s, anchor) : null}
-            taken={pointCards(s)}
-            {seal}
-            {twoJokers}
           />
         </div>
       {/each}
@@ -1360,22 +1179,6 @@
       {/if}
     </div>
 
-    {#if review && lastTrick}
-      <div class="sheet review-sheet" role="dialog" aria-label="직전 라운드">
-        <div class="review-cards">
-          {#each lastTrick.plays as p, i (p.seat)}
-            <figure class:won={p.seat === lastTrick.winner}>
-              <span class="mini-slot">
-                <Card card={p.card} size="mini" seal={seal(p.card)} {twoJokers} />
-                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={lastTrick.lead} compact />{/if}
-              </span>
-              <figcaption>{seatName(p.seat)}</figcaption>
-            </figure>
-          {/each}
-        </div>
-        <button class="close" onclick={() => (review = false)}>닫기</button>
-      </div>
-    {/if}
   </div>
 
   {#if done}
@@ -1431,15 +1234,7 @@
                   <td class="who">{seatName(s)}</td>
                   <td class="role">{#if t}<span class="team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}</td>
                   <td class="num">
-                    {#if points(s) > 0}
-                      <button
-                        type="button"
-                        class="pts peek-num"
-                        aria-expanded={peek?.seat === s && !peek.own && peek.anchor.closest('.spot') === null}
-                        aria-haspopup="dialog"
-                        aria-label="{subject(seatName(s))} 가져온 점수 카드 {points(s)}장 보기"
-                        onclick={(e) => togglePeek(s, e.currentTarget)}>{points(s)}</button>
-                    {:else}<span class="pts">0</span>{/if}
+                    <span class="pts">{points(s)}</span>
                   </td>
                   <td class="num" class:neg={pay < 0}>{(shownPay[s] ?? pay) > 0 ? '+' : ''}{shownPay[s] ?? pay}</td>
                   <td class="num">{room?.scores[s] ?? ''}</td>
@@ -1540,11 +1335,6 @@
           trumpSuit={contract?.trump ?? null}
           lookAt={lookAt(0)}
           mood={mood(me)}
-          pointsOpen={peek?.seat === me && peek.own}
-          onpoints={canPeek ? (anchor) => togglePeek(me, anchor, true) : null}
-          taken={pointCards(me)}
-          {seal}
-          {twoJokers}
         />
       </div>
       <div class="tray-tools">
@@ -1554,17 +1344,7 @@
       <div class="me-row">
         {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}{/if}
         {#if points(me) > 0}
-          {#if canPeek}
-            <button
-              type="button"
-              class="my-points peek-mine"
-              aria-expanded={peek?.seat === me && peek.own}
-              aria-haspopup="dialog"
-              aria-label="내가 가져온 점수 카드 {points(me)}장 보기"
-              onclick={(e) => togglePeek(me, e.currentTarget, true)}>{points(me)}점</button>
-          {:else}
-            <span class="my-points">{points(me)}점</span>
-          {/if}
+          <span class="my-points">{points(me)}점</span>
         {/if}
       </div>
       <!-- Always drawn, even empty, so the tray keeps its height. -->
@@ -1602,25 +1382,8 @@
       onclose={() => (replay = false)}
     />
   {/if}
-  {#if peek}
-    {@const cards = pointCards(peek.seat)}
-    <div
-      class="peek"
-      popover="manual"
-      role="dialog"
-      aria-label="{subject(seatName(peek.seat))} 가져온 점수 카드"
-      bind:this={peekEl}
-      use:placePeek={peek}
-    >
-      <p class="peek-title">{seatName(peek.seat)} · 점수 카드 <strong>{cards.length}</strong>장</p>
-      <div class="peek-cards" style:--cols={Math.min(cards.length, 5)}>
-        {#each cards as c, i (i)}<Card card={c} size="mini" seal={seal(c)} {twoJokers} />{/each}
-      </div>
-    </div>
-  {/if}
 </section>
 
-<svelte:window onpointerdown={peekOutside} onkeydown={peekKey} />
 
 <style>
   /* The table fills the screen exactly; the felt takes what is left and
@@ -1734,70 +1497,8 @@
   }
 
   /* The point cards one seat took, on card paper beside its seat. */
-  .peek {
-    position: fixed;
-    inset: auto;
-    z-index: 30;
-    margin: 0;
-    padding: 8px 10px 10px;
-    border: 1px solid var(--card-edge);
-    border-radius: 12px;
-    background: var(--card);
-    color: var(--card-ink);
-    box-shadow: 0 3px 0 rgb(28 25 21 / 0.12);
-    overflow: visible;
-    animation: peek-in var(--dur-quick) var(--ease-standard) both;
-  }
-  @keyframes peek-in {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-  }
-  .peek-title {
-    margin: 0 0 6px;
-    font-size: 13px;
-    font-weight: 600;
-    word-break: keep-all;
-    white-space: nowrap;
-  }
-  .peek-title strong {
-    font-variant-numeric: tabular-nums;
-  }
-  .peek-cards {
-    display: grid;
-    grid-template-columns: repeat(var(--cols, 5), auto);
-    gap: 4px;
-  }
   /* The points in the result table and on your tray open the same cards;
      they keep looking like text, with a hairline to say they open. */
-  .peek-num,
-  .peek-mine {
-    position: relative;
-    display: inline-block;
-    min-height: 0;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: transparent;
-    color: inherit;
-    font-size: inherit;
-    font-weight: inherit;
-    font-variant-numeric: tabular-nums;
-    line-height: 18px;
-    box-shadow: 0 0 0 1px var(--line);
-  }
-  .peek-num::before,
-  .peek-mine::before {
-    content: '';
-    position: absolute;
-    inset: -13px -8px;
-  }
-  .peek-num[aria-expanded='true'],
-  .peek-mine[aria-expanded='true'] {
-    background: var(--ink);
-    color: var(--table);
-    box-shadow: none;
-  }
   .tag-chip {
     padding: 1px 8px;
     border-radius: 999px;
@@ -1855,12 +1556,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-  .felt > .review {
-    position: absolute;
-    left: 4px;
-    bottom: calc(8px + var(--lift));
-    z-index: 6;
   }
   .react-status {
     align-items: center;
@@ -1931,18 +1626,6 @@
     text-align: center;
     font-size: 13px;
     color: var(--ink-muted);
-  }
-  .review {
-    min-height: 32px;
-    padding: 4px 10px;
-    font-size: 13px;
-    color: var(--ink-muted);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-  }
-  .review[aria-pressed='true'] {
-    color: var(--ink);
-    border-color: var(--ink);
   }
 
   /* The felt: four seats in fixed bands (two on top, one each side), the
@@ -2077,7 +1760,9 @@
   }
   /* Right under the bottom card's place, on one line. */
   .note.below {
-    top: calc(var(--cy) + var(--ty) + var(--card-h) / 2 + 8px);
+    /* Clear of a joker's lead tag (it hangs 14px under its card), but
+       never down into the turn pill on the tray's rim. */
+    top: min(calc(var(--cy) + var(--ty) + var(--card-h) / 2 + 20px), calc(100% - 46px));
     transform: translateX(-50%);
     max-width: calc(100cqw - 16px);
     overflow: hidden;
@@ -2114,14 +1799,6 @@
     background: var(--panel);
     box-shadow: 0 4px 0 rgb(0 0 0 / 0.08);
     z-index: 2;
-  }
-  .review-sheet {
-    display: grid;
-    justify-items: center;
-    gap: 8px;
-    width: auto;
-    max-width: calc(100% - 8px);
-    padding: 10px 12px;
   }
   /* Sheet buttons that only close: secondary, and small. */
   .sheet .close {
@@ -2181,28 +1858,6 @@
   /* As in the hand, only the last card shows its big glyph. */
   .thrown-row :global(.card:not(:last-child) .glyph) {
     visibility: hidden;
-  }
-  .mini-slot {
-    position: relative;
-    margin-bottom: 8px;
-  }
-  .review-cards {
-    display: flex;
-    gap: 8px;
-  }
-  figure {
-    margin: 0;
-    display: grid;
-    justify-items: center;
-    gap: 4px;
-  }
-  figcaption {
-    max-width: 56px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 12px;
-    color: var(--ink-muted);
   }
 
   /* The result's room: from under the top seats to the table's foot, in
@@ -2651,9 +2306,11 @@
     transition: outline-color var(--dur-quick) var(--ease-standard);
   }
   /* Your own reaction rises over your hand, as others' rise over their seats. */
+  /* Your reaction rises at the tray's left, over your own seat, clear of
+     the turn pill and the round note in the middle. */
   .my-reaction {
     position: absolute;
-    left: 50%;
+    left: 64px;
     top: 0;
     z-index: 6;
     padding: 4px 12px;
@@ -2810,12 +2467,7 @@
     .table.tips {
       --event-h: 36px;
     }
-    .status,
-    .felt > .review {
-      display: none;
-    }
-    /* The event line lives in 기록 here; tips for learners stay. */
-    .event > p:not(.tip) {
+    .status {
       display: none;
     }
     .side {
@@ -2833,6 +2485,10 @@
     border-radius: 16px;
     background: var(--panel);
     font-size: 13px;
+  }
+  .pane-empty {
+    margin: 0;
+    color: var(--ink-muted);
   }
   .pane-title {
     display: flex;
@@ -2858,10 +2514,6 @@
     color: var(--ink);
     font-family: var(--font-display);
     font-weight: 800;
-  }
-  .pane-empty {
-    margin: 0;
-    color: var(--ink-muted);
   }
   /* 상황판: the contract large, the facts beside it, the tally under. */
   .big-contract {
@@ -3056,103 +2708,10 @@
     text-align: right;
   }
   /* 기록: newest on top; it takes what height is left. */
-  .log-pane {
-    flex: 1 1 0;
-    min-height: 0;
-    overflow: hidden;
-  }
   /* A short log takes only its lines, not an empty block. */
-  .log-pane.short {
-    flex: 0 1 auto;
-  }
-  .log {
-    display: grid;
-    gap: 1px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .log li {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 3px 0;
-    border-top: 1px solid var(--line);
-    line-height: 20px;
-    color: var(--ink-muted);
-    animation: fade-up 240ms var(--ease-standard) both;
-  }
-  .log li:first-child {
-    border-top: 0;
-    color: var(--ink);
-    font-weight: 600;
-  }
-  .log-text {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .log-pts {
-    flex: none;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--ink);
-  }
-  .log-power .log-text,
-  .log-result .log-text {
-    color: var(--ink);
-    font-weight: 700;
-  }
   /* The friend's line carries a dot of the 여당 colour. */
-  .log-friend .log-text::before,
-  .log-declarer .log-text::before {
-    content: '';
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    margin-right: 6px;
-    border-radius: 50%;
-    background: var(--team-declarer);
-    vertical-align: 1px;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .log li {
-      animation: none;
-    }
-  }
   /* 직전 라운드: its five cards, small, with who played each. */
-  .last-cards {
-    display: flex;
-    justify-content: space-between;
-    gap: 4px;
-  }
-  .last-cards figure {
-    gap: 2px;
-  }
-  .last-cards figcaption {
-    max-width: 44px;
-    font-size: 11px;
-  }
-  .last-cards figure.won figcaption,
-  .review-cards figure.won figcaption {
-    color: var(--ink);
-    font-weight: 700;
-  }
   /* Who took the round: an ink outline; plum is only for "act now". */
-  figure.won :global(.card) {
-    outline: 2px solid var(--ink);
-    outline-offset: 1px;
-  }
-  .last-cards .mini-slot {
-    margin-bottom: 10px;
-  }
-  .last-pane .cols {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   /* Phones on their side: the strip moves beside the felt, seats go down
      both sides, and the note moves into the event line. */
