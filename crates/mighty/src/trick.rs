@@ -67,16 +67,7 @@ pub fn winner(ctx: &TrickContext, plays: &[Played]) -> usize {
         return i;
     }
 
-    let (main_joker, sub_joker) = match (ctx.deck, ctx.trump) {
-        (DeckKind::OneJoker, _) => (Some(Card::Joker(Color::Black)), None),
-        // Mighty, then the trump-colour joker, then trump, then the other
-        // joker, then everything else.
-        (DeckKind::TwoJokers, Some(trump)) => (
-            Some(Card::Joker(trump.color())),
-            Some(Card::Joker(other(trump.color()))),
-        ),
-        (DeckKind::TwoJokers, None) => (Some(Card::Joker(ctx.lead.color())), None),
-    };
+    let (main_joker, sub_joker) = jokers(ctx);
     if let Some(i) = main_joker.and_then(|j| find(&|p| p.powered && p.card == j)) {
         return i;
     }
@@ -95,6 +86,68 @@ pub fn winner(ctx: &TrickContext, plays: &[Played]) -> usize {
         .filter(|(_, p)| suit.is_some() && p.card.suit() == suit)
         .max_by_key(|(_, p)| p.card.rank())
         .map_or(0, |(i, _)| i)
+}
+
+/// The joker that ranks just under the mighty, and the one, with two
+/// jokers and a trump, that ranks between trumps and plain cards.
+fn jokers(ctx: &TrickContext) -> (Option<Card>, Option<Card>) {
+    match (ctx.deck, ctx.trump) {
+        (DeckKind::OneJoker, _) => (Some(Card::Joker(Color::Black)), None),
+        // Mighty, then the trump-colour joker, then trump, then the other
+        // joker, then everything else.
+        (DeckKind::TwoJokers, Some(trump)) => (
+            Some(Card::Joker(trump.color())),
+            Some(Card::Joker(other(trump.color()))),
+        ),
+        (DeckKind::TwoJokers, None) => (Some(Card::Joker(ctx.lead.color())), None),
+    }
+}
+
+/// Which plain cards can win a two-card trick: those of one suit, or,
+/// after a joker that sets no suit, any suited card (the second card
+/// sets it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlainSuit {
+    Suit(Suit),
+    Any,
+}
+
+/// [`PlainSuit`] for a two-card trick led by `first`.
+pub(crate) fn plain_suit(ctx: &TrickContext, first: &Played) -> PlainSuit {
+    let passed = ctx.powerless_joker_passes && first.card.is_joker() && !first.powered;
+    match (ctx.lead, first.card.suit()) {
+        (Lead::Suit(suit), _) if !passed => PlainSuit::Suit(suit),
+        (_, Some(suit)) => PlainSuit::Suit(suit),
+        (_, None) => PlainSuit::Any,
+    }
+}
+
+/// [`winner`] of a two-card trick as an order: with `suit` from
+/// [`plain_suit`] of the first card, the second card wins exactly when
+/// its key is greater. Keys rank the mighty, the main joker, trumps by
+/// rank, the other joker, plain cards of the winning suit by rank, and
+/// everything else, in that order; the tests check it card by card.
+pub(crate) fn power(ctx: &TrickContext, suit: PlainSuit, p: &Played) -> u16 {
+    let (main_joker, sub_joker) = jokers(ctx);
+    let rank = u16::from(p.card.rank().unwrap_or(0));
+    let tier = |tier: u16| tier * 16;
+    if p.powered && p.card == ctx.mighty {
+        tier(5)
+    } else if p.powered && Some(p.card) == main_joker {
+        tier(4)
+    } else if p.powered && is_trump(ctx, p) {
+        tier(3) + rank
+    } else if p.powered && Some(p.card) == sub_joker {
+        tier(2)
+    } else if p
+        .card
+        .suit()
+        .is_some_and(|s| suit == PlainSuit::Any || suit == PlainSuit::Suit(s))
+    {
+        tier(1) + rank
+    } else {
+        0
+    }
 }
 
 /// The suit whose highest card wins when no card with power is played.
@@ -240,6 +293,47 @@ mod tests {
         // Without the rule the named suit stands.
         let c = ctx_lead(DeckKind::TwoJokers, Some(Suit::Spade), Lead::Suit(Suit::Diamond), false);
         assert_eq!(winner(&c, &p), 2);
+    }
+
+    /// Every pair of cards, with and without power, under every deck,
+    /// trump, lead and joker-lead rule: `power` orders them as `winner`
+    /// decides.
+    #[test]
+    fn power_orders_two_card_tricks_as_winner_does() {
+        let cards: Vec<Card> = DeckKind::TwoJokers.cards();
+        let trumps = [
+            None,
+            Some(Suit::Spade),
+            Some(Suit::Diamond),
+            Some(Suit::Heart),
+            Some(Suit::Club),
+        ];
+        let leads = Suit::ALL
+            .map(Lead::Suit)
+            .into_iter()
+            .chain([Lead::Color(Color::Black), Lead::Color(Color::Red)]);
+        for deck in [DeckKind::OneJoker, DeckKind::TwoJokers] {
+            for trump in trumps {
+                for lead in leads.clone() {
+                    for passes in [false, true] {
+                        let c = ctx_lead(deck, trump, lead, passes);
+                        for &a in &cards {
+                            for &b in cards.iter().filter(|&&b| b != a) {
+                                for (pa, pb) in [(true, true), (true, false), (false, true), (false, false)] {
+                                    let p = plays(&[(a, pa), (b, pb)]);
+                                    let suit = plain_suit(&c, &p[0]);
+                                    assert_eq!(
+                                        winner(&c, &p) == 1,
+                                        power(&c, suit, &p[1]) > power(&c, suit, &p[0]),
+                                        "{a} then {b}, powered {pa} {pb}, {c:?}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

@@ -132,6 +132,55 @@ fn write_spec_snapshot() {
     std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/encoding.json"), json + "\n").unwrap();
 }
 
+/// FNV-1a, 64 bits: enough to notice any change to a stream of numbers.
+struct Fingerprint(u64);
+
+impl Fingerprint {
+    fn new() -> Fingerprint {
+        Fingerprint(0xcbf2_9ce4_8422_2325)
+    }
+
+    fn add(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0 ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+
+    fn observation(&mut self, obs: &Observation) {
+        for x in obs.global.iter().chain(&obs.cards).chain(&obs.events) {
+            self.add(&x.to_bits().to_le_bytes());
+        }
+        for c in &obs.event_cards {
+            self.add(&c.to_le_bytes());
+        }
+        self.add(&obs.events_len.to_le_bytes());
+        self.add(&obs.legal.iter().map(|&l| u8::from(l)).collect::<Vec<_>>());
+    }
+}
+
+/// What every seat sees at every position of a fixed set of random games,
+/// bit for bit. Like the spec, the values change only with `VERSION`;
+/// faster encoders must reproduce this exactly.
+#[test]
+fn encodings_are_pinned() {
+    let mut fingerprint = Fingerprint::new();
+    let mut positions = 0;
+    for (i, rules) in rule_sets().into_iter().enumerate().step_by(4) {
+        let players = rules.players;
+        play(&options(rules, i % players), i as u64, |state| {
+            for seat in 0..players {
+                fingerprint.observation(&encode(state, seat));
+                positions += 1;
+            }
+        });
+    }
+    assert_eq!(positions, 7833);
+    assert_eq!(
+        fingerprint.0, 0x399c_baa2_fc25_9c4d,
+        "the encoding changed; bump VERSION and pin the new fingerprint"
+    );
+}
+
 /// Each legal action of every position of many random games has its own
 /// index, which maps back to it.
 #[test]

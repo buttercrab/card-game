@@ -167,6 +167,14 @@ impl Features {
         Features::default()
     }
 
+    /// Values only, with room for `capacity` of them.
+    pub fn with_capacity(capacity: usize) -> Features {
+        Features {
+            values: Vec::with_capacity(capacity),
+            names: None,
+        }
+    }
+
     /// Values and names, for building a [`Spec`].
     pub fn named() -> Features {
         Features {

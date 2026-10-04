@@ -29,7 +29,7 @@
 use crate::card::{ACE, Card, Color, Suit};
 use crate::rules::{BackRun, CardPolicy, Contract, Doubling, NextDealer, Rules, TrickPolicy, WinScore};
 use crate::state::{Action, Bid, FriendCall, Phase, TrickState, powered};
-use crate::trick::{self, Lead, Played, Trick, TrickContext};
+use crate::trick::{self, Lead, PlainSuit, Played, Trick, TrickContext, plain_suit, power};
 use crate::view::{PhaseView, View};
 use crate::{Mighty, Options, State};
 use engine::{Encode, Features, Game, Observation, Seat, Spec, Unsupported, Viewer};
@@ -449,29 +449,35 @@ impl<'a> Table<'a> {
     /// Each live card's power in the trick under way, or as a lead when
     /// none is: the share of the other live cards that would not beat it
     /// if played after it. 1 is unbeatable; 0 for cards already played.
+    ///
+    /// Who beats whom in a two-card trick is an order on [`power`] keys
+    /// once the lead and the winning plain suit are fixed, and those take
+    /// only a few values, so each card's count is a binary search among
+    /// the keys of its group instead of a trick played against every other
+    /// card. `tests::strengths_match_two_card_tricks` checks the two agree.
     fn strengths(&self) -> [f32; SLOTS] {
         // Power does not depend on the lead, so each card's is worked out once.
-        let t = self.trick_state(self.lead);
-        let live: Vec<Played> = (0..SLOTS)
-            .map(card_at)
-            .filter(|&card| self.live(card))
-            .map(|card| Played {
-                seat: 0,
-                card,
-                powered: powered(self.rules, t, card),
-            })
-            .collect();
+        let live = self.live_played();
+        let others = live.len().saturating_sub(1);
+        // Sorted keys of every live card, by (lead, winning suit).
+        let mut groups: Vec<(Lead, PlainSuit, Vec<u16>)> = Vec::new();
         let mut strengths = [0.0; SLOTS];
-        for &first in &live {
-            let ctx = self.context(self.lead.unwrap_or_else(|| natural_lead(first.card)));
-            let beaten = live
-                .iter()
-                .filter(|other| other.card != first.card)
-                .filter(|&&other| trick::winner(&ctx, &[first, Played { seat: 1, ..other }]) == 1)
-                .count();
-            let card = first.card;
-            let others = live.len() - 1;
-            strengths[slot(card)] = if others == 0 {
+        for first in &live {
+            let lead = self.lead.unwrap_or_else(|| natural_lead(first.card));
+            let ctx = self.context(lead);
+            let suit = plain_suit(&ctx, first);
+            let keys = match groups.iter().position(|&(l, s, _)| l == lead && s == suit) {
+                Some(i) => &groups[i].2,
+                None => {
+                    let mut keys: Vec<u16> = live.iter().map(|p| power(&ctx, suit, p)).collect();
+                    keys.sort_unstable();
+                    groups.push((lead, suit, keys));
+                    &groups[groups.len() - 1].2
+                }
+            };
+            let mine = power(&ctx, suit, first);
+            let beaten = keys.len() - keys.partition_point(|&k| k <= mine);
+            strengths[slot(first.card)] = if others == 0 {
                 1.0
             } else {
                 1.0 - beaten as f32 / others as f32
@@ -480,19 +486,35 @@ impl<'a> Table<'a> {
         strengths
     }
 
+    /// Every live card as played into the trick under way.
+    fn live_played(&self) -> Vec<Played> {
+        let t = self.trick_state(self.lead);
+        (0..SLOTS)
+            .map(card_at)
+            .filter(|&card| self.live(card))
+            .map(|card| Played {
+                seat: 0,
+                card,
+                powered: powered(self.rules, t, card),
+            })
+            .collect()
+    }
+
     /// Whether `card`, played now, would be winning the trick under way.
-    fn would_win(&self, card: Card) -> bool {
+    /// `plays` is scratch space, reused across cards.
+    fn would_win(&self, card: Card, plays: &mut Vec<Played>) -> bool {
         let Some(lead) = self.lead.filter(|_| !self.plays.is_empty()) else {
             // Leading: the first card is the trick so far.
             return true;
         };
-        let mut plays = self.plays.to_vec();
+        plays.clear();
+        plays.extend_from_slice(self.plays);
         plays.push(Played {
             seat: self.me,
             card,
             powered: powered(self.rules, self.trick_state(Some(lead)), card),
         });
-        trick::winner(&self.context(lead), &plays) == plays.len() - 1
+        trick::winner(&self.context(lead), plays) == plays.len() - 1
     }
 }
 
@@ -748,6 +770,8 @@ fn rules_features(f: &mut Features, r: &Rules) {
 struct CardRow {
     card: Card,
     strength: f32,
+    /// Live, and would win the trick under way if played now.
+    would_win: bool,
     playable: bool,
 }
 
@@ -798,12 +822,10 @@ fn card_features(f: &mut Features, t: &Table, row: &CardRow) {
     f.flag("friend_card", on(t.call == Some(FriendCall::Card(card))));
 
     // In the trick under way.
-    let live = t.live(card);
-    let in_play = matches!(t.view.phase, PhaseView::Play { .. });
     f.flag("powered", on(powered(rules, t.trick_state(t.lead), card)));
     f.flag("follows", on(t.lead.is_some_and(|lead| lead.follows(card))));
     f.num("strength", row.strength);
-    f.flag("would_win", on(live && in_play && t.would_win(card)));
+    f.flag("would_win", on(row.would_win));
     f.flag("playable", row.playable);
     f.flag("called_joker", on(t.called_joker == Some(card)));
 
@@ -969,8 +991,17 @@ struct Names {
 /// pass so the names always match the values.
 fn encode_into(view: &View, legal: &[Action], named: bool) -> (Observation, Option<Names>) {
     let t = Table::new(view);
-    let features = || if named { Features::named() } else { Features::new() };
-    let names = |f: &Features| f.names().map(<[String]>::to_vec).unwrap_or_default();
+    // Each array is written by one builder, row after row: allocating per
+    // row was most of the cost of an encoding.
+    let features = |capacity| {
+        if named {
+            Features::named()
+        } else {
+            Features::with_capacity(capacity)
+        }
+    };
+    // The names of a builder's first `width` features.
+    let names = |f: &Features, width: usize| f.names().map(|n| n[..width].to_vec()).unwrap_or_default();
 
     let mut playable = [false; SLOTS];
     for action in legal {
@@ -978,49 +1009,48 @@ fn encode_into(view: &View, legal: &[Action], named: bool) -> (Observation, Opti
             playable[slot(*card)] = true;
         }
     }
-    let mut cards = Vec::with_capacity(SLOTS * 64);
-    let mut card_names = Vec::new();
+    let in_play = matches!(view.phase, PhaseView::Play { .. });
+    let mut trick = Vec::with_capacity(MAX_SEATS);
+    let mut cards = features(SLOTS * 64);
     for (i, strength) in t.strengths().into_iter().enumerate() {
-        let mut f = features();
+        let card = card_at(i);
         let row = CardRow {
-            card: card_at(i),
+            card,
             strength,
+            would_win: in_play && t.live(card) && t.would_win(card, &mut trick),
             playable: playable[i],
         };
-        card_features(&mut f, &t, &row);
-        if i == 0 {
-            card_names = names(&f);
-        }
-        cards.extend(f.into_values());
+        card_features(&mut cards, &t, &row);
     }
+    let card_width = cards.len() / SLOTS;
 
     let all = events(&t);
     let kept = &all[all.len().saturating_sub(MAX_EVENTS)..];
     // A blank row gives the width and names even before anything happened.
-    let mut blank = features();
+    let mut blank = features(64);
     event_features(&mut blank, &t, &Event::default());
     let width = blank.len();
-    let mut events = vec![0.0; MAX_EVENTS * width];
+    let mut rows = Features::with_capacity(MAX_EVENTS * width);
     let mut event_cards = vec![-1; MAX_EVENTS];
     for (i, e) in kept.iter().enumerate() {
-        let mut f = Features::new();
-        event_features(&mut f, &t, e);
-        events[i * width..(i + 1) * width].copy_from_slice(f.values());
+        event_features(&mut rows, &t, e);
         event_cards[i] = e.card.map_or(-1, |c| slot(c) as i32);
     }
+    let mut events = rows.into_values();
+    events.resize(MAX_EVENTS * width, 0.0);
 
-    let mut g = features();
+    let mut g = features(256);
     global(&mut g, &t);
     g.num("events_dropped", (all.len() - kept.len()) as f32 / MAX_EVENTS as f32);
 
     let names = named.then(|| Names {
-        global: names(&g),
-        card: card_names,
-        event: names(&blank),
+        global: names(&g, g.len()),
+        card: names(&cards, card_width),
+        event: names(&blank, width),
     });
     let obs = Observation {
         global: g.into_values(),
-        cards,
+        cards: cards.into_values(),
         events,
         event_cards,
         events_len: kept.len(),
@@ -1097,5 +1127,70 @@ impl Encode for Mighty {
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::Preset;
+    use engine::Turn;
+    use rand::seq::IndexedRandom;
+    use rand::{Rng, SeedableRng};
+    use rand_chacha::ChaCha8Rng;
+
+    /// Strengths as first written: every live card played first against
+    /// every other in a two-card trick.
+    fn strengths_by_tricks(t: &Table) -> [f32; SLOTS] {
+        let live = t.live_played();
+        let mut strengths = [0.0; SLOTS];
+        for &first in &live {
+            let ctx = t.context(t.lead.unwrap_or_else(|| natural_lead(first.card)));
+            let beaten = live
+                .iter()
+                .filter(|other| other.card != first.card)
+                .filter(|&&other| trick::winner(&ctx, &[first, Played { seat: 1, ..other }]) == 1)
+                .count();
+            let others = live.len() - 1;
+            strengths[slot(first.card)] = if others == 0 {
+                1.0
+            } else {
+                1.0 - beaten as f32 / others as f32
+            };
+        }
+        strengths
+    }
+
+    /// The fast strengths equal the trick-by-trick ones bit for bit, for
+    /// every seat of every position of random hands over varied rules.
+    #[test]
+    fn strengths_match_two_card_tricks() {
+        let mut rng = ChaCha8Rng::seed_from_u64(3);
+        let mut positions = 0;
+        for game in 0..40 {
+            let rules = Preset::ALL[game % Preset::ALL.len()].rules().varied(&mut rng);
+            let players = rules.players;
+            let options = Options {
+                rules,
+                first_bidder: rng.random_range(0..players),
+            };
+            let mut state = Mighty::new_game(&options).unwrap();
+            loop {
+                for seat in 0..players {
+                    let view = Mighty::view(&state, Viewer::Seat(seat));
+                    let t = Table::new(&view);
+                    let (fast, slow) = (t.strengths(), strengths_by_tricks(&t));
+                    assert_eq!(fast.map(f32::to_bits), slow.map(f32::to_bits), "{view:?}");
+                    positions += 1;
+                }
+                let action = match Mighty::turn(&state) {
+                    Turn::Over => break,
+                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                    Turn::Seat(_) => Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone(),
+                };
+                Mighty::apply(&mut state, action).unwrap();
+            }
+        }
+        assert!(positions > 5_000, "only {positions} positions");
     }
 }
