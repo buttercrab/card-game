@@ -1,19 +1,15 @@
 <script lang="ts">
-  import { botName } from './names';
   import { onDestroy, untrack } from 'svelte';
   import { RoomClient, savedName } from './client.svelte';
   import { PRESET_NAME } from './presets';
   import ReportSheet from './ReportSheet.svelte';
-  import PlayerFigure from './PlayerFigure.svelte';
+  import LobbyTable from './LobbyTable.svelte';
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import SettingsSheet from './SettingsSheet.svelte';
   import { sound } from './sound';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
-  import type { BotLevel } from './types';
-
-  const LEVEL: Record<BotLevel, string> = { easy: '초보', normal: '보통', hard: '고수' };
 
   let { id, onleave }: { id: string; onleave: () => void } = $props();
 
@@ -73,9 +69,31 @@
     room?.seats.flatMap((s, i) => (s.kind === 'human' && !s.connected ? [{ seat: i, name: s.name }] : [])) ?? [],
   );
 
+  // Your name is asked for once, then remembered (client.join saves it), so
+  // later tables seat you with a single tap on an empty seat.
+  let editingName = $state(!untrack(() => name).trim());
+  let pending = $state<number | null>(null);
+  let nameInput = $state<HTMLInputElement>();
+  const filled = $derived(room?.seats.filter((s) => s.kind !== 'empty').length ?? 0);
+
+  function sitAt(seat: number) {
+    if (name.trim()) {
+      client.join(name.trim(), seat);
+      editingName = false;
+      return;
+    }
+    pending = seat;
+    editingName = true;
+    queueMicrotask(() => nameInput?.focus());
+  }
+
   function take(event: SubmitEvent) {
     event.preventDefault();
-    if (name.trim()) client.join(name.trim());
+    if (!name.trim()) return;
+    const seat = pending !== null && room?.seats[pending]?.kind === 'empty' ? pending : undefined;
+    client.join(name.trim(), seat);
+    pending = null;
+    editingName = false;
   }
 
   async function copyLink() {
@@ -128,76 +146,67 @@
     {/if}
 
     {#if showLobby}
-      <section class="panel lobby">
+      <section class="lobby" aria-labelledby="lobby-title">
         <div class="lobby-head">
-          <h2>{room.hands_played === 0 ? '자리' : `${room.hands_played}판 끝`}</h2>
-          {#if seated && room.hands_played === 0}
-            <button class="primary" disabled={!full} onclick={() => client.start()}>시작</button>
-          {/if}
+          <h2 id="lobby-title">{room.hands_played === 0 ? '자리' : `${room.hands_played}판 끝`}</h2>
+          <div class="rules-line">
+            <span>
+              {PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙
+              {#if room.settings.rules}<span class="tag">바꾼 규칙</span>{/if}
+            </span>
+            <button class="ghost small" onclick={() => (showRules = true)}>보기</button>
+            {#if seated}<button class="ghost small" onclick={() => (editRules = true)}>바꾸기</button>{/if}
+          </div>
         </div>
+
+        <LobbyTable
+          {room}
+          me={client.seat}
+          onsit={sitAt}
+          onaddbot={(i, level) => client.addBot(i, level)}
+          onremovebot={(i) => client.removeBot(i)}
+        >
+          {#snippet centre()}
+            {#if seated && room.hands_played === 0}
+              <button class="primary start" disabled={!full} onclick={() => client.start()}>시작</button>
+              <span class="count" aria-label="{filled}명 앉음, 5명이 필요해요">{filled} / {room.seats.length}</span>
+            {:else if seated}
+              <span class="centre-note">{room.hands_played}판 끝</span>
+            {:else if full}
+              <span class="centre-note">자리가 다 찼어요</span>
+            {:else}
+              <span class="centre-note">빈 자리를 눌러 앉으세요</span>
+            {/if}
+          {/snippet}
+        </LobbyTable>
+
         {#if seated && !full}
           <p class="muted hint">빈 자리를 친구나 봇으로 채우면 시작할 수 있어요.</p>
         {/if}
-        <div class="rules-line">
-          <span>
-            {PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙
-            {#if room.settings.rules}<span class="tag">바꾼 규칙</span>{/if}
-          </span>
-          <button class="ghost small" onclick={() => (showRules = true)}>보기</button>
-          {#if seated}<button class="ghost small" onclick={() => (editRules = true)}>바꾸기</button>{/if}
-        </div>
-
-        <ol class="seats">
-          {#each room.seats as s, i (i)}
-            <li class:me={client.seat === i}>
-              <span class="seat-no">{i + 1}</span>
-              <span class="seat-figure">
-                {#if s.kind !== 'empty'}<PlayerFigure still isBot={s.kind === 'bot'} offline={s.kind === 'human' && !s.connected} />{:else}<span class="empty-figure" aria-hidden="true"></span>{/if}
-              </span>
-              {#key s.kind + ('name' in s ? s.name : '')}<span class="seat-name fade-up">
-                {#if s.kind === 'empty'}
-                  <span class="muted">빈 자리</span>
-                {:else}
-                  {s.kind === 'bot' ? botName(i) : s.name}
-                  {#if s.kind === 'bot' && !seated}<span class="tag">{LEVEL[s.level ?? 'hard']}</span>{/if}
-                  {#if client.seat === i}<span class="tag">나</span>{/if}
-                  {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>{/if}
-                {/if}
-              </span>{/key}
-              {#if room.hands_played > 0}
-                <span class="score" class:neg={room.scores[i] < 0} title="누적 점수">{room.scores[i] > 0 ? '+' : ''}{room.scores[i]}</span>
-              {/if}
-              <span class="seat-actions">
-                {#if s.kind === 'empty' && !seated && name.trim()}
-                  <button onclick={() => client.join(name.trim(), i)}>앉기</button>
-                {:else if s.kind === 'empty' && seated}
-                  <button onclick={() => client.addBot(i)}>봇 넣기</button>
-                {:else if s.kind === 'bot' && seated}
-                  <select
-                    class="level"
-                    aria-label="{botName(i)} 실력"
-                    value={s.level ?? 'hard'}
-                    onchange={(e) => client.addBot(i, e.currentTarget.value as BotLevel)}
-                  >
-                    <option value="easy">초보 · 빨리 둬요</option>
-                    <option value="normal">보통</option>
-                    <option value="hard">고수 · 오래 생각해요</option>
-                  </select>
-                  {#if !inHand}<button class="ghost" onclick={() => client.removeBot(i)}>빼기</button>{/if}
-                {:else if s.kind === 'human' && !s.connected && seated}
-                  <button class="ghost" onclick={() => client.addBot(i)}>봇으로 바꾸기</button>
-                {/if}
-              </span>
-            </li>
-          {/each}
-        </ol>
 
         {#if !seated}
-          <form onsubmit={take}>
-            <input bind:value={name} placeholder="이름" aria-label="이름" maxlength="24" />
-            <button class="primary" type="submit" disabled={!name.trim() || full}>자리에 앉기</button>
-          </form>
-          {#if full}<p class="muted hint">자리가 다 찼어요. 구경하는 중이에요.</p>{/if}
+          {#if full}
+            <p class="muted hint">구경하는 중이에요.</p>
+          {:else if editingName}
+            <form onsubmit={take}>
+              <input
+                bind:this={nameInput}
+                bind:value={name}
+                placeholder="이름"
+                aria-label="이름"
+                maxlength="24"
+                autocomplete="nickname"
+              />
+              <button class="primary" type="submit" disabled={!name.trim()}>
+                {pending === null ? '자리에 앉기' : `${pending + 1}번 자리에 앉기`}
+              </button>
+            </form>
+          {:else}
+            <p class="as-name">
+              <span><strong>{name.trim()}</strong> 이름으로 앉아요</span>
+              <button class="ghost small" onclick={() => (editingName = true)}>이름 바꾸기</button>
+            </p>
+          {/if}
         {:else}
           <button class="ghost leave" onclick={() => client.leave()}>자리에서 일어나기</button>
         {/if}
@@ -306,71 +315,27 @@
     margin: 0;
     font-size: 17px;
   }
+  /* The lobby is the table itself, not a list: see LobbyTable. */
   .lobby {
     display: grid;
     gap: 12px;
-    max-width: 560px;
+    max-width: 720px;
     width: 100%;
     justify-self: center;
+    padding-top: 4px;
   }
   .lobby-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-  }
-  .lobby-head .primary {
-    min-width: 120px;
+    gap: 4px 12px;
   }
   .hint {
     margin: 0;
     font-size: 14px;
-  }
-  .seats {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 6px;
-  }
-  .seats li {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 56px;
-    padding: 6px 8px 6px 12px;
-    border-radius: 12px;
-    background: var(--table);
-  }
-  .seats li.me {
-    outline: 2px solid var(--ink);
-    outline-offset: -2px;
-  }
-  .seat-no {
-    width: 18px;
-    color: var(--ink-muted);
-    font-variant-numeric: tabular-nums;
-  }
-  /* An empty seat: the outline of a figure waiting to be filled. */
-  .empty-figure {
-    display: block;
-    width: 22px;
-    height: 22px;
-    margin: 2px auto 0;
-    border: 2px dashed var(--line);
-    border-radius: 50%;
-  }
-  .seat-figure {
-    flex: none;
-    width: 36px;
-  }
-  .seat-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 600;
+    text-align: center;
+    word-break: keep-all;
   }
   .tag {
     margin-left: 6px;
@@ -381,34 +346,44 @@
     font-weight: 600;
     color: var(--ink-muted);
   }
-  .tag.warn {
-    border-color: var(--danger);
-    color: var(--danger);
+  .start {
+    min-width: min(120px, 100%);
   }
-  .score {
-    font-family: var(--font-display);
-    font-weight: 800;
+  .count {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-muted);
     font-variant-numeric: tabular-nums;
   }
-  .score.neg {
-    color: var(--danger);
+  .centre-note {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    word-break: keep-all;
   }
   form {
     display: flex;
     gap: 8px;
+    width: 100%;
+    max-width: 420px;
+    justify-self: center;
   }
   form input {
     flex: 1;
     min-width: 0;
   }
-  .level {
-    min-height: 40px;
-    padding: 0 8px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--bg);
+  .as-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 4px 8px;
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-muted);
+  }
+  .as-name strong {
     color: var(--ink);
-    font-weight: 600;
   }
   .rules-line {
     display: flex;
@@ -417,13 +392,13 @@
     font-size: 14px;
   }
   .rules-line > span {
-    flex: 1;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 0;
+    color: var(--ink-muted);
   }
   .leave {
-    justify-self: start;
+    justify-self: center;
     font-size: 14px;
     color: var(--ink-muted);
   }
