@@ -89,6 +89,17 @@ async fn main() -> std::io::Result<()> {
     if let Some(ms) = args.bot_think_ms {
         state = state.with_bot_think(Duration::from_millis(ms));
     }
+    // The owner's /stats page, the analytics beacon and the site's address.
+    let env = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+    if let Some(token) = env("STATS_TOKEN") {
+        state = state.with_stats_token(token);
+    }
+    if let Some(token) = env("CF_BEACON_TOKEN") {
+        state = state.with_beacon(token.trim().to_string());
+    }
+    if let Some(url) = env("SITE_URL") {
+        state = state.with_site_url(url);
+    }
     if let Some(dir) = args.data {
         state = state.with_data(dir);
         let restored = state.restore_rooms()?;
@@ -96,5 +107,7 @@ async fn main() -> std::io::Result<()> {
     }
     let listener = tokio::net::TcpListener::bind(args.addr).await?;
     tracing::info!("listening on http://{}", listener.local_addr()?);
-    axum::serve(listener, router(state, Some(args.web))).await
+    // The peer address backs the rate limits when no proxy names the client.
+    let app = router(state, Some(args.web)).into_make_service_with_connect_info::<SocketAddr>();
+    axum::serve(listener, app).await
 }

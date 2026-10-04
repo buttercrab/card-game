@@ -42,6 +42,15 @@ pub trait SessionGame:
 
     /// The hand in brief, once it is over.
     fn summary(state: &Self::State) -> Option<Self::Summary>;
+
+    /// The preset the table plays, by id, for the stats.
+    fn preset_id(settings: &Self::Settings) -> &'static str;
+
+    /// Whether the table's players changed the preset's rules.
+    fn customized(settings: &Self::Settings) -> bool;
+
+    /// How a finished hand went, in a word, for the stats.
+    fn outcome(state: &Self::State) -> &'static str;
 }
 
 /// How well a seated bot plays.
@@ -130,6 +139,22 @@ impl SessionGame for Mighty {
 
     fn summary(state: &mighty::State) -> Option<mighty::HandSummary> {
         state.summary()
+    }
+
+    fn preset_id(settings: &MightySettings) -> &'static str {
+        settings.preset.name()
+    }
+
+    fn customized(settings: &MightySettings) -> bool {
+        settings.rules.as_ref().is_some_and(|r| *r != settings.preset.rules())
+    }
+
+    fn outcome(state: &mighty::State) -> &'static str {
+        match state.summary() {
+            Some(s) if s.made => "made",
+            Some(_) => "failed",
+            None => "none",
+        }
     }
 }
 

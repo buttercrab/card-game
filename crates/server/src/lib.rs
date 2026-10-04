@@ -2,9 +2,15 @@
 //! task (see [`room`]).
 
 pub mod bots;
+pub mod dashboard;
+pub mod errors;
+pub mod limit;
 pub mod room;
 pub mod session;
+pub mod site;
+pub mod stats;
 
+use axum::extract::DefaultBodyLimit;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -12,6 +18,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
+use limit::{ClientIp, Limits, too_many};
 use mighty::Mighty;
 use mighty::rules::Preset;
 use rand::Rng;
@@ -19,13 +26,13 @@ use room::{ClientMsg, Command, ConnId, Room};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use session::{MightySettings, SessionGame};
+use stats::{Event, Stats};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc::{self, UnboundedSender};
-use tower_http::services::{ServeDir, ServeFile};
 
 type Registry = Arc<Mutex<HashMap<String, UnboundedSender<Command>>>>;
 
@@ -47,6 +54,18 @@ pub struct AppState {
     bot_token: Option<String>,
     /// When recent problem reports arrived, to cap them per hour.
     reports: Arc<Mutex<Vec<std::time::Instant>>>,
+    /// When new client errors were last filed as issues, to cap them per hour.
+    error_issues: Arc<Mutex<Vec<std::time::Instant>>>,
+    stats: Arc<Stats>,
+    /// The secret that opens `/stats`; without one, it does not exist.
+    stats_token: Option<String>,
+    limits: Arc<Limits>,
+    /// The built web client, if served.
+    web: Option<PathBuf>,
+    /// The site's own address, for canonical links and the sitemap.
+    site_url: String,
+    /// Cloudflare Web Analytics token, if pages should load its beacon.
+    beacon: Option<String>,
 }
 
 impl AppState {
@@ -60,9 +79,53 @@ impl AppState {
             idle: Duration::from_secs(30 * 60),
             data: None,
             reports: Arc::default(),
+            error_issues: Arc::default(),
             remote: Arc::default(),
             bot_token: None,
+            stats: Arc::new(Stats::in_memory()),
+            stats_token: None,
+            limits: Arc::default(),
+            web: None,
+            site_url: site::SITE_URL.to_string(),
+            beacon: None,
         }
+    }
+
+    /// Opens `/stats` and `/api/stats` to whoever presents `token`.
+    pub fn with_stats_token(self, token: String) -> AppState {
+        AppState {
+            stats_token: Some(token),
+            ..self
+        }
+    }
+
+    /// Adds the Cloudflare Web Analytics beacon with this token to every page.
+    pub fn with_beacon(self, token: String) -> AppState {
+        AppState {
+            beacon: Some(token),
+            ..self
+        }
+    }
+
+    /// Where the site is served, for canonical links; [`site::SITE_URL`] by default.
+    pub fn with_site_url(self, url: String) -> AppState {
+        AppState {
+            site_url: url.trim_end_matches('/').to_string(),
+            ..self
+        }
+    }
+
+    /// Replaces the rate limits, say to loosen them for a test.
+    pub fn with_rate_limits(self, limits: Limits) -> AppState {
+        AppState {
+            limits: Arc::new(limits),
+            ..self
+        }
+    }
+
+    /// The stats log, for recording from outside a request.
+    pub fn stats(&self) -> Arc<Stats> {
+        self.stats.clone()
     }
 
     /// Accepts bot workers that present `token`; see [`bots`].
@@ -86,10 +149,19 @@ impl AppState {
         }
     }
 
-    /// Saves every room under `dir` as it changes; see [`AppState::restore_rooms`].
+    /// Saves every room under `dir` as it changes (see
+    /// [`AppState::restore_rooms`]) and keeps the stats log there.
     pub fn with_data(self, dir: PathBuf) -> AppState {
+        let stats = match Stats::open(&dir) {
+            Ok(stats) => Arc::new(stats),
+            Err(e) => {
+                tracing::error!(dir = %dir.display(), "could not open the stats log, keeping it in memory: {e}");
+                self.stats.clone()
+            }
+        };
         AppState {
             data: Some(dir),
+            stats,
             ..self
         }
     }
@@ -116,6 +188,7 @@ impl AppState {
                         room.limit_think(think);
                     }
                     room.use_remote(self.remote.clone());
+                    room.use_stats(self.stats.clone());
                     let id = room.id().to_string();
                     let mut rooms = self.rooms.lock().expect("room registry poisoned");
                     self.spawn_room(&mut rooms, id, room);
@@ -156,11 +229,16 @@ impl AppState {
                 break id;
             }
         };
-        let mut room = Room::<G>::new(id.clone(), settings, self.bot_delay);
+        let mut room = Room::<G>::new(id.clone(), settings.clone(), self.bot_delay);
         if let Some(think) = self.bot_think {
             room.limit_think(think);
         }
         room.use_remote(self.remote.clone());
+        room.use_stats(self.stats.clone());
+        self.stats.record(Event::TableCreated {
+            table: id.clone(),
+            preset: G::preset_id(&settings).to_string(),
+        });
         self.spawn_room(&mut rooms, id.clone(), room);
         Some(id)
     }
@@ -189,7 +267,8 @@ impl AppState {
 
 /// The API under `/api`, plus the built web client from `web_dir` if given.
 pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
-    let api = Router::new()
+    let state = AppState { web: web_dir, ..state };
+    Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/api/presets", get(presets))
         .route("/api/presets/{id}", get(preset_rules))
@@ -197,13 +276,19 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
         .route("/api/reports", post(report))
+        .route(
+            "/api/errors",
+            post(errors::client_error).layer(DefaultBodyLimit::max(32 * 1024)),
+        )
+        .route("/api/stats", get(dashboard::stats_json))
+        .route("/stats", get(dashboard::stats_page))
+        .route("/robots.txt", get(site::robots_txt))
+        .route("/sitemap.xml", get(site::sitemap_xml))
         .route("/internal/bots", get(bot_worker))
-        .with_state(state);
-    match web_dir {
-        // Unknown paths such as /r/abc123 get the app, which routes on the client.
-        Some(dir) => api.fallback_service(ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html")))),
-        None => api,
-    }
+        // Built files, or the app's page for the path (see [`site`]).
+        .fallback(site::fallback)
+        .layer(axum::middleware::map_response(site::base_headers))
+        .with_state(state)
 }
 
 async fn presets() -> Json<Vec<&'static str>> {
@@ -227,7 +312,7 @@ async fn bot_worker(State(app): State<AppState>, headers: axum::http::HeaderMap,
 }
 
 /// Compares secrets without leaking how much of them matched.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
@@ -245,7 +330,10 @@ struct CreateRoom {
     preset: Option<Preset>,
 }
 
-async fn create_room(State(app): State<AppState>, body: Option<Json<CreateRoom>>) -> Response {
+async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: Option<Json<CreateRoom>>) -> Response {
+    if !app.limits.tables.allow(ip) {
+        return too_many();
+    }
     let preset = body.and_then(|Json(b)| b.preset).unwrap_or(Preset::Gshs);
     match app.create_room::<Mighty>(MightySettings { preset, rules: None }) {
         Some(id) => Json(json!({ "id": id })).into_response(),
@@ -266,12 +354,15 @@ struct Report {
 }
 
 /// Reports kept at most this long, and accepted at most this often.
-const REPORT_DAYS: u64 = 14;
+pub(crate) const REPORT_DAYS: u64 = 14;
 const REPORTS_PER_HOUR: usize = 30;
 
 /// Saves a player's problem report with the room's state and move log under
 /// `<data>/reports`, where the deploy host picks it up and files an issue.
-async fn report(State(app): State<AppState>, Json(r): Json<Report>) -> Response {
+async fn report(State(app): State<AppState>, ClientIp(ip): ClientIp, Json(r): Json<Report>) -> Response {
+    if !app.limits.reports.allow(ip) {
+        return too_many();
+    }
     let text: String = r.text.trim().chars().take(2000).collect();
     if text.is_empty() {
         return (StatusCode::BAD_REQUEST, "describe the problem").into_response();
@@ -296,9 +387,8 @@ async fn report(State(app): State<AppState>, Json(r): Json<Report>) -> Response 
                 .unwrap_or(Value::Null);
         }
     }
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
+    let now = stats::now();
+    app.stats.record_at(now, Event::Report { table: room_id.clone() });
     let report = json!({
         "time": now,
         "version": env!("CARGO_PKG_VERSION"),
@@ -322,7 +412,7 @@ async fn report(State(app): State<AppState>, Json(r): Json<Report>) -> Response 
 }
 
 /// Deletes reports older than [`REPORT_DAYS`]; their names start with the time.
-fn prune_reports(dir: &std::path::Path, now: u64) {
+pub(crate) fn prune_reports(dir: &std::path::Path, now: u64) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -340,7 +430,15 @@ async fn room_info(State(app): State<AppState>, Path(id): Path<String>) -> Respo
     }
 }
 
-async fn connect(State(app): State<AppState>, Path(id): Path<String>, ws: WebSocketUpgrade) -> Response {
+async fn connect(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Path(id): Path<String>,
+    ws: WebSocketUpgrade,
+) -> Response {
+    if !app.limits.sockets.allow(ip) {
+        return too_many();
+    }
     let Some(room) = app.room(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };

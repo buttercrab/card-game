@@ -90,7 +90,11 @@ async fn join(ws: &mut Socket, name: &str, token: Option<&str>) -> (u64, String)
 
 #[tokio::test]
 async fn one_player_and_four_bots_finish_a_hand() {
-    let addr = spawn_server().await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = AppState::new(Duration::ZERO);
+    let stats = state.stats();
+    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
     let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
     let (seat, _) = join(&mut ws, "Jae", None).await;
@@ -136,6 +140,15 @@ async fn one_player_and_four_bots_finish_a_hand() {
     let taken: i64 = rounds.iter().filter(|&&r| r > 0).sum();
     assert!(taken <= hands[0]["team_points"].as_i64().unwrap());
     assert!(rounds.iter().map(|r| r.abs()).sum::<i64>() <= 20);
+
+    // The stats saw the table, its seats and both hands, but no names.
+    let s = stats.summary(server::stats::now());
+    assert_eq!(s.totals.tables, 1);
+    assert_eq!((s.totals.hands_started, s.totals.hands_finished), (2, 1));
+    assert_eq!(s.bots_by_level.get("hard"), Some(&4));
+    assert_eq!(s.hands_by_humans.get(&1), Some(&1));
+    assert_eq!(s.presets[0].preset, "gshs");
+    assert_eq!(s.players.active_7, 1);
 }
 
 #[tokio::test]
@@ -479,4 +492,29 @@ async fn a_bot_worker_thinks_for_the_room() {
         }
     }
     assert!(remote.answered() > 10, "the worker made the bots' moves");
+}
+
+#[tokio::test]
+async fn a_hand_left_unfinished_when_the_table_closes_counts_as_abandoned() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = AppState::new(Duration::from_millis(50)).with_limits(10, Duration::from_millis(200));
+    let stats = state.stats();
+    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    join(&mut ws, "Jae", None).await;
+    for bot in 1..5 {
+        send(&mut ws, json!({ "type": "add_bot", "seat": bot })).await;
+    }
+    send(&mut ws, json!({ "type": "start" })).await;
+    next(&mut ws, "state").await;
+    // Everyone leaves mid-hand; the table closes once idle.
+    drop(ws);
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let s = stats.summary(server::stats::now());
+    assert_eq!(s.totals.hands_started, 1);
+    assert_eq!(s.totals.hands_abandoned, 1);
+    assert_eq!(s.totals.hands_finished, 0);
 }
