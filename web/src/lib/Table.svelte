@@ -15,7 +15,7 @@
   import Seat, { TEAM_LABEL, subject, type Team } from './Seat.svelte';
   import Callout from './Callout.svelte';
   import SuitIcon from './SuitIcon.svelte';
-  import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
+  import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, kittyCount, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
   import { after, later } from './clock';
   import { flyFrom, flyTo, juice, pop, ring, settle } from './motion';
@@ -356,7 +356,7 @@
   });
 
   // ---- My choices ----------------------------------------------------------
-  const kittySize = $derived(52 + (twoJokers ? 2 : 1) - n * view.rules.hand_size);
+  const kittySize = $derived(kittyCount(view.rules));
   const toDiscard = $derived(exchange ? kittySize - (exchange.discards?.length ?? 0) : 0);
   // The hand answers to the latest server state, not the one still being
   // animated: once it is your turn you can play, and playing skips ahead.

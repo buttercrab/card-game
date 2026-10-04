@@ -2,9 +2,9 @@
   // The rules of one preset in plain Korean, written from the server's
   // actual rule values so the book can never disagree with the game.
   import Card from './Card.svelte';
-  import { cardLabel, jokers } from './cards';
+  import { cardLabel, jokers, kittyCount, rankLabel } from './cards';
   import { PRESET_NAME } from './presets';
-  import type { Card as CardT, CardPolicy, Rules, TrickPolicy } from './types';
+  import type { Card as CardT, CardPolicy, Contract, Rules, Scoring, TrickPolicy } from './types';
 
   /** `rules` overrides the preset's, for a table whose players changed them. */
   let { preset, rules: given = null }: { preset: string; rules?: Rules | null } = $props();
@@ -35,9 +35,110 @@
 
   const n = (suit: 'Spade' | 'Diamond' | 'Heart' | 'Club', rank: number): CardT => ({ Normal: [suit, rank] });
 
-  const kitty = (r: Rules) => 52 + jokers(r).length - r.players * r.hand_size;
+  const kitty = kittyCount;
 
   const signed = (v: number) => (v > 0 ? `+${v}` : String(v));
+
+  /** What the server scores with when the rules predate the options. */
+  const DEFAULT_SCORING: Scoring = {
+    win: 'OverTen',
+    no_trump: 'Win',
+    alone: 'Win',
+    run: true,
+    back_run: { TeamAtMost: 10 },
+    discards_to_declarer: true,
+  };
+  const scoring = (r: Rules): Scoring => r.scoring ?? DEFAULT_SCORING;
+
+  /** The deck in words: 52장, or 7부터 A까지 28장과 ♣3, ♠3. */
+  function deckText(r: Rules): string {
+    const lowest = r.lowest_rank ?? 2;
+    const extras = (r.extra_cards ?? []).map(cardLabel);
+    const base = lowest === 2 ? '52장' : `네 무늬의 ${rankLabel(lowest)}부터 A까지 ${4 * (15 - lowest)}장`;
+    return extras.length ? `${base}과 ${extras.join(', ')}` : base;
+  }
+
+  /** A bid's rank against the minimum: 노기루다 may count more than it says. */
+  const bidValue = (r: Rules, c: Contract) => c.count + (c.trump === null ? r.bidding.no_trump_bonus : 0);
+
+  /** What one opponent pays the declarer's side; mirrors `hand_value` in
+   * crates/mighty/src/state.rs. */
+  function handValue(r: Rules, c: Contract, alone: boolean, points: number): number {
+    const s = scoring(r);
+    const min = r.bidding.min;
+    const made = points >= c.count;
+    let base: number;
+    if (made) {
+      base = {
+        OverTen: Math.max(points - 10, 1),
+        OverMin: points - min,
+        OverBid: points - c.count,
+        BidBonus: points - c.count + 2 * (bidValue(r, c) - min),
+      }[s.win];
+    } else {
+      const short = c.count - points;
+      const b = s.back_run;
+      const backRun =
+        b === 'Never'
+          ? false
+          : b === 'DefenceReachesBid'
+            ? 20 - points >= c.count
+            : 'TeamAtMost' in b
+              ? points <= b.TeamAtMost
+              : short >= b.ShortBy;
+      base = -short * (backRun ? 2 : 1);
+    }
+    const applies = (d: Scoring['alone']) => d === 'Always' || (d === 'Win' && made);
+    const doubles = [applies(s.no_trump) && c.trump === null, applies(s.alone) && alone, s.run && made && points === 20];
+    return base * 2 ** doubles.filter(Boolean).length;
+  }
+
+  /** A made contract's worth: the formula, and a note after it. */
+  function winFormula(r: Rules): [string, string] {
+    const min = r.bidding.min;
+    return {
+      OverTen: ['가져온 점수 − 10', '(적어도 1)'],
+      OverMin: [`가져온 점수 − ${min}`, `(최소 공약 ${min}을 넘긴 만큼이라, 공약을 지켜도 0이나 그 아래일 수 있어요)`],
+      OverBid: ['가져온 점수 − 공약', ''],
+      BidBonus: [`가져온 점수 − 공약 + (공약 − ${min}) × 2`, '(높게 부를수록 더 얻어요)'],
+    }[scoring(r).win] as [string, string];
+  }
+
+  /** The rest of the scoring rules as sentences. */
+  function scoringLines(r: Rules): string[] {
+    const s = scoring(r);
+    const noTrump = r.bidding.allow_no_trump;
+    const alone = r.friend?.alone ?? true;
+    const winDoubles = [
+      noTrump && s.no_trump !== 'Never' && '노기루다면',
+      alone && s.alone !== 'Never' && '노프렌드면',
+      s.run && '20점을 모두 가져오면(런)',
+    ].filter((x): x is string => typeof x === 'string');
+    const lines: string[] = [];
+    if (winDoubles.length) lines.push(`이긴 점수는 ${winDoubles.join(', ')} 두 배씩이에요.`);
+    const b = s.back_run;
+    const backRun =
+      b === 'Never'
+        ? ''
+        : b === 'DefenceReachesBid'
+          ? ' 야당이 공약만큼 이상 가져갔다면(백런) 두 배로 잃어요.'
+          : 'TeamAtMost' in b
+            ? ` ${b.TeamAtMost}점 이하로 가져왔다면(백런) 두 배로 잃어요.`
+            : ` ${b.ShortBy}점 이상 모자라면(백런) 두 배로 잃어요.`;
+    lines.push(`공약을 못 채우면 모자란 만큼 잃어요.${backRun}`);
+    const lossDoubles = [
+      noTrump && s.no_trump === 'Always' && '노기루다',
+      alone && s.alone === 'Always' && '노프렌드',
+    ].filter((x): x is string => typeof x === 'string');
+    if (lossDoubles.length) lines.push(`${lossDoubles.join('와 ')}는 져도 두 배예요.`);
+    return lines;
+  }
+
+  /** How much the contract's number rises to change to 노기루다 from a suit. */
+  function toNoTrumpCost(r: Rules): number {
+    const b = r.bidding;
+    return b.change_to_no_trump_cost ?? Math.max(b.change_trump_cost - b.no_trump_bonus, 0);
+  }
 
   /** What a card policy means on one round, or null when nothing changes. */
   function policyText(p: CardPolicy): string | null {
@@ -84,18 +185,29 @@
       f.by_seat && '자리로 부르기: 그 자리에 앉은 사람이 프렌드예요.',
       f.first_trick && '첫 라운드: 첫 라운드를 이긴 사람이 프렌드예요.',
       f.last_trick && '마지막 라운드: 마지막 라운드를 이긴 사람이 프렌드예요.',
-      f.alone && '노프렌드: 혼자 해요. 이기면 점수가 두 배예요.',
+      f.alone &&
+        {
+          Never: '노프렌드: 혼자 해요. 야당 모두와 혼자 주고받아요.',
+          Win: '노프렌드: 혼자 해요. 이기면 점수가 두 배예요.',
+          Always: '노프렌드: 혼자 해요. 이기든 지든 점수가 두 배예요.',
+        }[scoring(r).alone],
       f.fake && '자기가 가진 카드를 불러서 몰래 혼자 할 수도 있어요.',
     ].filter((x): x is string => typeof x === 'string');
   }
 
-  function misdealText(r: Rules): string | null {
+  function misdealText(r: Rules): string[] {
     const m = r.misdeal;
-    if (!m) return null;
+    if (!m) return [];
     const parts = [`점수 카드 ${signed(m.point_value)}`];
     if (m.joker_value !== 0) parts.push(`조커 ${signed(m.joker_value)}`);
     for (const [card, v] of m.card_values) parts.push(`${cardLabel(card)} ${signed(v)}`);
-    return `받은 패가 약하면 공약하기 전에 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${m.threshold}점 이하일 때예요.`;
+    const when = m.after_bidding ? '자기가 부를 차례에, 이미 공약했더라도' : '공약하기 전에';
+    const lines = [
+      `받은 패가 약하면 ${when} 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${m.threshold}점 이하일 때예요.`,
+    ];
+    if (m.all_points) lines.push('받은 카드가 모두 점수 카드여도 딜미스를 할 수 있어요.');
+    if (m.declarer) lines.push('주공도 키티를 가져온 뒤 버리기 전에, 가진 카드 전부로 세어 딜미스를 할 수 있어요.');
+    return lines;
   }
 </script>
 
@@ -135,6 +247,12 @@
   {:else}
     {@const r = rules}
     {@const twoJokers = jokers(r).length === 2}
+    {@const [formula, note] = winFormula(r)}
+    {@const f = r.friend}
+    {@const withFriend = !f || f.by_card || f.by_seat || f.first_trick || f.last_trick}
+    {@const opponents = r.players - (withFriend ? 2 : 1)}
+    {@const bid = { trump: 'Spade' as const, count: r.bidding.min + 1 }}
+    {@const v = handValue(r, bid, !withFriend, bid.count + 2)}
     <section>
       <h2>목표</h2>
       <p>
@@ -152,16 +270,23 @@
     <section>
       <h2>카드 나누기</h2>
       <p>
-        52장에 조커 {jokers(r).length}장을 더해 한 사람에 {r.hand_size}장씩 나누고, 남은 {kitty(r)}장은 키티로 엎어
-        둬요.
+        {deckText(r)}에 조커 {jokers(r).length}장을 더해 {r.players}명에게 {r.hand_size}장씩 나누고, 남은 {kitty(r)}장은
+        키티로 엎어 둬요.
       </p>
-      {#if misdealText(r)}<p>{misdealText(r)}</p>{/if}
+      {#each misdealText(r) as line (line)}<p>{line}</p>{/each}
     </section>
 
     <section>
       <h2>공약</h2>
       <ul>
-        <li>차례대로 기루다(으뜸 무늬)와 가져올 점수를 부르거나 패스해요. 한 번 패스하면 그 판에는 다시 못 불러요.</li>
+        {#if r.bidding.pass_is_final === false}
+          <li>
+            차례대로 기루다(으뜸 무늬)와 가져올 점수를 부르거나 패스해요. 패스했어도 누가 더 높게 부르면 다시 부를 수
+            있어요. 한 사람을 빼고 모두 잇달아 패스하면 그 사람이 주공이에요.
+          </li>
+        {:else}
+          <li>차례대로 기루다(으뜸 무늬)와 가져올 점수를 부르거나 패스해요. 한 번 패스하면 그 판에는 다시 못 불러요.</li>
+        {/if}
         <li>점수는 {r.bidding.min}부터 {r.bidding.max}까지 부를 수 있고, 앞사람보다 높아야 해요.</li>
         {#if r.bidding.allow_no_trump}
           <li>
@@ -184,17 +309,27 @@
             : '첫 사람은 패스할 수 없고 꼭 불러야 해요.'}
           모두 패스하면 다시 나눠요.
         </li>
+        <li>
+          아무도 더 높게 부를 수 없는 공약({r.bidding.allow_no_trump ? '풀노' : `${r.bidding.max}`})이 나오면 공약은 바로
+          끝나요.
+        </li>
       </ul>
     </section>
 
     <section>
       <h2>키티와 프렌드</h2>
       <ul>
-        <li>주공이 키티 {kitty(r)}장을 가져가고 {kitty(r)}장을 버려요. 버린 점수 카드는 여당 점수가 돼요.</li>
+        <li>
+          주공이 키티 {kitty(r)}장을 가져가고 {kitty(r)}장을 버려요. 버린 점수 카드는
+          {scoring(r).discards_to_declarer ? '여당' : '야당'} 점수가 돼요.
+        </li>
         <li>
           {r.bidding.change_trump_cost > 0
             ? `기루다를 바꾸려면 공약을 ${r.bidding.change_trump_cost} 올려야 해요.`
             : '공약을 올리지 않고 기루다를 바꿀 수 있어요.'}
+          {#if r.bidding.allow_no_trump && toNoTrumpCost(r) !== r.bidding.change_trump_cost}
+            노기루다로 바꿀 때는 {toNoTrumpCost(r) > 0 ? `${toNoTrumpCost(r)}만 올려요` : '올리지 않아도 돼요'}.
+          {/if}
         </li>
       </ul>
       <p>프렌드를 정하는 방법:</p>
@@ -297,19 +432,18 @@
     <section>
       <h2>점수 계산</h2>
       <ul>
-        <li>
-          여당이 공약 이상을 가져오면 <strong>가져온 점수 − 10</strong>(적어도 1)을 얻어요.
-          {r.bidding.allow_no_trump ? '노기루다면 두 배, ' : ''}노프렌드면 두 배, 20점을 모두 가져오면 또 두 배예요.
-        </li>
-        <li>공약을 못 채우면 모자란 만큼 잃어요. 10점 이하로 가져왔다면 두 배로 잃어요.</li>
+        <li>여당이 공약 이상을 가져오면 <strong>{formula}</strong>{note}만큼 얻어요.</li>
+        {#each scoringLines(r) as line (line)}
+          <li>{line}</li>
+        {/each}
         <li>
           그 점수를 야당은 한 사람마다 내고, 프렌드는 한 몫을 받고, 주공은 야당 수만큼 받아서 프렌드 몫을 뺀 만큼 가져요.
           모두 더하면 항상 0이에요.
         </li>
       </ul>
       <p class="example">
-        예: 공약 {r.bidding.min}에 {r.bidding.min + 2}점을 가져오면 {r.bidding.min - 8}점. 야당 세 명이 −{r.bidding.min - 8}씩,
-        프렌드 +{r.bidding.min - 8}, 주공 +{(r.bidding.min - 8) * 2}.
+        예: ♠ {bid.count} 공약에 {bid.count + 2}점을 가져오면 한 몫이 {v}점. 야당 {opponents}명이 {signed(-v)}씩,
+        {#if withFriend}프렌드 {signed(v)}, 주공 {signed(v * (opponents - 1))}.{:else}주공 {signed(v * opponents)}.{/if}
       </p>
     </section>
   {/if}

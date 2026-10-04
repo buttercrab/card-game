@@ -120,6 +120,8 @@ files it as a GitHub issue labelled `error`, beside player reports.
 cargo test --workspace
 cargo run --release -p sim -- --games 2000            # every preset
 cargo run --release -p sim -- --preset gshs --bots random
+cargo run --release -p sim -- --players 4             # 3 to 7 players
+cargo run --release -p sim -- --vary --bots random    # random optional rules each game
 cargo run --release -p sim -- --games 2500 --bots search   # search bot vs simple bots
 cargo run --release -p sim -- --preset gshs --bots search --focus search:100 --field search  # any two bots
 (cd web && npm run check)
@@ -128,7 +130,9 @@ cargo run --release -p sim -- --preset gshs --bots search --focus search:100 --f
 After every step the simulator checks that:
 - the seat to act always has a legal move
 - no card is created or lost
-- payoffs sum to zero
+- payoffs sum to zero, and a made contract never costs the declarer (a
+  failed one always does)
+- the bidding never stays open past a bid nobody can top
 - views don't change when hidden cards are reshuffled
 - every game ends
 - replaying the log reproduces the final state

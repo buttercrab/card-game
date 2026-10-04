@@ -48,12 +48,49 @@ export interface TrickPolicy {
   last: CardPolicy;
 }
 
+/** When a doubling applies: never, only to a made contract, or made or not. */
+export type Doubling = 'Never' | 'Win' | 'Always';
+/** What a made contract is worth before doubling: points − 10 (at least 1),
+ * points − the minimum bid, points − the contract, or points − the contract
+ * + 2 × how far the bid ranks above the minimum. */
+export type WinScore = 'OverTen' | 'OverMin' | 'OverBid' | 'BidBonus';
+/** When a failed contract counts double (백런). */
+export type BackRun = 'Never' | 'DefenceReachesBid' | { TeamAtMost: number } | { ShortBy: number };
+
+export interface Scoring {
+  win: WinScore;
+  no_trump: Doubling;
+  /** Playing openly alone (노프렌드). */
+  alone: Doubling;
+  /** Taking all 20 points doubles a win. */
+  run: boolean;
+  back_run: BackRun;
+  /** Point cards in the declarer's discards count for the declarer's side;
+   * otherwise for the defence. */
+  discards_to_declarer: boolean;
+}
+
 export interface Rules {
   players: number;
   hand_size: number;
   deck: 'OneJoker' | 'TwoJokers';
+  /** The lowest rank dealt (2 unless 3마 or 4마). Older servers leave this out. */
+  lowest_rank?: number;
+  /** Cards below `lowest_rank` dealt anyway, such as ♣3 and ♠3 in 4마. */
+  extra_cards?: Card[];
   /** Full rules carry these; the preview's made-up rules may not. */
-  misdeal?: { point_value: number; joker_value: number; card_values: [Card, number][]; threshold: number };
+  misdeal?: {
+    point_value: number;
+    joker_value: number;
+    card_values: [Card, number][];
+    threshold: number;
+    /** A hand of only point cards qualifies too. */
+    all_points?: boolean;
+    /** A player who already bid may still ask on their turn. */
+    after_bidding?: boolean;
+    /** The declarer may ask after taking the kitty, before discarding. */
+    declarer?: boolean;
+  };
   bidding: {
     min: number;
     max: number;
@@ -62,6 +99,12 @@ export interface Rules {
     no_trump_wins_ties?: boolean;
     first_bidder_may_pass: boolean;
     change_trump_cost: number;
+    /** How much the contract's number rises to change to no-trump; null
+     * means like any change. */
+    change_to_no_trump_cost?: number | null;
+    /** false: a player who passed may bid again, and the bidding ends when
+     * everyone else passes in a row. */
+    pass_is_final?: boolean;
   };
   friend?: { by_card: boolean; by_seat: boolean; first_trick: boolean; last_trick: boolean; fake: boolean; alone: boolean };
   policy?: {
@@ -77,6 +120,8 @@ export interface Rules {
     called_joker_has_power: boolean;
   };
   joker_lead?: { by_color: boolean; powerless_passes: boolean };
+  /** Older servers leave this out; their scoring is the default here. */
+  scoring?: Scoring;
 }
 
 export type PhaseView =

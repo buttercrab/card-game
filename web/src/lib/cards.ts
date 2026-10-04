@@ -59,6 +59,18 @@ export function jokers(rules: Rules): Card[] {
   return rules.deck === 'TwoJokers' ? [{ Joker: 'Black' }, { Joker: 'Red' }] : [{ Joker: 'Black' }];
 }
 
+/** Cards in the deck: four suits from the lowest rank to A, the jokers,
+ * and any cards kept below the lowest rank (4마 keeps ♣3 and ♠3). */
+export function deckSize(rules: Rules): number {
+  const lowest = rules.lowest_rank ?? 2;
+  return 4 * (15 - lowest) + jokers(rules).length + (rules.extra_cards?.length ?? 0);
+}
+
+/** Cards left face down after the deal. */
+export function kittyCount(rules: Rules): number {
+  return deckSize(rules) - rules.players * rules.hand_size;
+}
+
 /** The mighty: ♠A, or ♦A when spades are trump. */
 export function mightyCard(trump: Suit | null): Card {
   return { Normal: [trump === 'Spade' ? 'Diamond' : 'Spade', 14] };
