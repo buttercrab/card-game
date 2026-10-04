@@ -135,7 +135,12 @@ impl SearchBot {
             Viewer::Seat(me) => me,
             Viewer::Spectator => return Vec::new(),
         };
-        let drawn: Vec<(State, f64)> = (0..n).filter_map(|_| self.draw(view, me, rng, &mut memo)).collect();
+        let Some(dealer) = Dealer::new(view) else {
+            return Vec::new();
+        };
+        let drawn: Vec<(State, f64)> = (0..n)
+            .filter_map(|_| self.draw(&dealer, view, me, rng, &mut memo))
+            .collect();
         let log_weights: Vec<f64> = drawn.iter().map(|(_, w)| *w).collect();
         let weights = self.reading.weights(&log_weights);
         drawn.into_iter().map(|(s, _)| s).zip(weights).collect()
@@ -156,11 +161,14 @@ impl SearchBot {
         let mut scores: Vec<Vec<i64>> = vec![Vec::new(); candidates.len()];
         let mut log_weights = Vec::new();
         let mut memo = Memo::default();
+        let Some(dealer) = Dealer::new(view) else {
+            return (scores, log_weights);
+        };
         for _ in 0..samples {
             if self.budget.is_some_and(|budget| started.elapsed() >= budget) {
                 break;
             }
-            let Some((world, log_weight)) = self.draw(view, me, rng, &mut memo) else {
+            let Some((world, log_weight)) = self.draw(&dealer, view, me, rng, &mut memo) else {
                 continue;
             };
             log_weights.push(log_weight);
@@ -175,15 +183,22 @@ impl SearchBot {
     /// several and keeps one in proportion to its weight, so that fewer
     /// playouts go to deals the other players' actions rule out; the one
     /// kept carries their average weight.
-    fn draw(&self, view: &View, me: Seat, rng: &mut dyn RngCore, memo: &mut Memo) -> Option<(State, f64)> {
+    fn draw(
+        &self,
+        dealer: &Dealer,
+        view: &View,
+        me: Seat,
+        rng: &mut dyn RngCore,
+        memo: &mut Memo,
+    ) -> Option<(State, f64)> {
         if !self.reading.on {
-            return Some((self.sample(view, rng)?, 0.0));
+            return Some((self.sample(dealer, view, rng)?, 0.0));
         }
         let mut kept = None;
         let mut total = f64::NEG_INFINITY;
         let draws = self.reading.draws.max(1);
         for _ in 0..draws {
-            let world = self.sample(view, rng)?;
+            let world = self.sample(dealer, view, rng)?;
             let log_weight = self.reading.log_weight(&self.policy, &world, me, memo);
             let top = total.max(log_weight);
             total = top + ((total - top).exp() + (log_weight - top).exp()).ln();
@@ -197,13 +212,13 @@ impl SearchBot {
     /// A determinized world, redealt up to 20 times until the policy would
     /// have bid what the declarer, or the best bidder so far, did. Past
     /// that, a wrong guess about how they bid is likelier than bad luck.
-    fn sample(&self, view: &View, rng: &mut dyn RngCore) -> Option<State> {
-        let mut world = determinize(view, rng)?;
+    fn sample(&self, dealer: &Dealer, view: &View, rng: &mut dyn RngCore) -> Option<State> {
+        let mut world = dealer.deal(rng)?;
         for _ in 0..20 {
             if self.agrees_with_bidding(&world, view) {
                 break;
             }
-            world = determinize(view, rng)?;
+            world = dealer.deal(rng)?;
         }
         Some(world)
     }
@@ -375,142 +390,191 @@ pub fn finish(mut policy: SimpleBot, endgame: usize, mut state: State, me: Seat,
 /// unseen cards dealt at random, honouring every suit a seat has shown it
 /// lacks. Works while bidding, exchanging and playing; `None` otherwise
 /// and for spectators.
+#[cfg(test)]
 pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
-    let Viewer::Seat(me) = view.viewer else { return None };
-    let rules = &view.rules;
-    let seats = rules.players;
-    let mut void = vec![[false; 4]; seats];
-    let mut seen: Vec<Card> = view.hand.clone();
-    let hidden_down = match &view.phase {
-        // The kitty is face down.
-        PhaseView::Bidding { .. } => rules.kitty_size(),
-        PhaseView::Play {
-            contract,
-            lead,
-            plays,
-            tricks,
-            discards,
-            ..
-        } => {
-            seen.extend(tricks.iter().flat_map(|t| t.plays.iter().map(|p| p.card)));
-            seen.extend(plays.iter().map(|p| p.card));
-            seen.extend(discards.iter().flatten());
-            // Playing off-suit (other than the mighty or a joker, which never
-            // oblige following) shows a seat has none of the led suit.
-            let mighty = rules.mighty(contract.trump);
-            let finished = tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead)));
-            for (trick, lead) in finished.chain([(plays.as_slice(), *lead)]) {
-                let Some(lead) = lead else { continue };
-                for p in trick.iter().skip(1) {
-                    let free = p.card == mighty || p.card.is_joker();
-                    if !free && !lead.follows(p.card) {
-                        // Not following a colour shows both of its suits are gone.
-                        for suit in Suit::ALL.into_iter().filter(|&s| lead.follows(Card::new(s, 2))) {
-                            void[p.seat][suit_index(suit)] = true;
+    Dealer::new(view)?.deal(rng)
+}
+
+/// What [`determinize`] works out from a view before dealing: worked out
+/// once, it serves every deal of a search, which deals thousands.
+pub(crate) struct Dealer {
+    me: Seat,
+    /// The cards `me` has not seen, in deck order.
+    unseen: Vec<Card>,
+    /// How many unseen cards each seat holds; none for `me`.
+    capacity: Vec<usize>,
+    /// Unseen cards lying face down: the kitty, or the discards.
+    hidden_down: usize,
+    /// The suits each seat has shown it lacks.
+    void: Vec<[bool; 4]>,
+    hand: Vec<Card>,
+    /// The world, but for the unseen cards.
+    template: State,
+}
+
+impl Dealer {
+    pub(crate) fn new(view: &View) -> Option<Dealer> {
+        let Viewer::Seat(me) = view.viewer else { return None };
+        let rules = &view.rules;
+        let seats = rules.players;
+        let mut void = vec![[false; 4]; seats];
+        let mut seen: Vec<Card> = view.hand.clone();
+        let hidden_down = match &view.phase {
+            // The kitty is face down.
+            PhaseView::Bidding { .. } => rules.kitty_size(),
+            PhaseView::Play {
+                contract,
+                lead,
+                plays,
+                tricks,
+                discards,
+                ..
+            } => {
+                seen.extend(tricks.iter().flat_map(|t| t.plays.iter().map(|p| p.card)));
+                seen.extend(plays.iter().map(|p| p.card));
+                seen.extend(discards.iter().flatten());
+                // Playing off-suit (other than the mighty or a joker, which never
+                // oblige following) shows a seat has none of the led suit.
+                let mighty = rules.mighty(contract.trump);
+                let finished = tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead)));
+                for (trick, lead) in finished.chain([(plays.as_slice(), *lead)]) {
+                    let Some(lead) = lead else { continue };
+                    for p in trick.iter().skip(1) {
+                        let free = p.card == mighty || p.card.is_joker();
+                        if !free && !lead.follows(p.card) {
+                            // Not following a colour shows both of its suits are gone.
+                            for suit in Suit::ALL.into_iter().filter(|&s| lead.follows(Card::new(s, 2))) {
+                                void[p.seat][suit_index(suit)] = true;
+                            }
                         }
                     }
                 }
+                // Only the declarer has seen the discards.
+                if discards.is_some() { 0 } else { rules.kitty_size() }
             }
-            // Only the declarer has seen the discards.
-            if discards.is_some() { 0 } else { rules.kitty_size() }
-        }
-        // Only the declarer acts while exchanging, and it has seen the kitty.
-        PhaseView::Exchange { discards, .. } => {
-            seen.extend(discards.iter().flatten());
-            0
-        }
-        _ => return None,
-    };
-    let mut unseen: Vec<Card> = rules.deck.cards().into_iter().filter(|c| !seen.contains(c)).collect();
-    let mut capacity: Vec<usize> = view.hand_sizes.clone();
-    capacity[me] = 0;
+            // Only the declarer acts while exchanging, and it has seen the kitty.
+            PhaseView::Exchange { discards, .. } => {
+                seen.extend(discards.iter().flatten());
+                0
+            }
+            _ => return None,
+        };
+        let seen = seen.iter().fold(0u64, |m, &c| m | crate::bot::bit(c));
+        let unseen: Vec<Card> = rules
+            .deck
+            .cards()
+            .into_iter()
+            .filter(|&c| seen & crate::bot::bit(c) == 0)
+            .collect();
+        let mut capacity: Vec<usize> = view.hand_sizes.clone();
+        capacity[me] = 0;
 
-    let (mut hands, down) = (0..20).find_map(|attempt| {
-        unseen.shuffle(rng);
-        // After repeated failures, a wrong inference is likelier than bad
-        // luck; deal without the void constraints.
-        deal(&unseen, &capacity, hidden_down, &void, attempt < 10, rng)
-    })?;
-    hands[me] = view.hand.clone();
-    for hand in &mut hands {
-        hand.sort();
-    }
-
-    let mut state = State {
-        rules: rules.clone(),
-        first_bidder: view.first_bidder,
-        phase: Phase::Dealing,
-        hands,
-        kitty: Vec::new(),
-        taken: vec![Vec::new(); seats],
-        bids: view.bids.clone(),
-        redealt: view.redealt.clone(),
-    };
-    state.phase = match &view.phase {
-        PhaseView::Bidding {
-            to_act,
-            best,
-            passed,
-            has_bid,
-        } => {
-            state.kitty = down;
-            Phase::Bidding(Bidding {
+        let mut state = State {
+            rules: rules.clone(),
+            first_bidder: view.first_bidder,
+            phase: Phase::Dealing,
+            hands: Vec::new(),
+            kitty: Vec::new(),
+            taken: vec![Vec::new(); seats],
+            bids: view.bids.clone(),
+            redealt: view.redealt.clone(),
+        };
+        state.phase = match &view.phase {
+            PhaseView::Bidding {
+                to_act,
+                best,
+                passed,
+                has_bid,
+            } => Phase::Bidding(Bidding {
                 to_act: *to_act,
                 best: *best,
                 passed: passed.clone(),
                 has_bid: has_bid.clone(),
-            })
-        }
-        PhaseView::Play {
-            declarer,
-            contract,
-            call,
-            friend,
-            trick_no,
-            leader,
-            lead,
-            plays,
-            called_joker,
-            tricks,
-            discards,
-            // Derived from the plays; the rebuilt state works it out again.
-            leading: _,
-        } => {
-            for t in tricks {
-                state.taken[t.winner].extend(t.plays.iter().map(|p| p.card));
+            }),
+            PhaseView::Play {
+                declarer,
+                contract,
+                call,
+                friend,
+                trick_no,
+                leader,
+                lead,
+                plays,
+                called_joker,
+                tricks,
+                discards,
+                // Derived from the plays; the rebuilt state works it out again.
+                leading: _,
+            } => {
+                for t in tricks {
+                    state.taken[t.winner].extend(t.plays.iter().map(|p| p.card));
+                }
+                Phase::Play(Play {
+                    declarer: *declarer,
+                    contract: *contract,
+                    // Dealt face down when not seen.
+                    discards: discards.clone().unwrap_or_default(),
+                    call: *call,
+                    friend: *friend,
+                    trick_no: *trick_no,
+                    leader: *leader,
+                    lead: *lead,
+                    plays: plays.clone(),
+                    called_joker: *called_joker,
+                    tricks: tricks.clone(),
+                })
             }
-            Phase::Play(Play {
+            PhaseView::Exchange {
+                declarer,
+                contract,
+                trump_changed,
+                discards,
+            } => Phase::Exchange(Exchange {
                 declarer: *declarer,
                 contract: *contract,
-                discards: discards.clone().unwrap_or(down),
-                call: *call,
-                friend: *friend,
-                trick_no: *trick_no,
-                leader: *leader,
-                lead: *lead,
-                plays: plays.clone(),
-                called_joker: *called_joker,
-                tricks: tricks.clone(),
-            })
+                discards: discards.clone().unwrap_or_default(),
+                trump_changed: *trump_changed,
+            }),
+            _ => unreachable!("other phases returned above"),
+        };
+        Some(Dealer {
+            me,
+            unseen,
+            capacity,
+            hidden_down,
+            void,
+            hand: view.hand.clone(),
+            template: state,
+        })
+    }
+
+    /// One world, dealt at random.
+    pub(crate) fn deal(&self, rng: &mut dyn RngCore) -> Option<State> {
+        let mut unseen = self.unseen.clone();
+        let (mut hands, down) = (0..20).find_map(|attempt| {
+            unseen.shuffle(rng);
+            // After repeated failures, a wrong inference is likelier than bad
+            // luck; deal without the void constraints.
+            deal(&unseen, &self.capacity, self.hidden_down, &self.void, attempt < 10, rng)
+        })?;
+        hands[self.me] = self.hand.clone();
+        for hand in &mut hands {
+            hand.sort();
         }
-        PhaseView::Exchange {
-            declarer,
-            contract,
-            trump_changed,
-            discards,
-        } => Phase::Exchange(Exchange {
-            declarer: *declarer,
-            contract: *contract,
-            discards: discards.clone().unwrap_or_default(),
-            trump_changed: *trump_changed,
-        }),
-        _ => unreachable!("other phases returned above"),
-    };
-    Some(state)
+        let mut state = self.template.clone();
+        state.hands = hands;
+        match &mut state.phase {
+            Phase::Bidding(_) => state.kitty = down,
+            Phase::Play(p) if self.hidden_down > 0 => p.discards = down,
+            _ => {}
+        }
+        Some(state)
+    }
 }
 
 /// Deals `cards` into hands of the given sizes plus `discards` face-down
 /// cards. Each card goes to a random place with room, weighted by room left.
+/// The hands come back sorted.
 fn deal(
     cards: &[Card],
     capacity: &[usize],
@@ -519,24 +583,25 @@ fn deal(
     respect_voids: bool,
     rng: &mut dyn RngCore,
 ) -> Option<(Vec<Vec<Card>>, Vec<Card>)> {
-    let mut hands: Vec<Vec<Card>> = vec![Vec::new(); capacity.len()];
-    let mut down = Vec::new();
+    // Searches deal thousands of times a move: count and collect the cards
+    // as bits, and lay the hands out (sorted, as bits are) at the end.
+    let seats = capacity.len();
+    let mut held = [0usize; 8];
+    let mut hands = [0u64; 8];
+    let mut down = Vec::with_capacity(discards);
     for &card in cards {
         let fits = |seat: usize| {
-            let lacks = card.suit().is_some_and(|s| void[seat][suit_index(s)]);
-            hands[seat].len() < capacity[seat] && !(respect_voids && lacks)
+            let lacks = card.suit().is_some_and(|s| void[seat][s as usize]);
+            held[seat] < capacity[seat] && !(respect_voids && lacks)
         };
-        let room: usize = (0..hands.len())
-            .filter(|&s| fits(s))
-            .map(|s| capacity[s] - hands[s].len())
-            .sum();
+        let room: usize = (0..seats).filter(|&s| fits(s)).map(|s| capacity[s] - held[s]).sum();
         let total = room + (discards - down.len());
         if total == 0 {
             return None;
         }
         let mut pick = rng.random_range(0..total);
-        let seat = (0..hands.len()).filter(|&s| fits(s)).find(|&s| {
-            let r = capacity[s] - hands[s].len();
+        let seat = (0..seats).filter(|&s| fits(s)).find(|&s| {
+            let r = capacity[s] - held[s];
             if pick < r {
                 true
             } else {
@@ -545,10 +610,14 @@ fn deal(
             }
         });
         match seat {
-            Some(s) => hands[s].push(card),
+            Some(s) => {
+                held[s] += 1;
+                hands[s] |= crate::bot::bit(card);
+            }
             None => down.push(card),
         }
     }
+    let hands = (0..seats).map(|s| crate::bot::cards(hands[s]).collect()).collect();
     Some((hands, down))
 }
 

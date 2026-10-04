@@ -185,7 +185,7 @@ pub struct InvalidRules(pub &'static str);
 
 impl Rules {
     pub fn kitty_size(&self) -> usize {
-        self.deck.cards().len().saturating_sub(self.players * self.hand_size)
+        (52 + self.deck.jokers().len()).saturating_sub(self.players * self.hand_size)
     }
 
     pub fn validate(&self) -> Result<(), InvalidRules> {
