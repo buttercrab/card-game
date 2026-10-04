@@ -1727,6 +1727,13 @@
   }
   .note.below {
     top: calc(50% + var(--ty) + var(--card-h) / 2 + 16px);
+    /* Long notes wrap to two centred lines instead of running under the
+       hint and reaction buttons in the corner. */
+    width: max-content;
+    max-width: calc(100cqw - 2 * 96px);
+    white-space: normal;
+    text-align: center;
+    text-wrap: balance;
   }
   .won-note {
     color: var(--ink);
