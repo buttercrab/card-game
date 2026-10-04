@@ -1,6 +1,6 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
-  // /preview?state=bidding | exchange | play | sweep | done | won
+  // /preview?state=bidding | misdeal | exchange | play | sweep | done | won
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
   import type { Card, PhaseView, Played, RoomMsg, Rules, StateMsg } from './types';
@@ -117,7 +117,7 @@
     in_hand: which !== 'done' && which !== 'won',
   };
 
-  const key = which === 'sweep' ? 'play' : which;
+  const key = which === 'sweep' ? 'play' : which === 'misdeal' ? 'bidding' : which;
   const client = $state({
     room,
     game: msg(phases[key] ?? phases.play, key, key === 'done' || key === 'won' ? 'Over' : { Seat: 0 }),
@@ -128,6 +128,19 @@
     react: () => {},
     reactions: { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
+
+  if (which === 'misdeal') {
+    // A new deal arrives after seat 3 threw in a weak hand.
+    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+    setTimeout(() => {
+      const next = msg(phases.bidding, 'bidding', { Seat: 0 });
+      next.view.redealt = {
+        why: { Misdeal: { seat: 3, hand: [n('Spade', 2), n('Spade', 3), n('Diamond', 4), n('Diamond', 5), n('Heart', 2), n('Heart', 6), n('Heart', 7), n('Club', 3), n('Club', 5), n('Club', 8)] } },
+        count: 1,
+      };
+      client.game = next;
+    }, 300);
+  }
 
   if (which === 'sweep') {
     // Finish the trick so the table plays its sweep, holding the note on screen.

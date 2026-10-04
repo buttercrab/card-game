@@ -197,6 +197,7 @@ impl Reading {
             kitty: Vec::new(),
             taken: vec![Vec::new(); rules.players],
             bids: world.bids.clone(),
+            redealt: None,
         };
         let mut log = 0.0;
         if me != now.declarer {

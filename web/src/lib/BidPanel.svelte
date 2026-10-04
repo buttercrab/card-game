@@ -41,7 +41,7 @@
     </div>
   {/if}
   <div class="actions">
-    {#if canMisdeal}<button onclick={() => onact('Misdeal')} title="패가 약하면 다시 돌릴 수 있어요">딜 미스</button>{/if}
+    {#if canMisdeal}<button onclick={() => onact('Misdeal')} title="패가 약하면 다시 돌릴 수 있어요">딜미스</button>{/if}
     {#if canPass}<button onclick={() => onact('Pass')}>패스</button>{/if}
     {#if bids.length > 0}
       <button class="primary" onclick={() => onact({ Bid: bid })}>공약 {trumpLabel(bid.trump)} {bid.count}</button>

@@ -3,7 +3,7 @@
 use engine::{Game, Turn, Viewer};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, Preset, Rules};
-use mighty::{Action, Bid, FriendCall, Lead, Mighty, Options, PhaseView, State};
+use mighty::{Action, Bid, FriendCall, Lead, Mighty, Options, PhaseView, Redeal, State};
 
 /// Parses cards such as `"SA D10 HK C3 BJ"`.
 fn cards(s: &str) -> Vec<Card> {
@@ -152,6 +152,35 @@ fn everyone_hears_every_bid_until_the_redeal() {
         act(&mut state, Action::Pass);
     }
     assert!(Mighty::view(&state, Viewer::Spectator).bids.is_empty());
+}
+
+#[test]
+fn everyone_sees_why_the_cards_were_dealt_again() {
+    let weak = "S2 S3 S4 S5 D2 D3 D4 H2 H3 C2";
+    let mut state = start(Rules::default(), &[weak], "");
+    act(&mut state, Action::Misdeal);
+    // The server deals again; the new deal's view says who threw in which hand.
+    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    act(&mut state, deal);
+    let seen = Mighty::view(&state, Viewer::Seat(3))
+        .redealt
+        .expect("a redeal is shown");
+    assert_eq!(
+        seen.why,
+        Redeal::Misdeal {
+            seat: 0,
+            hand: cards(weak)
+        }
+    );
+    assert_eq!(seen.count, 1);
+
+    for _ in 0..5 {
+        act(&mut state, Action::Pass);
+    }
+    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    act(&mut state, deal);
+    let seen = Mighty::view(&state, Viewer::Spectator).redealt.unwrap();
+    assert_eq!((seen.why, seen.count), (Redeal::AllPassed, 2));
 }
 
 #[test]

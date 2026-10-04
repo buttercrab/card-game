@@ -114,17 +114,17 @@
     if (!settings.tips || !myTurn) return null;
     if (bidding)
       return bidding.best
-        ? `${contractLabel(bidding.best[1])}보다 높게 부르거나 패스해요. 기루다로 할 무늬가 많고 마이티·조커가 있으면 도전!`
-        : '공약 차례예요. 많이 가진 무늬를 기루다로 골라 점수를 불러요. 자신 없으면 패스.';
+        ? `${contractLabel(bidding.best[1])}보다 높게 부르거나 패스. 센 카드가 많으면 도전!`
+        : '많이 가진 무늬를 기루다로 골라 불러요. 자신 없으면 패스.';
     if (exchange)
       return toDiscard > 0
-        ? `키티를 가져왔어요. 필요 없는 카드 ${toDiscard}장을 골라 버려요. 점수 카드는 버려도 여당 점수예요.`
-        : '프렌드를 불러요. 보통 마이티나 조커처럼 센 카드를 가진 사람을 불러요.';
+        ? `필요 없는 카드 ${toDiscard}장을 버려요. 버린 점수 카드도 여당 점수예요.`
+        : '프렌드를 불러요. 보통 마이티나 조커를 불러요.';
     if (play) {
-      if (play.plays.length === 0) return '내가 선이에요. 아무 카드나 낼 수 있어요. 센 카드로 점수 카드를 모아 보세요.';
+      if (play.plays.length === 0) return '내가 선이에요. 아무 카드나 내도 돼요.';
       const lead = play.lead;
-      if (lead && 'Suit' in lead) return `${leadLabel(lead)}를 따라 내야 해요. 없으면 아무 카드나 내도 돼요. 마이티와 조커는 언제든 낼 수 있어요.`;
-      return '처음 낸 색의 카드가 있으면 그 색을 내야 해요. 없으면 아무 카드나 내도 돼요.';
+      if (lead && 'Suit' in lead) return `${leadLabel(lead)}를 따라 내요. 없으면 아무거나. 마이티·조커는 언제든.`;
+      return '처음 낸 색이 있으면 그 색을 내요. 없으면 아무거나.';
     }
     return null;
   });
@@ -277,7 +277,7 @@
     }
   }
 
-  type Round = { plays: Played[]; tricks: Trick[]; friend: number | null };
+  type Round = { plays: Played[]; tricks: Trick[]; friend: number | null; called_joker?: CardT | null };
   function roundOf(p: PhaseView): Round | null {
     if (typeof p !== 'object') return null;
     if ('Play' in p) return p.Play;
@@ -302,6 +302,12 @@
     const was = prev.view.phase;
     const now = next.view.phase;
     if (typeof now !== 'object') return null;
+    const redeal = next.view.redealt;
+    if (redeal && JSON.stringify(redeal) !== JSON.stringify(prev.view.redealt)) {
+      return redeal.why === 'AllPassed'
+        ? '모두 패스 · 패를 다시 나눠요'
+        : `${seatName(redeal.why.Misdeal.seat)} 딜미스 · 패를 다시 나눠요`;
+    }
     if ('Bidding' in now) {
       if (!(typeof was === 'object' && 'Bidding' in was)) return null;
       const passed = now.Bidding.passed.findIndex((p, i) => p && !was.Bidding.passed[i]);
@@ -315,6 +321,14 @@
     if ('Exchange' in now && !(typeof was === 'object' && 'Exchange' in was)) {
       return `${seatName(now.Exchange.declarer)} 주공 · ${contractLabel(now.Exchange.contract)}`;
     }
+    if ('Exchange' in now && typeof was === 'object' && 'Exchange' in was) {
+      const before = was.Exchange.contract;
+      const after = now.Exchange.contract;
+      if (before.trump !== after.trump) {
+        return `기루다 변경 · ${contractLabel(after)}`;
+      }
+      return null;
+    }
     if ('Play' in now && typeof was === 'object' && 'Exchange' in was) {
       const label = friendCallLabel(now.Play.call, seatName, twoJokers);
       return `프렌드 ${sameCallMighty(now.Play.call, now.Play.contract.trump) ? '마이티' : label}`;
@@ -323,6 +337,7 @@
     const b = roundOf(now);
     if (a && b) {
       if (b.friend !== null && a.friend === null) return `${seatName(b.friend)} 프렌드 공개`;
+      if (b.called_joker && !a.called_joker) return '조커콜 · 조커를 가진 사람은 조커를 내야 해요';
       if (b.tricks.length > a.tricks.length) {
         const t = b.tricks.at(-1)!;
         const got = t.plays.filter((p) => isPoint(p.card)).length;
@@ -355,11 +370,24 @@
   /** The latest thing that happened, for anyone who looked away. */
   let event = $state<string | null>(null);
 
+  /** A hand thrown in as 딜미스, shown face up for a while as at a real table. */
+  let thrownIn = $state<{ seat: number; hand: CardT[] } | null>(null);
+  let thrownInTimer: ReturnType<typeof setTimeout> | undefined;
+  function showThrownIn(next: StateMsg, prev: StateMsg) {
+    const redeal = next.view.redealt;
+    if (!redeal || JSON.stringify(redeal) === JSON.stringify(prev.view.redealt)) return;
+    if (redeal.why === 'AllPassed') return;
+    thrownIn = redeal.why.Misdeal;
+    clearTimeout(thrownInTimer);
+    thrownInTimer = setTimeout(() => (thrownIn = null), 8000);
+  }
+
   /** Sounds and the event line for a change of state. */
   function cues(prev: StateMsg, next: StateMsg) {
     const was = prev.view.phase;
     const now = next.view.phase;
     event = describe(prev, next) ?? event;
+    showThrownIn(next, prev);
     const turnOf = (m: StateMsg) => (typeof m.turn === 'object' ? m.turn.Seat : null);
     if (me !== null && turnOf(next) === me && turnOf(prev) !== me) {
       sound.turn();
@@ -528,9 +556,12 @@
       </span>
     {/if}
   </div>
-  {#if tip}
-    {#key tip}<p class="event tip fade-up" aria-live="polite">💬 {tip}</p>{/key}
-  {:else if event && !done}{#key event}<p class="event fade-up" aria-live="polite">{event}</p>{/key}{/if}
+  {#if (event && !done) || tip}
+    <div class="event">
+      {#if event && !done}{#key event}<p class="fade-up" aria-live="polite">{event}</p>{/key}{/if}
+      {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite">💬 {tip}</p>{/key}{/if}
+    </div>
+  {/if}
 
   <div class="felt" bind:this={felt}>
     {#if me !== null}
@@ -585,6 +616,15 @@
       <p class="note below">{trickNotes.join(' · ')}</p>
     {/if}
 
+    {#if thrownIn && bidding}
+      <div class="sheet review-sheet thrown-in fade-up" role="status" aria-label="딜미스로 보여 준 패">
+        <p class="thrown-title"><strong>{seatName(thrownIn.seat)}</strong> 딜미스 · 이 패를 보여 줬어요</p>
+        <div class="thrown-cards">
+          {#each thrownIn.hand as c, i (i)}<Card card={c} size="mini" {twoJokers} />{/each}
+        </div>
+        <button class="ghost" onclick={() => (thrownIn = null)}>닫기</button>
+      </div>
+    {/if}
     {#if review && lastTrick}
       <div class="sheet review-sheet" role="dialog" aria-label="직전 라운드">
         <div class="review-cards">
@@ -732,9 +772,13 @@
   .event {
     grid-area: event;
   }
-  .event.tip {
-    color: var(--ink);
+  .event p {
+    margin: 0;
+  }
+  .event .tip {
+    font-size: 13px;
     font-weight: 600;
+    color: var(--ink);
   }
   .felt {
     grid-area: felt;
@@ -939,6 +983,16 @@
     justify-items: center;
     gap: 8px;
     width: auto;
+  }
+  .thrown-title {
+    margin: 0;
+    font-size: 15px;
+  }
+  .thrown-cards {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 3px;
   }
   .mini-slot {
     position: relative;

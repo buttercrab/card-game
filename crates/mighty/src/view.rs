@@ -1,6 +1,6 @@
 use crate::card::Card;
 use crate::rules::{Contract, Rules};
-use crate::state::{Bid, FriendCall, Phase, State};
+use crate::state::{Bid, FriendCall, Phase, Redealt, State};
 use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,9 @@ pub struct View {
     /// them. Empty while dealing.
     #[serde(default)]
     pub bids: Vec<Bid>,
+    /// Why the cards were last dealt again, while the new deal is bid on.
+    #[serde(default)]
+    pub redealt: Option<Redealt>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +131,7 @@ impl View {
                 .collect(),
             phase,
             bids: state.bids.clone(),
+            redealt: state.redealt.clone(),
         }
     }
 }

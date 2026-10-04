@@ -56,6 +56,23 @@ pub struct Bid {
     pub contract: Option<Contract>,
 }
 
+/// Why the last deal was thrown in and the cards dealt again.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Redeal {
+    /// A player showed a weak hand (딜미스); everyone sees it.
+    Misdeal { seat: Seat, hand: Vec<Card> },
+    /// Everyone passed.
+    AllPassed,
+}
+
+/// The last redeal of this hand, and how many there have been, so two in a
+/// row are told apart.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Redealt {
+    pub why: Redeal,
+    pub count: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -82,6 +99,8 @@ pub struct State {
     pub(crate) taken: Vec<Vec<Card>>,
     /// Every bid and pass of this deal, in order.
     pub(crate) bids: Vec<Bid>,
+    /// Why the cards were last dealt again, until the bidding ends.
+    pub(crate) redealt: Option<Redealt>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,6 +174,7 @@ impl State {
             kitty: Vec::new(),
             taken: vec![Vec::new(); n],
             bids: Vec::new(),
+            redealt: None,
         })
     }
 
@@ -224,7 +244,9 @@ impl State {
         Ok(())
     }
 
-    fn redeal(&mut self) {
+    fn redeal(&mut self, why: Redeal) {
+        let count = self.redealt.as_ref().map_or(0, |r| r.count) + 1;
+        self.redealt = Some(Redealt { why, count });
         for hand in &mut self.hands {
             hand.clear();
         }
@@ -430,7 +452,8 @@ impl State {
         let phase = std::mem::replace(&mut self.phase, Phase::Dealing);
         self.phase = match (phase, action) {
             (Phase::Bidding(_), Action::Misdeal) => {
-                self.redeal();
+                let hand = self.hands[seat].clone();
+                self.redeal(Redeal::Misdeal { seat, hand });
                 Phase::Dealing
             }
             (Phase::Bidding(b), action) => self.step_bidding(b, seat, action),
@@ -464,10 +487,11 @@ impl State {
         let active = b.passed.iter().filter(|p| !**p).count();
         match (active, b.best) {
             (0, _) => {
-                self.redeal();
+                self.redeal(Redeal::AllPassed);
                 Phase::Dealing
             }
             (1, Some((declarer, contract))) => {
+                self.redealt = None;
                 let kitty = std::mem::take(&mut self.kitty);
                 self.hands[declarer].extend(kitty);
                 self.hands[declarer].sort();

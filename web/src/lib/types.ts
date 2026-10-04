@@ -130,6 +130,14 @@ export interface View {
   phase: PhaseView;
   /** Every bid and pass of this deal so far, in order; null is a pass. Older servers leave this out. */
   bids?: Bid[];
+  /** Why the cards were last dealt again, while the new deal is bid on. */
+  redealt?: Redealt | null;
+}
+
+export type Redeal = { Misdeal: { seat: number; hand: Card[] } } | 'AllPassed';
+export interface Redealt {
+  why: Redeal;
+  count: number;
 }
 
 export interface Bid {
