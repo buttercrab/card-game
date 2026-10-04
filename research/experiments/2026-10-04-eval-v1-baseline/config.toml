@@ -1,0 +1,18 @@
+# The first full run of eval suite v1, on the table's 고수.
+# Everything else (seeds, deal counts, fields, puzzles) is in the suite.
+
+suite = "v1"
+suite_sha256 = "dd53cdf85cb7cbebbad37835b5a2b85c25946403c958c79a1c2af25edf42d95b"
+bot = "hard"       # the table's 고수 at a fixed 200 deals (search:200:1:0 with seat temper)
+baseline = ""      # none: this run is the baseline later bots are compared with
+
+[run]
+commit = "fa3f2021e6a026e7790ed15b65b20d58be65853c"
+command = "nice -n 10 target/release/eval run --suite v1 --bot hard --out <dir>"
+machine = "the Mac (M4 Pro, 14 threads), shared with other work"
+
+# The cost part again on the machine that thinks for the tables.
+[cost_home]
+commit = "2a6095a1f5e26616ee7fb2b53cba548fb3da5eff"   # same play code; adds --commit
+command = "nice -n 10 target/release/eval run --suite v1 --bot hard --parts cost --commit <commit> --out cost-home"
+machine = "the home server (Ryzen 5 5600X, 12 threads), beside the live bot worker"

@@ -148,6 +148,34 @@ Done (2026-10-04), pending CI on the branch:
 Exit: the 2026-10-04 benchmark numbers reproduce from one command; two runs
 of the same suite agree within their intervals.
 
+Done (2026-10-04), pending CI on the branch:
+- `crates/eval`: `eval run --suite <name> --bot <spec> [--baseline <spec>]`
+  writes `results.json` (schema `eval-results/1`) and `report.md`;
+  `--quick` is a smoke test (in CI), `--parts` runs some parts.
+  Generic over an `EvalGame` trait (bot specs, deal options, rule sets);
+  Mighty's bots are `sim`'s specs, which gained the table's levels
+  `easy`, `normal` and `hard` (a test checks 초보 and 보통 against the
+  server's; `hard` deals a fixed 200 times instead of a time budget).
+  Tables are `sim --bots search` exactly; the worker loop, timing and
+  statistics moved into `sim`'s library.
+- Suite v1 (`research/evals/v1`): ladder under 경기과고 (2000 deals a
+  rung) with a rating, the mean over rungs; every preset (500 each) and 40
+  held-out rule sets (25 each) against 고수; think time; 10 puzzles, 6
+  scored with answers proven by solving the rest of the hand in every
+  redeal of the hidden cards, 4 informational. The held-out sets are a
+  JSON array of `Rules` that training must exclude.
+- Baseline (`research/experiments/2026-10-04-eval-v1-baseline`): the
+  table's 고수 rates +6.81 ± 0.29 (random +18.84, 초보 +3.95, 보통 +4.71,
+  itself −0.26), draws itself in every preset and on held-out rules,
+  thinks median 131 ms, p99 346 ms per decision on the home server, and
+  passes 6 of 6 puzzles; it still calls its own side's joker early.
+- Exit met (`research/experiments/2026-10-04-bench-reproduction`): every
+  head-to-head table of the benchmark reproduces exactly from one
+  command, and two runs agree exactly (deterministic bots; tested).
+  Deviations: the benchmark's `default` was web-mighty's base rules, so
+  the suite gives them in full; its pooled default (−0.20) was a slip for
+  −0.13; the card-play breakdown (`cheat`, `x10`) stays in the lab.
+
 ### P2 — RL environment and data
 
 - `crates/env`: batched, deterministic, any `Game` with `Encode`; rules as an

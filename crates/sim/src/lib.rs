@@ -6,14 +6,23 @@
 //! - no view changes when everything that viewer cannot see is reshuffled
 //! - the game ends within a step budget, with payoffs
 //! - replaying the action log reproduces the final state exactly
+//!
+//! Also the pieces the `sim` binary and the evals (`crates/eval`) share:
+//! games spread over threads ([`parallel`]), bots timed per decision
+//! ([`Timed`]) and the statistics reported on them ([`stats`]).
 
 pub mod lab;
 pub mod spec;
+pub mod stats;
 
 use engine::{Bot, Game, Turn, Viewer};
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Checks {
@@ -138,4 +147,58 @@ fn check_views<G: Game>(state: &G::State, seats: usize, rng: &mut impl Rng) -> R
         }
     }
     Ok(())
+}
+
+/// Runs `job` for every index in `0..n` on `threads` workers (all cores
+/// when `None`) and returns the results in index order. Each index is one
+/// game, so how the games fall to threads never changes a result.
+pub fn parallel<T: Send>(n: u64, threads: Option<usize>, job: impl Fn(u64) -> T + Sync) -> Vec<T> {
+    let threads = threads.unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+    let next = AtomicU64::new(0);
+    let mut results: Vec<(u64, T)> = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads.max(1))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        if i >= n {
+                            return done;
+                        }
+                        done.push((i, job(i)));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().expect("worker panicked"))
+            .collect()
+    });
+    results.sort_by_key(|(i, _)| *i);
+    results.into_iter().map(|(_, t)| t).collect()
+}
+
+/// How long each of a bot's decisions with a real choice took.
+#[derive(Debug, Clone, Default)]
+pub struct Clock {
+    pub times: Vec<Duration>,
+}
+
+/// Times every decision of the bot it wraps into a shared [`Clock`]; a
+/// decision with one legal action is no choice and is not counted.
+pub struct Timed<G: Game> {
+    pub bot: Box<dyn Bot<G>>,
+    pub clock: Rc<RefCell<Clock>>,
+}
+
+impl<G: Game> Bot<G> for Timed<G> {
+    fn act(&mut self, view: &G::View, legal: &[G::Action], rng: &mut dyn RngCore) -> G::Action {
+        let started = Instant::now();
+        let action = self.bot.act(view, legal, rng);
+        if legal.len() > 1 {
+            self.clock.borrow_mut().times.push(started.elapsed());
+        }
+        action
+    }
 }

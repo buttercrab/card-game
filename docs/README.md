@@ -9,6 +9,19 @@
 
 ## How-tos
 
+### Measure a bot
+
+```sh
+cargo build --release -p eval
+nice -n 10 target/release/eval run --suite v1 --bot <bot> --baseline hard --out <dir>
+```
+
+plays eval suite v1 (ladder, presets, held-out rule sets, think time,
+puzzles) and writes `results.json` and `report.md`; `--quick` is a
+smoke test of a few minutes. Suites, the results schema and running the
+think-time part on the home server are in
+[research/evals](../research/evals/README.md).
+
 ### Run the Python checks
 
 `ml/` is a [uv](https://docs.astral.sh/uv/) project. It depends on the

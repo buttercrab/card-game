@@ -142,9 +142,7 @@ impl EnvGame for Mighty {
                     ..default
                 })
             }
-            BotSpec::Sim(sim::spec::Spec::Random) => Box::new(engine::RandomBot),
-            BotSpec::Sim(sim::spec::Spec::Simple(bot)) => Box::new(bot),
-            BotSpec::Sim(sim::spec::Spec::Search(bot)) => Box::new(bot),
+            BotSpec::Sim(sim_spec) => sim_spec.build(seat),
         }
     }
 }

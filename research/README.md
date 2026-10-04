@@ -31,6 +31,11 @@ Each phase ends with a short entry here.
 - **P0, foundations (2026-10):** `engine::Encode` (encoding spec
   `mighty-1`, pinned in `crates/mighty/tests/encoding.json`),
   `engine::DynGame`, the `ml/` project and these folders. No results yet.
+- **P1, evals v1 (2026-10):** `crates/eval` and suite
+  [v1](evals/v1); the table's 고수 rates +6.81 ± 0.29 on it
+  ([baseline](experiments/2026-10-04-eval-v1-baseline)), and the runner
+  reproduces the 2026-10-04 benchmark's head-to-head tables exactly
+  ([reproduction](experiments/2026-10-04-bench-reproduction)).
 - **P2, environment and data (2026-10):** `crates/env` and its Python
   bindings `cardgame_env`, with a Rust–Python parity test; the first
   dataset, [self-play v1](experiments/2026-10-04-selfplay-v1): 1.19

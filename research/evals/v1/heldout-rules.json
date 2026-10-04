@@ -1,0 +1,4526 @@
+[
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -2,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          0
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": false,
+      "last_chance_min": 13,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Never",
+      "alone": "Always",
+      "run": false,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "FriendOrDeclarer"
+  },
+  {
+    "players": 6,
+    "hand_size": 8,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 1,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 9
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 4,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 5,
+    "extra_cards": [
+      {
+        "Normal": [
+          "Spade",
+          3
+        ]
+      },
+      {
+        "Normal": [
+          "Club",
+          3
+        ]
+      }
+    ],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 23,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": false,
+      "last_chance_min": 11,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": false,
+      "back_run": {
+        "TeamAtMost": 10
+      },
+      "full_contract": "Never",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": -1,
+      "card_values": [],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": true,
+      "last_chance_min": 12,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": false,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverBid",
+      "no_trump": "Always",
+      "alone": "Never",
+      "run": true,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 6,
+    "hand_size": 8,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Always",
+      "alone": "Always",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Never",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "TwoJokers",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          -2
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Diamond",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": true,
+      "powerless_passes": true,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": {
+        "BothOver": 13
+      },
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": true,
+      "back_run": {
+        "ShortBy": 4
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 0,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": true
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Never",
+      "alone": "Always",
+      "run": true,
+      "back_run": {
+        "ShortBy": 4
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": false,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Never",
+      "alone": "Win",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 9
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": 0,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 14,
+      "max": 23,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": false,
+      "last_chance_min": 13,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Win",
+      "alone": "Never",
+      "run": false,
+      "back_run": {
+        "ShortBy": 5
+      },
+      "full_contract": "Never",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -2,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          0
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": false,
+      "last_chance_min": 13,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": false,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Never",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": false,
+    "next_dealer": "FriendOrDeclarer"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 1,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Win",
+      "alone": "Never",
+      "run": false,
+      "back_run": {
+        "TeamAtMost": 8
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 6,
+    "hand_size": 8,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 12,
+      "max": 23,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": false,
+      "back_run": {
+        "ShortBy": 6
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": -1,
+      "card_values": [],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": false,
+      "last_chance_min": 12,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": false,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverBid",
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Win",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 4,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 5,
+    "extra_cards": [
+      {
+        "Normal": [
+          "Spade",
+          3
+        ]
+      },
+      {
+        "Normal": [
+          "Club",
+          3
+        ]
+      }
+    ],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": false,
+      "last_chance_min": 11,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": false,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Never",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "TwoJokers",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          -2
+        ]
+      ],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Diamond",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": true,
+      "powerless_passes": true,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Always",
+      "alone": "Always",
+      "run": false,
+      "back_run": {
+        "ShortBy": 3
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 0,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": false,
+      "last_chance_min": 11,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": true
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 8
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": false,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Never",
+      "alone": "Never",
+      "run": false,
+      "back_run": {
+        "ShortBy": 6
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": 0,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 14,
+      "max": 23,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": {
+        "BothOver": 13
+      },
+      "no_trump": "Always",
+      "alone": "Never",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Win",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -2,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          0
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": false,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverBid",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": true,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Never",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "FriendOrDeclarer"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 1,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": false,
+      "back_run": "Never",
+      "full_contract": "Never",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 12,
+      "max": 23,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": true,
+      "last_chance_min": 11,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Never",
+      "alone": "Always",
+      "run": true,
+      "back_run": {
+        "ShortBy": 4
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 4,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 5,
+    "extra_cards": [
+      {
+        "Normal": [
+          "Spade",
+          3
+        ]
+      },
+      {
+        "Normal": [
+          "Club",
+          3
+        ]
+      }
+    ],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": -1,
+      "card_values": [],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": false,
+      "last_chance_min": 12,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": false,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Always",
+      "alone": "Win",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 8
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": false,
+      "last_chance_min": 11,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": true,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Always",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "TwoJokers",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          -2
+        ]
+      ],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              7
+            ]
+          }
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Diamond",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": true,
+      "powerless_passes": true,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Never",
+      "alone": "Always",
+      "run": false,
+      "back_run": "Never",
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 0,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": true
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Always",
+      "alone": "Always",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 9
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": false,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Never",
+      "alone": "Always",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 8
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": 0,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 14,
+      "max": 23,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverBid",
+      "no_trump": "Always",
+      "alone": "Always",
+      "run": false,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Win",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -2,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          0
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": false,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Always",
+      "alone": "Win",
+      "run": true,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Win",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "FriendOrDeclarer"
+  },
+  {
+    "players": 3,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 7,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 1,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": false,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": false,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              7
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Win",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 6,
+    "hand_size": 8,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 23,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 2,
+      "pass_is_final": true,
+      "last_chance_min": 11,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Never",
+      "alone": "Never",
+      "run": false,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 6,
+    "hand_size": 8,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": -1,
+      "card_values": [],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": false,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": {
+        "BothOver": 13
+      },
+      "no_trump": "Always",
+      "alone": "Never",
+      "run": false,
+      "back_run": {
+        "TeamAtMost": 8
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 6,
+    "hand_size": 8,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverBid",
+      "no_trump": "Never",
+      "alone": "Always",
+      "run": true,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "TwoJokers",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          -2
+        ]
+      ],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Diamond",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": true,
+      "powerless_passes": true,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": false,
+      "back_run": {
+        "ShortBy": 3
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 12,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 0,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": true
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": {
+        "BothOver": 13
+      },
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": false,
+      "back_run": {
+        "ShortBy": 5
+      },
+      "full_contract": "Never",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -1,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": true,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": false,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Never",
+      "alone": "Always",
+      "run": false,
+      "back_run": {
+        "ShortBy": 6
+      },
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": 0,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          1
+        ]
+      ],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 14,
+      "max": 23,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": false,
+      "last_chance_min": 13,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverMin",
+      "no_trump": "Never",
+      "alone": "Win",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Win",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 2,
+      "joker_value": -2,
+      "card_values": [
+        [
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          1
+        ],
+        [
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          },
+          0
+        ]
+      ],
+      "threshold": 1,
+      "all_points": false,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": true,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 14,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 1,
+      "no_trump_wins_ties": false,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": true
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": false,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Never",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "FriendOrDeclarer"
+  },
+  {
+    "players": 7,
+    "hand_size": 7,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": false,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 1,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": true,
+      "last_chance_min": 12,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": false,
+      "first_trick": false,
+      "last_trick": false,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": {
+        "BothOver": 13
+      },
+      "no_trump": "Always",
+      "alone": "Win",
+      "run": true,
+      "back_run": "Never",
+      "full_contract": "Never",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 4,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 5,
+    "extra_cards": [
+      {
+        "Normal": [
+          "Spade",
+          3
+        ]
+      },
+      {
+        "Normal": [
+          "Club",
+          3
+        ]
+      }
+    ],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": true,
+      "after_bidding": true,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": true
+    },
+    "bidding": {
+      "min": 12,
+      "max": 23,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": false,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 0,
+      "pass_is_final": false,
+      "last_chance_min": 11,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "NoEffect",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": true
+    },
+    "scoring": {
+      "win": "OverTen",
+      "no_trump": "Always",
+      "alone": "Always",
+      "run": false,
+      "back_run": "DefenceReachesBid",
+      "full_contract": "Always",
+      "discards_to_declarer": false
+    },
+    "reveal_discards": false,
+    "next_dealer": "Rotate"
+  },
+  {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": -1,
+      "card_values": [],
+      "threshold": 1,
+      "all_points": true,
+      "after_bidding": false,
+      "declarer": true,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": 1,
+      "pass_is_final": false,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": false
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": false,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "BidBonus",
+      "no_trump": "Win",
+      "alone": "Always",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 10
+      },
+      "full_contract": "Always",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  }
+]

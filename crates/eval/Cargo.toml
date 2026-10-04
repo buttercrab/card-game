@@ -1,0 +1,25 @@
+[package]
+name = "eval"
+description = "Eval suites and their runner: ladder, presets, held-out rules, think time and puzzles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+clap.workspace = true
+engine.workspace = true
+mighty.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sim.workspace = true
+
+[dev-dependencies]
+# Only to check that the eval's bot levels are the ones the tables seat.
+server.workspace = true
+
+[lints]
+workspace = true

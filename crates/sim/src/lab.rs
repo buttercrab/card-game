@@ -7,7 +7,7 @@
 //! exactly what the recorded bot chose replays the recorded hand exactly,
 //! and the difference in payoff is the change's alone.
 
-use crate::spec::Spec;
+use crate::spec::{Kind, Spec};
 use engine::{Game, Seat, Turn, Viewer};
 use mighty::bot::SimpleBot;
 use mighty::card::{ACE, Card, Suit};
@@ -79,7 +79,7 @@ impl Actor {
         }
         let view = Mighty::view(state, Viewer::Seat(seat));
         match *self {
-            Actor::Bot(spec) => spec.build().act(&view, &legal, rng),
+            Actor::Bot(spec) => spec.build(seat).act(&view, &legal, rng),
             Actor::Cheat { rollouts, slip } => {
                 let policy = SimpleBot::default();
                 let usual = engine::Bot::act(&mut policy.clone(), &view, &legal, rng);
@@ -569,7 +569,10 @@ pub fn bid_oracle(state: &State, seat: Seat, contract: Contract, worlds: usize, 
             }
         }
         let table = Table {
-            all: Actor::Bot(Spec::Simple(SimpleBot::default())),
+            all: Actor::Bot(Spec {
+                kind: Kind::Simple(SimpleBot::default()),
+                temper: false,
+            }),
             focus: None,
         };
         let mut rngs = streams(0, TAG_LAB, Mighty::seat_count(&s));

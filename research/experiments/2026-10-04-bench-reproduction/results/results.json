@@ -1,0 +1,189 @@
+{
+  "schema": "eval-results/1",
+  "suite": {
+    "name": "bench-2026-10-04",
+    "game": "mighty",
+    "sha256": "ad26a5d079cd1eab555fad6df51a76d5e8023adef11c7431813e67ba2a56cf82",
+    "quick": false
+  },
+  "bot": "search:430:1:0",
+  "baseline": "search:200:1:0",
+  "reproducible": true,
+  "run": {
+    "commit": "6e2ed835ef6a5834e3685fa1770cc832a04eaee8",
+    "dirty": false,
+    "started": "2026-10-04T16:49:28Z",
+    "wall_seconds": 10475.975538125,
+    "threads": 14,
+    "command": [
+      "/private/tmp/claude-501/-Users-jaeyong-Development-Github-card-game/a0227ca7-bdd9-4d3e-93aa-264aa45cdbd7/scratchpad/eval-bench",
+      "run",
+      "--suite",
+      "bench-2026-10-04",
+      "--bot",
+      "search:430:1:0",
+      "--baseline",
+      "search:200:1:0",
+      "--machine",
+      "the Mac (M4 Pro), shared with other work",
+      "--out",
+      "/private/tmp/claude-501/-Users-jaeyong-Development-Github-card-game/a0227ca7-bdd9-4d3e-93aa-264aa45cdbd7/scratchpad/bench-full"
+    ]
+  },
+  "machine": {
+    "label": "the Mac (M4 Pro), shared with other work",
+    "os": "macos",
+    "arch": "aarch64",
+    "cpu": "Apple M4 Pro",
+    "threads": 14,
+    "load": [
+      76.35,
+      90.12,
+      93.46
+    ]
+  },
+  "ladder": null,
+  "presets": null,
+  "heldout": null,
+  "matches": [
+    {
+      "name": "gshs, seed 60000",
+      "rules": "gshs",
+      "field": "search:200:1:0",
+      "seed": 60000,
+      "deals": 1500,
+      "bot": {
+        "mean": 0.84,
+        "ci95": 0.5576283459311425,
+        "n": 1500
+      },
+      "baseline": {
+        "mean": 0.574,
+        "ci95": 0.5692048977774282,
+        "n": 1500
+      },
+      "diff": {
+        "mean": 0.266,
+        "ci95": 0.5017381561428201,
+        "n": 1500
+      },
+      "digest": "20a96f564c9ec32baea9bce7f98f4e4465cfffdc3272d551004df27c5f767c76"
+    },
+    {
+      "name": "gshs, seed 90000",
+      "rules": "gshs",
+      "field": "search:200:1:0",
+      "seed": 90000,
+      "deals": 1000,
+      "bot": {
+        "mean": -0.017,
+        "ci95": 0.6597606277002797,
+        "n": 1000
+      },
+      "baseline": {
+        "mean": -0.088,
+        "ci95": 0.6461431702386439,
+        "n": 1000
+      },
+      "diff": {
+        "mean": 0.071,
+        "ci95": 0.6563222914427358,
+        "n": 1000
+      },
+      "digest": "d2814b41a49df63f1d45fab3abc9d2c5a4070238f4c69359b9958ffda11ca1c9"
+    },
+    {
+      "name": "web-mighty base, seed 60000",
+      "rules": "5 players, 53 cards",
+      "field": "search:200:1:0",
+      "seed": 60000,
+      "deals": 1000,
+      "bot": {
+        "mean": -0.22,
+        "ci95": 0.5985188198692988,
+        "n": 1000
+      },
+      "baseline": {
+        "mean": 0.484,
+        "ci95": 0.5992641110772653,
+        "n": 1000
+      },
+      "diff": {
+        "mean": -0.704,
+        "ci95": 0.5902662245039866,
+        "n": 1000
+      },
+      "digest": "5a90a713ceb50da5f35fde4a551b91bcc67d0069b30b326d4b88cc35d7e78d76"
+    },
+    {
+      "name": "web-mighty base, seed 70000",
+      "rules": "5 players, 53 cards",
+      "field": "search:200:1:0",
+      "seed": 70000,
+      "deals": 1000,
+      "bot": {
+        "mean": 0.732,
+        "ci95": 0.7427696378127333,
+        "n": 1000
+      },
+      "baseline": {
+        "mean": 0.191,
+        "ci95": 0.6651643157576619,
+        "n": 1000
+      },
+      "diff": {
+        "mean": 0.541,
+        "ci95": 0.687994990226657,
+        "n": 1000
+      },
+      "digest": "22603f0bc2af4ceaf5ee2ba3050b318123acc6dbe0f6881542ff9c9c7e44e39b"
+    },
+    {
+      "name": "web-mighty base, seed 80000",
+      "rules": "5 players, 53 cards",
+      "field": "search:200:1:0",
+      "seed": 80000,
+      "deals": 1000,
+      "bot": {
+        "mean": -0.125,
+        "ci95": 0.591024677970362,
+        "n": 1000
+      },
+      "baseline": {
+        "mean": 0.103,
+        "ci95": 0.6350744151502071,
+        "n": 1000
+      },
+      "diff": {
+        "mean": -0.228,
+        "ci95": 0.5749186719397319,
+        "n": 1000
+      },
+      "digest": "33dd25c63d0da159bac864ce2dee331e460cb544ec83f4dcb0899d1e1efea04d"
+    }
+  ],
+  "cost": {
+    "rules": "gshs",
+    "field": "search:200:1:0",
+    "seed": 0,
+    "deals": 40,
+    "bot": {
+      "decisions": 397,
+      "mean_ms": 219.88384186649878,
+      "median_ms": 223.94125,
+      "p90_ms": 359.73641699999996,
+      "p99_ms": 433.30854200000005,
+      "max_ms": 465.226
+    },
+    "baseline": {
+      "decisions": 395,
+      "mean_ms": 97.16446522278488,
+      "median_ms": 95.0925,
+      "p90_ms": 159.728084,
+      "p99_ms": 207.584167,
+      "max_ms": 213.337583
+    },
+    "seconds": 441.280597458
+  },
+  "puzzles": null
+}

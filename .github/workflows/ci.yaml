@@ -46,6 +46,17 @@ jobs:
           # The search bot is slow; a few games still catch illegal moves.
           cargo run --release -p sim -- --games 30 --bots search
 
+  # A few deals of every part of eval suite v1, so the suite and the runner
+  # keep working together. Too small to measure anything.
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release -p eval -- run --suite v1 --bot hard --quick --out target/eval-quick
+      - run: cat target/eval-quick/report.md >> "$GITHUB_STEP_SUMMARY"
+
   # Lint, types and tests for the Python side, the environment's bindings
   # (crates/env-py) included: `uv sync` builds them with maturin, and the
   # tests replay positions the Rust side recorded. Installs without the

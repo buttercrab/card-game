@@ -1,0 +1,35 @@
+{
+  "suite": "v1",
+  "game": "mighty",
+  "about": "The first Mighty scoreboard: a ladder of the table's bots under 경기과고, every preset and 40 held-out rule sets against the table's 고수, think time, and regression puzzles.",
+  "ladder": {
+    "rules": "gshs",
+    "seed": 1000000,
+    "deals": 2000,
+    "quick_deals": 5,
+    "rungs": [
+      { "name": "random", "field": "random" },
+      { "name": "초보", "field": "easy" },
+      { "name": "보통", "field": "normal" },
+      { "name": "고수", "field": "hard" }
+    ]
+  },
+  "presets": {
+    "field": "hard",
+    "seed": 2000000,
+    "deals": 500,
+    "quick_deals": 1,
+    "presets": ["default", "ddshs", "dshs", "kmla", "gsa", "gshs", "skku", "sshs", "yonsei"]
+  },
+  "heldout": {
+    "field": "hard",
+    "file": "heldout-rules.json",
+    "sha256": "a80da4768ac3b916146ea9c0d10fa56e1c0e503facad5539541f69a9b6931b4e",
+    "seed": 3000000,
+    "deals": 25,
+    "quick_deals": 1,
+    "quick_sets": 5
+  },
+  "cost": { "rules": "gshs", "field": "hard", "seed": 4000000, "deals": 40, "quick_deals": 1 },
+  "puzzles": { "file": "puzzles.json", "sha256": "cdea43fe6d8177a34c9df2841f57abc89e4c204dfec4cff2251b4004e65ec804", "tries": 3 }
+}
