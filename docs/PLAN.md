@@ -114,6 +114,27 @@ P1–P5 are the AI track; P6–P7 the service track. The tracks share only the
 
 Exit: CI green with the new jobs; `Encode` and `DynGame` tested on Mighty.
 
+Done (2026-10-04), pending CI on the branch:
+- `engine::Encode`: a spec (shapes and feature names) plus observations as
+  flat arrays: a global vector (the rules whole, then public state), one
+  row per card of the largest deck (meaning under the current contract
+  and trick, and where the viewer knows it to be), up to 160 events, and
+  a legal mask over a fixed action space. Seats are relative to the
+  viewer, with presence masks for seats and cards. Belief targets come
+  from the full state, separately. Mighty's spec, `mighty-1`, is one for
+  every rule set the engine accepts (up to 8 seats, contracts up to 30)
+  and is pinned in `crates/mighty/tests/encoding.json`, which `ml/` reads.
+  About 40 µs an encoding in release.
+- `engine::DynGame`/`DynState` over serde JSON, with `JsonGame` for games
+  to opt in and a `Registry`; the server does not use it yet (P6).
+- `ml/` (uv; ruff, strict pyright, pytest; PyTorch as the `torch` extra),
+  `research/` with its conventions and a manifest schema
+  (`cardgame_ml.manifest`), the `ml` CI job, `docs/README.md`, and
+  DESIGN.md moved here.
+- Deviations: `sim --vary`'s rule sampler moved into `mighty` as
+  `Rules::varied` (same draws). The Rust–Python parity test proper waits
+  for `env-py` (P2); until then the two sides share the pinned spec.
+
 ### P1 — Evals v1
 
 - `crates/eval` with one CLI: `eval run --suite v1 --bot <spec>` writes JSON
