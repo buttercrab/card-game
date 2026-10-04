@@ -154,7 +154,7 @@
   .stand :global(.figure) {
     position: relative;
   }
-  /* The friend's plate turns over like a card. */
+  /* The friend's seat turns over like a card. */
   .seat.reveal {
     animation: reveal 520ms var(--ease-standard);
   }

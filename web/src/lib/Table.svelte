@@ -415,8 +415,15 @@
       if (suit === trump && trickNo === 1) return '첫 라운드엔 기루다를 낼 수 없어요';
       return '지금은 낼 수 없는 카드예요';
     })();
-    client.notice(reason);
+    // Said where the turn is said, in place of the caption or the pill, so
+    // it never lands on the hand or on the line it replaces.
+    if (controls) return client.notice(reason);
+    refusal = reason;
+    clearTimeout(refusalTimer);
+    refusalTimer = setTimeout(() => (refusal = null), 2200);
   }
+  let refusal = $state<string | null>(null);
+  let refusalTimer: ReturnType<typeof setTimeout> | undefined;
 
   function playable(card: CardT): boolean {
     return discardable.some((d) => sameCard(d, card)) || plays.some((p) => sameCard(p.card, card));
@@ -507,10 +514,14 @@
 
   /** Duration multiplier: 0 skips motion; a backlog speeds it up. */
   function pace(): number {
-    if (settings.speed === 'off' || hurry) return 0;
     // Once it is your turn, what is left to show plays three times as fast.
     const waiting = untrack(() => liveTurn) ? 3 : 1;
-    return (settings.speed === 'fast' ? 0.5 : 1) / (1 + 0.5 * queue.length) / waiting;
+    return paceUnhurried() / waiting;
+  }
+  /** The same without your turn's hurry: a finished trick is always shown. */
+  function paceUnhurried(): number {
+    if (settings.speed === 'off' || hurry) return 0;
+    return (settings.speed === 'fast' ? 0.5 : 1) / (1 + 0.5 * queue.length);
   }
 
   async function pump() {
@@ -799,11 +810,14 @@
         k,
         { all: trick.plays, lead: trick.lead, trump, taker: trick.winner },
       );
-      // The hero moment: a beat, the winning card pops, the trick sweeps to its winner.
-      await pause(150 * k);
+      // The hero moment: a beat, the winning card pops, the whole trick
+      // stays a moment to be read, then sweeps to its winner. The hold is
+      // not hurried by your turn: everyone gets to see how the round ended.
+      const kh = paceUnhurried();
+      await pause(150 * kh);
       winner = trick.winner;
-      await pop(slotCard(trick.winner), reduced || hurry ? 0 : 360 * k);
-      await pause((reduced ? 700 : 250) * k);
+      await pop(slotCard(trick.winner), reduced || hurry ? 0 : 360 * kh);
+      await pause((reduced ? 1100 : 900) * kh);
       const to = anchor(trick.winner);
       // The sweep is heard from the winner's side of the table.
       const pan = to ? ((to.left + to.width / 2) / innerWidth - 0.5) * 1.2 : 0;
@@ -1234,7 +1248,7 @@
                   <td class="who">{seatName(s)}</td>
                   <td class="role">{#if t}<span class="team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}</td>
                   <td class="num">
-                    <span class="pts">{points(s)}</span>
+                    {points(s)}
                   </td>
                   <td class="num" class:neg={pay < 0}>{(shownPay[s] ?? pay) > 0 ? '+' : ''}{shownPay[s] ?? pay}</td>
                   <td class="num">{room?.scores[s] ?? ''}</td>
@@ -1307,6 +1321,8 @@
             />
           {/if}
         </div>
+      {:else if refusal}
+        <p class="prompt pill refusal" role="alert">{refusal}</p>
       {:else if myTurn && play}
         <p class="prompt pill">
           <strong>내 차례</strong> ·
@@ -2185,16 +2201,6 @@
   .role {
     text-align: center;
   }
-  /* Points taken: the same small pill for every row; those with cards open them. */
-  .pts {
-    display: inline-block;
-    min-width: 26px;
-    padding: 0 6px;
-    border-radius: 999px;
-    text-align: center;
-    line-height: 20px;
-    box-shadow: 0 0 0 1px var(--line);
-  }
   tr.me td {
     font-weight: 700;
   }
@@ -2269,6 +2275,9 @@
     font-size: 14px;
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
   }
+  .strip .refusal {
+    font-weight: 700;
+  }
   /* Someone else's turn is news, not a button: a plain caption. */
   .strip .caption {
     font-size: 13px;
@@ -2293,6 +2302,10 @@
   }
   .next > button:not(.primary) {
     flex: none;
+  }
+  /* A label never breaks; on a narrow phone the primary wraps to its own row. */
+  .next > button {
+    white-space: nowrap;
   }
   .foot-react {
     display: inline-flex;

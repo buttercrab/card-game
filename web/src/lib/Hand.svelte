@@ -196,12 +196,19 @@
     z-index: 1;
   }
   /* Choosing discards: a chosen card lifts only a little, inside the tray
-     (the exchange controls sit just above its rim), and an ink outline
-     says it is picked. */
+     (the exchange controls sit just above its rim), and keeps its place in
+     the fan: it does not come forward over the next card or cast the raised
+     shadow, which would show under it as a second edge. An ink outline
+     drawn just inside its edge says it is picked. */
+  .choose .spot:has(:global(.raised)) {
+    z-index: auto;
+  }
   .choose :global(.card.raised) {
     translate: 0 -12px;
-    outline: 2px solid var(--ink);
-    outline-offset: 2px;
+    box-shadow: var(--shadow-card);
+    /* Card ink, not table ink: it sits on the card face in either theme. */
+    outline: 3px solid var(--card-ink);
+    outline-offset: -3px;
     animation: none;
   }
   /* An overlapped card's corner glyph would peek out from under the next

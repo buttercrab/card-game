@@ -17,13 +17,26 @@
   const counts = $derived(bids.filter((b) => b.trump === chosenTrump).map((b) => b.count));
   const chosenCount = $derived(count !== null && counts.includes(count) ? count : (counts[0] ?? 0));
   const bid = $derived<Contract>({ trump: chosenTrump, count: chosenCount });
+
+  // When the row runs past the screen, its right edge fades to say so.
+  let picks = $state<HTMLElement>();
+  let more = $state(false);
+  function measure() {
+    if (picks) more = picks.scrollLeft + picks.clientWidth < picks.scrollWidth - 2;
+  }
+  $effect(() => {
+    void counts.length;
+    measure();
+  });
 </script>
+
+<svelte:window onresize={measure} />
 
 <!-- Phones: the suits and counts on one row, the buttons full width under
      them. Wider screens: one centred row. -->
 <div class="bid">
   {#if bids.length > 0}
-    <div class="picks">
+    <div class="picks" class:more bind:this={picks} onscroll={measure}>
       <div class="chips" role="radiogroup" aria-label="기루다">
         {#each trumps as t (t ?? 'nt')}
           <button
@@ -65,8 +78,14 @@
     gap: 6px;
     min-width: 0;
     overflow-x: auto;
-    padding: 2px 2px 4px;
+    /* Room for the focus ring and a chip's lip inside the scroller, which
+       clips them; the negative margin keeps the row where it was. */
+    margin: -6px -6px -4px;
+    padding: 6px 6px 8px;
     scrollbar-width: none;
+  }
+  .picks.more {
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
   .chips {
     display: flex;

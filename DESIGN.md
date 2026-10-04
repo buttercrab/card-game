@@ -152,11 +152,11 @@ The table is a tool first. Five friends glance at a phone between jokes; everyth
 A warm paper neutral, near-black ink, four suit inks, two team colours, and a single plum accent.
 
 ### Primary
-- **Jaju Plum** (#8E2F6B; dark #D27BB0): the accent. It marks exactly one thing: the player can act now. The "your turn" ring on your seat and tray, the primary button in the action strip. Focus rings, checkboxes and selection rings are ink, not plum. Its deep shade #6B2251 (dark #A2558A) is only the button lip.
+- **Jaju Plum** (#8E2F6B; dark #D27BB0): the accent. It marks exactly one thing: the player can act now. The name tag of the seat on turn, the ring on your tray on your turn, the primary button in the action strip. Focus rings, checkboxes and selection rings are ink, not plum. Its deep shade #6B2251 (dark #A2558A) is only the button lip.
 
 ### Neutral
 - **Hanji** (#EFEBE3; dark #17191C): the table. Everything sits on it.
-- **Panel** (#E6E1D6; dark #202327): the hand tray, the action strip, sheets. Recedes behind cards.
+- **Panel** (#E6E1D6; dark #202327): the hand tray, sheets, the side panel. Recedes behind cards.
 - **Line** (#D6CFC1; dark #2F343A): hairline dividers and input borders.
 - **Ink** (#1C1915; dark #ECE7DD): text, and the spade suit.
 - **Ink Muted** (#645D53; dark #9A958B): secondary text, seats not on turn. Passes 4.5:1 on Hanji and Panel.
@@ -192,7 +192,7 @@ Badges always carry the word (주공, 프렌드, 야당); the colour is the seco
 - **Display** (800, 32px, 1.1, tabular): result headline (주공 승리), the big contract number.
 - **Headline** (700, 22px, 1.25): sheet titles.
 - **Title** (600, 17px, 1.3): buttons, seat names, top-display values.
-- **Body** (400, 15px, 1.5): messages, settings, the event log.
+- **Body** (400, 15px, 1.5): messages, settings, the event line.
 - **Label** (600, 13px, 1.3, tabular): badges, counters, captions.
 - **Card rank** (Wanted Sans 800, 32% of card width, tabular): the card index. Never below 16px. "10" uses tightened tracking so it is no wider than other ranks.
 
@@ -229,13 +229,13 @@ Flat. There are no blurred drop shadows. Depth comes from four devices only, and
 1. **Tone.** Panel is one step darker than Hanji; Card is brighter than both.
 2. **Contact shadow.** A hard, faint offset under cards: it says "object on a table".
 3. **The lip.** A hard same-hue offset under pressable buttons and chips; pressing moves the button down onto it.
-4. **Fade.** What is not in focus fades instead of gaining outlines: unplayable cards drop to 40% opacity; seats not on turn use Ink Muted.
+4. **Fade.** What is not in focus fades instead of gaining outlines: unplayable cards dim and sink 4px (desaturated, still opaque, so the hand never shows the table through it); seats not on turn use Ink Muted.
 
 ### Shadow Vocabulary
 - **Card at rest** (`box-shadow: 0 2px 0 rgb(28 25 21 / 0.10)`; dark `0 2px 0 rgb(0 0 0 / 0.35)`): every card face and back.
 - **Card raised** (`transform: translateY(-12px)`, `box-shadow: 0 6px 0 rgb(28 25 21 / 0.07)`): the first tap of tap-twice; hover on desktop lifts -6px.
 - **Button lip** (`box-shadow: 0 3px 0 var(--accent-deep)`; secondary `0 3px 0 var(--line)`): pressed state `transform: translateY(3px); box-shadow: none`.
-- **Turn ring** (`outline: 3px solid var(--accent); outline-offset: 3px`): your seat and tray on your turn.
+- **Turn ring** (`outline: 3px solid var(--accent); outline-offset: 3px`): your tray on your turn. Seats show the turn as a plum name tag instead.
 
 ### Named Rules
 **The Flat-By-Default Rule.** Nothing floats. A shadow is always hard-edged and always means "object" or "pressable".
@@ -259,19 +259,19 @@ Rounded, friendly UI; crisp card faces.
 - **The 마이티.** Its suit inside a gold ring of rays under a small crown, on warmer stock (Card Warm) inside a thin gold rule.
 - **Jokers.** Jesters with three bells, inside an ink rule. The two must differ three ways at once: ink colour (흑 ink / 홍 red), corner label (`흑` / `홍` under a star), and the rule (solid for 흑, dashed for 홍). Never rely on colour alone.
 - **Back.** One geometric idea per back (`CardBack.svelte`), the same either way up, in one lighter tone over the ground inside a 3.5px inset rule: 숯 the spade both ways tip to tip, 자두 frames within frames (첫 승리), 쪽빛 a wall (철벽 야당), 금 twenty dots round a ring, one per point card (큰 그림), 먹 one corner-to-corner sweep (런), 옥 rings from two corners (마이티 중독). Neutral on purpose: plum is reserved for "act now".
-- **States.** Rest; raised (first tap); playable vs unplayable (40% opacity, not tappable); won-trick highlight (accent outline for one beat); kitty tag (`키티` pill) during the exchange.
+- **States.** Rest; raised (first tap); playable vs unplayable (dimmed and sunk 4px, not tappable); won-trick highlight (accent outline for one beat); kitty tag (`키티` pill) during the exchange.
 
 ### Hand
 Tap once to raise a card; tap it again, or swipe up, to play. Tapping elsewhere lowers it. A setting switches to single tap. Only the server's legal cards are tappable.
 
 ### Seat
-Name (Title), a bot mark, a connection dot, the team badge once known, points won (Label, tabular), and a short reaction bubble. The player to act gets the turn ring; others use Ink Muted.
+Name (Title), a bot mark, a connection dot, the team badge once known, points won (Label, tabular), and a short reaction bubble. The seat to act gets a plum name tag (Plum ground, On Accent text); others use Ink Muted. Seats sit in the same place in every phase.
 
 ### Top display (상황판)
 One line of Label/Title text on Hanji with no panel behind it. The contract number uses Display at phone size 22px.
 
 ### Action strip
-Panel background, 64px tall, content by phase. The primary action is always a plum button with a lip at the right end; at most one plum button is visible at any time.
+No panel behind it, 64px tall in every phase so nothing above it moves; content by phase. The primary action is always a plum button with a lip at the right end; at most one plum button is visible at any time.
 
 ### Bid chips
 A row of number chips (13–20, respecting the preset's minimum) and a row of suit chips (♠ ♦ ♥ ♣ 노기루다). Selected chips invert to Ink. The 패스 button is secondary.
@@ -301,7 +301,7 @@ Motion explains what happened; it is never decoration. All movement is `transfor
 ### The four moments
 1. **Card play.** Your card starts on tap (within 100ms), flies to its slot and settles with a small overshoot and a resting angle of ±3°. Others' cards fly from their seat and turn face-up mid-flight.
 2. **Trick sweep** (the hero moment). A 150ms pause, a short pop on the winning card, then the five cards slide to the winner's seat with a stagger while the points counter ticks up. About 800ms in total.
-3. **Friend reveal.** The friend card pops, a plum ring pulses once on the seat, and the 프렌드 badge slides in; team badges appear on every seat.
+3. **Friend reveal.** The friend card pops, the seat turns over once, and the 프렌드 badge slides in; team badges appear on every seat.
 4. **Hand result.** The headline rises in, numbers count up over 0.3–0.8s.
 
 Everything else (deal, kitty pickup, discards, hand re-sort) is quick and plain.

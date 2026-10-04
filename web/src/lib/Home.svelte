@@ -122,6 +122,8 @@
     margin: 0 auto;
     padding: 40px 16px;
     display: grid;
+    /* One column that never grows past the screen, even on a 320px phone. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
   }
   header {
