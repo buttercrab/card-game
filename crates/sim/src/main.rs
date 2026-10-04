@@ -1,10 +1,11 @@
 use clap::{Parser, ValueEnum};
 use engine::{Bot, RandomBot};
 use mighty::bot::SimpleBot;
-use mighty::rules::Preset;
+use mighty::rules::{BackRun, Doubling, Preset, Rules, Scoring, WinScore};
 use mighty::search::{Reading, SearchBot};
 use mighty::{Action, Mighty, Options, View};
-use rand::RngCore;
+use rand::{Rng, RngCore, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use sim::{Checks, Failure};
 use std::cell::Cell;
 use std::process::ExitCode;
@@ -52,6 +53,55 @@ struct Args {
     /// Worker threads; all cores when omitted.
     #[arg(long)]
     threads: Option<usize>,
+    /// Play the preset for this many players (3 to 7), as
+    /// `Rules::for_players` adapts it.
+    #[arg(long)]
+    players: Option<usize>,
+    /// Give every game a random mix of the optional rules (misdeal,
+    /// bidding, scoring and player-count variants) on top of the preset.
+    #[arg(long)]
+    vary: bool,
+}
+
+/// The preset's rules with the optional rules drawn at random for one game.
+fn vary(rules: &Rules, seed: u64) -> Rules {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut r = rules.for_players(rng.random_range(3..=7)).expect("3 to 7 players");
+    r.misdeal.all_points = rng.random();
+    r.misdeal.after_bidding = rng.random();
+    r.misdeal.declarer = rng.random();
+    r.bidding.pass_is_final = rng.random();
+    r.misdeal.ask_first = rng.random();
+    r.misdeal.caller_deals = rng.random();
+    r.bidding.change_to_no_trump_cost = [None, Some(0), Some(1), Some(2)][rng.random_range(0..4)];
+    r.bidding.last_chance_min = rng.random::<bool>().then(|| r.bidding.min.saturating_sub(1).max(1));
+    r.bidding.raise_on_exchange = rng.random();
+    r.policy.release_with_mighty = rng.random();
+    r.joker_lead.not_first_trick = rng.random();
+    r.reveal_discards = rng.random();
+    let doubling = |rng: &mut ChaCha8Rng| [Doubling::Never, Doubling::Win, Doubling::Always][rng.random_range(0..3)];
+    r.scoring = Scoring {
+        win: [
+            WinScore::OverTen,
+            WinScore::OverMin,
+            WinScore::OverBid,
+            WinScore::BidBonus,
+            WinScore::BothOver(13),
+        ][rng.random_range(0..5)],
+        no_trump: doubling(&mut rng),
+        alone: doubling(&mut rng),
+        run: rng.random(),
+        back_run: match rng.random_range(0..4) {
+            0 => BackRun::Never,
+            1 => BackRun::TeamAtMost(rng.random_range(8..=10)),
+            2 => BackRun::ShortBy(rng.random_range(3..=6)),
+            _ => BackRun::DefenceReachesBid,
+        },
+        full_contract: doubling(&mut rng),
+        discards_to_declarer: rng.random(),
+    };
+    r.validate().expect("varied rules are valid");
+    r
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -237,8 +287,15 @@ struct Outcome {
 
 /// Plays `args.games` games of `preset` on all workers.
 fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
-    let rules = preset.rules();
-    let seats = rules.players;
+    let mut rules = preset.rules();
+    if let Some(players) = args.players {
+        rules = rules.for_players(players).ok_or_else(|| Failure {
+            seed: args.seed,
+            step: 0,
+            message: format!("no rules for {players} players"),
+            last_actions: Vec::new(),
+        })?;
+    }
     let next = AtomicU64::new(0);
     let checks = Checks {
         view_every: args.view_every,
@@ -257,8 +314,14 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                         if game >= args.games {
                             return done;
                         }
+                        let rules = if args.vary {
+                            vary(&rules, args.seed + game)
+                        } else {
+                            rules.clone()
+                        };
+                        let seats = rules.players;
                         let options = Options {
-                            rules: rules.clone(),
+                            rules,
                             first_bidder: game as usize % seats,
                         };
                         let one = |focus_bot: Spec| {

@@ -36,6 +36,10 @@ pub enum PhaseView {
         passed: Vec<bool>,
         /// Who has bid at least once; they may no longer call a misdeal.
         has_bid: Vec<bool>,
+        /// Everyone is answering whether they call a misdeal before any
+        /// bid (`misdeal.ask_first`); a pass now means "no misdeal".
+        #[serde(default)]
+        asking_misdeal: bool,
     },
     Exchange {
         declarer: Seat,
@@ -91,6 +95,7 @@ impl View {
                 best: b.best,
                 passed: b.passed.clone(),
                 has_bid: b.has_bid.clone(),
+                asking_misdeal: b.asking,
             },
             Phase::Exchange(e) => PhaseView::Exchange {
                 declarer: e.declarer,
@@ -120,7 +125,11 @@ impl View {
                 team_points: d.team_points,
                 payoffs: d.payoffs.clone(),
                 tricks: d.tricks.clone(),
-                discards: d.discards.clone(),
+                discards: if state.rules.reveal_discards {
+                    d.discards.clone()
+                } else {
+                    own_discards(d.declarer, &d.discards).unwrap_or_default()
+                },
             },
         };
         View {

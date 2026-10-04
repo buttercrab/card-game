@@ -1,5 +1,5 @@
 use crate::card::{Card, Color, Suit};
-use crate::rules::{CardPolicy, Contract, InvalidRules, Rules};
+use crate::rules::{BackRun, CardPolicy, Contract, InvalidRules, Rules, WinScore};
 use crate::trick::{self, Lead, Played, Trick, TrickContext};
 use engine::{Seat, Turn};
 use rand::RngCore;
@@ -35,6 +35,10 @@ pub enum Action {
     Pass,
     /// Declarer, before discarding: change trump at the cost of a higher contract.
     ChangeTrump(Option<Suit>),
+    /// Declarer, before discarding, where `bidding.raise_on_exchange`
+    /// allows: set a higher contract than keeping trump or `ChangeTrump`
+    /// gives.
+    Raise(Contract),
     /// Declarer: put one card back, until as many as the kitty held.
     Discard(Card),
     CallFriend(FriendCall),
@@ -118,6 +122,9 @@ pub(crate) struct Bidding {
     pub best: Option<(Seat, Contract)>,
     pub passed: Vec<bool>,
     pub has_bid: Vec<bool>,
+    /// Everyone is still answering whether they call a misdeal, before
+    /// any bid (`misdeal.ask_first`).
+    pub asking: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -210,7 +217,7 @@ impl State {
     }
 
     pub(crate) fn sample_deal(&self, rng: &mut dyn RngCore) -> Action {
-        let mut deck = self.rules.deck.cards();
+        let mut deck = self.rules.cards();
         deck.shuffle(rng);
         let kitty = deck.split_off(self.seats() * self.rules.hand_size);
         let hands = deck.chunks(self.rules.hand_size).map(<[Card]>::to_vec).collect();
@@ -239,7 +246,7 @@ impl State {
             return Err(Error::BadDeal("wrong hand sizes"));
         }
         let mut dealt: Vec<Card> = hands.iter().flatten().chain(&kitty).copied().collect();
-        let mut deck = self.rules.deck.cards();
+        let mut deck = self.rules.cards();
         dealt.sort();
         deck.sort();
         if dealt != deck {
@@ -257,6 +264,7 @@ impl State {
             best: None,
             passed: vec![false; n],
             has_bid: vec![false; n],
+            asking: self.rules.misdeal.ask_first,
         });
         Ok(())
     }
@@ -291,45 +299,85 @@ impl State {
 
     fn legal_bids(&self, b: &Bidding) -> Vec<Action> {
         let bidding = &self.rules.bidding;
+        let misdeal = &self.rules.misdeal;
         let mut actions = Vec::new();
-        if !b.has_bid[b.to_act] && self.rules.is_misdeal(&self.hands[b.to_act]) {
+        let may_misdeal = if misdeal.ask_first {
+            b.asking
+        } else {
+            !b.has_bid[b.to_act] || misdeal.after_bidding
+        };
+        if may_misdeal && self.rules.is_misdeal(&self.hands[b.to_act]) {
             actions.push(Action::Misdeal);
         }
+        if b.asking {
+            // Passing here answers "no misdeal".
+            actions.push(Action::Pass);
+            return actions;
+        }
+        let min = if self.last_chance(b) {
+            bidding.last_chance_min.unwrap_or(bidding.min)
+        } else {
+            bidding.min
+        };
         if b.best.is_some() || bidding.first_bidder_may_pass {
             actions.push(Action::Pass);
         }
-        for trump in self.trump_options() {
-            for count in 1..=bidding.max {
-                let contract = Contract { trump, count };
-                let rank = self.rules.bid_rank(contract);
-                let beats_best = b.best.is_none_or(|(_, best)| rank > self.rules.bid_rank(best));
-                if self.rules.bid_value(contract) >= bidding.min && beats_best {
-                    actions.push(Action::Bid(contract));
-                }
-            }
-        }
+        actions.extend(self.bids_from(b.best.map(|(_, c)| c), min).map(Action::Bid));
         actions
     }
 
+    /// Whether everyone has passed once and the first bidder is having
+    /// the extra turn `bidding.last_chance_min` gives.
+    fn last_chance(&self, b: &Bidding) -> bool {
+        self.rules.bidding.last_chance_min.is_some() && b.best.is_none() && self.bids.len() == self.seats()
+    }
+
+    /// Every bid that would top `best`, lowest first within each trump.
+    fn bids_over(&self, best: Option<Contract>) -> impl Iterator<Item = Contract> + '_ {
+        self.bids_from(best, self.rules.bidding.min)
+    }
+
+    fn bids_from(&self, best: Option<Contract>, min: u8) -> impl Iterator<Item = Contract> + '_ {
+        let bidding = &self.rules.bidding;
+        self.trump_options().into_iter().flat_map(move |trump| {
+            (1..=bidding.max)
+                .map(move |count| Contract { trump, count })
+                .filter(move |&contract| {
+                    let beats_best = best.is_none_or(|best| self.rules.bid_rank(contract) > self.rules.bid_rank(best));
+                    self.rules.bid_value(contract) >= min && beats_best
+                })
+        })
+    }
+
     fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
-        let bonus = |t: Option<Suit>| {
-            if t.is_none() {
-                self.rules.bidding.no_trump_bonus
-            } else {
-                0
-            }
-        };
-        let count = contract.count + self.rules.bidding.change_trump_cost + bonus(contract.trump);
-        Contract {
-            trump,
-            count: count.saturating_sub(bonus(trump)),
-        }
+        self.rules.changed_contract(contract, trump)
+    }
+
+    /// Contracts the declarer may raise `contract` to: the same trump with
+    /// a higher number, or another trump worth more than the least change,
+    /// which `ChangeTrump` offers.
+    fn raises(&self, contract: Contract) -> impl Iterator<Item = Contract> + '_ {
+        let max = self.rules.bidding.max;
+        self.trump_options().into_iter().flat_map(move |trump| {
+            let least = self.changed_contract(contract, trump);
+            (1..=max).map(move |count| Contract { trump, count }).filter(move |c| {
+                if trump == contract.trump {
+                    c.count > contract.count
+                } else {
+                    c.count > least.count
+                }
+            })
+        })
     }
 
     fn legal_exchange(&self, e: &Exchange) -> Vec<Action> {
         let hand = &self.hands[e.declarer];
         let mut actions = Vec::new();
         if e.discards.len() < self.rules.kitty_size() {
+            // Holding the kitty, a hand that qualifies may still be thrown in.
+            if self.rules.misdeal.declarer && e.discards.is_empty() && self.rules.is_misdeal(hand) {
+                actions.push(Action::Misdeal);
+            }
             if !e.trump_changed && e.discards.is_empty() {
                 for trump in self.trump_options() {
                     let changed = self.changed_contract(e.contract, trump);
@@ -337,13 +385,16 @@ impl State {
                         actions.push(Action::ChangeTrump(trump));
                     }
                 }
+                if self.rules.bidding.raise_on_exchange {
+                    actions.extend(self.raises(e.contract).map(Action::Raise));
+                }
             }
             actions.extend(hand.iter().map(|&c| Action::Discard(c)));
             return actions;
         }
         let f = &self.rules.friend;
         if f.by_card {
-            for card in self.rules.deck.cards() {
+            for card in self.rules.cards() {
                 let own = hand.contains(&card) || e.discards.contains(&card);
                 if !own || f.fake {
                     actions.push(Action::CallFriend(FriendCall::Card(card)));
@@ -376,21 +427,27 @@ impl State {
 
         // A card held back by policy may still be played when nothing else
         // is left but jokers and the mighty: holding only trump and those
-        // means trump may be played too.
+        // means trump may be played too. Without `release_with_mighty`,
+        // only jokers count: holding the mighty, the mighty must go.
+        let with_mighty = self.rules.policy.release_with_mighty;
         let or_forced = |allowed: Vec<Card>, all: &[Card]| {
-            if allowed.iter().all(|c| c.is_joker() || *c == mighty) {
+            if allowed.iter().all(|c| c.is_joker() || (with_mighty && *c == mighty)) {
                 all.to_vec()
             } else {
                 allowed
             }
         };
         let cards: Vec<Card> = if leading {
+            // Where a joker may not lead the first trick, it stays barred
+            // even when trump is released, unless it is all there is.
+            let barred = |c: &Card| c.is_joker() && p.trick_no == 0 && self.rules.joker_lead.not_first_trick;
             let allowed: Vec<Card> = hand
                 .iter()
                 .copied()
-                .filter(|c| !matches!(policy(c), CardPolicy::Invalid | CardPolicy::NoLead))
+                .filter(|c| !matches!(policy(c), CardPolicy::Invalid | CardPolicy::NoLead) && !barred(c))
                 .collect();
-            or_forced(allowed, hand)
+            let unbarred: Vec<Card> = hand.iter().copied().filter(|c| !barred(c)).collect();
+            or_forced(allowed, if unbarred.is_empty() { hand } else { &unbarred })
         } else if let Some(joker) = p.called_joker.filter(|j| hand.contains(j)) {
             // A called joker must come out, rules above notwithstanding.
             let defend = self.rules.joker_call.mighty_defense && hand.contains(&mighty);
@@ -469,9 +526,12 @@ impl State {
     pub(crate) fn step(&mut self, seat: Seat, action: Action) {
         let phase = std::mem::replace(&mut self.phase, Phase::Dealing);
         self.phase = match (phase, action) {
-            (Phase::Bidding(_), Action::Misdeal) => {
+            (Phase::Bidding(_) | Phase::Exchange(_), Action::Misdeal) => {
                 let hand = self.hands[seat].clone();
                 self.redeal(Redeal::Misdeal { seat, hand });
+                if self.rules.misdeal.caller_deals {
+                    self.first_bidder = seat;
+                }
                 Phase::Dealing
             }
             (Phase::Bidding(b), action) => self.step_bidding(b, seat, action),
@@ -489,6 +549,14 @@ impl State {
     }
 
     fn step_bidding(&mut self, mut b: Bidding, seat: Seat, action: Action) -> Phase {
+        let n = self.seats();
+        if b.asking {
+            // Nobody called a misdeal so far; once everyone has answered,
+            // the bidding starts with the first bidder.
+            b.to_act = (seat + 1) % n;
+            b.asking = b.to_act != self.first_bidder;
+            return Phase::Bidding(b);
+        }
         let contract = match action {
             Action::Pass => {
                 b.passed[seat] = true;
@@ -497,18 +565,30 @@ impl State {
             Action::Bid(contract) => {
                 b.best = Some((seat, contract));
                 b.has_bid[seat] = true;
+                if !self.rules.bidding.pass_is_final {
+                    // Everyone else may answer, even those who passed.
+                    b.passed.fill(false);
+                }
                 Some(contract)
             }
             other => unreachable!("{other:?} while bidding"),
         };
         self.bids.push(Bid { seat, contract });
         let active = b.passed.iter().filter(|p| !**p).count();
+        // A bid nobody can top (풀노) ends the bidding at once.
+        let unbeatable = contract.is_some_and(|c| self.bids_over(Some(c)).next().is_none());
         match (active, b.best) {
+            // Everyone passed once: the first bidder may bid once more.
+            (0, None) if self.last_chance(&b) => {
+                b.passed[self.first_bidder] = false;
+                b.to_act = self.first_bidder;
+                Phase::Bidding(b)
+            }
             (0, _) => {
                 self.redeal(Redeal::AllPassed);
                 Phase::Dealing
             }
-            (1, Some((declarer, contract))) => {
+            (_, Some((declarer, contract))) if active == 1 || unbeatable => {
                 self.redealt = None;
                 let kitty = std::mem::take(&mut self.kitty);
                 self.hands[declarer].extend(kitty);
@@ -521,7 +601,6 @@ impl State {
                 })
             }
             _ => {
-                let n = self.seats();
                 b.to_act = (1..=n)
                     .map(|i| (seat + i) % n)
                     .find(|&s| !b.passed[s])
@@ -535,6 +614,10 @@ impl State {
         match action {
             Action::ChangeTrump(trump) => {
                 e.contract = self.changed_contract(e.contract, trump);
+                e.trump_changed = true;
+            }
+            Action::Raise(contract) => {
+                e.contract = contract;
                 e.trump_changed = true;
             }
             Action::Discard(card) => {
@@ -628,25 +711,13 @@ impl State {
     fn score(&self, p: Play) -> Done {
         let team = |s: Seat| s == p.declarer || Some(s) == p.friend;
         let won_points = (0..self.seats()).filter(|&s| team(s)).flat_map(|s| &self.taken[s]);
-        let team_points = won_points.chain(&p.discards).filter(|c| c.is_point()).count() as u8;
-
-        let count = p.contract.count;
-        let value: i64 = if team_points >= count {
-            let mut multiplier = 1;
-            if p.contract.trump.is_none() {
-                multiplier *= 2;
-            }
-            if p.call == FriendCall::Alone {
-                multiplier *= 2;
-            }
-            if team_points == 20 {
-                multiplier *= 2;
-            }
-            multiplier * (i64::from(team_points) - 10).max(1)
+        let discards = if self.rules.scoring.discards_to_declarer {
+            &p.discards[..]
         } else {
-            let short = i64::from(count - team_points);
-            if team_points <= 10 { -2 * short } else { -short }
+            &[]
         };
+        let team_points = won_points.chain(discards).filter(|c| c.is_point()).count() as u8;
+        let value = self.hand_value(p.contract, p.call == FriendCall::Alone, team_points);
 
         let opponents = (0..self.seats()).filter(|&s| !team(s)).count() as i64;
         let payoffs = (0..self.seats())
@@ -670,6 +741,41 @@ impl State {
             payoffs,
             tricks: p.tricks,
         }
+    }
+
+    /// What one opponent pays the declarer's side (negative: receives) when
+    /// the side took `team_points`.
+    fn hand_value(&self, contract: Contract, alone: bool, team_points: u8) -> i64 {
+        let s = &self.rules.scoring;
+        let (count, points) = (i64::from(contract.count), i64::from(team_points));
+        let min = i64::from(self.rules.bidding.min);
+        let made = points >= count;
+        let base = if made {
+            match s.win {
+                WinScore::OverTen => (points - 10).max(1),
+                WinScore::OverMin => points - min,
+                WinScore::OverBid => points - count,
+                WinScore::BidBonus => points - count + 2 * (i64::from(self.rules.bid_value(contract)) - min),
+                WinScore::BothOver(n) => (points - i64::from(n) + count - i64::from(n)).max(1),
+            }
+        } else {
+            let short = count - points;
+            let back_run = match s.back_run {
+                BackRun::Never => false,
+                BackRun::TeamAtMost(n) => points <= i64::from(n),
+                BackRun::ShortBy(n) => short >= i64::from(n),
+                // Every point the side did not take went to the defence.
+                BackRun::DefenceReachesBid => 20 - points >= count,
+            };
+            -short * if back_run { 2 } else { 1 }
+        };
+        let doubles = [
+            s.no_trump.applies(made) && contract.trump.is_none(),
+            s.alone.applies(made) && alone,
+            s.run && made && points == 20,
+            s.full_contract.applies(made) && count == 20,
+        ];
+        base * 2_i64.pow(doubles.iter().filter(|d| **d).count() as u32)
     }
 
     pub(crate) fn discards(&self) -> Option<(&[Card], Seat)> {
@@ -734,9 +840,9 @@ impl State {
             engine::Viewer::Seat(s) => Some(s),
             engine::Viewer::Spectator => None,
         };
-        // Everyone sees the discards once the hand is over.
-        let sees_discards =
-            matches!(self.phase, Phase::Done(_)) || self.discards().is_some_and(|(_, declarer)| Some(declarer) == me);
+        // Everyone sees the discards once the hand is over, if the rules show them.
+        let shown = matches!(self.phase, Phase::Done(_)) && self.rules.reveal_discards;
+        let sees_discards = shown || self.discards().is_some_and(|(_, declarer)| Some(declarer) == me);
         let mut next = self.clone();
 
         let mut pool: Vec<Card> = Vec::new();
@@ -784,7 +890,7 @@ impl State {
         if let Phase::Play(p) = &self.phase {
             cards.extend(p.plays.iter().map(|pl| pl.card));
         }
-        let mut deck = self.rules.deck.cards();
+        let mut deck = self.rules.cards();
         cards.sort();
         deck.sort();
         if cards != deck {
@@ -797,9 +903,33 @@ impl State {
                     return Err("hand size changed during bidding".into());
                 }
                 let last = self.bids.iter().rev().find_map(|bid| Some((bid.seat, bid.contract?)));
-                let passes = self.bids.iter().filter(|bid| bid.contract.is_none()).count();
+                // Passes since the last bid, when a bid lets everyone answer again.
+                let counted = if self.rules.bidding.pass_is_final {
+                    &self.bids[..]
+                } else {
+                    let since = self
+                        .bids
+                        .iter()
+                        .rposition(|bid| bid.contract.is_some())
+                        .map_or(0, |i| i + 1);
+                    &self.bids[since..]
+                };
+                let passes = counted.iter().filter(|bid| bid.contract.is_none()).count();
+                // On the first bidder's extra turn, their pass no longer counts.
+                let passes = passes - usize::from(self.last_chance(b));
+                if b.asking && (!self.bids.is_empty() || !self.rules.misdeal.ask_first) {
+                    return Err("still asking about misdeals after a bid".into());
+                }
                 if last != b.best || passes != b.passed.iter().filter(|p| **p).count() {
                     return Err("the bidding record disagrees with the bidding".into());
+                }
+                if b.best
+                    .is_some_and(|(_, best)| self.bids_over(Some(best)).next().is_none())
+                {
+                    return Err("the bidding went on past a bid nobody can top".into());
+                }
+                if b.passed[b.to_act] {
+                    return Err(format!("seat {} is to bid but has passed", b.to_act));
                 }
             }
             Phase::Play(p) => {
@@ -814,6 +944,20 @@ impl State {
                 if d.payoffs.iter().sum::<i64>() != 0 {
                     return Err(format!("payoffs do not sum to zero: {:?}", d.payoffs));
                 }
+                if d.team_points > 20 {
+                    return Err(format!("the declarer's side took {} of 20 points", d.team_points));
+                }
+                // A made contract never costs the declarer, a failed one always
+                // does; only scoring against the minimum can lose on a win.
+                let made = d.team_points >= d.contract.count;
+                let declarer = d.payoffs[d.declarer];
+                let may_lose = self.rules.scoring.win == WinScore::OverMin;
+                if (made && declarer < 0 && !may_lose) || (!made && declarer >= 0) {
+                    return Err(format!(
+                        "declarer gets {declarer} for {} of {}",
+                        d.team_points, d.contract.count
+                    ));
+                }
             }
             Phase::Dealing | Phase::Exchange(_) => {}
         }
@@ -825,5 +969,277 @@ fn joker_color(card: Card) -> Option<Color> {
     match card {
         Card::Joker(color) => Some(color),
         Card::Normal(..) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::{Doubling, Scoring};
+
+    fn state(rules: Rules) -> State {
+        State::new(&Options { rules, first_bidder: 0 }).unwrap()
+    }
+
+    const DIAMOND: Option<Suit> = Some(Suit::Diamond);
+
+    /// 나무위키's worked examples (점수 계산), scored the usual way: points −
+    /// contract + 2 × (contract − 13), no-trump and runs double, a failed
+    /// contract doubles when the defence took 11 or more.
+    #[test]
+    fn the_usual_scoring_matches_the_worked_examples() {
+        let rules = Rules {
+            scoring: Scoring {
+                win: WinScore::BidBonus,
+                no_trump: Doubling::Win,
+                alone: Doubling::Never,
+                run: true,
+                back_run: BackRun::TeamAtMost(9),
+                full_contract: Doubling::Never,
+                discards_to_declarer: true,
+            },
+            ..Rules::default()
+        };
+        let s = state(rules);
+        let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
+        assert_eq!(value(DIAMOND, 15, false, 19), 8);
+        assert_eq!(value(DIAMOND, 15, false, 20), 18);
+        assert_eq!(value(None, 15, true, 16), 10);
+        assert_eq!(value(DIAMOND, 15, false, 14), -1);
+        assert_eq!(value(DIAMOND, 15, false, 9), -12);
+        // No doubling for no-trump on a loss unless agreed.
+        assert_eq!(value(None, 15, true, 9), -12);
+    }
+
+    #[test]
+    fn scoring_against_the_minimum_can_lose_on_a_win() {
+        let mut rules = Rules::default();
+        rules.scoring.win = WinScore::OverMin;
+        let s = state(rules);
+        // 둘노 made with 12 against a minimum of 13: (12 − 13) × 2.
+        assert_eq!(s.hand_value(Contract { trump: None, count: 12 }, false, 12), -2);
+        assert_eq!(s.hand_value(Contract { trump: None, count: 12 }, false, 13), 0);
+    }
+
+    #[test]
+    fn default_scoring_is_unchanged() {
+        let s = state(Rules::default());
+        let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
+        assert_eq!(value(DIAMOND, 13, false, 15), 5);
+        assert_eq!(value(None, 13, true, 20), 80);
+        assert_eq!(value(DIAMOND, 13, false, 11), -2);
+        assert_eq!(value(DIAMOND, 13, false, 10), -6);
+        // A loss is never doubled for no-trump or playing alone.
+        assert_eq!(value(None, 13, true, 12), -1);
+    }
+
+    #[test]
+    fn doublings_may_apply_to_losses_too() {
+        let mut rules = Rules::default();
+        rules.scoring.no_trump = Doubling::Always;
+        rules.scoring.alone = Doubling::Always;
+        rules.scoring.back_run = BackRun::ShortBy(5);
+        let s = state(rules);
+        // 부산대: 13 bid, 8 taken is 백런; no-trump and 노프렌드 double too.
+        assert_eq!(s.hand_value(Contract { trump: None, count: 13 }, true, 8), -40);
+        assert_eq!(s.hand_value(Contract { trump: None, count: 13 }, true, 9), -16);
+        let mut rules = Rules::default();
+        rules.scoring.back_run = BackRun::DefenceReachesBid;
+        let s = state(rules);
+        // 세종: the defence took 13 of a 13 contract's points.
+        assert_eq!(
+            s.hand_value(
+                Contract {
+                    trump: DIAMOND,
+                    count: 13
+                },
+                false,
+                7
+            ),
+            -12
+        );
+        assert_eq!(
+            s.hand_value(
+                Contract {
+                    trump: DIAMOND,
+                    count: 13
+                },
+                false,
+                8
+            ),
+            -5
+        );
+    }
+
+    #[test]
+    fn discards_may_count_for_the_defence() {
+        let mut rules = Rules::default();
+        rules.scoring.discards_to_declarer = false;
+        let mut s = state(rules);
+        let tens = Suit::ALL.map(|suit| Card::new(suit, 10));
+        // The declarer won 12 points in tricks and buried three tens.
+        let won: Vec<Card> = Suit::ALL
+            .into_iter()
+            .flat_map(|suit| (11..=13).map(move |r| Card::new(suit, r)))
+            .collect();
+        s.taken[0] = won;
+        let play = Play {
+            declarer: 0,
+            contract: Contract {
+                trump: DIAMOND,
+                count: 13,
+            },
+            discards: tens[..3].to_vec(),
+            call: FriendCall::Alone,
+            friend: None,
+            trick_no: 10,
+            leader: 0,
+            lead: None,
+            plays: Vec::new(),
+            called_joker: None,
+            tricks: Vec::new(),
+        };
+        let done = s.score(play.clone());
+        assert_eq!((done.team_points, done.payoffs[0]), (12, -4));
+        s.rules.scoring.discards_to_declarer = true;
+        assert_eq!(s.score(play).team_points, 15);
+    }
+
+    fn basic() -> State {
+        state(crate::rules::Preset::Default.rules())
+    }
+
+    /// 기본: B = max(1, (P − 13) + (C − 13)) on a win, P − C on a loss;
+    /// ×2 each for 노기루다, 노프렌드, 런, 백런 (P ≤ 10) and C = 20.
+    #[test]
+    fn basic_scoring() {
+        let s = basic();
+        let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
+        assert_eq!(value(DIAMOND, 15, false, 19), 8);
+        assert_eq!(value(DIAMOND, 13, false, 13), 1);
+        assert_eq!(value(DIAMOND, 15, false, 20), 2 * 9);
+        assert_eq!(value(DIAMOND, 15, false, 14), -1);
+        assert_eq!(value(DIAMOND, 15, false, 10), -2 * 5);
+        // 노기루다 and 노프렌드 double whichever side wins.
+        assert_eq!(value(None, 15, true, 16), 4 * 5);
+        assert_eq!(value(None, 15, true, 14), -4);
+        // C = 20 doubles too: 풀노 made alone with a run is ×16.
+        assert_eq!(value(None, 20, true, 20), 16 * 14);
+        assert_eq!(value(DIAMOND, 20, false, 15), -2 * 5);
+    }
+
+    /// A finished hand of seat 0 declaring ♦15 with `call`, `friend`
+    /// known, its side having taken 16 points.
+    fn finish(s: &mut State, call: FriendCall, friend: Option<Seat>) -> Done {
+        let points: Vec<Card> = Suit::ALL
+            .into_iter()
+            .flat_map(|suit| (11..=14).map(move |r| Card::new(suit, r)))
+            .collect();
+        s.taken = vec![Vec::new(); 5];
+        s.taken[0] = points;
+        let play = Play {
+            declarer: 0,
+            contract: Contract {
+                trump: DIAMOND,
+                count: 15,
+            },
+            discards: Vec::new(),
+            call,
+            friend,
+            trick_no: 10,
+            leader: 0,
+            lead: None,
+            plays: Vec::new(),
+            called_joker: None,
+            tricks: Vec::new(),
+        };
+        s.score(play)
+    }
+
+    #[test]
+    fn basic_false_no_friend_scores_without_doubling() {
+        let mut s = basic();
+        // B = (16 − 13) + (15 − 13) = 5.
+        let with_friend = finish(&mut s, FriendCall::Seat(1), Some(1));
+        assert_eq!(with_friend.payoffs, vec![10, 5, -5, -5, -5]);
+        let alone = finish(&mut s, FriendCall::Alone, None);
+        assert_eq!(alone.payoffs, vec![40, -10, -10, -10, -10]);
+        // Naming a card the declarer holds, or winning the first trick
+        // when it calls the friend: no friend, but no doubling either.
+        let false_alone = finish(&mut s, FriendCall::Card(Card::new(Suit::Spade, 14)), None);
+        assert_eq!(false_alone.payoffs, vec![20, -5, -5, -5, -5]);
+        let first_trick = finish(&mut s, FriendCall::FirstTrick, None);
+        assert_eq!(first_trick.payoffs, vec![20, -5, -5, -5, -5]);
+    }
+
+    /// Trick 10 of 기본, seat 0 to lead `hand0`; the others hold one card each.
+    fn last_trick(hand0: Card, others: [Card; 4]) -> State {
+        let mut s = basic();
+        s.hands = std::iter::once(vec![hand0]).chain(others.map(|c| vec![c])).collect();
+        s.phase = Phase::Play(Play {
+            declarer: 0,
+            contract: Contract {
+                trump: DIAMOND,
+                count: 14,
+            },
+            discards: Vec::new(),
+            call: FriendCall::Alone,
+            friend: None,
+            trick_no: 9,
+            leader: 0,
+            lead: None,
+            plays: Vec::new(),
+            called_joker: None,
+            tricks: Vec::new(),
+        });
+        s
+    }
+
+    #[test]
+    fn basic_last_trick_joker_call_does_nothing_and_a_led_weak_joker_can_win() {
+        let joker = Card::Joker(Color::Black);
+        let c = |s, r| Card::new(s, r);
+        let s = last_trick(
+            c(Suit::Club, 3),
+            [joker, c(Suit::Club, 9), c(Suit::Spade, 9), c(Suit::Heart, 9)],
+        );
+        assert!(
+            s.legal_actions()
+                .iter()
+                .all(|a| matches!(a, Action::Play { call_joker: false, .. }))
+        );
+
+        // The joker leads hearts, weak; nobody plays a heart, trump or the mighty.
+        let mut s = last_trick(
+            joker,
+            [
+                c(Suit::Club, 9),
+                c(Suit::Spade, 9),
+                c(Suit::Club, 10),
+                c(Suit::Spade, 2),
+            ],
+        );
+        let lead = Action::Play {
+            card: joker,
+            joker_lead: Some(Lead::Suit(Suit::Heart)),
+            call_joker: false,
+        };
+        assert!(s.legal_actions().contains(&lead));
+        s.step(0, lead);
+        let Phase::Play(p) = &s.phase else { unreachable!() };
+        assert!(!p.plays[0].powered);
+        for seat in 1..5 {
+            let card = s.hands[seat][0];
+            s.step(
+                seat,
+                Action::Play {
+                    card,
+                    joker_lead: None,
+                    call_joker: false,
+                },
+            );
+        }
+        let Phase::Done(d) = &s.phase else { unreachable!() };
+        assert_eq!(d.tricks[0].winner, 0);
     }
 }
