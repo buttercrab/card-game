@@ -66,6 +66,10 @@ enum Command {
         /// Skip this many records first.
         #[arg(long, default_value_t = 0)]
         skip: usize,
+        /// Replay the recorded hand up to this trick (1-based) and play
+        /// only the rest, base and variant both.
+        #[arg(long)]
+        from_trick: Option<usize>,
     },
     /// Bidding: the declarer passing instead of its winning bid, the
     /// closest pass bidding instead, and what playouts thought of both.
@@ -101,12 +105,15 @@ enum Command {
         #[arg(long, default_value = HARD)]
         play: String,
         /// `name=bot:SPEC` (a bot's exchange), `name=joint:WORLDS` (search
-        /// whole discard sets and the call) or `name=call:WORLDS` (the
-        /// recorded discards, searched call).
+        /// whole discard sets and the call), `name=call:WORLDS` (the
+        /// recorded discards, searched call) or `name=split:BOT/BOT` (one
+        /// bot's discards, the other's call).
         #[arg(long, required = true)]
         variant: Vec<String>,
         #[arg(long)]
         limit: Option<usize>,
+        #[arg(long, default_value_t = 0)]
+        skip: usize,
     },
 }
 
@@ -181,6 +188,7 @@ fn main() {
             rotate,
             limit,
             skip,
+            from_trick,
         } => {
             let mut records = load(records, *limit);
             records.drain(..(*skip).min(records.len()));
@@ -196,7 +204,10 @@ fn main() {
                 let mut out = Vec::new();
                 for &seat in &focus {
                     for (name, v) in &variants {
-                        out.push(lab::play_variant(&rules, record, base, seat, (name, *v)));
+                        out.push(match from_trick {
+                            Some(t) => lab::play_from(&rules, record, base, seat, (name, *v), t - 1),
+                            None => lab::play_variant(&rules, record, base, seat, (name, *v)),
+                        });
                     }
                 }
                 out
@@ -229,8 +240,10 @@ fn main() {
             play,
             variant,
             limit,
+            skip,
         } => {
-            let records = load(records, *limit);
+            let mut records = load(records, *limit);
+            records.drain(..(*skip).min(records.len()));
             let play = actor(play);
             let variants: Vec<(String, Exchanger)> = named(variant)
                 .into_iter()
@@ -240,6 +253,12 @@ fn main() {
                     } else if let Some(n) = spec.strip_prefix("joint:") {
                         Exchanger::Joint {
                             worlds: n.parse().expect("world count"),
+                        }
+                    } else if let Some(pair) = spec.strip_prefix("split:") {
+                        let (discard, call) = pair.split_once('/').expect("split:DISCARD_BOT/CALL_BOT");
+                        Exchanger::Split {
+                            discard: actor(discard),
+                            call: actor(call),
                         }
                     } else if let Some(n) = spec.strip_prefix("call:") {
                         Exchanger::CallOnly {

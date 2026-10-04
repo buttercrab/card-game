@@ -474,6 +474,74 @@ pub fn play_variant(rules: &Rules, record: &Record, base: Actor, focus: Seat, va
     }
 }
 
+/// Replays `record` to the start of trick `trick` (0-based), then plays the
+/// rest twice on the same randomness: `base` in every seat, and `variant`
+/// in seat `focus` instead. Cheap, and with little luck left in the hand,
+/// precise about how a bot plays the last tricks. `base` is the replayed
+/// base payoff, not the recorded one.
+pub fn play_from(
+    rules: &Rules,
+    record: &Record,
+    base: Actor,
+    focus: Seat,
+    variant: (&str, Actor),
+    trick: usize,
+) -> PlayResult {
+    let seats = rules.players;
+    let start = replay(rules, record, record.play_at + trick * seats);
+    let tag = TAG_LAB + 16 + trick as u64;
+    let finish = |actor: Actor, differing: &mut Vec<PlayDecision>, watch: bool| {
+        let mut state = start.clone();
+        let table = Table {
+            all: base,
+            focus: Some((focus, Phase::Play, actor)),
+        };
+        let mut rngs = streams(record.deal, tag, seats);
+        advance(&mut state, &table, &mut rngs, &mut Vec::new(), Phase::Play, &mut |d| {
+            if !watch || d.seat != focus || Mighty::legal_actions(d.state).len() == 1 {
+                return;
+            }
+            let hard = base.act(d.state, focus, &mut d.rng.clone());
+            if hard == *d.action {
+                return;
+            }
+            let view = Mighty::view(d.state, Viewer::Seat(focus));
+            let PhaseView::Play { trick_no, plays, .. } = &view.phase else {
+                return;
+            };
+            differing.push(PlayDecision {
+                trick_no: *trick_no,
+                leading: plays.is_empty(),
+                attacking: focus == record.declarer || record.friend == Some(focus),
+                chosen: d.action.clone(),
+                hard,
+                simple: engine::Bot::act(
+                    &mut SimpleBot::default(),
+                    &view,
+                    &Mighty::legal_actions(d.state),
+                    &mut stream(0, 0, 0),
+                ),
+            });
+        });
+        outcome(&state)
+    };
+    let mut differing = Vec::new();
+    let was = finish(base, &mut Vec::new(), false);
+    let now = finish(variant.1, &mut differing, true);
+    PlayResult {
+        deal: record.deal,
+        focus,
+        variant: variant.0.to_string(),
+        declarer: record.declarer,
+        attacking: focus == record.declarer || record.friend == Some(focus),
+        base: was.payoffs[focus],
+        payoff: now.payoffs[focus],
+        team_points: now.team_points,
+        base_team_points: was.team_points,
+        differing,
+    }
+}
+
 /// What the simple-bot playouts think a hand is worth as declarer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Oracle {
@@ -653,6 +721,8 @@ pub enum Exchanger {
     Joint { worlds: usize },
     /// The recorded discards, then the joint search's friend call.
     CallOnly { worlds: usize },
+    /// One bot's discards (and change of trump), another's friend call.
+    Split { discard: Actor, call: Actor },
 }
 
 fn exchange_actions(record: &Record) -> &[Action] {
@@ -689,6 +759,18 @@ pub fn exchange_variant(rules: &Rules, record: &Record, play: Actor, name: &str,
                 Phase::Exchange,
                 &mut |_| {},
             );
+        }
+        Exchanger::Split { discard, call } => {
+            let mut rngs = streams(record.deal, TAG_EXCHANGE, seats);
+            while phase(&state) == Phase::Exchange {
+                let calling = Mighty::legal_actions(&state)
+                    .iter()
+                    .any(|a| matches!(a, Action::CallFriend(_)));
+                let who = if calling { call } else { discard };
+                let a = who.act(&state, declarer, &mut rngs[declarer]);
+                Mighty::apply(&mut state, a.clone()).expect("legal exchange");
+                log.push(a);
+            }
         }
         Exchanger::Joint { worlds } => {
             for a in joint_exchange(&state, declarer, worlds, true, &mut lab_rng) {
