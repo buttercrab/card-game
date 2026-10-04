@@ -10,7 +10,7 @@
   import LeadTag from './LeadTag.svelte';
   import Reactions from './Reactions.svelte';
   import ShareCard from './ShareCard.svelte';
-  import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
+  import Seat, { TEAM_LABEL, subject, type Team } from './Seat.svelte';
   import Callout from './Callout.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
@@ -268,6 +268,111 @@
     if (defensePoints !== null && 20 - defensePoints < contract.count) return 'lost';
     return null;
   });
+  // ---- Point-card tally -----------------------------------------------------
+  // Twenty ticks, one per point card: 여당 fill from the left, 야당 from the
+  // right. Until the 프렌드 is known, its points count for 야당, as everyone
+  // sees them.
+  const TICKS = Array.from({ length: 20 }, (_, i) => i);
+  const tallyDecl = $derived(Math.min(teamPoints, 20));
+  const tallyDef = $derived(
+    Math.min(
+      20 - tallyDecl,
+      defensePoints ?? view.points_taken.reduce((sum, _, s) => sum + (s !== declarer && s !== friend ? points(s) : 0), 0),
+    ),
+  );
+  // What the tally showed last, so the ticks that just filled pop in turn.
+  let tallyFrom = $state({ decl: 0, def: 0 });
+  $effect(() => {
+    tallyFrom = { decl: tallyDecl, def: tallyDef };
+  });
+  /** Where the line after tick `k` sits in a 20-column grid with 2px gaps. */
+  const tickEdge = (k: number) => `calc((100% - 38px) * ${k / 20} + ${2 * k - 2}px)`;
+  /** Lets the ticks pop only for points taken after the tally appeared. */
+  function goLive(node: HTMLElement) {
+    const id = requestAnimationFrame(() => node.classList.add('live'));
+    return { destroy: () => cancelAnimationFrame(id) };
+  }
+
+  // ---- Point cards a seat took (tap its points) ------------------------------
+  let peek = $state<{ seat: number; anchor: HTMLElement; own: boolean } | null>(null);
+  let peekEl = $state<HTMLElement>();
+  const canPeek = $derived(play !== null || done !== null);
+  function togglePeek(seat: number, anchor: HTMLElement, own = false) {
+    peek = peek && peek.seat === seat && peek.anchor === anchor ? null : { seat, anchor, own };
+  }
+  $effect(() => {
+    if (!canPeek) peek = null;
+  });
+  const SUIT_ORDER: Suit[] = ['Spade', 'Diamond', 'Heart', 'Club'];
+  /** A seat's point cards, trump first, then by suit and rank. */
+  function pointCards(seat: number): CardT[] {
+    const trump = contract?.trump ?? null;
+    const order = (c: CardT) => {
+      if (!('Normal' in c)) return 0;
+      const [suit, rank] = c.Normal;
+      return (suit === trump ? 0 : 1 + SUIT_ORDER.indexOf(suit)) * 100 + (100 - rank);
+    };
+    return [...(view.points_taken[seat] ?? [])].filter(isPoint).sort((a, b) => order(a) - order(b));
+  }
+  function peekOutside(e: PointerEvent) {
+    const t = e.target as Node;
+    if (!peek || peekEl?.contains(t) || peek.anchor.contains(t)) return;
+    peek = null;
+  }
+  function peekKey(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !peek) return;
+    const back = peek.anchor;
+    peek = null;
+    back.focus();
+  }
+  /** Places the popover beside its anchor: above for your own points; below
+   * (or else above) a seat, never over your hand, always on screen. */
+  function placePeek(el: HTMLElement, at: { anchor: HTMLElement; own: boolean }) {
+    let current = at;
+    const m = 8;
+    const update = () => {
+      // A seat's cards sit clear of the whole seat, so its name stays readable.
+      const a = (current.anchor.closest('.seat') ?? current.anchor).getBoundingClientRect();
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      const vw = document.documentElement.clientWidth;
+      const vh = window.innerHeight;
+      const floor = current.own || !tray ? vh : Math.min(vh, tray.getBoundingClientRect().top);
+      const above = a.top - 6 - h;
+      const below = a.bottom + 6;
+      let top: number;
+      if (current.own) top = above;
+      else if (below + h <= floor - m) top = below;
+      else if (above >= m) top = above;
+      else top = Math.min(below, floor - m - h);
+      top = Math.max(m, Math.min(top, vh - m - h));
+      const left = Math.max(m, Math.min(a.left + a.width / 2 - w / 2, vw - m - w));
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
+    };
+    try {
+      el.showPopover?.();
+    } catch {
+      // Already open, or drawn in place by an older browser: placing still works.
+    }
+    update();
+    const watch = new ResizeObserver(update);
+    watch.observe(el);
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return {
+      update(next: { anchor: HTMLElement; own: boolean }) {
+        current = next;
+        update();
+      },
+      destroy() {
+        watch.disconnect();
+        window.removeEventListener('resize', update);
+        window.removeEventListener('scroll', update, true);
+      },
+    };
+  }
+
   // The music follows the hand; see music.svelte.ts.
   $effect(() => {
     setMood(done ? 'result' : play ? 'play' : bidding || exchange ? 'bidding' : 'lobby');
@@ -895,14 +1000,28 @@
       {#if callLabel}<span class="item">프렌드 <strong>{callLabel}</strong></span>{/if}
       {#if play}<span class="item">라운드 <strong>{trickNo}/{view.rules.hand_size}</strong></span>{/if}
       {#if play || done}
-        <span class="item meter" class:made={contractState === 'made'} class:lost={contractState === 'lost'}>
-          여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}
-          <span class="bar" aria-hidden="true">
-            <span class="fill" style:width="{(Math.min(teamPoints, 20) / 20) * 100}%"></span>
-            <span class="goal" style:left="{(contract.count / 20) * 100}%"></span>
+        <span class="item meter">
+          <span class="meter-label">여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}</span>
+          <!-- One tick per point card: 여당 from the left, 야당 from the right.
+               The tall line is the contract; the low one is where 야당 breaks it. -->
+          <span
+            class="tally"
+            role="img"
+            aria-label="점수 카드 20장 중 여당 {tallyDecl}장, 야당 {tallyDef}장"
+            use:goLive
+          >
+            {#each TICKS as i (i)}
+              {@const side = i < tallyDecl ? 'decl' : i >= 20 - tallyDef ? 'def' : ''}
+              <span
+                class="tick {side}"
+                style:--d="{Math.max(0, side === 'decl' ? i - tallyFrom.decl : side === 'def' ? 19 - i - tallyFrom.def : 0) * 40}ms"
+              ></span>
+            {/each}
+            <span class="goal" style:left={tickEdge(contract.count)}></span>
+            <span class="break" style:left={tickEdge(contract.count - 1)}></span>
           </span>
+          {#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}
         </span>
-        {#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}
       {/if}
       {#if lastTrick && !resolving}
         <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
@@ -951,6 +1070,8 @@
             trumpSuit={contract?.trump ?? null}
             lookAt={lookAt(r)}
             mood={mood(s)}
+            pointsOpen={peek?.seat === s && peek.anchor.closest('.spot') !== null}
+            onpoints={canPeek ? (anchor) => togglePeek(s, anchor) : null}
           />
         </div>
       {/each}
@@ -1051,7 +1172,17 @@
               <tr class:me={s === me}>
                 <td class="who">{seatName(s)}</td>
                 <td>{#if t}<span class="team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}</td>
-                <td class="num">{points(s)}</td>
+                <td class="num">
+                  {#if points(s) > 0}
+                    <button
+                      type="button"
+                      class="peek-num"
+                      aria-expanded={peek?.seat === s && !peek.own && peek.anchor.closest('.spot') === null}
+                      aria-haspopup="dialog"
+                      aria-label="{subject(seatName(s))} 가져온 점수 카드 {points(s)}장 보기"
+                      onclick={(e) => togglePeek(s, e.currentTarget)}>{points(s)}</button>
+                  {:else}0{/if}
+                </td>
                 <td class="num" class:neg={pay < 0}>{(shownPay[s] ?? pay) > 0 ? '+' : ''}{shownPay[s] ?? pay}</td>
                 <td class="num">{room?.scores[s] ?? ''}</td>
               </tr>
@@ -1115,7 +1246,19 @@
       {#if seatCues[me]?.text}{#key seatCues[me].id}<Callout text={seatCues[me].text!} below={false} />{/key}{/if}
       <div class="me-row">
         {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}{/if}
-        {#if points(me) > 0}<span class="my-points">{points(me)}점</span>{/if}
+        {#if points(me) > 0}
+          {#if canPeek}
+            <button
+              type="button"
+              class="my-points peek-mine"
+              aria-expanded={peek?.seat === me && peek.own}
+              aria-haspopup="dialog"
+              aria-label="내가 가져온 점수 카드 {points(me)}장 보기"
+              onclick={(e) => togglePeek(me, e.currentTarget, true)}>{points(me)}점</button>
+          {:else}
+            <span class="my-points">{points(me)}점</span>
+          {/if}
+        {/if}
       </div>
       {#if view.hand.length > 0}
         <Hand
@@ -1168,7 +1311,25 @@
       onclose={() => (replay = false)}
     />
   {/if}
+  {#if peek}
+    {@const cards = pointCards(peek.seat)}
+    <div
+      class="peek"
+      popover="manual"
+      role="dialog"
+      aria-label="{subject(seatName(peek.seat))} 가져온 점수 카드"
+      bind:this={peekEl}
+      use:placePeek={peek}
+    >
+      <p class="peek-title">{seatName(peek.seat)} · 점수 카드 <strong>{cards.length}</strong>장</p>
+      <div class="peek-cards" style:--cols={Math.min(cards.length, 5)}>
+        {#each cards as c, i (i)}<Card card={c} size="mini" seal={seal(c)} {twoJokers} />{/each}
+      </div>
+    </div>
+  {/if}
 </section>
+
+<svelte:window onpointerdown={peekOutside} onkeydown={peekKey} />
 
 <style>
   /* The table fills the screen exactly; the felt takes what is left and
@@ -1191,43 +1352,148 @@
   .event {
     grid-area: event;
   }
-  /* 여당's points against the contract, on a 0–20 bar with the goal marked. */
+  /* The point cards as twenty ticks: 여당 from the left, 야당 from the right,
+     the contract and its break point marked between them. */
   .meter {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
   }
-  .meter .bar {
+  .meter-label {
+    white-space: nowrap;
+  }
+  .tally {
     position: relative;
-    width: 48px;
-    height: 6px;
-    border-radius: 3px;
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    gap: 2px;
+    width: clamp(160px, 40vw, 320px);
+    height: 10px;
+  }
+  .tick {
+    border-radius: 2px;
     background: var(--line);
+    transition: background-color var(--dur-quick) var(--ease-standard);
   }
-  .meter .fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 3px;
-    background: var(--ink-muted);
-    transition: width var(--dur-quick) var(--ease-standard);
+  .tick.decl {
+    background: var(--team-declarer);
   }
-  .meter .goal {
+  .tick.def {
+    background: var(--team-defense);
+  }
+  /* A tick that just filled hops once, in the order the cards came in. */
+  .tally:global(.live) .tick.decl,
+  .tally:global(.live) .tick.def {
+    animation: tick-pop 280ms var(--ease-settle) var(--d, 0ms) both;
+  }
+  @keyframes tick-pop {
+    0% {
+      transform: translateY(0);
+    }
+    45% {
+      transform: translateY(-4px);
+    }
+    100% {
+      transform: translateY(0);
+    }
+  }
+  /* The contract: a tall ink line. 야당 past the low line breaks it. */
+  .tally .goal,
+  .tally .break {
     position: absolute;
-    top: -3px;
     width: 2px;
-    height: 12px;
-    margin-left: -1px;
     border-radius: 1px;
+  }
+  .tally .goal {
+    top: -4px;
+    bottom: -4px;
     background: var(--ink);
   }
-  .meter.made .fill {
-    background: var(--accent);
+  .tally .break {
+    top: 3px;
+    bottom: -4px;
+    background: var(--team-defense);
   }
-  .meter.made strong {
-    color: var(--accent);
+  /* On phones the tally takes its own row, as wide as the row allows. */
+  @media (max-width: 599px) {
+    .meter {
+      flex: 1 1 100%;
+      flex-wrap: wrap;
+      justify-content: center;
+      row-gap: 2px;
+    }
+    .tally {
+      flex: 1 1 auto;
+      width: auto;
+      min-width: 160px;
+      max-width: 320px;
+    }
   }
-  .meter.lost .fill {
-    background: var(--danger);
+
+  /* The point cards one seat took, on card paper beside its seat. */
+  .peek {
+    position: fixed;
+    inset: auto;
+    z-index: 30;
+    margin: 0;
+    padding: 8px 10px 10px;
+    border: 1px solid var(--card-edge);
+    border-radius: 12px;
+    background: var(--card);
+    color: var(--card-ink);
+    box-shadow: 0 3px 0 rgb(28 25 21 / 0.12);
+    overflow: visible;
+    animation: peek-in var(--dur-quick) var(--ease-standard) both;
+  }
+  @keyframes peek-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  .peek-title {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    word-break: keep-all;
+    white-space: nowrap;
+  }
+  .peek-title strong {
+    font-variant-numeric: tabular-nums;
+  }
+  .peek-cards {
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 5), auto);
+    gap: 4px;
+  }
+  /* The points in the result table and on your tray open the same cards;
+     they keep looking like text, with a hairline to say they open. */
+  .peek-num,
+  .peek-mine {
+    position: relative;
+    display: inline-block;
+    min-height: 0;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    font-variant-numeric: tabular-nums;
+    line-height: 18px;
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  .peek-num::before,
+  .peek-mine::before {
+    content: '';
+    position: absolute;
+    inset: -13px -8px;
+  }
+  .peek-num[aria-expanded='true'],
+  .peek-mine[aria-expanded='true'] {
+    background: var(--ink);
+    color: var(--table);
+    box-shadow: none;
   }
   .tag-chip {
     padding: 1px 8px;
