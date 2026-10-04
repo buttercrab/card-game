@@ -255,27 +255,13 @@
   });
   // The music follows the hand; see music.svelte.ts.
   $effect(() => {
-    setMood(done ? 'result' : deciding ? 'deciding' : play ? 'play' : bidding || exchange ? 'bidding' : 'lobby');
+    setMood(done ? 'result' : play ? 'play' : bidding || exchange ? 'bidding' : 'lobby');
   });
   $effect(() => () => setMood('lobby'));
 
-  /**
-   * This round decides the contract: the points on the table would make it
-   * for the 여당, or, taken by the 야당, would leave it out of reach.
-   */
-  const deciding = $derived.by(() => {
-    if (!play || !contract || resolving || contractState) return false;
-    const onTablePoints = play.plays.filter((p) => isPoint(p.card)).length;
-    if (onTablePoints === 0) return false;
-    const need = contract.count - teamPoints;
-    const makes = need <= onTablePoints;
-    const breaks = defensePoints !== null && 20 - defensePoints - onTablePoints < contract.count;
-    return makes || breaks;
-  });
   const tags = $derived.by(() => {
     const list: { text: string; tone: 'accent' | 'danger' | 'gold' | 'plain' }[] = [];
     if (!play) return list;
-    if (deciding) list.push({ text: '결정적 라운드', tone: 'gold' });
     if (contractState === 'made') list.push({ text: '공약 확정', tone: 'accent' });
     if (contractState === 'lost') list.push({ text: '공약 불가', tone: 'danger' });
     if (defensePoints === 0 && teamPoints > 0 && play.tricks.length >= 5 && trickNo <= view.rules.hand_size) {

@@ -10,15 +10,14 @@ const FADE = 4;
 
 /**
  * The music follows the hand without changing its notes (they are
- * recordings): muffled while people bid, open in play, a little brighter and
- * louder on a deciding round, and dipped under the result.
+ * recordings): muffled while people bid, open in play, and dipped under the
+ * result.
  */
-export type Mood = 'lobby' | 'bidding' | 'play' | 'deciding' | 'result';
+export type Mood = 'lobby' | 'bidding' | 'play' | 'result';
 const MOODS: Record<Mood, { cutoff: number; level: number }> = {
   lobby: { cutoff: 18000, level: 1 },
   bidding: { cutoff: 1400, level: 0.85 },
   play: { cutoff: 9000, level: 1 },
-  deciding: { cutoff: 18000, level: 1.2 },
   result: { cutoff: 2200, level: 0.55 },
 };
 let mood: Mood = 'lobby';
