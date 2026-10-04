@@ -96,8 +96,8 @@
   </select>
 {/snippet}
 
-<dialog bind:this={dialog} onclose={onclose} aria-labelledby="editor-title">
-  <div class="body">
+<dialog class="sheet editor" bind:this={dialog} onclose={onclose} aria-labelledby="editor-title">
+  <div class="sheet-body">
     <h2 id="editor-title">규칙 바꾸기</h2>
     <p class="muted">{PRESET_NAME[preset] ?? preset} 규칙에서 시작해요. 다음 판부터 적용돼요.</p>
 
@@ -146,7 +146,9 @@
         <h3>프렌드</h3>
         <div class="chips">
           {#each FRIEND_WAYS as w (w.key)}
-            <button type="button" class="chip" aria-pressed={f[w.key]} onclick={() => (f[w.key] = !f[w.key])}>{w.label}</button>
+            <button type="button" class="chip way" aria-pressed={f[w.key]} onclick={() => (f[w.key] = !f[w.key])}>
+              <svg class="check" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5 L5 9 L9.5 3.5" /></svg>{w.label}
+            </button>
           {/each}
         </div>
       {/if}
@@ -188,7 +190,7 @@
       <p class="muted">불러오는 중…</p>
     {/if}
   </div>
-  <div class="actions">
+  <div class="sheet-foot">
     <button type="button" class="ghost" disabled={!base} onclick={() => base && (draft = structuredClone($state.snapshot(base)))}>
       처음대로
     </button>
@@ -198,27 +200,9 @@
 </dialog>
 
 <style>
-  dialog {
+  .editor {
     width: min(100% - 32px, 480px);
-    max-height: min(100% - 32px, 860px);
-    padding: 0;
-    border: none;
-    border-radius: 16px;
-    background: var(--panel);
-    color: var(--ink);
-    overflow: hidden;
-  }
-  dialog[open] {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-  dialog::backdrop {
-    background: rgb(23 25 28 / 0.4);
-  }
-  .body {
-    overflow-y: auto;
-    padding: 20px;
-    scrollbar-width: thin;
+    max-height: min(100dvh - 32px, 860px);
   }
   h2 {
     margin: 0;
@@ -249,7 +233,6 @@
     height: 22px;
     min-height: 0;
     flex: none;
-    accent-color: var(--accent);
   }
   .stepper {
     display: inline-flex;
@@ -272,6 +255,38 @@
     flex-wrap: wrap;
     gap: 6px;
   }
+  /* Ways to pick a friend are toggles: several can be on at once, so an
+     "on" chip is outlined with a check, not filled, and a set of them
+     reads as a list rather than a wall of ink. */
+  .chips .way {
+    min-height: 36px;
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--ink-muted);
+    box-shadow: inset 0 0 0 1px var(--line);
+    font-size: 14px;
+    animation: none;
+  }
+  .chips .way[aria-pressed='true'] {
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow:
+      inset 0 0 0 1.5px var(--ink),
+      0 2px 0 var(--btn-lip);
+  }
+  .check {
+    display: none;
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .way[aria-pressed='true'] .check {
+    display: block;
+  }
   .grid {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
@@ -283,18 +298,6 @@
     min-height: 36px;
     min-width: 0;
     padding: 0 8px;
-    border: 1px solid var(--line);
     border-radius: 10px;
-    background: var(--bg);
-    color: var(--ink);
-  }
-  .actions {
-    display: flex;
-    gap: 8px;
-    padding: 12px 20px;
-    border-top: 1px solid var(--line);
-  }
-  .actions .ghost {
-    margin-right: auto;
   }
 </style>

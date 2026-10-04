@@ -39,7 +39,6 @@
   const DECLARER = '#e69f00';
   const DEFENSE = '#3b4a6b';
   const GOLD = '#a77a12';
-  const ACCENT = '#8e2f6b';
   const DANGER = '#b3261e';
   const SUIT_INK: Record<Suit, string> = { Spade: INK, Heart: '#a3271f', Diamond: '#c2620a', Club: '#1d5fb0' };
   const SUIT_TEXT: Record<Suit, string> = { Spade: '♠', Heart: '♥', Diamond: '♦', Club: '♣' };
@@ -47,12 +46,12 @@
   /** The session as text for a chat, with emoji squares in place of the grid. */
   function asText(date: Date): string {
     const lines = [`마이티 ${date.getMonth() + 1}/${date.getDate()} · ${ruleset} · ${room.hands_played}판`];
-    if (hidden > 0) lines.push(`(+${hidden}판)`);
     for (const h of shown) {
       const contract = `${h.contract.trump ? SUIT_TEXT[h.contract.trump] : '노'}${h.contract.count}`;
       const squares = h.rounds.map((r) => (r > 0 ? '🟧' : r < 0 ? '🟦' : '⬜')).join('');
       lines.push(`${contract} ${h.made ? '✓' : '✗'} ${squares}`);
     }
+    if (hidden > 0) lines.push(`외 ${hidden}판`);
     lines.push('');
     for (const row of standings) {
       lines.push(`${row.score === top ? '👑 ' : ''}${row.name} ${signed(row.score)}`);
@@ -84,8 +83,8 @@
 
     // Lay out first so the whole card sits in the middle.
     const headerH = 150;
-    const noteH = hidden > 0 ? 48 : 0;
-    const gridH = shown.length ? noteH + shown.length * rowH - gap : 40;
+    const noteH = hidden > 0 ? 56 : 0;
+    const gridH = shown.length ? shown.length * rowH - gap + noteH : 40;
     const total = headerH + 64 + gridH + 64 + 64 + standings.length * standH - 20;
     let y = Math.max(80, (H - total) / 2);
 
@@ -107,12 +106,6 @@
       g.fillText('아직 끝난 판이 없어요', left, y + 30);
       y += gridH;
     } else {
-      if (hidden > 0) {
-        g.fillStyle = MUTED;
-        g.font = `700 32px ${display}`;
-        g.fillText(`+${hidden}판`, left, y + 24);
-        y += noteH;
-      }
       for (const hand of shown) {
         drawLabel(g, display, hand, left, y, sq);
         hand.rounds.forEach((r, i) => {
@@ -138,6 +131,15 @@
         y += rowH;
       }
       y -= gap;
+      // Earlier hands are counted under the grid, not drawn.
+      if (hidden > 0) {
+        g.fillStyle = MUTED;
+        g.font = `600 30px ${display}`;
+        g.textBaseline = 'alphabetic';
+        g.textAlign = 'left';
+        g.fillText(`외 ${hidden}판`, gridLeft, y + 46);
+        y += noteH;
+      }
     }
     y += 64;
 
@@ -155,7 +157,9 @@
       g.font = `${row.score === top ? 800 : 700} 44px ${display}`;
       g.fillText(short(row.name), left + 72, mid);
       g.textAlign = 'right';
-      g.fillStyle = row.score > 0 ? ACCENT : row.score < 0 ? DANGER : MUTED;
+      // Scores are ink with a sign; only a loss is red. Plum is the game's
+      // "act now" and means nothing on a card that is only looked at.
+      g.fillStyle = row.score < 0 ? DANGER : row.score > 0 ? INK : MUTED;
       g.font = `800 48px ${display}`;
       g.fillText(signed(row.score), right, mid);
       y += standH;
@@ -288,34 +292,24 @@
   });
 </script>
 
-<dialog bind:this={dialog} onclose={onclose} aria-labelledby="share-title">
-  <h2 id="share-title">결과 카드</h2>
-  {#if url}
-    <img src={url} alt="마이티 {room.hands_played}판 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
-  {:else}
-    <p class="muted">그리는 중…</p>
-  {/if}
-  <p class="muted status" role="status">{status ?? ''}</p>
-  <div class="actions">
-    <form method="dialog"><button>닫기</button></form>
-    <button onclick={copyText}>텍스트 복사</button>
-    <button class="primary" disabled={!url} onclick={share}>공유하기</button>
+<dialog class="sheet share" bind:this={dialog} onclose={onclose} aria-labelledby="share-title">
+  <div class="sheet-body">
+    <h2 id="share-title">결과 카드</h2>
+    {#if url}
+      <img src={url} alt="마이티 {room.hands_played}판 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
+    {:else}
+      <p class="muted">그리는 중…</p>
+    {/if}
+    <p class="muted status" role="status">{status ?? ''}</p>
   </div>
+  <form method="dialog" class="sheet-foot">
+    <button class="ghost">닫기</button>
+    <button type="button" onclick={copyText}>텍스트 복사</button>
+    <button type="button" class="primary" disabled={!url} onclick={share}>공유하기</button>
+  </form>
 </dialog>
 
 <style>
-  dialog {
-    width: min(100% - 32px, 420px);
-    max-height: calc(100% - 32px);
-    padding: 20px;
-    border: none;
-    border-radius: 16px;
-    background: var(--panel);
-    color: var(--ink);
-  }
-  dialog::backdrop {
-    background: rgb(23 25 28 / 0.4);
-  }
   h2 {
     margin: 0 0 12px;
     font-size: 22px;
@@ -323,7 +317,7 @@
   img {
     display: block;
     width: 100%;
-    max-height: 60vh;
+    max-height: 60dvh;
     object-fit: contain;
     border-radius: 12px;
     box-shadow: var(--shadow-card);
@@ -333,17 +327,5 @@
     min-height: 1.4em;
     margin: 8px 0 0;
     font-size: 13px;
-  }
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 6px;
-  }
-  .actions form {
-    margin-right: auto;
-  }
-  .actions .primary {
-    min-width: 108px;
   }
 </style>
