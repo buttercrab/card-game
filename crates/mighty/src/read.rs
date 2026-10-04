@@ -9,11 +9,14 @@
 
 use crate::bot::{SimpleBot, bit};
 use crate::card::{Card, Suit};
+use crate::endgame::Mix;
 use crate::rules::{Contract, Rules};
 use crate::state::{Action, Exchange, FriendCall, Phase, Play, State};
+use crate::trick::{Played, Trick};
 use crate::view::View;
 use engine::Seat;
 use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
 
 /// How the search weighs its sampled deals by what the other players did.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -68,7 +71,10 @@ pub(crate) struct Memo {
     /// Keyed by the decision's place in the hand, the hand, and the
     /// declarer's discards when the declarer is the one deciding. Holds the
     /// legal cards and the card chosen.
-    plays: HashMap<(usize, u64, u64), (u64, Card)>,
+    plays: HashMap<(usize, u64, u64), (u64, Card), BuildHasherDefault<Mix>>,
+    /// The log weight of the declarer's friend call, by the hand it kept
+    /// and its discards.
+    calls: HashMap<(u64, u64), f64, BuildHasherDefault<Mix>>,
 }
 
 impl Reading {
@@ -184,7 +190,15 @@ impl Reading {
         } else {
             now.discards.iter().fold(0, |m, &c| m | bit(c))
         };
-        let mut state = State {
+        // Most of the simple bot's choices are remembered from other deals,
+        // so the hand is replayed on a state only up to where one is not:
+        // `masks` follows every hand, `state` catches up when needed.
+        let mut masks = [0u64; 8];
+        for (mask, hand) in masks.iter_mut().zip(&hands) {
+            *mask = hand.iter().fold(0, |m, &c| m | bit(c));
+        }
+        let mut hands = Some(hands);
+        let build = |hands: Vec<Vec<Card>>| State {
             rules: rules.clone(),
             first_bidder: world.first_bidder,
             phase: Phase::Exchange(Exchange {
@@ -201,9 +215,13 @@ impl Reading {
         };
         let mut log = 0.0;
         if me != now.declarer {
-            log += self.friend_call(policy, &state, now.call);
+            let key = (masks[now.declarer], now.discards.iter().fold(0, |m, &c| m | bit(c)));
+            log += *memo.calls.entry(key).or_insert_with(|| {
+                let state = build(hands.clone().expect("not yet used"));
+                self.friend_call(policy, &state, now.call)
+            });
         }
-        state.phase = Phase::Play(Play {
+        let start = Play {
             declarer: now.declarer,
             contract: now.contract,
             discards: now.discards.clone(),
@@ -218,7 +236,12 @@ impl Reading {
             plays: Vec::new(),
             called_joker: None,
             tricks: Vec::new(),
-        });
+        };
+        let mut state: Option<State> = None;
+        // Every card played and every trick finished so far, and how many
+        // of them `state` has seen.
+        let mut events: Vec<Event> = Vec::new();
+        let mut applied = 0;
         let finished = now.tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead), Some(t)));
         let mut index = 0;
         for (plays, lead, done) in finished.chain([(now.plays.as_slice(), now.lead, None)]) {
@@ -229,31 +252,29 @@ impl Reading {
             });
             for (i, played) in plays.iter().enumerate() {
                 let seat = played.seat;
-                play_mut(&mut state).lead = if i == 0 { None } else { lead };
                 if seat != me && !(call_card && i > 0) {
-                    let hand = state.hands[seat].iter().fold(0, |m, &c| m | bit(c));
-                    let key = (index, hand, if seat == now.declarer { discards } else { 0 });
-                    let (legal, choice) = *memo.plays.entry(key).or_insert_with(|| decide(policy, &state, seat));
+                    let key = (index, masks[seat], if seat == now.declarer { discards } else { 0 });
+                    let (legal, choice) = *memo.plays.entry(key).or_insert_with(|| {
+                        let state = state.get_or_insert_with(|| {
+                            let mut state = build(hands.take().expect("built once"));
+                            state.phase = Phase::Play(start.clone());
+                            state
+                        });
+                        for event in &events[applied..] {
+                            event.apply(state);
+                        }
+                        applied = events.len();
+                        play_mut(state).lead = if i == 0 { None } else { lead };
+                        decide(policy, state, seat)
+                    });
                     log += self.card(legal, choice, played.card);
                 }
-                state.hands[seat].retain(|&c| c != played.card);
-                let p = play_mut(&mut state);
-                p.plays.push(*played);
-                if p.call == FriendCall::Card(played.card) && seat != p.declarer {
-                    p.friend = Some(seat);
-                }
+                masks[seat] &= !bit(played.card);
+                events.push(Event::Card(played));
                 index += 1;
             }
             if let Some(trick) = done {
-                state.taken[trick.winner].extend(trick.plays.iter().map(|p| p.card));
-                let p = play_mut(&mut state);
-                if p.call == FriendCall::FirstTrick && p.trick_no == 0 && trick.winner != p.declarer {
-                    p.friend = Some(trick.winner);
-                }
-                p.tricks.push(trick.clone());
-                p.plays.clear();
-                p.trick_no += 1;
-                p.leader = trick.winner;
+                events.push(Event::Trick(trick));
             }
         }
         log
@@ -291,6 +312,38 @@ impl Reading {
         } else {
             let usual = if choice == card { 1.0 - self.slip } else { 0.0 };
             (usual + self.slip / options).ln()
+        }
+    }
+}
+
+/// A step of the replay in [`Reading::play`].
+enum Event<'a> {
+    Card(&'a Played),
+    Trick(&'a Trick),
+}
+
+impl Event<'_> {
+    fn apply(&self, state: &mut State) {
+        match *self {
+            Event::Card(played) => {
+                state.hands[played.seat].retain(|&c| c != played.card);
+                let p = play_mut(state);
+                p.plays.push(*played);
+                if p.call == FriendCall::Card(played.card) && played.seat != p.declarer {
+                    p.friend = Some(played.seat);
+                }
+            }
+            Event::Trick(trick) => {
+                state.taken[trick.winner].extend(trick.plays.iter().map(|p| p.card));
+                let p = play_mut(state);
+                if p.call == FriendCall::FirstTrick && p.trick_no == 0 && trick.winner != p.declarer {
+                    p.friend = Some(trick.winner);
+                }
+                p.tricks.push(trick.clone());
+                p.plays.clear();
+                p.trick_no += 1;
+                p.leader = trick.winner;
+            }
         }
     }
 }

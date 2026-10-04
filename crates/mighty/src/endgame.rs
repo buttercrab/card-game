@@ -72,10 +72,11 @@ fn friend(state: &State, p: &Play) -> Option<Option<Seat>> {
 /// reached by playing the same cards in another order.
 type Key = ([u64; 8], usize);
 
-/// A quick hash for [`Key`]s, which are already well spread bits; the
-/// standard one is built to resist attacks and costs more than the search.
+/// A quick hash for keys of card sets, which are already well spread bits;
+/// the standard one is built to resist attacks and costs more than the
+/// searches that use it.
 #[derive(Default)]
-struct Mix(u64);
+pub(crate) struct Mix(u64);
 
 impl Hasher for Mix {
     fn finish(&self) -> u64 {
