@@ -349,9 +349,9 @@ Every drawing in the game, from court figures to icons and card backs, follows t
 
 1. **The paper test.** It could be cut from flat coloured paper: no gradients, glows, bevels, metallic sheen, particles or blur.
 2. **Shapes.** Circles, triangles, bells, rounded rectangles and soft curves. A figure is at most two shapes for the head and hat and three for the body, plus one prop.
-3. **Tones.** At most four per figure: the suit ink (currentColor), Card Gold, skin #F3E3CF and the card paper.
-4. **Eyes.** Always two dots, r 2.3 on a head of r 18–20, 14 apart. Expression comes only from where they look, a lid (a squash) and at most one mouth arc. No pupils, brows or blush.
-5. **Stroke.** Only round heads are outlined (3 units at 120×160); everything else is a fill.
+3. **Tones.** At most four per figure: the suit ink (currentColor), Card Gold, skin #F3E3CF and the card paper. Seat figures wear their team colour in place of the suit ink.
+4. **Eyes.** Always two dots, r 2.3 on a head of r 18–20, 14 apart (seat figures, drawn far smaller, use r 3 in a fixed dark ink so they still read). Expression comes only from where they look, a lid (a squash) and at most one mouth arc. No pupils, brows or blush.
+5. **Stroke.** Shapes are fills; only round heads are outlined (3 units at 120×160). Thin things that are lines in life (a sceptre, a halberd's shaft, a stem, the 마이티's rays and ring) may be drawn as round-capped strokes.
 6. **Status by form.** A special card or role is shown by its frame, edge or shape, never by a stamp or a Hangul character in a box.
 7. **Backs** carry one geometric idea, read the same either way up, use one tone over the ground and keep the inset rule.
 8. **Motion.** Transform and opacity only; figures live by blinking, glancing and hopping. Everything respects reduced motion.

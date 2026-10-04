@@ -918,7 +918,7 @@
   {#if (event && !done) || tip}
     <div class="event">
       {#if event && !done}{#key event}<p class="fade-up" aria-live="polite">{event}</p>{/key}{/if}
-      {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite">💬 {tip}</p>{/key}{/if}
+      {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite">{tip}</p>{/key}{/if}
     </div>
   {/if}
 
@@ -1382,12 +1382,14 @@
   .note {
     --card-w: clamp(
       40px,
-      min((100cqw - 2 * var(--seat-w) - 16px) / 3.55, (50cqh - var(--seat-h) - 14px) / 1.96, (50cqh - 40px) / 2.1),
+      min((100cqw - 2 * var(--seat-w) - 16px) / 3.55, (50cqh - var(--seat-h) - 14px) / 2.04, (50cqh - 40px) / 2.1),
       124px
     );
     --card-h: calc(var(--card-w) * 1.4);
     --tx: calc(var(--card-w) * 1.1);
-    --ty: calc(var(--card-h) + 6px);
+    /* The side cards sit only 0.95 of this below the top ones, so it must
+       outgrow the card height or big cards would overlap. */
+    --ty: calc(var(--card-h) * 1.06 + 8px);
   }
   .spot {
     position: absolute;
@@ -1769,7 +1771,7 @@
     padding: 5px 14px;
     border-radius: 999px;
     background: var(--card);
-    color: var(--ink-on-card, #1c1915);
+    color: var(--card-ink);
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
   }
   .strip.pill .prompt {
@@ -1781,6 +1783,10 @@
   }
   .mine .prompt strong {
     color: var(--accent);
+  }
+  /* On the card-paper pill, the light-theme plum keeps its contrast. */
+  .strip.pill .prompt strong {
+    color: #8e2f6b;
   }
   .variants,
   .next {
@@ -1814,7 +1820,7 @@
     padding: 4px 12px;
     border-radius: 16px;
     background: var(--card);
-    color: var(--ink-on-card, #1c1915);
+    color: var(--card-ink);
     box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
     font-size: 15px;
     font-weight: 700;

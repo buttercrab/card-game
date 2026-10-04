@@ -139,12 +139,13 @@
     right: -14%;
     bottom: -3px;
     height: 26%;
-    border: 3px solid transparent;
+    border: 3px solid var(--accent);
     border-radius: 50%;
-    transition: border-color var(--dur-quick) var(--ease-standard);
+    opacity: 0;
+    transition: opacity var(--dur-quick) var(--ease-standard);
   }
   .seat.turn .floor {
-    border-color: var(--accent);
+    opacity: 1;
   }
   .stand :global(.figure) {
     position: relative;

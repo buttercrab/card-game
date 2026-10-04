@@ -384,6 +384,18 @@
     .index-joker {
       font-size: 15cqw;
     }
+    /* Trick and mini cards drawn this large use the full layout too. */
+    .trick .index-rank,
+    .mini .index-rank {
+      font-size: 22cqw;
+    }
+    .mini .corner {
+      width: 18cqw;
+    }
+    .mini .corner :global(.index-suit) {
+      width: 13cqw;
+      height: 13cqw;
+    }
   }
 
   .centre {
@@ -416,7 +428,7 @@
   .frame-joker::before {
     content: '';
     position: absolute;
-    inset: 3.5cqw;
+    inset: 2cqw;
     border: 1.5px solid var(--frame);
     border-radius: 5px;
     pointer-events: none;
@@ -461,8 +473,8 @@
     bottom: 5cqw;
     padding: 1px 6px;
     border-radius: 999px;
-    background: var(--ink-muted);
-    color: var(--card);
+    background: #645d53;
+    color: #fbf8f2;
     font-family: var(--font);
     font-size: 11px;
     font-weight: 700;

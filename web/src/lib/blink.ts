@@ -15,16 +15,15 @@ function later(now: number): number {
   return now + 3000 + Math.random() * 4000;
 }
 
-function blink(b: Blinker) {
+// Reopening is skipped for a figure that has left the table meanwhile.
+function shut(b: Blinker) {
   b.set(true);
-  setTimeout(() => b.set(false), CLOSED_MS);
-  if (Math.random() < 0.15) {
-    setTimeout(() => {
-      if (!blinkers.has(b)) return;
-      b.set(true);
-      setTimeout(() => b.set(false), CLOSED_MS);
-    }, CLOSED_MS + GAP_MS);
-  }
+  setTimeout(() => blinkers.has(b) && b.set(false), CLOSED_MS);
+}
+
+function blink(b: Blinker) {
+  shut(b);
+  if (Math.random() < 0.15) setTimeout(() => blinkers.has(b) && shut(b), CLOSED_MS + GAP_MS);
 }
 
 function tick() {
@@ -32,7 +31,7 @@ function tick() {
   const now = Date.now();
   for (const b of blinkers) {
     if (b.next <= now) {
-      if (blinkers.has(b)) blink(b);
+      blink(b);
       b.next = later(now);
     }
   }

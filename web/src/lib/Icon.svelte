@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type IconName = 'hint' | 'smile';
+  export type IconName = 'hint' | 'smile' | 'lock';
 </script>
 
 <script lang="ts">
@@ -31,6 +31,11 @@
     <circle cx="8.9" cy="10.2" r="1.25" fill="currentColor" />
     <circle cx="15.1" cy="10.2" r="1.25" fill="currentColor" />
     <path d="M8 14 q4 4 8 0" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" />
+  {:else if name === 'lock'}
+    <!-- A padlock: an ink shackle over a gold body with a keyhole. -->
+    <path d="M7.5 11 V8 a4.5 4.5 0 0 1 9 0 V11" stroke="currentColor" stroke-width="2.2" fill="none" />
+    <rect x="4.5" y="10.5" width="15" height="11" rx="2.5" fill={GOLD} />
+    <circle cx="12" cy="15.4" r="1.7" fill={SKIN} />
   {/if}
 </svg>
 

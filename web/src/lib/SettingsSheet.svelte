@@ -1,6 +1,7 @@
 <script lang="ts">
   import Card from './Card.svelte';
   import BackArt from './CardBack.svelte';
+  import Icon from './Icon.svelte';
   import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './achievements';
   import { settings, type Speed } from './settings.svelte';
 
@@ -61,7 +62,7 @@
   <label class="row">
     <span>
       <strong>힌트 버튼</strong>
-      <span class="muted">내 차례에 💡를 누르면 봇이라면 뭘 할지 알려 줘요</span>
+      <span class="muted">내 차례에 전구를 누르면 봇이라면 뭘 할지 알려 줘요</span>
     </span>
     <input type="checkbox" bind:checked={settings.hints} />
   </label>
@@ -108,7 +109,7 @@
           title={open ? BACK_NAMES[id] : `잠김 · ${howTo('back', id)}`}
           aria-label={open ? BACK_NAMES[id] : `${BACK_NAMES[id]}, 잠김: ${howTo('back', id)}`}
           onclick={() => open && (settings.cardBack = id)}
-        ><BackArt {id} />{#if !open}<span class="lock">🔒</span>{/if}</button>
+        ><BackArt {id} />{#if !open}<span class="lock"><Icon name="lock" size="16px" /></span>{/if}</button>
       {/each}
     </div>
   </div>
@@ -125,7 +126,7 @@
           title={open ? TABLE_NAMES[id] : `잠김 · ${howTo('table', id)}`}
           aria-label={open ? TABLE_NAMES[id] : `${TABLE_NAMES[id]}, 잠김: ${howTo('table', id)}`}
           onclick={() => open && (settings.tableTone = id)}
-        >{#if !open}🔒{/if}</button>
+        >{#if !open}<Icon name="lock" size="14px" />{/if}</button>
       {/each}
     </div>
   </div>

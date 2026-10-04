@@ -151,7 +151,7 @@
             <li class:me={client.seat === i}>
               <span class="seat-no">{i + 1}</span>
               <span class="seat-figure">
-                {#if s.kind !== 'empty'}<PlayerFigure still isBot={s.kind === 'bot'} offline={s.kind === 'human' && !s.connected} />{/if}
+                {#if s.kind !== 'empty'}<PlayerFigure still isBot={s.kind === 'bot'} offline={s.kind === 'human' && !s.connected} />{:else}<span class="empty-figure" aria-hidden="true"></span>{/if}
               </span>
               {#key s.kind + ('name' in s ? s.name : '')}<span class="seat-name fade-up">
                 {#if s.kind === 'empty'}
@@ -349,6 +349,15 @@
     width: 18px;
     color: var(--ink-muted);
     font-variant-numeric: tabular-nums;
+  }
+  /* An empty seat: the outline of a figure waiting to be filled. */
+  .empty-figure {
+    display: block;
+    width: 22px;
+    height: 22px;
+    margin: 2px auto 0;
+    border: 2px dashed var(--line);
+    border-radius: 50%;
   }
   .seat-figure {
     flex: none;

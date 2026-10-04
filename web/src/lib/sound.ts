@@ -149,7 +149,8 @@ function burst(
     node = node.connect(wobble);
   }
   node.connect(o.gain);
-  src.start(o.t, Math.random() * 0.9, attack + decay + 0.02);
+  // Start somewhere in the one-second buffer that leaves room to finish.
+  src.start(o.t, Math.random() * Math.max(0, 0.98 - attack - decay), attack + decay + 0.02);
 }
 
 /** A short band of noise: paper on felt. */
