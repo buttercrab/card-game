@@ -1,5 +1,6 @@
 """A tiny training run on CPU, and the batches it reads."""
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,15 @@ def test_the_split_is_by_game_and_batches_cover_it(dataset: Dataset) -> None:
     # Within a batch, sequences are of about one length.
     spread = [int(np.ptp(b["events_len"])) for b in seeded]
     assert np.median(spread) < np.ptp(np.concatenate([b["events_len"] for b in seeded]))
+
+
+def test_eval_only_data_is_never_trained_on(
+    dataset: Dataset, train_config: dict[str, Any], tmp_path: Path
+) -> None:
+    config = from_mapping(BeliefTrainConfig, train_config, "test")
+    held_out = dataclasses.replace(dataset, eval_only=True)
+    with pytest.raises(ValueError, match="evaluation only"):
+        train(config, held_out, tmp_path, lambda _: None)
 
 
 def test_a_tiny_run_learns_and_writes_its_files(

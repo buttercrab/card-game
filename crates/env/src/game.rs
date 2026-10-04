@@ -181,9 +181,10 @@ impl<R: Clone + PartialEq + Debug> RuleSampler<R> {
     }
 }
 
-/// Reads excluded rule sets: a JSON array of serialized rule sets, such as
-/// `research/evals/v1/heldout-rules.json`.
-pub fn load_excluded<R: DeserializeOwned>(path: &Path) -> Result<Vec<R>, Error> {
+/// Reads a JSON array of serialized rule sets, such as the evals' held-out
+/// ones (`research/evals/v1/heldout-rules.json`): rule sets to exclude, or
+/// a pool to play.
+pub fn load_rule_sets<R: DeserializeOwned>(path: &Path) -> Result<Vec<R>, Error> {
     let text = std::fs::read_to_string(path).map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
     serde_json::from_str(&text).map_err(|e| Error::Rules(format!("{}: {e}", path.display())))
 }

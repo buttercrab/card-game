@@ -1,0 +1,36 @@
+# Self-play v2: self-play v1's mix three times over, on fresh seeds, for
+# belief models that want more than v1's 1.19 million decisions. Bots of
+# every level play varied rules, 3 to 7 players, never a held-out rule set.
+#
+#   nice -n 10 cargo run --release -p env --bin selfplay -- \
+#       --config research/experiments/2026-10-05-selfplay-v2/config.toml \
+#       --stats research/experiments/2026-10-05-selfplay-v2/results/stats.json
+
+name = "selfplay-v2"
+game = "mighty"
+seed = 20261006
+# About 58 decisions a game: some 3.5 million decisions.
+games = 60000
+rules = "varied"
+exclude = "research/evals/v1/heldout-rules.json"
+shard_decisions = 200000
+
+[[bots]]
+spec = "hard:50"
+weight = 3.0
+
+[[bots]]
+spec = "hard"
+weight = 1.0
+
+[[bots]]
+spec = "보통"
+weight = 3.0
+
+[[bots]]
+spec = "초보"
+weight = 2.0
+
+[[bots]]
+spec = "random"
+weight = 1.0

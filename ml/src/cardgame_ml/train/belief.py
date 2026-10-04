@@ -28,7 +28,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from cardgame_ml.data.shards import Dataset
+from cardgame_ml.data.shards import Batch, Dataset
 from cardgame_ml.data.spec import EncodingSpec
 from cardgame_ml.models.belief import (
     BeliefModel,
@@ -88,6 +88,8 @@ def learning_rate(config: BeliefTrainConfig, step: int, total: int) -> float:
 def train(config: BeliefTrainConfig, dataset: Dataset, out: Path, log: Log) -> Report:
     """Trains a model by ``config`` into ``out``, resuming from its last
     checkpoint if there is one. Returns the final validation report."""
+    if dataset.eval_only:
+        raise ValueError(f"{dataset.name} is for evaluation only, never for training")
     out.mkdir(parents=True, exist_ok=True)
     device = device_for(config.device)
     torch.manual_seed(config.seed)
@@ -119,7 +121,6 @@ def train(config: BeliefTrainConfig, dataset: Dataset, out: Path, log: Log) -> R
         model.train()
         return report
 
-    classes = len(dataset.spec.belief_classes)
     report = Report()
     started = time.monotonic()
     for epoch in range(first_epoch, config.optim.epochs):
@@ -130,13 +131,7 @@ def train(config: BeliefTrainConfig, dataset: Dataset, out: Path, log: Log) -> R
         for batch in prefetch(batches(dataset, split.train_rows, config.optim.batch_size, seed)):
             for group in optimizer.param_groups:
                 group["lr"] = learning_rate(config, step, total)
-            targets = torch.as_tensor(batch["belief"], device=device)
-            logits = model(*to_inputs(batch, device))
-            losses, _ = card_losses(log_probs(logits, class_counts(targets, classes)), targets)
-            optimizer.zero_grad(set_to_none=True)
-            losses.mean().backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.optim.grad_clip)
-            optimizer.step()
+            losses = _step(model, optimizer, batch, config.optim.grad_clip)
             step += 1
             running += losses.detach().sum()
             cards += len(losses)
@@ -160,6 +155,22 @@ def train(config: BeliefTrainConfig, dataset: Dataset, out: Path, log: Log) -> R
     torch.save(model.state_dict(), out / "model.pt")
     _write_json(out / "metrics.json", {"step": step, "val": report.to_json()})
     return report
+
+
+def _step(
+    model: BeliefModel, optimizer: torch.optim.Optimizer, batch: Batch, grad_clip: float
+) -> torch.Tensor:
+    """One optimisation step on ``batch``: each hidden card's loss."""
+    device = next(model.parameters()).device
+    targets = torch.as_tensor(batch["belief"], device=device)
+    logits = model(*to_inputs(batch, device))
+    counts = class_counts(targets, logits.shape[-1])
+    losses, _ = card_losses(log_probs(logits, counts), targets)
+    optimizer.zero_grad(set_to_none=True)
+    losses.mean().backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+    optimizer.step()
+    return losses
 
 
 def _describe(config: BeliefTrainConfig, dataset: Dataset, model: BeliefModel) -> dict[str, Any]:

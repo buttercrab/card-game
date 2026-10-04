@@ -1,7 +1,7 @@
 //! Rule sources, and that excluded rule sets (the evals' held-out ones)
 //! never reach a hand.
 
-use env::{EnvGame, Error, RuleSampler, RuleSource, load_excluded, rules_id, rules_key};
+use env::{EnvGame, Error, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
 use mighty::Mighty;
 use mighty::rules::{Preset, Rules};
 use rand::SeedableRng;
@@ -83,11 +83,11 @@ fn excluded_rule_sets_load_from_a_json_array() {
         .collect();
     let path = std::env::temp_dir().join(format!("heldout-{}.json", std::process::id()));
     std::fs::write(&path, serde_json::to_string_pretty(&sets).unwrap()).unwrap();
-    let loaded: Vec<Rules> = load_excluded(&path).unwrap();
+    let loaded: Vec<Rules> = load_rule_sets(&path).unwrap();
     std::fs::remove_file(&path).unwrap();
     assert_eq!(loaded, sets);
     assert!(matches!(
-        load_excluded::<Rules>(&path.with_extension("missing")),
+        load_rule_sets::<Rules>(&path.with_extension("missing")),
         Err(Error::Io(_))
     ));
 }

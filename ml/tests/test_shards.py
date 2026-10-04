@@ -15,6 +15,7 @@ def test_reads_the_metadata(dataset: Dataset) -> None:
     assert dataset.name == "tiny"
     assert dataset.encoding == dataset.spec.version == "mighty-1"
     assert dataset.bots == ("random", "simple", "초보")
+    assert not dataset.eval_only
     assert len(dataset.shards) >= 2
     assert sum(s.games for s in dataset.shards) == 24
     rules = dataset.rules()
