@@ -70,8 +70,8 @@ def evaluate(model: BeliefModel, dataset: Dataset, rows: Rows, batch_size: int =
             report.add(
                 phases(dataset.spec, batch["global"]),
                 np.nonzero(batch["belief"] >= 0)[0],
-                (ours[0].double().cpu().numpy(), ours[1].cpu().numpy()),
-                (base[0].double().cpu().numpy(), base[1].cpu().numpy()),
+                (ours[0].cpu().double().numpy(), ours[1].cpu().numpy()),
+                (base[0].cpu().double().numpy(), base[1].cpu().numpy()),
             )
     return report
 
