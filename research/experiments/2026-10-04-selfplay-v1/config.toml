@@ -1,0 +1,40 @@
+# Self-play v1: the first training data (P2's exit check). Bots of every
+# level play varied rules, 3 to 7 players, never a held-out rule set.
+#
+#   nice -n 10 cargo run --release -p env --bin selfplay -- \
+#       --config research/experiments/2026-10-04-selfplay-v1/config.toml \
+#       --stats research/experiments/2026-10-04-selfplay-v1/results/stats.json
+
+name = "selfplay-v1"
+game = "mighty"
+seed = 20261004
+# About 58 decisions a game: some 1.16 million decisions.
+games = 20000
+rules = "varied"
+exclude = "research/evals/v1/heldout-rules.json"
+# About 100 MB a shard on disk, 4 GB loaded.
+shard_decisions = 200000
+
+# Each seat of each game draws its bot by these weights.
+
+# 고수 at a quarter of its samples, for about a quarter of the cost.
+[[bots]]
+spec = "hard:50"
+weight = 3.0
+
+# 고수 as it plays at the table, without the time limit.
+[[bots]]
+spec = "hard"
+weight = 1.0
+
+[[bots]]
+spec = "보통"
+weight = 3.0
+
+[[bots]]
+spec = "초보"
+weight = 2.0
+
+[[bots]]
+spec = "random"
+weight = 1.0

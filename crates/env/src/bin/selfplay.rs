@@ -81,7 +81,8 @@ fn today() -> String {
 fn run(args: &Args) -> Result<(), String> {
     let root = PathBuf::from(git(Path::new("."), &["rev-parse", "--show-toplevel"])?);
     let commit = git(&root, &["rev-parse", "HEAD"])?;
-    if !args.allow_dirty && !git(&root, &["status", "--porcelain"])?.is_empty() {
+    let changes = git(&root, &["status", "--porcelain", "--untracked-files=no"])?;
+    if !args.allow_dirty && !changes.is_empty() {
         return Err("uncommitted changes: commit first, or pass --allow-dirty".into());
     }
     let config_path = std::fs::canonicalize(&args.config).map_err(|e| format!("{}: {e}", args.config.display()))?;

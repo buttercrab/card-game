@@ -2,8 +2,9 @@
 //! decision is written down for training.
 //!
 //! A dataset is a directory of shards, `shard-00000.npz` and on, with
-//! `meta.json` (the config, the spec, the bot styles, each shard's counts
-//! and the run's [`Stats`]) and `rules.jsonl.gz` (every rule set played,
+//! `meta.json` (the config, the spec, the bot styles, each shard's counts,
+//! the excluded rule sets' file with its SHA-256, and the run's [`Stats`])
+//! and `rules.jsonl.gz` (every rule set played,
 //! one JSON line `{"id", "rules"}` each). Each shard is a NumPy archive
 //! with one row per decision, whole games only, in game order:
 //!
@@ -27,8 +28,11 @@
 //!
 //! Why `.npz`: NumPy alone reads it (no Arrow or Parquet dependency on
 //! the training side), arrays load one at a time, and deflate shrinks the
-//! mostly-zero observations about tenfold. The events are stored ragged
-//! because padding them to the spec's 160 rows would triple the raw size.
+//! mostly-zero, one-hot observations about fortyfold (some 20 KB a
+//! decision to about 0.5 KB). The events are stored ragged because
+//! padding them to the spec's 160 rows would triple the raw size. A shard
+//! is loaded whole, so `shard_decisions` sizes it by memory: 200 000
+//! decisions are about 4 GB of arrays, about 100 MB on disk.
 //!
 //! Game `g` uses the first seed of stream `g` of the dataset seed, the
 //! same hand an [`crate::Env`] with that seed deals in slot `g` first, and
@@ -329,9 +333,18 @@ pub fn run<G: EnvGame>(
     if config.shard_decisions == 0 {
         return Err(Error::Config("shard_decisions must be at least 1".into()));
     }
-    let excluded = match &config.exclude {
-        Some(path) => load_excluded(&root.join(path))?,
-        None => Vec::new(),
+    // The file may live outside this commit (the evals own it), so the
+    // dataset records exactly which list it avoided.
+    let (excluded, exclusion) = match &config.exclude {
+        Some(path) => {
+            let full = root.join(path);
+            let excluded = load_excluded::<G::Rules>(&full)?;
+            let bytes = std::fs::read(&full).map_err(io(&full))?;
+            let sha256: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+            let record = json!({"path": path, "sha256": sha256, "rule_sets": excluded.len()});
+            (excluded, record)
+        }
+        None => (Vec::new(), Value::Null),
     };
     let bots: Vec<(String, f64)> = config.bots.iter().map(|b| (b.spec.clone(), b.weight)).collect();
     let setup = Setup::<G> {
@@ -429,6 +442,7 @@ pub fn run<G: EnvGame>(
         "bots": setup.bots.names(),
         "shards": shards,
         "rules": RULES,
+        "excluded": exclusion,
         "stats": stats,
         "spec": spec,
     });

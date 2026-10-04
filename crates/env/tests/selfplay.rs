@@ -66,6 +66,11 @@ fn datasets_are_reproducible_and_avoid_excluded_rules() {
     }
     assert_ne!(first.stats, a.stats, "other rules, other games");
 
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("a/meta.json")).unwrap()).unwrap();
+    assert_eq!(meta["excluded"]["rule_sets"], held_out.len());
+    assert_eq!(meta["excluded"]["sha256"].as_str().unwrap().len(), 64);
+
     let played = read_rules(&root.join("a"));
     assert_eq!(played.len(), a.stats.rule_sets);
     assert!(
