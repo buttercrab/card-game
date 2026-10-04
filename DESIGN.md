@@ -152,7 +152,7 @@ The table is a tool first. Five friends glance at a phone between jokes; everyth
 A warm paper neutral, near-black ink, four suit inks, two team colours, and a single plum accent.
 
 ### Primary
-- **Jaju Plum** (#8E2F6B; dark #D27BB0): the accent. It marks exactly one thing: the player can act now. The "your turn" ring on your seat and tray, the primary button in the action strip, the focus ring. Its deep shade #6B2251 (dark #A2558A) is only the button lip.
+- **Jaju Plum** (#8E2F6B; dark #D27BB0): the accent. It marks exactly one thing: the player can act now. The "your turn" ring on your seat and tray, the primary button in the action strip. Focus rings, checkboxes and selection rings are ink, not plum. Its deep shade #6B2251 (dark #A2558A) is only the button lip.
 
 ### Neutral
 - **Hanji** (#EFEBE3; dark #17191C): the table. Everything sits on it.
