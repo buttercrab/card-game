@@ -24,12 +24,16 @@ impl FromStr for Spec {
         let mut policy = SimpleBot::default();
         let mut reading = Reading::default();
         let mut search_threads = 1;
+        let mut endgame = 0;
         for setting in weights.split(',').filter(|w| !w.is_empty()) {
             let (key, value) = setting.split_once('=').ok_or(format!("bad weight {setting:?}"))?;
             match key.strip_prefix("read.") {
                 Some(key) if name.starts_with("search") => set_reading(&mut reading, key, value)?,
                 None if key == "threads" && name.starts_with("search") => {
                     search_threads = value.parse().map_err(|_| format!("bad value {value:?} for threads"))?;
+                }
+                None if key == "endgame" && name.starts_with("search") => {
+                    endgame = value.parse().map_err(|_| format!("bad value {value:?} for endgame"))?;
                 }
                 _ => set_weight(&mut policy, key, value)?,
             }
@@ -47,6 +51,7 @@ impl FromStr for Spec {
             policy,
             reading,
             threads: search_threads,
+            endgame,
             ..SearchBot::default()
         };
         if let Some(samples) = parts.next() {

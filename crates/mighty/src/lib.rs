@@ -3,6 +3,7 @@
 
 pub mod bot;
 pub mod card;
+pub mod endgame;
 mod read;
 pub mod rules;
 pub mod search;

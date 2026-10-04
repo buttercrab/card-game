@@ -146,6 +146,29 @@ pub(crate) struct Play {
     pub tricks: Vec<Trick>,
 }
 
+impl Play {
+    pub(crate) fn trick(&self) -> TrickState {
+        TrickState {
+            trump: self.contract.trump,
+            trick_no: self.trick_no,
+            lead: self.lead,
+            called_joker: self.called_joker,
+        }
+    }
+}
+
+/// What the cards that may be played next depend on, besides the hand: the
+/// trick so far.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TrickState {
+    pub trump: Option<Suit>,
+    pub trick_no: usize,
+    /// What the trick follows; `None` before its first card.
+    pub lead: Option<Lead>,
+    /// The joker called this trick, if the call has effect.
+    pub called_joker: Option<Card>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Done {
     pub declarer: Seat,
@@ -368,101 +391,12 @@ impl State {
 
     fn legal_plays(&self, p: &Play) -> Vec<Action> {
         let seat = (p.leader + p.plays.len()) % self.seats();
-        let hand = &self.hands[seat];
-        let trump = p.contract.trump;
-        let mighty = self.rules.mighty(trump);
-        let policy = |c: &Card| self.rules.policy(*c, trump, p.trick_no);
-        let leading = p.plays.is_empty();
-
-        // A card held back by policy may still be played when nothing else
-        // is left but jokers and the mighty: holding only trump and those
-        // means trump may be played too.
-        let or_forced = |allowed: Vec<Card>, all: &[Card]| {
-            if allowed.iter().all(|c| c.is_joker() || *c == mighty) {
-                all.to_vec()
-            } else {
-                allowed
-            }
-        };
-        let cards: Vec<Card> = if leading {
-            let allowed: Vec<Card> = hand
-                .iter()
-                .copied()
-                .filter(|c| !matches!(policy(c), CardPolicy::Invalid | CardPolicy::NoLead))
-                .collect();
-            or_forced(allowed, hand)
-        } else if let Some(joker) = p.called_joker.filter(|j| hand.contains(j)) {
-            // A called joker must come out, rules above notwithstanding.
-            let defend = self.rules.joker_call.mighty_defense && hand.contains(&mighty);
-            std::iter::once(joker).chain(defend.then_some(mighty)).collect()
-        } else {
-            // The mighty and jokers may always be played and never oblige following.
-            let lead = p.lead.expect("a trick in progress has a lead");
-            let free = |c: &Card| *c == mighty || c.is_joker();
-            // The mighty still belongs to its suit: when that suit is led
-            // and the mighty is all of it in hand, the mighty must follow.
-            let follows = hand.iter().any(|c| !c.is_joker() && lead.follows(*c));
-            let candidates: Vec<Card> = hand
-                .iter()
-                .copied()
-                .filter(|c| !follows || free(c) || lead.follows(*c))
-                .collect();
-            // Held-back cards (such as trump on the first trick) may still
-            // follow: a joker can name a suit that is otherwise held back.
-            let allowed: Vec<Card> = candidates
-                .iter()
-                .copied()
-                .filter(|c| policy(c) != CardPolicy::Invalid || (follows && !free(c)))
-                .collect();
-            or_forced(allowed, &candidates)
-        };
-
-        let mut actions = Vec::new();
-        for card in cards {
-            let play = |joker_lead, call_joker| Action::Play {
-                card,
-                joker_lead,
-                call_joker,
-            };
-            if leading && card.is_joker() {
-                let two_jokers = self.rules.deck.jokers().len() > 1;
-                let own = joker_color(card);
-                for suit in Suit::ALL {
-                    if !two_jokers || Some(suit.color()) == own {
-                        actions.push(play(Some(Lead::Suit(suit)), false));
-                    }
-                }
-                if self.rules.joker_lead.by_color {
-                    for color in [Color::Black, Color::Red] {
-                        if !two_jokers || Some(color) == own {
-                            actions.push(play(Some(Lead::Color(color)), false));
-                        }
-                    }
-                }
-            } else {
-                actions.push(play(None, false));
-                if leading && self.can_call_joker(p, card) {
-                    actions.push(play(None, true));
-                }
-            }
-        }
-        actions
+        legal_plays(&self.rules, &self.hands[seat], p.trick(), |j| self.joker_gone(j))
     }
 
-    /// The joker that leading `card` would call, if a call is possible now.
-    fn callable_joker(&self, p: &Play, card: Card) -> Option<Card> {
-        let call_policy = self.rules.on_trick(self.rules.policy.joker_call, p.trick_no);
-        if call_policy != CardPolicy::Valid {
-            return None;
-        }
-        self.rules.deck.jokers().iter().copied().find(|&joker| {
-            let played = self.taken.iter().any(|t| t.contains(&joker));
-            !played && self.rules.joker_call_card(joker, p.contract.trump) == Some(card)
-        })
-    }
-
-    fn can_call_joker(&self, p: &Play, card: Card) -> bool {
-        self.callable_joker(p, card).is_some()
+    /// Whether `joker` was won in a finished trick.
+    fn joker_gone(&self, joker: Card) -> bool {
+        self.taken.iter().any(|t| t.contains(&joker))
     }
 
     /// Applies an action already known to be legal.
@@ -587,11 +521,13 @@ impl State {
             } else {
                 card.suit().map(Lead::Suit)
             };
-            p.called_joker = if call { self.callable_joker(&p, card) } else { None };
+            p.called_joker = if call {
+                callable_joker(&self.rules, p.trick(), card, |j| self.joker_gone(j))
+            } else {
+                None
+            };
         }
-        let called_and_powerless = p.called_joker == Some(card) && !self.rules.joker_call.called_joker_has_power;
-        let powered =
-            self.rules.policy(card, p.contract.trump, p.trick_no) != CardPolicy::NoEffect && !called_and_powerless;
+        let powered = powered(&self.rules, p.trick(), card);
         p.plays.push(Played { seat, card, powered });
         if p.call == FriendCall::Card(card) && seat != p.declarer {
             p.friend = Some(seat);
@@ -629,37 +565,7 @@ impl State {
         let team = |s: Seat| s == p.declarer || Some(s) == p.friend;
         let won_points = (0..self.seats()).filter(|&s| team(s)).flat_map(|s| &self.taken[s]);
         let team_points = won_points.chain(&p.discards).filter(|c| c.is_point()).count() as u8;
-
-        let count = p.contract.count;
-        let value: i64 = if team_points >= count {
-            let mut multiplier = 1;
-            if p.contract.trump.is_none() {
-                multiplier *= 2;
-            }
-            if p.call == FriendCall::Alone {
-                multiplier *= 2;
-            }
-            if team_points == 20 {
-                multiplier *= 2;
-            }
-            multiplier * (i64::from(team_points) - 10).max(1)
-        } else {
-            let short = i64::from(count - team_points);
-            if team_points <= 10 { -2 * short } else { -short }
-        };
-
-        let opponents = (0..self.seats()).filter(|&s| !team(s)).count() as i64;
-        let payoffs = (0..self.seats())
-            .map(|s| {
-                if s == p.declarer {
-                    value * opponents - if p.friend.is_some() { value } else { 0 }
-                } else if team(s) {
-                    value
-                } else {
-                    -value
-                }
-            })
-            .collect();
+        let payoffs = settle(self.seats(), p.declarer, p.friend, p.contract, p.call, team_points);
         Done {
             declarer: p.declarer,
             contract: p.contract,
@@ -819,6 +725,145 @@ impl State {
         }
         Ok(())
     }
+}
+
+/// The legal plays from `hand` into trick `t`. `gone` tells whether a
+/// joker was won in a finished trick, which ends calling it. Shared by the
+/// game and by [`crate::endgame`], which plays tricks out without a [`State`].
+pub(crate) fn legal_plays(rules: &Rules, hand: &[Card], t: TrickState, gone: impl Fn(Card) -> bool) -> Vec<Action> {
+    let trump = t.trump;
+    let mighty = rules.mighty(trump);
+    let policy = |c: &Card| rules.policy(*c, trump, t.trick_no);
+    let leading = t.lead.is_none();
+
+    // A card held back by policy may still be played when nothing else
+    // is left but jokers and the mighty: holding only trump and those
+    // means trump may be played too. Searches call this often, so the
+    // cards are picked without building lists along the way.
+    let special = |c: &Card| c.is_joker() || *c == mighty;
+    let pick = |candidate: &dyn Fn(&Card) -> bool, allowed: &dyn Fn(&Card) -> bool| -> Vec<Card> {
+        let forced = hand.iter().filter(|c| candidate(c) && allowed(c)).all(special);
+        hand.iter()
+            .copied()
+            .filter(|c| candidate(c) && (forced || allowed(c)))
+            .collect()
+    };
+    let cards: Vec<Card> = if let Some(lead) = t.lead {
+        if let Some(joker) = t.called_joker.filter(|j| hand.contains(j)) {
+            // A called joker must come out, rules above notwithstanding.
+            let defend = rules.joker_call.mighty_defense && hand.contains(&mighty);
+            std::iter::once(joker).chain(defend.then_some(mighty)).collect()
+        } else {
+            // The mighty and jokers may always be played and never oblige following.
+            let free = |c: &Card| *c == mighty || c.is_joker();
+            // The mighty still belongs to its suit: when that suit is led
+            // and the mighty is all of it in hand, the mighty must follow.
+            let follows = hand.iter().any(|c| !c.is_joker() && lead.follows(*c));
+            // Held-back cards (such as trump on the first trick) may still
+            // follow: a joker can name a suit that is otherwise held back.
+            pick(&|c| !follows || free(c) || lead.follows(*c), &|c| {
+                policy(c) != CardPolicy::Invalid || (follows && !free(c))
+            })
+        }
+    } else {
+        pick(&|_| true, &|c| {
+            !matches!(policy(c), CardPolicy::Invalid | CardPolicy::NoLead)
+        })
+    };
+
+    let mut actions = Vec::with_capacity(cards.len() + 1);
+    for card in cards {
+        let play = |joker_lead, call_joker| Action::Play {
+            card,
+            joker_lead,
+            call_joker,
+        };
+        if leading && card.is_joker() {
+            let two_jokers = rules.deck.jokers().len() > 1;
+            let own = joker_color(card);
+            for suit in Suit::ALL {
+                if !two_jokers || Some(suit.color()) == own {
+                    actions.push(play(Some(Lead::Suit(suit)), false));
+                }
+            }
+            if rules.joker_lead.by_color {
+                for color in [Color::Black, Color::Red] {
+                    if !two_jokers || Some(color) == own {
+                        actions.push(play(Some(Lead::Color(color)), false));
+                    }
+                }
+            }
+        } else {
+            actions.push(play(None, false));
+            if leading && callable_joker(rules, t, card, &gone).is_some() {
+                actions.push(play(None, true));
+            }
+        }
+    }
+    actions
+}
+
+/// The joker that leading `card` into trick `t` would call, if a call is
+/// possible then.
+pub(crate) fn callable_joker(rules: &Rules, t: TrickState, card: Card, gone: impl Fn(Card) -> bool) -> Option<Card> {
+    if rules.on_trick(rules.policy.joker_call, t.trick_no) != CardPolicy::Valid {
+        return None;
+    }
+    rules
+        .deck
+        .jokers()
+        .iter()
+        .copied()
+        .find(|&joker| !gone(joker) && rules.joker_call_card(joker, t.trump) == Some(card))
+}
+
+/// Whether `card` keeps its power when played into trick `t` (its lead and
+/// call already set).
+pub(crate) fn powered(rules: &Rules, t: TrickState, card: Card) -> bool {
+    let called_and_powerless = t.called_joker == Some(card) && !rules.joker_call.called_joker_has_power;
+    rules.policy(card, t.trump, t.trick_no) != CardPolicy::NoEffect && !called_and_powerless
+}
+
+/// Every seat's payoff when the declarer's side ends with `team_points`.
+pub(crate) fn settle(
+    seats: usize,
+    declarer: Seat,
+    friend: Option<Seat>,
+    contract: Contract,
+    call: FriendCall,
+    team_points: u8,
+) -> Vec<i64> {
+    let team = |s: Seat| s == declarer || Some(s) == friend;
+    let count = contract.count;
+    let value: i64 = if team_points >= count {
+        let mut multiplier = 1;
+        if contract.trump.is_none() {
+            multiplier *= 2;
+        }
+        if call == FriendCall::Alone {
+            multiplier *= 2;
+        }
+        if team_points == 20 {
+            multiplier *= 2;
+        }
+        multiplier * (i64::from(team_points) - 10).max(1)
+    } else {
+        let short = i64::from(count - team_points);
+        if team_points <= 10 { -2 * short } else { -short }
+    };
+
+    let opponents = (0..seats).filter(|&s| !team(s)).count() as i64;
+    (0..seats)
+        .map(|s| {
+            if s == declarer {
+                value * opponents - if friend.is_some() { value } else { 0 }
+            } else if team(s) {
+                value
+            } else {
+                -value
+            }
+        })
+        .collect()
 }
 
 fn joker_color(card: Card) -> Option<Color> {

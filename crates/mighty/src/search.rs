@@ -40,6 +40,10 @@ pub struct SearchBot {
     /// Threads dealing and playing out deals at once. The deals are split
     /// between them, and so is the budget's work.
     pub threads: usize,
+    /// Playouts solve the last this many tricks exactly, every hand being
+    /// known in a sampled deal (see [`crate::endgame`]), instead of playing
+    /// them with the simple bot. 0 plays every trick with the simple bot.
+    pub endgame: usize,
 }
 
 impl Default for SearchBot {
@@ -51,6 +55,7 @@ impl Default for SearchBot {
             policy: SimpleBot::default(),
             reading: Reading::default(),
             threads: 1,
+            endgame: 0,
         }
     }
 }
@@ -160,7 +165,7 @@ impl SearchBot {
             };
             log_weights.push(log_weight);
             for (action, scores) in candidates.iter().zip(&mut scores) {
-                scores.push(rollout(self.policy, &world, action, me, rng));
+                scores.push(rollout(self.policy, self.endgame, &world, action, me, rng));
             }
         }
         (scores, log_weights)
@@ -324,18 +329,24 @@ fn bid_candidates(legal: &[Action]) -> Vec<Action> {
 }
 
 /// Plays `action` in `world`, then plays the hand out with simple bots,
-/// redealing if the hand is thrown in.
-fn rollout(policy: SimpleBot, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
+/// the last `endgame` tricks solved, redealing if the hand is thrown in.
+fn rollout(policy: SimpleBot, endgame: usize, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
     let mut state = world.clone();
     state.step(me, action.clone());
-    playout(policy, state, me, rng)
+    finish(policy, endgame, state, me, rng)
 }
 
 /// Plays `state` to the end of the hand with `policy` in every seat,
 /// redealing if the hand is thrown in: `me`'s payoff. Public for
 /// experiments (`sim`'s `lab`), which use it as a perfect-information
 /// player and as an oracle.
-pub fn playout(mut policy: SimpleBot, mut state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
+pub fn playout(policy: SimpleBot, state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
+    finish(policy, 0, state, me, rng)
+}
+
+/// [`playout`], solving the last `endgame` tricks exactly once the sides
+/// are settled.
+pub fn finish(mut policy: SimpleBot, endgame: usize, mut state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
     // Redeals could in principle repeat forever; give up and call it even.
     for _ in 0..2000 {
         match state.turn() {
@@ -345,6 +356,11 @@ pub fn playout(mut policy: SimpleBot, mut state: State, me: Seat, rng: &mut dyn 
                 state.apply(deal).expect("a sampled deal is legal");
             }
             Turn::Seat(seat) => {
+                if endgame > 0
+                    && let Some(payoffs) = crate::endgame::solve(&state, endgame)
+                {
+                    return payoffs[me];
+                }
                 let view = View::new(&state, Viewer::Seat(seat));
                 let legal = state.legal_actions();
                 let choice = policy.act(&view, &legal, rng);
