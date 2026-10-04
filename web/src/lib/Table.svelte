@@ -696,13 +696,13 @@
     fresh: Played[],
     apply: () => void,
     k: number,
-    context?: { all: Played[]; lead: Lead | null; trump: Suit | null },
+    context?: { all: Played[]; lead: Lead | null; trump: Suit | null; taker: number | null },
   ): Promise<boolean[]> {
     const from = fresh.map((p) => anchor(p.seat, p.card));
     apply();
     await tick();
     const heavy = fresh.map((p) =>
-      context ? weight(p, context.all[0]?.seat === p.seat, context.lead, context.trump) : null,
+      context ? weight(p, context.all[0]?.seat === p.seat, context.lead, context.trump, context.taker) : null,
     );
     if (!prefersReducedMotion.current) {
       await Promise.all(
@@ -754,10 +754,18 @@
   /** The result has been counted out (or shown at once). */
   let tallied = $state(false);
 
-  /** How hard a card lands: the 마이티 and jokers ring; a trump cutting the round thumps. */
-  function weight(p: Played, leader: boolean, lead: Lead | null, trump: Suit | null): 'mighty' | 'joker' | 'cut' | null {
+  /** How hard a card lands: the 마이티 and jokers ring; a trump cutting the round thumps.
+   * With two jokers the other-colour one ranks below every trump, so a joker
+   * rings only while it takes the round (`taker`); otherwise it lands plainly. */
+  function weight(
+    p: Played,
+    leader: boolean,
+    lead: Lead | null,
+    trump: Suit | null,
+    taker: number | null,
+  ): 'mighty' | 'joker' | 'cut' | null {
     if (!p.powered) return null;
-    if ('Joker' in p.card) return 'joker';
+    if ('Joker' in p.card) return !twoJokers || taker === p.seat ? 'joker' : null;
     if (sameCard(p.card, mightyCard(trump))) return 'mighty';
     const suit = p.card.Normal[0];
     if (leader || trump === null || suit !== trump || !lead) return null;
@@ -850,6 +858,7 @@
         all: after.plays,
         lead: liveLead,
         trump,
+        taker: after.leading ?? null,
       });
       // A card that takes the lead gives a small bounce once it has landed;
       // heavy cards have already made their own entrance.
@@ -868,7 +877,7 @@
           shown = next;
         },
         k,
-        { all: trick.plays, lead: trick.lead, trump },
+        { all: trick.plays, lead: trick.lead, trump, taker: trick.winner },
       );
       // The hero moment: a beat, the winning card pops, the trick sweeps to its winner.
       await pause(150 * k);
@@ -1032,18 +1041,51 @@
     return friendCallLabel(call, seatName, twoJokers);
   });
 
-  const waitingFor = $derived.by(() => {
+  /** Whose turn it is, in parts, so a long name gives way and the rest stays. */
+  const waiting = $derived.by(() => {
     if (turn === null) return null;
-    if (exchange) return `주공 ${seatName(turn)} · 키티 정리 중`;
-    if (bidding) return `${seatName(turn)} · 공약 고르는 중`;
-    return `${seatName(turn)} 차례`;
+    const name = seatName(turn);
+    if (exchange) return { pre: '주공 ', name, post: ' · 키티 정리 중' };
+    if (bidding) return { pre: '', name, post: ' · 공약 고르는 중' };
+    return { pre: '', name, post: ' 차례' };
+  });
+  const waitingFor = $derived(waiting ? waiting.pre + waiting.name + waiting.post : null);
+  /** Controls that rise over the felt's foot: bids, the exchange, a joker's choices. */
+  const controls = $derived(!!variants || (myTurn && (bidding !== null || exchange !== null)));
+  let controlsHeight = $state(0);
+
+  /** Where the result sits on wider screens, from the felt's top: under
+   * the side seats when it fits there; else under the top seats and as wide
+   * as the ring, so it covers the side seats whole instead of slicing them. */
+  let resultFit = $state<{ top: number; width: number | null } | null>(null);
+  $effect(() => {
+    if (!done || !felt) return;
+    const measure = () => {
+      const f = felt.getBoundingClientRect();
+      const side = felt.querySelector('.spot.pos-1 .seat, .spot.pos-4 .seat')?.getBoundingClientRect();
+      const top = felt.querySelector('.spot.pos-2 .seat, .spot.pos-3 .seat')?.getBoundingClientRect();
+      const ring = felt.querySelector('.ring')?.getBoundingClientRect();
+      const sheet = document.querySelector<HTMLElement>('.result-layer .sheet');
+      const body = sheet?.querySelector<HTMLElement>('.result-body');
+      const foot = sheet?.querySelector<HTMLElement>('.result-foot');
+      if (!side || !top || !ring || !sheet?.parentElement || !body || !foot) return;
+      const floor = sheet.parentElement.getBoundingClientRect().bottom;
+      const under = side.bottom - f.top + 8;
+      resultFit =
+        floor - (f.top + under) >= body.scrollHeight + foot.offsetHeight
+          ? { top: under, width: null }
+          : { top: top.bottom - f.top + 8, width: ring.width + 16 };
+    };
+    void tick().then(measure);
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
   });
 
   const seated = $derived(client.seat !== null);
   const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
 </script>
 
-<section class="table" class:mine={myTurn} class:nudge>
+<section class="table" class:mine={myTurn} class:nudge class:tips={settings.tips}>
   <!-- 상황판: everything about the hand on one line. -->
   {#snippet hintTools()}
     {#if client.hint && myTurn}
@@ -1095,9 +1137,6 @@
           {#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}
         </span>
       {/if}
-      {#if lastTrick && !resolving}
-        <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
-      {/if}
     {/if}
     {#if me !== null}
       <span class="react-status">
@@ -1106,12 +1145,11 @@
       </span>
     {/if}
   </div>
-  {#if (event && !done) || tip}
-    <div class="event">
-      {#if event && !done}{#key event}<p class="fade-up" aria-live="polite">{event}</p>{/key}{/if}
-      {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite">{tip}</p>{/key}{/if}
-    </div>
-  {/if}
+  <!-- Always there, at a fixed height, so the felt below never moves. -->
+  <div class="event">
+    {#if event && !done}{#key event}<p class="fade-up" aria-live="polite">{event}</p>{/key}{/if}
+    {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite">{tip}</p>{/key}{/if}
+  </div>
 
   <!-- Desktop: the hand at a glance, on stacked paper beside the felt. -->
   <aside class="side" aria-label="게임 정보">
@@ -1172,7 +1210,7 @@
     </section>
 
     <section class="pane scores" aria-label="점수판">
-      <h3 class="pane-title">점수판 <span class="cols"><span>이번 판</span><span>누적</span></span></h3>
+      <h3 class="pane-title">점수판 <span class="cols"><span>점수</span><span>누적</span></span></h3>
       <ol class="score-rows">
         {#each Array.from({ length: n }, (_, k) => seatAt(k)) as s (s)}
           {@const info = room?.seats[s]}
@@ -1185,14 +1223,14 @@
               <span class="row-name">{s === me ? myName : seatName(s)}</span>
               {#if t}<span class="team mini-team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}
             </span>
-            <span class="num hand-pts">{play || done ? points(s) : '·'}</span>
+            <span class="num hand-pts">{play || done ? points(s) : '–'}</span>
             <span class="num total" class:neg={(room?.scores[s] ?? 0) < 0}>{room?.scores[s] ?? 0}</span>
           </li>
         {/each}
       </ol>
     </section>
 
-    <section class="pane log-pane" aria-label="기록" bind:clientHeight={logHeight}>
+    <section class="pane log-pane" class:short={log.length <= 4} aria-label="기록" bind:clientHeight={logHeight}>
       <h3 class="pane-title">기록</h3>
       {#if recent.length}
         <ol class="log">
@@ -1215,8 +1253,8 @@
           {#each prevTrick.plays as p, i (p.seat)}
             <figure class:won={p.seat === prevTrick.winner}>
               <span class="mini-slot">
-                <Card card={p.card} size="mini" width={38} seal={seal(p.card)} {twoJokers} won={p.seat === prevTrick.winner} />
-                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={prevTrick.lead} />{/if}
+                <Card card={p.card} size="mini" width={38} seal={seal(p.card)} {twoJokers} />
+                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={prevTrick.lead} compact />{/if}
               </span>
               <figcaption>{seatName(p.seat)}</figcaption>
             </figure>
@@ -1226,12 +1264,15 @@
     {/if}
   </aside>
 
-  <div class="felt" bind:this={felt}>
-    {#if me !== null}
-      <span class="react-spot" class:over-result={done !== null}>
+  <div class="felt" bind:this={felt} style:--over="{controls ? controlsHeight : 0}px">
+    {#if me !== null && !done}
+      <span class="react-spot">
         {@render hintTools()}
         <Reactions onreact={(text) => client.react(text)} />
       </span>
+    {/if}
+    {#if lastTrick && !resolving}
+      <button class="ghost review" aria-pressed={review} onclick={() => (review = !review)}>직전 라운드</button>
     {/if}
     <!-- The seats and the trick sit in a ring no wider than the felt is tall,
          so on a wide screen the seats stay near their cards. -->
@@ -1249,6 +1290,7 @@
             turn={turn === s}
             bubble={bubble(s)}
             reaction={client.reactions?.[s] ?? null}
+            reactSide={n === 5 && r === 2 ? 'right' : n === 5 && r === 3 ? 'left' : 'up'}
             cue={seatCues[s] ?? null}
             dim={bidding?.passed[s] ?? false}
             reveal={revealed === s}
@@ -1287,156 +1329,196 @@
         {/each}
       </div>
 
+      <!-- One line right under the trick; a long name gives way first. -->
       {#if resolving && winner !== null}
-        <p class="note below won-note">{winner === me ? '내가' : seatName(winner)} 가져감</p>
+        <p class="note below won-note"><span class="who-name">{winner === me ? '내가' : seatName(winner)}</span> 가져감</p>
       {:else if play && play.plays.length === 0 && !resolving}
-        <p class="note">{turn === me ? '내가 선' : `${seatName(play.leader)} 선`}</p>
+        <p class="note">{#if turn === me}내가 선{:else}<span class="who-name">{seatName(play.leader)}</span> 선{/if}</p>
       {:else if play?.called_joker}
         <p class="note below alert">조커콜 · 조커를 내야 해요</p>
       {:else if leading !== null || trickNotes.length > 0}
         <p class="note below">
-          {[leading !== null && `${leading === me ? '내가' : seatName(leading)} 이기는 중`, ...trickNotes].filter(Boolean).join(' · ')}
+          {#if leading !== null}<span class="who-name">{leading === me ? '내가' : seatName(leading)}</span> 이기는 중{/if}{#if trickNotes.length}{leading !== null ? ' · ' : ''}{trickNotes.join(' · ')}{/if}
         </p>
+      {/if}
+
+      <!-- A hand thrown in sits where the trick goes, between the seats. -->
+      {#if thrownIn && bidding}
+        <div class="sheet thrown-in fade-up" role="status" aria-label="딜미스로 보여 준 패">
+          <div class="thrown-head">
+            <p class="thrown-title"><span class="who-name">{seatName(thrownIn.seat)}</span> 딜미스</p>
+            <button class="close" onclick={() => (thrownIn = null)}>닫기</button>
+          </div>
+          <div class="thrown-cards">
+            {#each [thrownIn.hand.slice(0, Math.ceil(thrownIn.hand.length / 2)), thrownIn.hand.slice(Math.ceil(thrownIn.hand.length / 2))] as row, r (r)}
+              <div class="thrown-row">
+                {#each row as c, i (i)}<Card card={c} size="mini" {twoJokers} />{/each}
+              </div>
+            {/each}
+          </div>
+        </div>
       {/if}
     </div>
 
-    {#if thrownIn && bidding}
-      <div class="sheet review-sheet thrown-in fade-up" role="status" aria-label="딜미스로 보여 준 패">
-        <p class="thrown-title"><strong>{seatName(thrownIn.seat)}</strong> 딜미스 · 이 패를 보여 줬어요</p>
-        <div class="thrown-cards">
-          {#each thrownIn.hand as c, i (i)}<Card card={c} size="mini" {twoJokers} />{/each}
-        </div>
-        <button class="ghost" onclick={() => (thrownIn = null)}>닫기</button>
-      </div>
-    {/if}
     {#if review && lastTrick}
       <div class="sheet review-sheet" role="dialog" aria-label="직전 라운드">
         <div class="review-cards">
           {#each lastTrick.plays as p, i (p.seat)}
-            <figure>
+            <figure class:won={p.seat === lastTrick.winner}>
               <span class="mini-slot">
-                <Card card={p.card} size="mini" seal={seal(p.card)} {twoJokers} won={p.seat === lastTrick.winner} />
-                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={lastTrick.lead} />{/if}
+                <Card card={p.card} size="mini" seal={seal(p.card)} {twoJokers} />
+                {#if i === 0 && 'Joker' in p.card}<LeadTag lead={lastTrick.lead} compact />{/if}
               </span>
               <figcaption>{seatName(p.seat)}</figcaption>
             </figure>
           {/each}
         </div>
-        <button class="ghost" onclick={() => (review = false)}>닫기</button>
-      </div>
-    {/if}
-
-    {#if done}
-      {@const won = done.team_points >= done.contract.count}
-      {@const mineWon = me !== null && won === (me === done.declarer || me === done.friend)}
-      <!-- A tap anywhere on the result skips the count; keys need nothing to skip. -->
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-      <div class="sheet result" class:big={result && result.made && result.margin >= 3} class:lost={!mineWon && me !== null} role="status" onclick={skipCount}>
-        <p class="headline">
-          {#if result?.run && tallied}<span class="run-word">런</span>{:else}{won ? '여당 승리' : '야당 승리'}{/if}
-          {#if mineWon}
-            <span class="burst" aria-hidden="true">
-              {#each ['Spade', 'Heart', 'Diamond', 'Club', 'Spade', 'Heart', 'Diamond', 'Club'] as const as suit, i (i)}
-                <span class="spark suit-{suit}" style:--a="{i * 45 + 20}deg"><SuitIcon {suit} /></span>
-              {/each}
-            </span>
-          {/if}
-        </p>
-        <p class="sub">여당 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
-        {#if result}
-          <ol class="ledger" aria-label="점수 계산">
-            {#each result.lines as line, i (i)}
-              <li class:shown={step > i} class:total={i === result.lines.length - 1}>{line}</li>
-            {/each}
-          </ol>
-        {/if}
-        <table>
-          <thead>
-            <tr><th scope="col">이름</th><th scope="col">역할</th><th scope="col">점수</th><th scope="col">이번 판</th><th scope="col">누적</th></tr>
-          </thead>
-          <tbody>
-            {#each done.payoffs as pay, s (s)}
-              {@const t = team(s)}
-              <tr class:me={s === me}>
-                <td class="who">{seatName(s)}</td>
-                <td>{#if t}<span class="team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}</td>
-                <td class="num">
-                  {#if points(s) > 0}
-                    <button
-                      type="button"
-                      class="peek-num"
-                      aria-expanded={peek?.seat === s && !peek.own && peek.anchor.closest('.spot') === null}
-                      aria-haspopup="dialog"
-                      aria-label="{subject(seatName(s))} 가져온 점수 카드 {points(s)}장 보기"
-                      onclick={(e) => togglePeek(s, e.currentTarget)}>{points(s)}</button>
-                  {:else}0{/if}
-                </td>
-                <td class="num" class:neg={pay < 0}>{(shownPay[s] ?? pay) > 0 ? '+' : ''}{shownPay[s] ?? pay}</td>
-                <td class="num">{room?.scores[s] ?? ''}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-        {#if earned.length}
-          <div class="achieved" role="status">
-            {#each earned as a (a.id)}
-              <div class="award" title={a.how}>
-                <span class="kicker">업적 달성</span>
-                <strong>{a.title}</strong>
-                {#if a.reward}
-                  <span class="reward">
-                    {a.reward.kind === 'back' ? '카드 뒷면' : '테이블 색'}
-                    ‘{a.reward.kind === 'back' ? BACK_NAMES[a.reward.id] : TABLE_NAMES[a.reward.id]}’을 쓸 수 있어요 · 설정
-                  </span>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
+        <button class="close" onclick={() => (review = false)}>닫기</button>
       </div>
     {/if}
   </div>
 
-  {#if me !== null}
-    <!-- During play the strip only ever says whose turn it is, so it shrinks
-         to a pill on the tray's edge and gives its height to the felt; the
-         bidding and exchange keep the full panel, which they fill. -->
-    <div class="strip" class:pill={play !== null && !variants && (myTurn || waitingFor !== null)} class:bare={done !== null && !variants}>
-      {#if variants}
-        <div class="variants">
-          {#each variants as v, i (i)}
-            <button class="chip" onclick={() => act({ Play: v })}>{variantLabel(v)}</button>
-          {/each}
-          <button class="ghost" onclick={() => (variants = null)}>취소</button>
+  {#if done}
+    {@const won = done.team_points >= done.contract.count}
+    {@const mineWon = me !== null && won === (me === done.declarer || me === done.friend)}
+    <!-- The result rises from the foot of the table (the hand is empty by
+         now) and stops under the top seats; its buttons are its own footer. -->
+    <div
+      class="result-layer"
+      class:cover={!!resultFit?.width}
+      style:--fit-top={resultFit ? `${resultFit.top}px` : undefined}
+      style:--fit-w={resultFit?.width ? `${resultFit.width}px` : undefined}
+    >
+      <!-- A tap anywhere on the result skips the count; keys need nothing to skip. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <div class="sheet result" class:big={result && result.made && result.margin >= 3} class:lost={!mineWon && me !== null} role="status" onclick={skipCount}>
+        <div class="result-body">
+          <div class="result-head">
+            <p class="headline">
+              {#if result?.run && tallied}<span class="run-word">런</span>{:else}{won ? '여당 승리' : '야당 승리'}{/if}
+              {#if mineWon}
+                <span class="burst" aria-hidden="true">
+                  {#each ['Spade', 'Heart', 'Diamond', 'Club', 'Spade', 'Heart', 'Diamond', 'Club'] as const as suit, i (i)}
+                    <span class="spark suit-{suit}" style:--a="{i * 45 + 20}deg"><SuitIcon {suit} /></span>
+                  {/each}
+                </span>
+              {/if}
+            </p>
+            <!-- When made, the first line of the count already says the points. -->
+            <p class="sub" class:said={result?.made}>여당 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
+            {#if result}
+              <ol class="ledger" aria-label="점수 계산">
+                {#each result.lines as line, i (i)}
+                  <li class:shown={step > i} class:total={i === result.lines.length - 1}>{line}</li>
+                {/each}
+              </ol>
+            {/if}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col" class="who">이름</th>
+                <th scope="col" class="role">역할</th>
+                <th scope="col" class="num">점수</th>
+                <th scope="col" class="num">이번 판</th>
+                <th scope="col" class="num">누적</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each done.payoffs as pay, s (s)}
+                {@const t = team(s)}
+                <tr class:me={s === me}>
+                  <td class="who">{seatName(s)}</td>
+                  <td class="role">{#if t}<span class="team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}</td>
+                  <td class="num">
+                    {#if points(s) > 0}
+                      <button
+                        type="button"
+                        class="pts peek-num"
+                        aria-expanded={peek?.seat === s && !peek.own && peek.anchor.closest('.spot') === null}
+                        aria-haspopup="dialog"
+                        aria-label="{subject(seatName(s))} 가져온 점수 카드 {points(s)}장 보기"
+                        onclick={(e) => togglePeek(s, e.currentTarget)}>{points(s)}</button>
+                    {:else}<span class="pts">0</span>{/if}
+                  </td>
+                  <td class="num" class:neg={pay < 0}>{(shownPay[s] ?? pay) > 0 ? '+' : ''}{shownPay[s] ?? pay}</td>
+                  <td class="num">{room?.scores[s] ?? ''}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          {#if earned.length}
+            <div class="achieved" role="status">
+              {#each earned as a (a.id)}
+                <div class="award" title={a.how}>
+                  <span class="kicker">업적 달성</span>
+                  <strong>{a.title}</strong>
+                  {#if a.reward}
+                    <span class="reward">
+                      {a.reward.kind === 'back' ? '카드 뒷면' : '테이블 색'}
+                      ‘{a.reward.kind === 'back' ? BACK_NAMES[a.reward.id] : TABLE_NAMES[a.reward.id]}’을 쓸 수 있어요 · 설정
+                    </span>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
-      {:else if myTurn && bidding}
-        <BidPanel {legal} onact={act} />
-      {:else if myTurn && exchange}
-        <ExchangePanel
-          {legal}
-          contract={exchange.contract}
-          rules={view.rules}
-          {toDiscard}
-          chosen={chosen.length}
-          hand={view.hand}
-          {seatName}
-          onact={act}
-          ondiscard={discardChosen}
-        />
+        <div class="result-foot">
+          {#if seated && !full}<p class="muted wait-seats">빈 자리를 채우면 다음 판을 시작할 수 있어요</p>{/if}
+          <div class="next">
+            {#if me !== null}
+              <span class="foot-react">
+                <Reactions onreact={(text) => client.react(text)} />
+              </span>
+            {/if}
+            {#if done.tricks.length}<button onclick={() => (replay = true)}>다시 보기</button>{/if}
+            {#if room}<button onclick={() => (sharing = true)}>결과 카드</button>{/if}
+            {#if me !== null}<button class="primary" disabled={!seated || !full} onclick={() => client.start()}>다음 판</button>{/if}
+          </div>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if me !== null}
+    <!-- One fixed slot between the felt and the hand. What it holds rises
+         over the felt's foot instead of pushing the table up, so the seats
+         never move: bids and the exchange on the table's own paper, the turn
+         as a pill on the tray's rim. -->
+    <div class="strip">
+      {#if controls}
+        <div class="controls" bind:clientHeight={controlsHeight}>
+          {#if variants}
+            <div class="variants">
+              {#each variants as v, i (i)}
+                <button class="chip" onclick={() => act({ Play: v })}>{variantLabel(v)}</button>
+              {/each}
+              <button class="ghost" onclick={() => (variants = null)}>취소</button>
+            </div>
+          {:else if bidding}
+            <BidPanel {legal} onact={act} />
+          {:else if exchange}
+            <ExchangePanel
+              {legal}
+              contract={exchange.contract}
+              rules={view.rules}
+              {toDiscard}
+              chosen={chosen.length}
+              hand={view.hand}
+              {seatName}
+              onact={act}
+              ondiscard={discardChosen}
+            />
+          {/if}
+        </div>
       {:else if myTurn && play}
-        <p class="prompt">
+        <p class="prompt pill">
           <strong>내 차례</strong> ·
           {settings.singleTap ? '낼 카드를 누르세요' : raisedCard ? '한 번 더 누르면 내요' : '낼 카드를 두 번 누르세요'}
         </p>
-      {:else if done}
-        <div class="next">
-          {#if seated && !full}<span class="muted">빈 자리를 채우면 다음 판을 시작할 수 있어요</span>{/if}
-          {#if done.tricks.length}<button onclick={() => (replay = true)}>다시 보기</button>{/if}
-          {#if room}<button onclick={() => (sharing = true)}>결과 카드</button>{/if}
-          <button class="primary" disabled={!seated || !full} onclick={() => client.start()}>다음 판</button>
-        </div>
-      {:else if waitingFor}
-        <p class="prompt muted">{waitingFor}…</p>
+      {:else if waiting && !done}
+        <p class="prompt caption">{waiting.pre}<span class="who-name">{waiting.name}</span>{waiting.post}…</p>
       {/if}
     </div>
 
@@ -1485,23 +1567,22 @@
           {/if}
         {/if}
       </div>
-      {#if view.hand.length > 0}
-        <Hand
-          cards={view.hand}
-          mode={handMode}
-          {playable}
-          {chosen}
-          {kitty}
-          {seal}
-          {twoJokers}
-          deal={dealing}
-          onplay={playCard}
-          ontoggle={toggle}
-          onrefuse={refuse}
-          bind:raised={raisedCard}
-          hinted={client.hint && typeof client.hint === 'object' && 'Play' in client.hint && myTurn ? client.hint.Play.card : null}
-        />
-      {/if}
+      <!-- Always drawn, even empty, so the tray keeps its height. -->
+      <Hand
+        cards={view.hand}
+        mode={handMode}
+        {playable}
+        {chosen}
+        {kitty}
+        {seal}
+        {twoJokers}
+        deal={dealing}
+        onplay={playCard}
+        ontoggle={toggle}
+        onrefuse={refuse}
+        bind:raised={raisedCard}
+        hinted={client.hint && typeof client.hint === 'object' && 'Play' in client.hint && myTurn ? client.hint.Play.card : null}
+      />
     </div>
   {:else}
     <p class="prompt muted spectating">구경하는 중{waitingFor ? ` · ${waitingFor}` : ''}</p>
@@ -1545,13 +1626,29 @@
   /* The table fills the screen exactly; the felt takes what is left and
      sizes its cards from its own width and height (container units), so
      nothing scrolls and nothing collides. */
+  /* Every row but the felt has a fixed height for the screen size, and the
+     tray never changes height either, so the felt (and every seat and the
+     trick on it) stays put from the deal to the result. Whatever comes and
+     goes (bids, the exchange, the result, the turn pill) lies over it. */
   .table {
+    --status-h: 48px;
+    --event-h: 18px;
+    --strip-h: 16px;
+    /* The top seats' height: the result stops under them. */
+    --seat-top: 84px;
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-rows: var(--status-h) var(--event-h) minmax(0, 1fr) var(--strip-h) auto;
     grid-template-areas: 'status' 'event' 'felt' 'strip' 'tray';
-    gap: 6px;
+    gap: 4px;
     height: calc(100dvh - var(--chrome, 80px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  @media (min-width: 600px) {
+    .table {
+      --status-h: 34px;
+      --seat-top: 116px;
+    }
   }
   .status {
     grid-area: status;
@@ -1561,6 +1658,10 @@
   }
   .event {
     grid-area: event;
+    min-width: 0;
+  }
+  .table.tips {
+    --event-h: 54px;
   }
   /* The point cards as twenty ticks: 여당 from the left, 야당 from the right,
      the contract marked between them. */
@@ -1720,8 +1821,17 @@
   }
   .event p {
     margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    line-height: 18px;
   }
   .event .tip {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
     font-size: 13px;
     font-weight: 600;
     color: var(--ink);
@@ -1732,20 +1842,25 @@
   .react-status {
     display: none;
   }
+  /* The felt's foot: your tools at the right, 직전 라운드 at the left.
+     Both step up over the bid or exchange controls when those are out. */
+  .felt {
+    --lift: max(0px, var(--over, 0px) - var(--strip-h) - 4px);
+  }
   .react-spot {
     position: absolute;
     right: 4px;
-    bottom: 4px;
+    bottom: calc(4px + var(--lift));
     z-index: 6;
     display: flex;
     align-items: center;
     gap: 6px;
   }
-  /* Over the result the buttons move to the top corner, where the
-     centred headline leaves room, instead of covering the score table. */
-  .react-spot.over-result {
-    top: 4px;
-    bottom: auto;
+  .felt > .review {
+    position: absolute;
+    left: 4px;
+    bottom: calc(8px + var(--lift));
+    z-index: 6;
   }
   .react-status {
     align-items: center;
@@ -1781,9 +1896,10 @@
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
+    align-content: center;
     gap: 2px 14px;
-    min-height: 32px;
-    font-size: 14px;
+    height: var(--status-h);
+    font-size: clamp(14px, 1.7vw, 16px);
     color: var(--ink-muted);
   }
   .status strong {
@@ -1812,7 +1928,6 @@
     color: var(--suit-club);
   }
   .event {
-    margin: -6px 0 0;
     text-align: center;
     font-size: 13px;
     color: var(--ink-muted);
@@ -1841,23 +1956,40 @@
      seats come in towards the trick instead of hugging the window edges. */
   .ring {
     --seat-w: clamp(92px, 10cqw, 148px);
-    --seat-h: 64px;
+    --seat-h: 78px;
+    /* A trick card is never much bigger than a card in your hand. */
+    --trick-max: 92px;
     position: absolute;
     inset: 0;
     max-width: calc(100cqh * 1.35);
     margin-inline: auto;
     container-type: size;
+    /* The trick's centre: the middle of the room under the top seats, not
+       of the whole felt, whose foot has no seat (you sit on the tray). */
+    --cy: calc(50cqh + var(--seat-h) / 2 - 12px);
+  }
+  /* Tablets: seats and cards grow with the table, the side seats come in. */
+  @media (min-width: 600px) and (max-width: 1023px) {
+    .ring {
+      --seat-w: clamp(92px, 16cqw, 160px);
+      --seat-h: 116px;
+      --trick-max: 100px;
+      inset-inline: 3cqw;
+    }
   }
   /* Card size from the room left between the seats: wide enough that the
      side cards (1.15 across) clear the side seats, short enough that the top
      cards (0.9 up) clear the top seats and the bottom card leaves room for
      the note. */
-  .trick,
-  .note {
+  .ring {
     --card-w: clamp(
       40px,
-      min((100cqw - 2 * var(--seat-w) - 16px) / 3.55, (50cqh - var(--seat-h) - 14px) / 2.04, (50cqh - 40px) / 2.1),
-      124px
+      min(
+        (100cqw - 2 * var(--seat-w) - 16px) / 3.55,
+        (50cqh - var(--seat-h) / 2 - 23px) / 2.04,
+        (50cqh - var(--seat-h) / 2 - 24px) / 2.18
+      ),
+      var(--trick-max)
     );
     --card-h: calc(var(--card-w) * 1.4);
     --tx: calc(var(--card-w) * 1.1);
@@ -1874,12 +2006,14 @@
   .spot.pos-1 {
     left: auto;
     right: 0;
-    top: 50%;
+    top: var(--cy);
     transform: translateY(-50%);
   }
+  /* The top seats sit just clear of the trick's top cards: at the felt's
+     top on a phone, nearer the middle on a tall tablet. */
   .spot.pos-2,
   .spot.pos-3 {
-    top: 0;
+    top: max(0px, var(--cy) - 0.9 * var(--ty) - var(--card-h) / 2 - var(--seat-h) - 20px);
     transform: translateX(-50%);
   }
   .spot.pos-2 {
@@ -1890,13 +2024,21 @@
   }
   .spot.pos-4 {
     left: 0;
-    top: 50%;
+    top: var(--cy);
     transform: translateY(-50%);
+  }
+  /* Phones and tablets: a bid on a right-hand seat hangs inwards. */
+  @media (max-width: 1023px), (max-height: 639px) {
+    .spot.pos-1 :global(.bubble),
+    .spot.pos-2 :global(.bubble) {
+      left: auto;
+      right: calc(100% - 6px);
+    }
   }
   .trick {
     position: absolute;
     left: 50%;
-    top: 50%;
+    top: var(--cy);
   }
   .slot {
     position: absolute;
@@ -1917,14 +2059,15 @@
     outline: 2px solid var(--ink);
     outline-offset: 2px;
   }
-  /* While a round resolves, the cards that lost step back. */
+  /* While a round resolves, the cards that lost step back: they lose some
+     colour but stay solid paper, never see-through. */
   .trick .slot.beaten :global(.card) {
-    opacity: 0.55;
+    filter: saturate(0.4) brightness(0.9);
   }
   .note {
     position: absolute;
     left: 50%;
-    top: 50%;
+    top: var(--cy);
     transform: translate(-50%, -50%);
     margin: 0;
     font-size: 14px;
@@ -1932,15 +2075,22 @@
     white-space: nowrap;
     pointer-events: none;
   }
+  /* Right under the bottom card's place, on one line. */
   .note.below {
-    top: calc(50% + var(--ty) + var(--card-h) / 2 + 16px);
-    /* Long notes wrap to two centred lines instead of running under the
-       hint and reaction buttons in the corner. */
-    width: max-content;
-    max-width: calc(100cqw - 2 * 96px);
-    white-space: normal;
-    text-align: center;
-    text-wrap: balance;
+    top: calc(var(--cy) + var(--ty) + var(--card-h) / 2 + 8px);
+    transform: translateX(-50%);
+    max-width: calc(100cqw - 16px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* A long name gives way, never the words after it. */
+  .who-name {
+    display: inline-block;
+    max-width: 7em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
   }
   .won-note {
     color: var(--ink);
@@ -1970,16 +2120,67 @@
     justify-items: center;
     gap: 8px;
     width: auto;
+    max-width: calc(100% - 8px);
+    padding: 10px 12px;
+  }
+  /* Sheet buttons that only close: secondary, and small. */
+  .sheet .close {
+    min-height: 32px;
+    padding: 4px 12px;
+    font-size: 14px;
+  }
+  /* The hand thrown in: two rows of five where the trick would be, so it
+     sits between the seats instead of over them. */
+  .thrown-in {
+    /* Hung from just under the top seats, so it clears the bid controls. */
+    top: calc(var(--seat-h) + 2px);
+    transform: translateX(-50%);
+    --m: clamp(40px, calc(var(--card-w) * 0.85), 56px);
+    display: grid;
+    gap: 4px;
+    width: auto;
+    max-width: none;
+    padding: 6px;
+    overflow: visible;
+    z-index: 3;
+  }
+  .thrown-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .thrown-in .close {
+    min-height: 26px;
+    padding: 2px 10px;
+    font-size: 13px;
   }
   .thrown-title {
-    margin: 0;
-    font-size: 15px;
+    margin: 0 0 0 4px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .thrown-title .who-name {
+    max-width: 5em;
   }
   .thrown-cards {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+  }
+  .thrown-row {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 3px;
+  }
+  .thrown-row :global(.card) {
+    --w: var(--m);
+  }
+  .thrown-row :global(.card:not(:first-child)) {
+    margin-left: calc(var(--m) * -0.42);
+  }
+  /* As in the hand, only the last card shows its big glyph. */
+  .thrown-row :global(.card:not(:last-child) .glyph) {
+    visibility: hidden;
   }
   .mini-slot {
     position: relative;
@@ -2004,6 +2205,113 @@
     color: var(--ink-muted);
   }
 
+  /* The result's room: from under the top seats to the table's foot, in
+     the felt's column. */
+  .result-layer {
+    position: absolute;
+    grid-column: felt;
+    grid-row: felt-start / tray-end;
+    inset: var(--seat-top) 0 0;
+    z-index: 9;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    pointer-events: none;
+  }
+  .result-layer .sheet {
+    position: relative;
+    left: auto;
+    top: auto;
+    transform: none;
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 440px);
+    max-height: 100%;
+    padding: 0;
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  .result-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 14px 16px 8px;
+  }
+  /* Phones have no room beside the side seats: the sheet covers them
+     whole, from under the top seats down, rather than cutting them in half. */
+  @media (max-width: 599px) {
+    .result-layer .sheet {
+      height: 100%;
+    }
+    .result-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: safe center;
+    }
+  }
+  .result-layer.cover .sheet {
+    height: 100%;
+  }
+  .result-layer.cover .result-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: safe center;
+  }
+  /* Wider screens: under the side seats, clear of every seat. */
+  @media (min-width: 600px) {
+    .result-layer {
+      top: var(--fit-top, var(--seat-top));
+    }
+    .result-layer .sheet {
+      width: min(100%, max(440px, var(--fit-w, 0px)));
+    }
+  }
+  /* A short desktop window: the result tightens to fit. */
+  @media (min-width: 600px) and (max-height: 760px) {
+    .result-body {
+      padding: 8px 14px 4px;
+    }
+    /* The headline and its count side by side. */
+    .result-head {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 4px 16px;
+    }
+    .result-head .ledger {
+      text-align: left;
+    }
+    .result .headline {
+      font-size: 22px;
+    }
+    .result .sub.said {
+      display: none;
+    }
+    .ledger {
+      margin: 2px 0 4px;
+    }
+    .result th {
+      padding: 2px 4px;
+    }
+    .result td {
+      height: 26px;
+    }
+    .result-foot {
+      padding: 4px 14px 8px;
+    }
+    .result-foot button {
+      min-height: 40px;
+    }
+  }
+  .result-foot {
+    flex: none;
+    padding: 8px 16px 14px;
+  }
+  .wait-seats {
+    margin: 0 0 8px;
+    font-size: 13px;
+  }
   .result {
     text-align: center;
     animation: rise var(--dur-reveal) var(--ease-settle) both;
@@ -2011,7 +2319,7 @@
   @keyframes rise {
     from {
       opacity: 0;
-      transform: translate(-50%, calc(-50% + 24px)) scale(0.96);
+      transform: translateY(24px) scale(0.96);
     }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -2067,6 +2375,44 @@
   .ledger li.total {
     color: var(--ink);
     font-weight: 700;
+  }
+  /* Phones: the result fits under the top seats without scrolling. */
+  @media (max-width: 599px) {
+    .headline {
+      font-size: 24px;
+    }
+    .result.big .headline {
+      font-size: 28px;
+    }
+    .run-word {
+      font-size: 40px;
+    }
+    .result .sub.said {
+      display: none;
+    }
+    .ledger {
+      margin: 4px 0 6px;
+      font-size: 14px;
+    }
+    .result td {
+      height: 28px;
+    }
+    .result-body {
+      padding: 10px 12px 4px;
+    }
+    .result-foot {
+      padding: 6px 12px 10px;
+    }
+    .result-foot .next {
+      flex-wrap: nowrap;
+      gap: 6px;
+    }
+    .result-foot .next > button:not(.primary) {
+      padding-inline: 12px;
+    }
+    .result-foot .next .primary {
+      min-width: 0;
+    }
   }
   /* An earned achievement slides down from the top after the result. */
   .achieved {
@@ -2151,10 +2497,11 @@
     font-family: var(--font-display);
     font-size: 30px;
     font-weight: 800;
+    line-height: 1.15;
     color: var(--ink);
   }
   .result .sub {
-    margin: 4px 0 12px;
+    margin: 2px 0 0;
     color: var(--ink-muted);
   }
   .result .sub strong {
@@ -2173,8 +2520,23 @@
     color: var(--ink-muted);
   }
   td {
-    padding: 6px 4px;
+    height: 34px;
+    padding: 0 4px;
     border-top: 1px solid var(--line);
+  }
+  /* Headers sit over their columns: names left, roles centred, numbers right. */
+  .role {
+    text-align: center;
+  }
+  /* Points taken: the same small pill for every row; those with cards open them. */
+  .pts {
+    display: inline-block;
+    min-width: 26px;
+    padding: 0 6px;
+    border-radius: 999px;
+    text-align: center;
+    line-height: 20px;
+    box-shadow: 0 0 0 1px var(--line);
   }
   tr.me td {
     font-weight: 700;
@@ -2210,54 +2572,53 @@
     color: var(--on-team-defense);
   }
 
-  /* The action strip: one slot whose content follows the phase. */
-  /* The strip has no panel of its own: prompts, bids and buttons sit on
-     the table itself. */
+  /* The action strip: one fixed slot whose content follows the phase. It
+     has no panel of its own, and nothing in it takes room: controls rise
+     from it over the felt's foot, on the table's own paper so the seats
+     behind never show through; the turn sits on the tray's rim. */
   .strip {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: center;
-    min-height: 64px;
-    padding: 6px 0;
+    position: relative;
+    z-index: 7;
+    height: var(--strip-h);
+    min-width: 0;
   }
-  /* After the hand the strip only holds buttons: they sit on the table
-     itself, with no panel behind them. */
-  .strip.bare {
-    min-height: 0;
-    padding: 4px 0;
-    background: none;
+  .controls {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 6px 0 4px;
+    background: var(--table);
   }
   .prompt {
     margin: 0;
     text-align: center;
     font-size: 15px;
   }
-  /* Half over the tray's top edge, like a label on its rim. The negative
-     margin hands most of the row back to the felt. */
-  .strip.pill {
-    position: relative;
-    z-index: 7;
-    justify-self: center;
-    min-height: 0;
-    margin-bottom: -22px;
+  /* Half over the tray's top edge, like a label on its rim. */
+  .strip .prompt {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    transform: translate(-50%, 50%);
+    max-width: calc(100% - 16px);
+    white-space: nowrap;
+  }
+  .strip .pill {
     padding: 5px 14px;
     border-radius: 999px;
     background: var(--card);
     color: var(--card-ink);
+    font-size: 14px;
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
   }
-  .strip.pill .prompt {
-    font-size: 14px;
-    white-space: nowrap;
-  }
-  .strip.pill + .tray {
-    padding-top: 18px;
-  }
-  .mine .prompt strong {
-    color: var(--accent);
+  /* Someone else's turn is news, not a button: a plain caption. */
+  .strip .caption {
+    font-size: 13px;
+    color: var(--ink-muted);
   }
   /* On the card-paper pill, the light-theme plum keeps its contrast. */
-  .strip.pill .prompt strong {
+  .strip .pill strong {
     color: #8e2f6b;
   }
   .variants,
@@ -2268,16 +2629,22 @@
     align-items: center;
     gap: 8px;
   }
+  /* The result's buttons fill its width; the primary takes what is left. */
   .next .primary {
-    min-width: 160px;
+    flex: 1 1 auto;
+    min-width: 120px;
   }
-  .next .muted {
-    font-size: 14px;
+  .next > button:not(.primary) {
+    flex: none;
+  }
+  .foot-react {
+    display: inline-flex;
+    flex: none;
   }
 
   .tray {
     position: relative;
-    padding: 8px 8px 12px;
+    padding: 18px 8px 10px;
     border-radius: 16px;
     outline: 3px solid transparent;
     outline-offset: -3px;
@@ -2356,13 +2723,20 @@
   .me-row {
     display: flex;
     justify-content: center;
+    align-items: center;
     gap: 8px;
-    min-height: 20px;
+    height: 20px;
     font-size: 13px;
     font-weight: 600;
   }
+  /* Your points: the same pill as on every seat. */
   .my-points {
+    padding: 0 6px;
+    border-radius: 999px;
+    color: var(--ink);
     font-variant-numeric: tabular-nums;
+    line-height: 18px;
+    box-shadow: 0 0 0 1px var(--line);
   }
   .spectating {
     padding: 16px;
@@ -2378,28 +2752,31 @@
   /* Desktop: seats become plates with their won pile, and the tray carries
      your own seat at its left and your tools at its right. */
   @media (min-width: 1024px) and (min-height: 640px) {
+    .table {
+      --seat-top: 112px;
+    }
     .ring {
       --seat-w: clamp(160px, 32cqh, 192px);
-      --seat-h: 96px;
+      --seat-h: 100px;
+      /* 1.2 times the hand's card (Hand.svelte: 12% of the window's height). */
+      --trick-max: calc(1.2 * clamp(88px, 12vh, 124px));
     }
     .react-spot,
-    .me-row {
+    .me-row,
+    .foot-react {
       display: none;
     }
+    /* Your seat, the hand across all the room between, your tools. */
     .tray {
       display: grid;
-      grid-template-columns: minmax(0, 170px) minmax(0, 1fr) minmax(0, 170px);
+      grid-template-columns: 170px minmax(0, 1fr) auto;
       grid-template-areas: 'me hand tools';
       align-items: center;
-      column-gap: 8px;
-      padding: 4px 10px 6px;
-    }
-    .strip.pill + .tray {
-      padding-top: 14px;
+      column-gap: 12px;
+      padding: 14px 10px 8px;
     }
     .tray > :global(.hand) {
       grid-area: hand;
-      padding-top: 10px;
     }
     .me-seat {
       grid-area: me;
@@ -2424,12 +2801,17 @@
      상황판, the scores, the log and the last round; the top line goes. */
   @media (min-width: 1100px) and (orientation: landscape) and (min-height: 600px) {
     .table {
+      --event-h: 0px;
       grid-template-columns: minmax(0, 1fr) clamp(260px, 21vw, 300px);
-      grid-template-rows: auto minmax(0, 1fr) auto auto;
+      grid-template-rows: var(--event-h) minmax(0, 1fr) var(--strip-h) auto;
       grid-template-areas: 'event side' 'felt side' 'strip side' 'tray side';
       column-gap: 16px;
     }
-    .status {
+    .table.tips {
+      --event-h: 36px;
+    }
+    .status,
+    .felt > .review {
       display: none;
     }
     /* The event line lives in 기록 here; tips for learners stay. */
@@ -2622,9 +3004,9 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 32px;
-    height: 32px;
-    border: 2px solid var(--accent);
+    width: 28px;
+    height: 28px;
+    border: 1.5px solid var(--accent);
     border-radius: 50%;
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.85);
@@ -2636,14 +3018,17 @@
     opacity: 1;
     transform: translate(-50%, -50%);
   }
+  /* Name, then the badge in a column of its own so badges line up. */
   .who-cell {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 6px;
     min-width: 0;
   }
   .row-name {
     min-width: 0;
+    max-width: 9em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2675,6 +3060,10 @@
     flex: 1 1 0;
     min-height: 0;
     overflow: hidden;
+  }
+  /* A short log takes only its lines, not an empty block. */
+  .log-pane.short {
+    flex: 0 1 auto;
   }
   .log {
     display: grid;
@@ -2745,9 +3134,15 @@
     max-width: 44px;
     font-size: 11px;
   }
-  .last-cards figure.won figcaption {
+  .last-cards figure.won figcaption,
+  .review-cards figure.won figcaption {
     color: var(--ink);
     font-weight: 700;
+  }
+  /* Who took the round: an ink outline; plum is only for "act now". */
+  figure.won :global(.card) {
+    outline: 2px solid var(--ink);
+    outline-offset: 1px;
   }
   .last-cards .mini-slot {
     margin-bottom: 10px;
@@ -2780,22 +3175,29 @@
     .me-row {
       display: none;
     }
+    /* Beside the felt the strip has room of its own: nothing lies over. */
     .strip {
       align-self: stretch;
+      height: auto;
       overflow-y: auto;
     }
-    .strip.pill {
-      align-self: center;
-      margin-bottom: 0;
+    .controls,
+    .strip .prompt {
+      position: static;
+      transform: none;
     }
-    .strip.pill + .tray {
+    .strip .prompt {
+      align-self: center;
+      white-space: normal;
+    }
+    .tray {
       padding-top: 0;
     }
     .ring {
+      --cy: 50cqh;
       max-width: none;
     }
-    .trick,
-    .note {
+    .ring {
       --card-w: clamp(36px, min((100cqw - 2 * var(--seat-w) - 16px) / 3.55, (50cqh - 6px) / 2.1), 72px);
     }
     .spot.pos-1,

@@ -85,13 +85,17 @@
     return (width - big) / 9 >= MIN_STEP ? big : 60;
   });
 
+  /** Room enough for the index alone (its column is about 31% of the card):
+   * a 13- or 14-card hand still fits one row at this step. */
+  const minStep = $derived(Math.max(20, Math.ceil(cardWidth * 0.31)));
+
   function stepFor(count: number): number {
     if (count <= 1 || width === 0) return cardWidth + 6;
     return Math.min(cardWidth + 6, (width - cardWidth) / (count - 1));
   }
 
   const rows = $derived.by(() => {
-    if (stepFor(cards.length) >= MIN_STEP) return [cards];
+    if (stepFor(cards.length) >= minStep) return [cards];
     const half = Math.ceil(cards.length / 2);
     return [cards.slice(0, half), cards.slice(half)];
   });
@@ -132,7 +136,17 @@
 
 <!-- Tapping the tray outside a card lowers the raised one. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="hand" class:deal bind:clientWidth={width} onclick={(e) => e.target === e.currentTarget && (raised = null)}>
+<!-- The hand is always one row tall, whatever it holds (even nothing), so the
+     table above never moves; a hand too big for one row lifts its first row
+     over the rim instead. -->
+<div
+  class="hand"
+  class:deal
+  class:two={rows.length > 1}
+  style:--row-h="{Math.round(cardWidth * 1.4)}px"
+  bind:clientWidth={width}
+  onclick={(e) => e.target === e.currentTarget && (raised = null)}
+>
   {#each rows as row, r (r)}
     {@const step = stepFor(row.length)}
     <div class="row" class:overlapped={step < cardWidth} style:--overlap="{step - cardWidth}px">
@@ -160,7 +174,12 @@
   .hand {
     display: grid;
     gap: 8px;
+    height: calc(14px + var(--row-h));
     padding-top: 14px;
+    box-sizing: border-box;
+  }
+  .hand.two > .row:first-child {
+    margin-top: calc(-8px - var(--row-h));
   }
   .row {
     display: flex;

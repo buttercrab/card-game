@@ -4,18 +4,19 @@
   import SuitIcon from './SuitIcon.svelte';
   import type { Color, Lead, Suit } from './types';
 
-  let { lead }: { lead: Lead } = $props();
+  /** `compact` drops the colour's name, for small cards: the suits say it. */
+  let { lead, compact = false }: { lead: Lead; compact?: boolean } = $props();
 
   const SUITS_OF: Record<Color, Suit[]> = { Red: ['Heart', 'Diamond'], Black: ['Spade', 'Club'] };
   const tone = $derived('Suit' in lead ? lead.Suit : lead.Color === 'Red' ? 'Heart' : 'Spade');
 </script>
 
-<span class="tag suit-{tone}" aria-label="조커가 부른 무늬: {leadLabel(lead)}">
+<span class="tag suit-{tone}" class:compact aria-label="조커가 부른 무늬: {leadLabel(lead)}">
   {#if 'Suit' in lead}
     <SuitIcon suit={lead.Suit} class="icon" />
   {:else}
     <!-- Name the suits that follow: with four colours, diamonds look blue but count as red. -->
-    {leadLabel(lead)}
+    {#if !compact}{leadLabel(lead)}{/if}
     {#each SUITS_OF[lead.Color] as suit (suit)}
       <SuitIcon {suit} class="icon suit-{suit}" />
     {/each}
@@ -42,6 +43,18 @@
     white-space: nowrap;
     gap: 3px;
     z-index: 1;
+  }
+  .tag.compact {
+    min-width: 0;
+    max-width: 100%;
+    height: 20px;
+    padding: 0 4px;
+    gap: 1px;
+    border-width: 1.5px;
+  }
+  .tag.compact :global(.icon) {
+    width: 12px;
+    height: 12px;
   }
   .tag :global(.icon) {
     width: 14px;

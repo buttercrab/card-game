@@ -19,25 +19,29 @@
   const bid = $derived<Contract>({ trump: chosenTrump, count: chosenCount });
 </script>
 
+<!-- Phones: the suits and counts on one row, the buttons full width under
+     them. Wider screens: one centred row. -->
 <div class="bid">
   {#if bids.length > 0}
-    <div class="chips" role="radiogroup" aria-label="기루다">
-      {#each trumps as t (t ?? 'nt')}
-        <button
-          class="chip suit-{t ?? 'nt'}"
-          role="radio"
-          aria-checked={t === chosenTrump}
-          aria-label={t ? undefined : '노기루다'}
-          onclick={() => (trump = t)}
-        >
-          {#if t}<SuitIcon suit={t} class="suit" />{:else}노기루다{/if}
-        </button>
-      {/each}
-    </div>
-    <div class="chips counts" role="radiogroup" aria-label="공약 수">
-      {#each counts as c (c)}
-        <button class="chip num" role="radio" aria-checked={c === chosenCount} onclick={() => (count = c)}>{c}</button>
-      {/each}
+    <div class="picks">
+      <div class="chips" role="radiogroup" aria-label="기루다">
+        {#each trumps as t (t ?? 'nt')}
+          <button
+            class="chip suit-{t ?? 'nt'}"
+            role="radio"
+            aria-checked={t === chosenTrump}
+            aria-label={t ? undefined : '노기루다'}
+            onclick={() => (trump = t)}
+          >
+            {#if t}<SuitIcon suit={t} class="suit" />{:else}노기루다{/if}
+          </button>
+        {/each}
+      </div>
+      <div class="chips counts" role="radiogroup" aria-label="공약 수">
+        {#each counts as c (c)}
+          <button class="chip num" role="radio" aria-checked={c === chosenCount} onclick={() => (count = c)}>{c}</button>
+        {/each}
+      </div>
     </div>
   {/if}
   <div class="actions">
@@ -53,14 +57,26 @@
   .bid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
+    gap: 4px;
   }
-  .chips {
+  .picks {
     display: flex;
+    align-items: center;
     gap: 6px;
+    min-width: 0;
     overflow-x: auto;
     padding: 2px 2px 4px;
     scrollbar-width: none;
+  }
+  .chips {
+    display: flex;
+    flex: none;
+    gap: 6px;
+  }
+  /* A hairline between the suits and the counts. */
+  .counts {
+    padding-left: 8px;
+    border-left: 1px solid var(--line);
   }
   .chip :global(.suit) {
     width: 18px;
@@ -86,11 +102,37 @@
   }
   .actions {
     display: flex;
-    justify-content: flex-end;
     gap: 8px;
+  }
+  .actions > button:not(.primary) {
+    flex: none;
+    min-width: 88px;
   }
   .actions .primary {
     flex: 1;
-    max-width: 240px;
+  }
+  @media (min-width: 600px) {
+    .bid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 8px 16px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .picks {
+      flex: 0 1 auto;
+    }
+    .counts {
+      padding-left: 12px;
+    }
+    .actions {
+      flex: none;
+    }
+    .actions .primary {
+      flex: none;
+      min-width: 180px;
+    }
   }
 </style>

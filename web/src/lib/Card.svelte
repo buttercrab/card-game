@@ -467,18 +467,22 @@
     transform: translate(-50%, -50%) rotate(180deg);
   }
 
+  /* Set upright down the left edge, under the index: the strip of a card
+     that still shows in an overlapped hand. */
   .kitty {
     position: absolute;
     left: 5cqw;
     bottom: 5cqw;
-    padding: 1px 6px;
+    padding: 5px 1px;
     border-radius: 999px;
     background: #645d53;
     color: #fbf8f2;
     font-family: var(--font);
     font-size: 11px;
     font-weight: 700;
-    line-height: 1.4;
+    line-height: 1.2;
+    writing-mode: vertical-rl;
+    text-orientation: upright;
     white-space: nowrap;
   }
 
@@ -509,11 +513,12 @@
     }
   }
   /* Cards that cannot be played sink back and lose some colour, rather
-     than greying out; they still answer a tap with the reason. */
+     than greying out; they stay solid paper (never see-through, which
+     showed the next card's edge and went muddy in dark mode) and still
+     answer a tap with the reason. */
   .unplayable {
     translate: 0 4px;
-    opacity: 0.62;
-    filter: saturate(0.45);
+    filter: saturate(0.4) brightness(0.9);
   }
   .hinted {
     outline: 2px dashed var(--accent);
