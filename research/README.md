@@ -1,0 +1,33 @@
+# Research
+
+Results of the AI track live here, next to the code that produced them.
+[docs/PLAN.md](../docs/PLAN.md) says what to do and in what order; this
+folder records what happened.
+
+| Folder | What it holds |
+| --- | --- |
+| [`evals/`](evals) | Eval suite definitions, by version: the scoreboard |
+| [`experiments/`](experiments) | One folder per experiment: config, results, notes |
+| [`manifests/`](manifests) | Manifests of large artifacts kept outside git |
+| [`loop/`](loop) | The experiment runner and the rules for agents that use it |
+
+## Conventions
+
+- **An experiment is a config file, a commit and seeds.** Anyone with the
+  repository reproduces it from those three; nothing else may matter.
+- **Large artifacts stay outside git.** Self-play shards and weights are
+  stored elsewhere; their manifests (path, size, SHA-256, the producing
+  commit, config and seeds) are committed in `manifests/`.
+- **Evals are out of reach of training.** The training side and the loop
+  read eval results but never change suites or see held-out rule sets.
+- **A win counts once it repeats on fresh deals**, and reaches players
+  only after beating what is live and the owner's go-ahead.
+- **Public repository:** no secrets, no player data, no real game logs.
+
+## Log
+
+Each phase ends with a short entry here.
+
+- **P0, foundations (2026-10):** `engine::Encode` (encoding spec
+  `mighty-1`, pinned in `crates/mighty/tests/encoding.json`),
+  `engine::DynGame`, the `ml/` project and these folders. No results yet.
