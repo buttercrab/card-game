@@ -12,7 +12,7 @@ use crate::card::{Card, Suit};
 use crate::rules::{Contract, Rules};
 use crate::state::{Action, Exchange, FriendCall, Phase, Play, State};
 use crate::view::View;
-use engine::{Seat, Viewer};
+use engine::Seat;
 use std::collections::HashMap;
 
 /// How the search weighs its sampled deals by what the other players did.
@@ -271,7 +271,7 @@ impl Reading {
             return OWN_CALL;
         }
         let legal = state.legal_actions();
-        let usual = policy.decide(&View::new(state, Viewer::Seat(e.declarer)), &legal);
+        let usual = policy.decide(&View::for_policy(state, e.declarer), &legal);
         let usual = if usual == Action::CallFriend(call) {
             1.0 - self.slip
         } else {
@@ -300,7 +300,7 @@ fn decide(policy: &SimpleBot, state: &State, seat: Seat) -> (u64, Card) {
     let legal = state.legal_actions();
     let cards = legal.iter().fold(0, |m, a| m | bit(card_of(a)));
     let choice = if cards.count_ones() > 1 {
-        card_of(&policy.decide(&View::new(state, Viewer::Seat(seat)), &legal))
+        card_of(&policy.decide(&View::for_policy(state, seat), &legal))
     } else {
         card_of(&legal[0])
     };
@@ -350,6 +350,7 @@ mod tests {
     use super::*;
     use crate::search::determinize;
     use crate::state::Options;
+    use engine::Viewer;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 

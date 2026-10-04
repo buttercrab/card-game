@@ -78,7 +78,36 @@ pub enum PhaseView {
 }
 
 impl View {
+    /// The view of `seat`, without what the simple bot never looks at
+    /// (hand sizes, points taken, the bidding): playouts and reading build
+    /// one for every card played, so it should cost little.
+    pub(crate) fn for_policy(state: &State, seat: Seat) -> View {
+        let mut view = View::lean(state, Viewer::Seat(seat));
+        view.hand = state.hands[seat].clone();
+        view
+    }
+
     pub(crate) fn new(state: &State, viewer: Viewer) -> View {
+        let me = match viewer {
+            Viewer::Seat(s) => Some(s),
+            Viewer::Spectator => None,
+        };
+        View {
+            hand: me.map(|s| state.hands[s].clone()).unwrap_or_default(),
+            hand_sizes: state.hands.iter().map(Vec::len).collect(),
+            points_taken: state
+                .taken
+                .iter()
+                .map(|t| t.iter().copied().filter(|c| c.is_point()).collect())
+                .collect(),
+            bids: state.bids.clone(),
+            redealt: state.redealt.clone(),
+            ..View::lean(state, viewer)
+        }
+    }
+
+    /// The rules and the phase as `viewer` sees them; nothing else.
+    fn lean(state: &State, viewer: Viewer) -> View {
         let me = match viewer {
             Viewer::Seat(s) => Some(s),
             Viewer::Spectator => None,
@@ -127,16 +156,12 @@ impl View {
             viewer,
             rules: state.rules.clone(),
             first_bidder: state.first_bidder,
-            hand: me.map(|s| state.hands[s].clone()).unwrap_or_default(),
-            hand_sizes: state.hands.iter().map(Vec::len).collect(),
-            points_taken: state
-                .taken
-                .iter()
-                .map(|t| t.iter().copied().filter(|c| c.is_point()).collect())
-                .collect(),
+            hand: Vec::new(),
+            hand_sizes: Vec::new(),
+            points_taken: Vec::new(),
             phase,
-            bids: state.bids.clone(),
-            redealt: state.redealt.clone(),
+            bids: Vec::new(),
+            redealt: None,
         }
     }
 }

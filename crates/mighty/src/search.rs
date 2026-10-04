@@ -357,7 +357,7 @@ pub fn finish(mut policy: SimpleBot, endgame: usize, mut state: State, me: Seat,
                 {
                     return payoffs[me];
                 }
-                let view = View::new(&state, Viewer::Seat(seat));
+                let view = View::for_policy(&state, seat);
                 let legal = state.legal_actions();
                 let choice = policy.act(&view, &legal, rng);
                 state.step(seat, choice);
