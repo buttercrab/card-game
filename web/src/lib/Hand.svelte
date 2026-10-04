@@ -165,6 +165,11 @@
   .spot:has(:global(.raised)) {
     z-index: 1;
   }
+  /* An overlapped card's corner glyph would peek out from under the next
+     card as a stray sliver; only the last card in a row shows its own. */
+  .spot:not(:last-child) :global(.glyph) {
+    visibility: hidden;
+  }
   .deal .spot {
     animation: deal-in var(--dur-travel) var(--ease-settle) both;
     animation-delay: calc(var(--i) * 45ms);

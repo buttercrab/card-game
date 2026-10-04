@@ -1,5 +1,6 @@
 <script lang="ts">
   import Card from './Card.svelte';
+  import BackArt from './CardBack.svelte';
   import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './achievements';
   import { settings, type Speed } from './settings.svelte';
 
@@ -107,7 +108,7 @@
           title={open ? BACK_NAMES[id] : `잠김 · ${howTo('back', id)}`}
           aria-label={open ? BACK_NAMES[id] : `${BACK_NAMES[id]}, 잠김: ${howTo('back', id)}`}
           onclick={() => open && (settings.cardBack = id)}
-        >{#if !open}🔒{/if}</button>
+        ><BackArt {id} />{#if !open}<span class="lock">🔒</span>{/if}</button>
       {/each}
     </div>
   </div>
@@ -227,12 +228,20 @@
     opacity: 0.45;
     cursor: not-allowed;
   }
-  .back-charcoal { background: #2a2622; }
-  .back-plum { background: #5a2445; }
-  .back-indigo { background: #22305c; }
-  .back-gold { background: #6a4c10; }
-  .back-ink { background: #0d0d0e; }
-  .back-jade { background: #1e4a3e; }
+  /* Back swatches are little cards showing the back itself. */
+  .swatch[class*='back-'] {
+    position: relative;
+    width: 30px;
+    height: 42px;
+    overflow: hidden;
+    border-radius: 5px;
+  }
+  .lock {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+  }
   .table-hanji { background: #efebe3; }
   .table-celadon { background: #e2eae2; }
   .table-indigo { background: #e3e7ef; }

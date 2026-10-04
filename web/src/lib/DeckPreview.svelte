@@ -1,6 +1,8 @@
 <script lang="ts">
   // A sheet of every card face, size and state in both themes, for design review.
+  import { BACK_NAMES, type CardBack } from './achievements';
   import Card from './Card.svelte';
+  import BackArt from './CardBack.svelte';
   import LeadTag from './LeadTag.svelte';
   import { sealOf, SUITS } from './cards';
   import { settings } from './settings.svelte';
@@ -107,6 +109,13 @@
           <figure><span class="tagged"><Card card={{ Joker: 'Red' }} seal="joker" /><LeadTag lead={{ Color: 'Red' }} /></span><figcaption>조커 선 빨강</figcaption></figure>
           <figure><span class="tagged"><Card card={{ Joker: 'Black' }} seal="joker" /><LeadTag lead={{ Suit: 'Club' }} /></span><figcaption>조커 선 ♣</figcaption></figure>
         </div>
+
+        <h3>뒷면</h3>
+        <div class="row states">
+          {#each Object.keys(BACK_NAMES) as id (id)}
+            <figure><span class="back-sample"><BackArt id={id as CardBack} /></span><figcaption>{BACK_NAMES[id as CardBack]}</figcaption></figure>
+          {/each}
+        </div>
       </section>
     {/each}
   </div>
@@ -184,6 +193,14 @@
   .tagged {
     position: relative;
     margin-bottom: 8px;
+  }
+  .back-sample {
+    position: relative;
+    display: block;
+    width: 88px;
+    height: 123px;
+    overflow: hidden;
+    border-radius: 8px;
   }
   figcaption {
     font-size: 12px;

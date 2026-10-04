@@ -13,12 +13,13 @@ colors:
   accent-deep: "#6B2251"
   on-accent: "#FFFFFF"
   suit-spade: "#1C1915"
-  suit-heart: "#B8342A"
+  suit-heart: "#A3271F"
   suit-diamond: "#C2620A"
   suit-club: "#1D5FB0"
   team-declarer: "#E69F00"
   team-defense: "#3B4A6B"
-  seal: "#C23B22"
+  card-gold: "#A77A12"
+  card-warm: "#FBF4E6"
   danger: "#B3261E"
   table-dark: "#17191C"
   panel-dark: "#202327"
@@ -66,7 +67,6 @@ typography:
     lineHeight: 1
     fontFeature: "'tnum'"
 rounded:
-  seal: "2px"
   card: "8px"
   control: "12px"
   panel: "16px"
@@ -133,7 +133,7 @@ The brief for every change to the web table. Research and decisions behind it: [
 
 **Creative North Star: "The Hanji Table"**
 
-A game of Mighty played on warm paper. The table is a quiet off-white surface like hanji (한지); ink is near-black; the only bright objects are the cards, and the only loud moments are the ones the game earns: a card landing, a trick swept to its winner, the friend revealed, the hand scored. Korean flavour arrives as small, exact details, not as a theme: a seal stamp (낙관) on the special cards, a chilbo (칠보) pattern on the card back, jaju (자주) plum as the one accent.
+A game of Mighty played on warm paper. The table is a quiet off-white surface like hanji (한지); ink is near-black; the only bright objects are the cards, and the only loud moments are the ones the game earns: a card landing, a trick swept to its winner, the friend revealed, the hand scored. Korean in the words, not the ornaments: the game speaks Mighty's own vocabulary, and the look is cut paper, flat figures and jaju (자주) plum as the one accent. No stamps, seals or traditional patterns.
 
 The table is a tool first. Five friends glance at a phone between jokes; everything they need (whose turn, what the contract is, who the friend might be, how many points the declarer has) must read in under a second. Premium comes from removing things, then letting motion and sound do the work that detail would have done.
 
@@ -165,7 +165,7 @@ A warm paper neutral, near-black ink, four suit inks, two team colours, and a si
 
 ### Suits (card faces and trump markers only)
 The four-colour deck is on by default; a setting switches diamonds and clubs back to red and ink.
-- **Spade** (#1C1915), **Heart** (#B8342A), **Diamond** (#C2620A, orange: still reads as a red suit), **Club** (#1D5FB0, blue). Diamond passes 3.9:1 on Card (enough for the bold index), the others 4.5:1 or more. The suit glyph is always drawn, so colour is never the only cue.
+- **Spade** (#1C1915), **Heart** (#A3271F), **Diamond** (#C2620A, orange: still reads as a red suit), **Club** (#1D5FB0, blue). Diamond passes 3.9:1 on Card (enough for the bold index), the others 4.5:1 or more. The heart is kept darker than the diamond (1.76:1 between them) so the two reds part by lightness, not only hue, for red-green colour-blind players. The suit glyph is always drawn, so colour is never the only cue.
 
 ### Teams (seat badges, result sheet)
 Following the convention Korean Mighty players already know from MightyKorea:
@@ -173,8 +173,8 @@ Following the convention Korean Mighty players already know from MightyKorea:
 - **Defense** (#3B4A6B; dark #8FA3C9): 야당.
 Badges always carry the word (주공, 프렌드, 야당); the colour is the second cue.
 
-### Seal
-- **Seal Red** (#C23B22): the stamp on the mighty, the jokers and the joker-call cards. It is always a small square with a Hangul character inside, which keeps it distinct from the heart suit.
+### Card gold
+- **Card Gold** (#A77A12) and **Card Warm** (#FBF4E6; dark #EFE6D3): crowns, props and the 마이티's rule and warmer stock. Flat ochre, never metallic; it does not flip in dark mode because cards stay light.
 
 ### Named Rules
 **The One Meaning Rule.** Each colour means one thing. Plum means "act now"; suit inks mean suits; team colours mean teams. No colour is ever used for decoration.
@@ -247,17 +247,17 @@ Rounded, friendly UI; crisp card faces.
 - **Buttons and inputs:** 12px radius.
 - **Chips and badges:** full pill.
 - **Panels and sheets:** 16px on exposed corners.
-- **Seal stamps:** square, 2px radius, the only sharp shape.
 - **Suit glyphs:** drawn as SVG paths, never emoji or font glyphs, so they look identical on every device.
 
 ## Components
 
 ### Card
-- **Face.** Corner index top-left (rank above suit glyph), mirrored bottom-right. Number cards show pips only at desktop hand size and above; J, Q, K show a large letter and no portrait. At phone sizes only the index is drawn.
-- **Court figures.** J, Q and K are flat figures built from circles and triangles (`CourtArt.svelte`), robed in the suit colour; each suit has its own crown, tiara and hat, and the suit sits on the chest. The 마이티 is its spade in a dotted gold ring.
-- **Jokers.** Jesters with three bells. The two must differ three ways at once: ink colour (흑 ink / 홍 red), corner label (`흑` / `홍` under a star), and the red one's dashed ring. Never rely on colour alone.
-- **Seal stamps.** Top-right square seal: `마` on the mighty, `조` on each joker, `콜` on the joker-call cards, for the current rules and trump.
-- **Back.** Charcoal ink (#2A2622) with a fine chilbo (interlocking circles) pattern in Card Edge lines, drawn in CSS or a small SVG. Neutral on purpose: plum is reserved for "act now".
+- **Face.** Corner index top-left (rank above suit glyph), mirrored bottom-right. Pips, figures and the bottom index appear from 80px wide; below that a card shows its index and one large glyph.
+- **Role cue.** Under the corner index, a small shape names the card's role (`CueIcon.svelte`): a crown for K, a tiara for Q, a cap and feather for J, a jester's hat for jokers, the ringed suit for the 마이티, a bell for the joker-call card. It is what you read in an overlapped hand, and small cards use it as their glyph. Number cards have none, so the specials stand out by shape.
+- **Court figures.** J, Q and K are flat figures built from circles and triangles (`CourtArt.svelte`), robed in the suit colour; each suit has its own crown, tiara and hat, and the suit sits on the chest. Each rank has its own outline and prop: the king wide with a sceptre, the queen a bell holding a flower, the jack tall with a halberd; the king glances left, the jack right.
+- **The 마이티.** Its suit inside a gold ring of rays under a small crown, on warmer stock (Card Warm) inside a thin gold rule.
+- **Jokers.** Jesters with three bells, inside an ink rule. The two must differ three ways at once: ink colour (흑 ink / 홍 red), corner label (`흑` / `홍` under a star), and the rule (solid for 흑, dashed for 홍). Never rely on colour alone.
+- **Back.** One geometric idea per back (`CardBack.svelte`), the same either way up, in one lighter tone over the ground inside a 3.5px inset rule: 숯 the spade both ways tip to tip, 자두 frames within frames (첫 승리), 쪽빛 a wall (철벽 야당), 금 twenty dots round a ring, one per point card (큰 그림), 먹 one corner-to-corner sweep (런), 옥 rings from two corners (마이티 중독). Neutral on purpose: plum is reserved for "act now".
 - **States.** Rest; raised (first tap); playable vs unplayable (40% opacity, not tappable); won-trick highlight (accent outline for one beat); kitty tag (`키티` pill) during the exchange.
 
 ### Hand
@@ -322,10 +322,10 @@ Every event has one of four tiers, so loudness always means the same thing. The 
 | 2 · big | 주공, 프렌드 revealed, 마이티, 조커, 조커콜, 딜미스 | The seat wiggles (squash and fading wobble, 0.4 s) and a short ink label pops in under it for 1.5 s, with its own motif; no label where a badge already says it (주공, 프렌드); the friend's plate turns over; the 마이티 and jokers land heavy with a 110 ms hold and a fading outline. |
 | 3 · huge | The result; 런 | The result is counted out step by step; 런 turns the headline into one large gold word with a 2 px table nudge. At most once per hand. |
 
-- **Never block play.** Seals, tags and holds run over the table; a tap skips the counted result.
+- **Never block play.** Labels, tags and holds run over the table; a tap skips the counted result.
 - **At the seat.** Calls appear where they were made, so everyone sees who.
 - **Ink, not particles.** No screen shake below tier 3; no voice lines.
-- **Motion off or reduced** shows the same seals and results without movement.
+- **Motion off or reduced** shows the same labels and results without movement.
 
 ## Sound
 
@@ -343,6 +343,22 @@ Sound supplies the tactile feel that flat visuals lack. On by default at 70% vol
 
 The first pass synthesises every cue with Web Audio (`web/src/lib/sound.ts`): filtered noise for paper sounds, a major pentatonic scale for notes. Nothing to download or license. Recorded CC0 packs (Kenney Casino Audio and Interface Sounds, BMacZero playing-card sounds) can replace individual cues later within a 200KB budget.
 
+## Art rules
+
+Every drawing in the game, from court figures to icons and card backs, follows these.
+
+1. **The paper test.** It could be cut from flat coloured paper: no gradients, glows, bevels, metallic sheen, particles or blur.
+2. **Shapes.** Circles, triangles, bells, rounded rectangles and soft curves. A figure is at most two shapes for the head and hat and three for the body, plus one prop.
+3. **Tones.** At most four per figure: the suit ink (currentColor), Card Gold, skin #F3E3CF and the card paper.
+4. **Eyes.** Always two dots, r 2.3 on a head of r 18–20, 14 apart. Expression comes only from where they look, a lid (a squash) and at most one mouth arc. No pupils, brows or blush.
+5. **Stroke.** Only round heads are outlined (3 units at 120×160); everything else is a fill.
+6. **Status by form.** A special card or role is shown by its frame, edge or shape, never by a stamp or a Hangul character in a box.
+7. **Backs** carry one geometric idea, read the same either way up, use one tone over the ground and keep the inset rule.
+8. **Motion.** Transform and opacity only; figures live by blinking, glancing and hopping. Everything respects reduced motion.
+9. **No emoji in the interface chrome.** Icons are drawn in the same language.
+10. **The squint test.** At 40px and blurred, rank and suit can still be named.
+11. **Restraint.** Before adding something, remove something.
+
 ## Do's and Don'ts
 
 **Do**
@@ -354,6 +370,7 @@ The first pass synthesises every cue with Web Audio (`web/src/lib/sound.ts`): fi
 
 **Don't**
 - Use green felt, gold-on-black, wood, leather, gradients, glass, or blurred shadows.
+- Use stamps, seals, traditional Korean patterns, foil or holo sheens: the casino and "Korean game" look.
 - Use plum for anything except "you can act now".
 - Show more than one primary button at a time.
 - Use dropdowns or modal dialogs for bids, exchange or friend calls.

@@ -6,7 +6,6 @@
 
   const SUIT_NAME: Record<Suit, string> = { Spade: '스페이드', Diamond: '다이아몬드', Heart: '하트', Club: '클로버' };
   const RANK: Record<number, string> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
-  const SEAL_CHAR: Record<Seal, string> = { mighty: '마', joker: '조', call: '콜' };
   const SEAL_NAME: Record<Seal, string> = { mighty: '마이티', joker: '조커', call: '조커콜' };
 
   // Pip centres as percentages of the pip box, for ranks 2 to 10.
@@ -36,7 +35,9 @@
 </script>
 
 <script lang="ts">
+  import CardBack from './CardBack.svelte';
   import CourtArt from './CourtArt.svelte';
+  import CueIcon, { type Cue } from './CueIcon.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { settings } from './settings.svelte';
 
@@ -86,6 +87,16 @@
     if (suit === 'Club') return settings.fourColor ? 'club' : 'spade';
     return 'spade';
   });
+  /** The role shape shown where the figure does not fit, if any. */
+  const cue = $derived.by((): Cue | null => {
+    if (joker) return 'joker';
+    if (seal === 'mighty') return 'mighty';
+    if (seal === 'call') return 'call';
+    if (rank === 13) return 'K';
+    if (rank === 12) return 'Q';
+    if (rank === 11) return 'J';
+    return null;
+  });
   const jokerLabel = $derived(twoJokers ? (joker === 'Red' ? '홍' : '흑') : '조커');
   // On a desktop, a card under the pointer leans toward it a little, like
   // a real card picked up by one corner (Balatro, kept to a few degrees).
@@ -127,10 +138,10 @@
 
 {#snippet face()}
   {#if card}
-    <span class="corner top">{@render index()}</span>
+    <span class="corner top">{@render index()}{#if cue}<CueIcon {cue} suit={suit ?? 'Spade'} class="index-cue" />{/if}</span>
     <span class="corner bottom">{@render index()}</span>
     {#if joker}
-      <span class="centre art" class:ring={joker === 'Red'}><CourtArt figure="joker" /></span>
+      <span class="centre art"><CourtArt figure="joker" /></span>
     {:else if suit && rank >= 11 && rank <= 13}
       <span class="centre art"><CourtArt figure={rank === 13 ? 'K' : rank === 12 ? 'Q' : 'J'} {suit} /></span>
     {:else if suit && rank === 14 && seal === 'mighty'}
@@ -144,9 +155,10 @@
         {/each}
       </span>
     {/if}
-    <span class="glyph" class:ring={joker === 'Red'}>{#if joker}<SuitIcon suit="Star" />{:else if suit}<SuitIcon {suit} />{/if}</span>
-    {#if seal}<span class="seal" aria-hidden="true">{SEAL_CHAR[seal]}</span>{/if}
+    <span class="glyph">{#if cue}<CueIcon {cue} suit={suit ?? 'Spade'} />{:else if suit}<SuitIcon {suit} />{/if}</span>
     {#if kitty}<span class="kitty" aria-hidden="true">키티</span>{/if}
+  {:else}
+    <CardBack />
   {/if}
 {/snippet}
 
@@ -154,6 +166,9 @@
   <button
     class="card {size} ink-{ink}"
     class:back={!card}
+    class:frame-mighty={seal === 'mighty'}
+    class:frame-joker={!!joker}
+    class:red={joker === 'Red'}
     class:raised
     class:hinted
     class:unplayable
@@ -175,6 +190,9 @@
   <div
     class="card {size} ink-{ink}"
     class:back={!card}
+    class:frame-mighty={seal === 'mighty'}
+    class:frame-joker={!!joker}
+    class:red={joker === 'Red'}
     class:raised
     class:unplayable
     class:won
@@ -309,11 +327,6 @@
     width: 44cqw;
     height: 44cqw;
   }
-  .glyph.ring {
-    padding: 7cqw;
-    border: 2.5cqw solid currentColor;
-    border-radius: 50%;
-  }
   /* Keep the rank at least 16px tall on the smallest cards. */
   .trick .index-rank {
     font-size: 34cqw;
@@ -388,48 +401,44 @@
   .centre.art {
     inset: 15cqw 14cqw 13cqw;
   }
-  /* The red joker keeps a third difference from the black one: a ring. */
-  .centre.art.ring::after {
+  /* Special cards are told by their frame, never a stamp: the 마이티 is
+     on warmer stock inside a gold rule, the jokers inside an ink rule,
+     solid for 흑 and dashed for 홍. Both show in an overlapped hand. */
+  .frame-mighty,
+  .frame-joker {
+    --frame: color-mix(in srgb, currentColor 45%, transparent);
+  }
+  .frame-mighty {
+    --frame: var(--card-gold);
+    background: var(--card-warm);
+  }
+  .frame-mighty::before,
+  .frame-joker::before {
     content: '';
     position: absolute;
-    inset: -4cqw;
-    border: 1.5cqw dashed currentColor;
-    border-radius: 12cqw;
-    opacity: 0.5;
+    inset: 3.5cqw;
+    border: 1.5px solid var(--frame);
+    border-radius: 5px;
+    pointer-events: none;
   }
-  .court {
-    flex-direction: column;
-    gap: 4cqw;
-    border: 1.5px solid currentColor;
-    border-radius: 4px;
-    opacity: 0.95;
+  .frame-joker.red::before {
+    border: 2px dashed var(--frame);
   }
-  .court-letter {
-    font-size: 34cqw;
-    font-weight: 800;
-    line-height: 1;
+  .corner :global(.index-cue) {
+    width: 22cqw;
+    height: 22cqw;
+    margin-top: 5cqw;
   }
-  .court :global(.court-suit) {
-    width: 16cqw;
-    height: 16cqw;
+  @container (min-width: 80px) {
+    .corner :global(.index-cue) {
+      width: 14cqw;
+      height: 14cqw;
+      margin-top: 3cqw;
+    }
   }
-  .joker-motif :global(svg) {
-    width: 46cqw;
-    height: 46cqw;
-  }
-  .joker-motif.ring {
-    border: 3cqw solid currentColor;
-    border-radius: 50%;
-    inset: auto;
-    left: 50%;
-    top: 50%;
-    width: 64cqw;
-    height: 64cqw;
-    transform: translate(-50%, -50%);
-  }
-  .joker-motif.ring :global(svg) {
-    width: 40cqw;
-    height: 40cqw;
+  .glyph :global(.cue) {
+    width: 100%;
+    height: 100%;
   }
 
   .pips {
@@ -444,32 +453,6 @@
   }
   .pip.flip {
     transform: translate(-50%, -50%) rotate(180deg);
-  }
-
-  /* Seal stamp on the mighty, the jokers and the joker-call cards. */
-  .seal {
-    position: absolute;
-    top: 5cqw;
-    right: 5cqw;
-    display: grid;
-    place-items: center;
-    width: 24cqw;
-    height: 24cqw;
-    border-radius: 2px;
-    background: var(--seal);
-    color: #fff;
-    font-family: var(--font);
-    font-size: 15cqw;
-    font-weight: 800;
-    line-height: 1;
-    transform: rotate(-6deg);
-  }
-  @container (min-width: 80px) {
-    .seal {
-      width: 18cqw;
-      height: 18cqw;
-      font-size: 11cqw;
-    }
   }
 
   .kitty {
@@ -487,25 +470,10 @@
     white-space: nowrap;
   }
 
-  /* The back: charcoal with a chilbo (interlocking circles) pattern. */
+  /* The back is drawn by CardBack; the box only matches its ground. */
   .back {
-    --chilbo: color-mix(in srgb, var(--card-edge) 55%, transparent);
-    background-color: var(--card-back);
-    background-image:
-      radial-gradient(circle, transparent 7.2px, var(--chilbo) 7.6px, var(--chilbo) 8.4px, transparent 8.8px),
-      radial-gradient(circle, transparent 7.2px, var(--chilbo) 7.6px, var(--chilbo) 8.4px, transparent 8.8px);
-    background-size: 16px 16px;
-    background-position:
-      0 0,
-      8px 8px;
+    background: var(--card-back);
     border-color: var(--card-back);
-  }
-  .back::after {
-    content: '';
-    position: absolute;
-    inset: 3px;
-    border: 1px solid var(--chilbo);
-    border-radius: 5px;
   }
 
   /* States. Lifts use the separate translate and scale properties, so a
