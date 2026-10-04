@@ -3,9 +3,22 @@
 // fetched only once someone turns it on.
 
 import { settings } from './settings.svelte';
-import { withAudio } from './sound';
+import { setKey, withAudio } from './sound';
 
-const TRACKS = ['/music/candlelit-at-70-bpm.mp3', '/music/stacks-of-quiet-books.mp3'];
+/**
+ * Each track with its key, in semitones from A, so the table's musical cues
+ * can be played in it. Keys were estimated from the recordings' chroma.
+ */
+interface Track {
+  src: string;
+  key: number;
+}
+const TRACKS: Track[] = [
+  // D minor: cues in F major (its relative major) sit on D minor pentatonic.
+  { src: '/music/candlelit-at-70-bpm.mp3', key: -4 },
+  // G major.
+  { src: '/music/stacks-of-quiet-books.mp3', key: -2 },
+];
 const FADE = 4;
 
 /**
@@ -41,10 +54,12 @@ let decks: [Deck, Deck] | null = null;
 /** Shared by both decks: a low-pass filter and a level that follow the hand. */
 let bus: { filter: BiquadFilterNode; gain: GainNode } | null = null;
 let current = 0;
-let order: string[] = [];
+let order: Track[] = [];
+/** The key of the track playing, in semitones from A. */
+let key = 0;
 let ctx: AudioContext | null = null;
 
-function nextTrack(): string {
+function nextTrack(): Track {
   if (!order.length) order = [...TRACKS].sort(() => Math.random() - 0.5);
   return order.pop()!;
 }
@@ -84,7 +99,10 @@ function play() {
   const t = ctx.currentTime;
   from.gain.gain.setTargetAtTime(0, t, FADE / 4);
   setTimeout(() => from.el.pause(), FADE * 1000);
-  to.el.src = nextTrack();
+  const track = nextTrack();
+  to.el.src = track.src;
+  key = track.key;
+  setKey(key);
   to.gain.gain.cancelScheduledValues(t);
   to.gain.gain.setValueAtTime(0, t);
   to.gain.gain.linearRampToValueAtTime(level(), t + FADE);
@@ -94,6 +112,8 @@ function play() {
 function update() {
   if (!ctx) return;
   const on = level() > 0;
+  // Without music the cues go back to their own key, A.
+  setKey(on ? key : 0);
   if (on && !decks) {
     decks = [deck(ctx), deck(ctx)];
     play();

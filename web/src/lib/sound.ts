@@ -7,6 +7,32 @@ import { settings } from './settings.svelte';
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
 
+/**
+ * A second of pink noise (Paul Kellet's filter), made once and reused. Pink
+ * is warmer than white: paper on felt, not radio hiss. Each voice starts at
+ * a random point in it, so no two sounds are the same.
+ */
+function pinkNoise(ctx: AudioContext): AudioBuffer {
+  const buffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+  let peak = 0;
+  for (let i = 0; i < data.length; i++) {
+    const w = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + w * 0.0555179;
+    b1 = 0.99332 * b1 + w * 0.0750759;
+    b2 = 0.969 * b2 + w * 0.153852;
+    b3 = 0.8665 * b3 + w * 0.3104856;
+    b4 = 0.55 * b4 + w * 0.5329522;
+    b5 = -0.7616 * b5 - w * 0.016898;
+    data[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362;
+    b6 = w * 0.115926;
+    peak = Math.max(peak, Math.abs(data[i]));
+  }
+  for (let i = 0; i < data.length; i++) data[i] /= peak;
+  return buffer;
+}
+
 function unlock() {
   if (!ctx) {
     try {
@@ -14,9 +40,7 @@ function unlock() {
     } catch {
       return;
     }
-    noise = ctx.createBuffer(1, ctx.sampleRate * 0.5, ctx.sampleRate);
-    const data = noise.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    noise = pinkNoise(ctx);
   }
   if (ctx.state === 'suspended') void ctx.resume();
   onUnlock?.(ctx);
@@ -40,6 +64,29 @@ if (typeof window !== 'undefined') {
   });
 }
 
+/**
+ * Musical cues are written in A; they move to the key of the music playing
+ * so the two never clash.
+ */
+let transpose = 1;
+
+/** Sets the key of the musical cues, in semitones from A (0 = A, -4 = F). */
+export function setKey(semitones: number) {
+  transpose = Math.pow(2, semitones / 12);
+}
+
+/**
+ * Pink noise has less energy up high than the white noise these levels were
+ * tuned on; this brings a band around `freq` back to about the same loudness.
+ */
+const lift = (freq: number) => 1.6 * Math.sqrt(freq / 1000);
+/** `x` nudged by up to ±`amount` (a fraction), so repeats never match. */
+const jitter = (x: number, amount = 0.08) => x * (1 + (Math.random() * 2 - 1) * amount);
+const between = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+const dB = (db: number) => Math.pow(10, db / 20);
+/** A level nudged by up to ±2 dB. */
+const vary = (level: number) => level * dB(between(-2, 2));
+
 /** The output for one cue, or null when sound is off or not yet allowed. */
 function out(at: number, level: number, pan = 0): { ctx: AudioContext; gain: GainNode; t: number } | null {
   if (!ctx || !settings.sound || settings.volume <= 0 || ctx.state !== 'running') return null;
@@ -52,25 +99,63 @@ function out(at: number, level: number, pan = 0): { ctx: AudioContext; gain: Gai
   } else {
     gain.connect(ctx.destination);
   }
-  return { ctx, gain, t: ctx.currentTime + at };
+  return { ctx, gain, t: ctx.currentTime + Math.max(0, at) };
 }
 
-/** A short filtered noise burst: paper on felt. */
-function snap(at: number, { freq = 2400, length = 0.06, level = 0.5, pan = 0 } = {}) {
+interface Filter {
+  type: BiquadFilterType;
+  freq: number;
+  /** Glide the frequency here over the length of the sound. */
+  to?: number;
+  q?: number;
+}
+
+/** One noise voice: pink noise through `filters`, shaped by an attack and an exponential decay. */
+function burst(
+  at: number,
+  filters: Filter[],
+  { attack = 0.004, decay = 0.06, level = 0.5, pan = 0, flutter = null as { rate: number; depth: number } | null } = {},
+) {
   const o = out(at, level, pan);
   if (!o || !noise) return;
+  const end = o.t + attack + decay;
   const src = o.ctx.createBufferSource();
   src.buffer = noise;
-  const filter = o.ctx.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.value = freq;
-  filter.Q.value = 0.9;
+  let node: AudioNode = src;
+  for (const f of filters) {
+    const filter = o.ctx.createBiquadFilter();
+    filter.type = f.type;
+    filter.frequency.setValueAtTime(f.freq, o.t);
+    if (f.to) filter.frequency.exponentialRampToValueAtTime(f.to, end);
+    if (f.q !== undefined) filter.Q.value = f.q;
+    node = node.connect(filter);
+  }
   const env = o.ctx.createGain();
   env.gain.setValueAtTime(0, o.t);
-  env.gain.linearRampToValueAtTime(1, o.t + 0.004);
-  env.gain.exponentialRampToValueAtTime(0.001, o.t + length);
-  src.connect(filter).connect(env).connect(o.gain);
-  src.start(o.t, Math.random() * 0.3, length + 0.02);
+  env.gain.linearRampToValueAtTime(1, o.t + attack);
+  env.gain.exponentialRampToValueAtTime(0.001, end);
+  node = node.connect(env);
+  if (flutter) {
+    // Amplitude wobble: the gain swings between 1 − depth and 1.
+    const wobble = o.ctx.createGain();
+    wobble.gain.value = 1 - flutter.depth / 2;
+    const lfo = o.ctx.createOscillator();
+    lfo.frequency.value = flutter.rate;
+    const depth = o.ctx.createGain();
+    depth.gain.value = flutter.depth / 2;
+    lfo.connect(depth).connect(wobble.gain);
+    lfo.start(o.t);
+    lfo.stop(end + 0.02);
+    node = node.connect(wobble);
+  }
+  node.connect(o.gain);
+  src.start(o.t, Math.random() * 0.9, attack + decay + 0.02);
+}
+
+/** A short band of noise: paper on felt. */
+function snap(at: number, { freq = 2400, length = 0.06, level = 0.5, pan = 0 } = {}) {
+  const f = jitter(freq);
+  burst(at, [{ type: 'bandpass', freq: f, q: 0.9 }], { decay: length, level: vary(level) * lift(f), pan });
 }
 
 /** A soft plucked tone. */
@@ -79,7 +164,7 @@ function note(at: number, freq: number, { length = 0.35, level = 0.18, type = 't
   if (!o) return;
   const osc = o.ctx.createOscillator();
   osc.type = type;
-  osc.frequency.value = freq;
+  osc.frequency.value = freq * transpose;
   const env = o.ctx.createGain();
   env.gain.setValueAtTime(0, o.t);
   env.gain.linearRampToValueAtTime(1, o.t + 0.01);
@@ -93,13 +178,46 @@ function note(at: number, freq: number, { length = 0.35, level = 0.18, type = 't
 const SCALE = [440, 494, 554, 659, 740, 880, 988, 1109, 1319, 1480];
 
 export const sound = {
-  /** A card lands on the trick. */
-  card(delay = 0) {
-    snap(delay, { freq: 1800 + Math.random() * 900 });
+  /**
+   * A card lands on the trick: the bright slap of its face, the soft thud of
+   * the air under it and, when `onTop` (a card already lies there), the tick
+   * of its edge on the other card.
+   */
+  card(delay = 0, onTop = false) {
+    const level = vary(0.5);
+    const slap = jitter(between(3200, 4500));
+    burst(
+      delay,
+      [
+        { type: 'highpass', freq: jitter(1200) },
+        { type: 'bandpass', freq: slap, q: 1.2 },
+      ],
+      { attack: 0.001, decay: between(0.025, 0.04), level: level * lift(slap) },
+    );
+    burst(delay + between(-0.01, 0.01), [{ type: 'lowpass', freq: jitter(between(500, 700)) }], {
+      attack: 0.003,
+      decay: between(0.07, 0.09),
+      level: level * dB(-12),
+    });
+    if (onTop) {
+      const edge = jitter(5500);
+      burst(delay + between(0.008, 0.014), [{ type: 'bandpass', freq: edge, q: 3 }], {
+        attack: 0.001,
+        decay: 0.01,
+        level: level * dB(-9) * lift(edge),
+      });
+    }
   },
   /** A trick slides to its winner, with a rising note per point card in it. */
   sweep(points: number, delay = 0, pan = 0) {
-    snap(delay, { freq: 900, length: 0.22, level: 0.35, pan });
+    // Cards dragged over felt: a falling band of noise with a fast flutter.
+    burst(delay, [{ type: 'bandpass', freq: jitter(1800), to: jitter(700), q: 0.7 }], {
+      attack: 0.02,
+      decay: between(0.18, 0.24),
+      level: vary(0.35) * lift(1100),
+      pan,
+      flutter: { rate: 32, depth: 0.25 },
+    });
     for (let i = 0; i < points; i++) note(delay + 0.08 + i * 0.07, SCALE[Math.min(i, SCALE.length - 1)]);
   },
   /** It is now your turn. */
@@ -155,9 +273,13 @@ export const sound = {
   friend() {
     [554, 659, 880, 1109].forEach((f, i) => note(i * 0.07, f, { level: 0.16, length: 0.5 }));
   },
-  /** Cards being shuffled and dealt: a quick riffle of paper snaps. */
+  /** Cards being dealt: one quick flick per card, a little apart. */
   shuffle() {
-    for (let i = 0; i < 14; i++) snap(i * 0.035, { freq: 1500 + Math.random() * 1500, length: 0.04, level: 0.28 });
+    let t = 0;
+    for (let i = 0; i < 14; i++) {
+      burst(t, [{ type: 'highpass', freq: jitter(2500) }], { attack: 0.001, decay: 0.011, level: vary(0.3) * lift(4000) });
+      t += between(0.04, 0.055);
+    }
   },
   /** A chip or button pressed. */
   tap() {

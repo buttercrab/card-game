@@ -6,6 +6,7 @@
   import ExchangePanel from './ExchangePanel.svelte';
   import Hand from './Hand.svelte';
   import HandReplay from './HandReplay.svelte';
+  import Icon from './Icon.svelte';
   import LeadTag from './LeadTag.svelte';
   import Reactions from './Reactions.svelte';
   import ShareCard from './ShareCard.svelte';
@@ -799,9 +800,9 @@
   <!-- 상황판: everything about the hand on one line. -->
   {#snippet hintTools()}
     {#if client.hint && myTurn}
-      <span class="hint-text pop" role="status">💡 봇이라면 <strong>{actionLabel(client.hint, seatName)}</strong></span>
+      <span class="hint-text pop" role="status"><Icon name="hint" /> 봇이라면 <strong>{actionLabel(client.hint, seatName)}</strong></span>
     {:else if settings.hints && liveTurn}
-      <button class="hint-btn" aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}>💡</button>
+      <button class="hint-btn" aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}><Icon name="hint" /></button>
     {/if}
   {/snippet}
   <div class="status" aria-live="polite">

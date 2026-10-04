@@ -1,6 +1,7 @@
 <script lang="ts">
   // A small button that opens the table's quick reactions. The list matches
   // the server's; it refuses anything else.
+  import Icon from './Icon.svelte';
   /** `below` opens the menu downward, for a button near the top of the screen. */
   let { onreact, below = false }: { onreact: (text: string) => void; below?: boolean } = $props();
 
@@ -31,7 +32,7 @@
 </script>
 
 <span class="reactions" bind:this={root}>
-  <button class="trigger" aria-label="반응 보내기" aria-expanded={open} onclick={() => (open = !open)}>😊</button>
+  <button class="trigger" aria-label="반응 보내기" aria-expanded={open} onclick={() => (open = !open)}><Icon name="smile" /></button>
   {#if open}
     <div class="menu pop" class:below role="menu" aria-label="반응">
       <div class="emoji">
