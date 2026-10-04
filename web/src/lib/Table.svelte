@@ -1218,7 +1218,7 @@
     <!-- During play the strip only ever says whose turn it is, so it shrinks
          to a pill on the tray's edge and gives its height to the felt; the
          bidding and exchange keep the full panel, which they fill. -->
-    <div class="strip" class:pill={play !== null && !variants && (myTurn || waitingFor !== null)}>
+    <div class="strip" class:pill={play !== null && !variants && (myTurn || waitingFor !== null)} class:bare={done !== null && !variants}>
       {#if variants}
         <div class="variants">
           {#each variants as v, i (i)}
@@ -2015,6 +2015,13 @@
     padding: 10px 12px;
     border-radius: 16px;
     background: var(--panel);
+  }
+  /* After the hand the strip only holds buttons: they sit on the table
+     itself, with no panel behind them. */
+  .strip.bare {
+    min-height: 0;
+    padding: 4px 0;
+    background: none;
   }
   .prompt {
     margin: 0;
