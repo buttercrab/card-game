@@ -8,11 +8,14 @@ before anyone plays it.
 
 | Part | What it is |
 | --- | --- |
-| [`engine`](crates/engine) | The `Game` trait every game implements, plus the `Bot` trait |
-| [`mighty`](crates/mighty) | Mighty rules, nine regional presets, and bots: a simple one and a search bot that plays at the table; see [RULES.md](crates/mighty/RULES.md) |
+| [`engine`](crates/engine) | The `Game` trait every game implements and the `Bot` trait; `Encode` (positions as model inputs) and `DynGame` (any game through JSON) |
+| [`mighty`](crates/mighty) | Mighty rules, nine regional presets, bots (a simple one and a search bot that plays at the table) and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
 | [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
 | [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats |
-| [`web`](web) | The table in the browser (Svelte 5 + Vite), in Korean; its look is specified in [DESIGN.md](DESIGN.md) |
+| [`web`](web) | The table in the browser (Svelte 5 + Vite), in Korean; its look is specified in [DESIGN.md](docs/DESIGN.md) |
+| [`ml`](ml) | Python training for learned bots (uv, PyTorch as an extra) |
+| [`research`](research) | Eval suites, experiments, artifact manifests and the experiment loop |
+| [`docs`](docs) | The plan, the design brief and how-tos; [index](docs/README.md) |
 
 A game is a deterministic state machine:
 - `legal_actions` is the only source of truth for what is allowed.
@@ -52,7 +55,7 @@ it was; without it rooms live in memory only.
 
 For frontend work, run `npm run dev` in `web/` while the server runs. Vite
 forwards `/api` to the server. `/deck` shows every card face, size and
-state in both themes. Visual changes follow [DESIGN.md](DESIGN.md).
+state in both themes. Visual changes follow [DESIGN.md](docs/DESIGN.md).
 
 ## Deploy
 
@@ -123,6 +126,7 @@ cargo run --release -p sim -- --vary --bots random    # random optional rules ea
 cargo run --release -p sim -- --games 2500 --bots search   # search bot vs simple bots
 cargo run --release -p sim -- --preset gshs --bots search --focus search:100 --field search  # any two bots
 (cd web && npm run check)
+(cd ml && uv sync --locked && uv run ruff check && uv run pyright && uv run pytest)
 ```
 
 After every step the simulator checks that:

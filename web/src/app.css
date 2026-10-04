@@ -1,4 +1,4 @@
-/* Tokens from DESIGN.md. The legacy names at the end of each block keep
+/* Tokens from docs/DESIGN.md. The legacy names at the end of each block keep
    older components working until they are restyled. */
 :root,
 [data-theme='light'] {
@@ -193,7 +193,7 @@ textarea {
   color: inherit;
 }
 
-/* Buttons are flat objects with a hard lip (DESIGN.md, Elevation & Depth).
+/* Buttons are flat objects with a hard lip (docs/DESIGN.md, Elevation & Depth).
    Pressing moves the button down onto its lip. */
 button {
   display: inline-flex;
