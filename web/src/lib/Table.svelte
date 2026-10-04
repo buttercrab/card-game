@@ -1566,11 +1566,13 @@
     outline-offset: -3px;
     transition: outline-color var(--dur-quick) var(--ease-standard);
   }
-  .tray :global(.hand) {
+  /* Only the hand's container (its direct child), never the cards, which
+     also carry a "hand" size class. */
+  .tray > :global(.hand) {
     transition: translate 420ms var(--ease-settle);
   }
   /* Your turn: the hand rises a touch to meet you. */
-  .mine .tray :global(.hand) {
+  .mine .tray > :global(.hand) {
     translate: 0 -4px;
   }
   .mine .tray {
