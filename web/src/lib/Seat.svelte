@@ -4,7 +4,8 @@
 </script>
 
 <script lang="ts">
-  import Stamp from './Stamp.svelte';
+  import Callout from './Callout.svelte';
+  import { juice } from './motion';
   let {
     name,
     bot = false,
@@ -14,7 +15,7 @@
     turn = false,
     bubble = null,
     reaction = null,
-    stamp = null,
+    cue = null,
     dim = false,
     reveal = false,
   }: {
@@ -29,16 +30,22 @@
     bubble?: string | null;
     /** A reaction the player just sent; `id` replays it when repeated. */
     reaction?: { text: string; id: number } | null;
-    /** An ink seal for a big moment at this seat; `id` restamps it. */
-    stamp?: { text: string; gold: boolean; id: number } | null;
+    /** A big moment at this seat: it wiggles, with a short label under it
+     * when `text` is set. A new `id` plays it again. */
+    cue?: { text: string | null; id: number } | null;
     /** Out of the current round, such as after passing. */
     dim?: boolean;
     /** Just revealed as the friend. */
     reveal?: boolean;
   } = $props();
+
+  let el: HTMLElement;
+  $effect(() => {
+    if (cue) juice(el, 0.6);
+  });
 </script>
 
-<div class="seat" class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
+<div class="seat" bind:this={el} class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
     <span class="name">{name}</span>
@@ -49,7 +56,7 @@
     {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
   </div>
   {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
-  {#if stamp}{#key stamp.id}<Stamp text={stamp.text} gold={stamp.gold} />{/key}{/if}
+  {#if cue?.text}{#key cue.id}<Callout text={cue.text} />{/key}{/if}
   {#if reaction}
     {#key reaction.id}
       <span class="reaction" class:emoji={/^\p{Extended_Pictographic}/u.test(reaction.text)} aria-live="polite">{reaction.text}</span>
@@ -81,20 +88,20 @@
     color: var(--ink);
     outline-color: var(--accent);
   }
+  /* The friend's plate turns over like a card and comes up in the team colour. */
   .seat.reveal {
-    animation: reveal var(--dur-reveal) var(--ease-standard);
+    animation: reveal 520ms var(--ease-standard);
   }
   @keyframes reveal {
     0% {
-      transform: scale(1);
-      box-shadow: 0 0 0 0 var(--team-declarer);
+      transform: perspective(500px) rotateX(0);
     }
-    35% {
-      transform: scale(1.12);
+    50% {
+      transform: perspective(500px) rotateX(90deg);
     }
     100% {
-      transform: scale(1);
-      box-shadow: 0 0 0 14px transparent;
+      transform: perspective(500px) rotateX(0);
+      box-shadow: 0 0 0 3px var(--team-declarer);
     }
   }
   @media (prefers-reduced-motion: reduce) {

@@ -9,11 +9,11 @@
   import LeadTag from './LeadTag.svelte';
   import Reactions from './Reactions.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
-  import Stamp from './Stamp.svelte';
+  import Callout from './Callout.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
-  import { flyFrom, flyTo, pop } from './motion';
+  import { flyFrom, flyTo, juice, pop, ring, settle } from './motion';
   import { settings } from './settings.svelte';
   import { recordHand } from './stats';
   import { sound } from './sound';
@@ -160,8 +160,10 @@
     if (instant) {
       step = 99;
       shownPay = pays;
+      tallied = true;
       return;
     }
+    tallied = false;
     step = 0;
     shownPay = pays.map(() => 0);
     let cancelled = false;
@@ -183,10 +185,13 @@
         const ease = 1 - (1 - f) ** 3;
         shownPay = pays.map((p) => Math.round(p * ease));
         if (f < 1) requestAnimationFrame(frame);
-        else if (result.run && done) {
-          stamp(done.declarer, '런!', 'run', true);
-          nudge = true;
-          setTimeout(() => (nudge = false), 320);
+        else {
+          tallied = true;
+          if (result.run) {
+            sound.run();
+            nudge = true;
+            setTimeout(() => (nudge = false), 320);
+          }
         }
       };
       requestAnimationFrame(frame);
@@ -199,6 +204,7 @@
     if (step < 99 && done) {
       step = 99;
       shownPay = done.payoffs;
+      tallied = true;
     }
   }
 
@@ -229,7 +235,10 @@
   let shownTags = '';
   $effect(() => {
     const now = tags.map((t) => t.text);
-    if (now.some((t) => !shownTags.split('|').includes(t))) sound.tag();
+    const fresh = now.filter((t) => !shownTags.split('|').includes(t));
+    // Reaching the contract resolves the chord; other tags just chime.
+    if (fresh.includes('공약 확정')) sound.resolve();
+    else if (fresh.length) sound.tag();
     shownTags = now.join('|');
   });
 
@@ -494,13 +503,16 @@
       );
     }
     // Heavy cards land with a thump and a beat's hold; the 마이티 and jokers
-    // are stamped at the seat that played them.
+    // are called out at the seat that played them.
     for (const [i, p] of fresh.entries()) {
       const kind = heavy[i];
       if (!kind) continue;
       sound.heavy();
-      if (kind === 'mighty') stamp(p.seat, '마이티', 'mighty');
-      if (kind === 'joker') stamp(p.seat, '조커', 'joker');
+      const card = slotCard(p.seat);
+      if (kind !== 'cut') void ring(card, 'var(--ink)');
+      void settle(card);
+      if (kind === 'mighty') cueAt(p.seat, '마이티', 'mighty');
+      if (kind === 'joker') cueAt(p.seat, '조커', 'joker');
       if (!hurry) await pause(110 * k);
     }
   }
@@ -508,21 +520,26 @@
   /** The latest thing that happened, for anyone who looked away. */
   let event = $state<string | null>(null);
 
-  // ---- Seals (도장) -----------------------------------------------------------
-  // Big moments are stamped at the seat that made them, never blocking play.
-  type SealKind = 'declarer' | 'friend' | 'mighty' | 'joker' | 'call' | 'misdeal' | 'run';
-  let stamps = $state<Record<number, { text: string; gold: boolean; id: number }>>({});
-  let stampId = 0;
-  function stamp(seat: number, text: string, kind: SealKind, gold = false) {
-    const id = ++stampId;
-    stamps[seat] = { text, gold, id };
-    sound.seal(kind);
+  // ---- Cues ---------------------------------------------------------------------
+  // Big moments play at the seat that made them: the seat wiggles and a short
+  // label pops in under it (Balatro-style), never blocking play.
+  type CueKind = 'declarer' | 'friend' | 'mighty' | 'joker' | 'call' | 'misdeal' | 'answer';
+  let seatCues = $state<Record<number, { text: string | null; id: number }>>({});
+  let cueId = 0;
+  let tray = $state<HTMLElement>();
+  function cueAt(seat: number, text: string | null, kind: CueKind) {
+    const id = ++cueId;
+    seatCues[seat] = { text, id };
+    sound.cue(kind);
+    if (seat === me) juice(tray ?? null, 0.25);
     setTimeout(() => {
-      if (stamps[seat]?.id === id) delete stamps[seat];
+      if (seatCues[seat]?.id === id) delete seatCues[seat];
     }, 1500);
   }
+  /** The result has been counted out (or shown at once). */
+  let tallied = $state(false);
 
-  /** How hard a card lands: the 마이티 and jokers stamp; a trump cutting the round thumps. */
+  /** How hard a card lands: the 마이티 and jokers ring; a trump cutting the round thumps. */
   function weight(p: Played, leader: boolean, lead: Lead | null, trump: Suit | null): 'mighty' | 'joker' | 'cut' | null {
     if (!p.powered) return null;
     if ('Joker' in p.card) return 'joker';
@@ -553,11 +570,11 @@
     showThrownIn(next, prev);
     const redeal = next.view.redealt;
     if (redeal && redeal.why !== 'AllPassed' && JSON.stringify(redeal) !== JSON.stringify(prev.view.redealt)) {
-      stamp(redeal.why.Misdeal.seat, '딜미스', 'misdeal');
+      cueAt(redeal.why.Misdeal.seat, '딜미스', 'misdeal');
     }
     const calledBefore = roundOf(was)?.called_joker;
     if (typeof now === 'object' && 'Play' in now && now.Play.called_joker && !calledBefore && now.Play.plays[0]) {
-      stamp(now.Play.plays[0].seat, '조커콜', 'call');
+      cueAt(now.Play.plays[0].seat, '조커콜', 'call');
     }
     const turnOf = (m: StateMsg) => (typeof m.turn === 'object' ? m.turn.Seat : null);
     if (me !== null && turnOf(next) === me && turnOf(prev) !== me) {
@@ -566,7 +583,7 @@
     }
     const kind = (p: PhaseView) => (typeof p === 'object' ? Object.keys(p)[0] : p);
     if (kind(now) !== kind(was)) {
-      if (kind(now) === 'Exchange' && typeof now === 'object' && 'Exchange' in now) stamp(now.Exchange.declarer, '주공', 'declarer');
+      if (kind(now) === 'Exchange' && typeof now === 'object' && 'Exchange' in now) cueAt(now.Exchange.declarer, '주공', 'declarer');
       if (kind(now) === 'Play' && kind(was) === 'Exchange') sound.call();
       if (kind(now) === 'Bidding') sound.shuffle();
     }
@@ -652,7 +669,10 @@
     }
     if (before.friend === null && after.friend !== null && after.friend !== undefined) {
       revealed = after.friend;
-      stamp(after.friend, '프렌드', 'friend');
+      cueAt(after.friend, '프렌드', 'friend');
+      // The 주공's seat answers, linking the two.
+      const partner = typeof next.view.phase === 'object' && 'Play' in next.view.phase ? next.view.phase.Play.declarer : null;
+      if (partner !== null) setTimeout(() => cueAt(partner, null, 'answer'), 260 * k);
       await pause(700 * k);
       revealed = null;
     }
@@ -773,7 +793,7 @@
           turn={turn === s}
           bubble={bubble(s)}
           reaction={client.reactions?.[s] ?? null}
-          stamp={stamps[s] ?? null}
+          cue={seatCues[s] ?? null}
           dim={bidding?.passed[s] ?? false}
           reveal={revealed === s}
         />
@@ -838,9 +858,9 @@
       {@const mineWon = me !== null && won === (me === done.declarer || me === done.friend)}
       <!-- A tap anywhere on the result skips the count; keys need nothing to skip. -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-      <div class="sheet result" class:big={result && result.made && result.margin >= 3} role="status" onclick={skipCount}>
+      <div class="sheet result" class:big={result && result.made && result.margin >= 3} class:lost={!mineWon && me !== null} role="status" onclick={skipCount}>
         <p class="headline">
-          {won ? '여당 승리' : '야당 승리'}
+          {#if result?.run && tallied}<span class="run-word">런</span>{:else}{won ? '여당 승리' : '야당 승리'}{/if}
           {#if mineWon}
             <span class="burst" aria-hidden="true">
               {#each ['Spade', 'Heart', 'Diamond', 'Club', 'Spade', 'Heart', 'Diamond', 'Club'] as const as suit, i (i)}
@@ -914,8 +934,8 @@
       {/if}
     </div>
 
-    <div class="tray" class:reveal={revealed === me}>
-      {#if stamps[me]}{#key stamps[me].id}<Stamp text={stamps[me].text} gold={stamps[me].gold} />{/key}{/if}
+    <div class="tray" class:reveal={revealed === me} bind:this={tray}>
+      {#if seatCues[me]?.text}{#key seatCues[me].id}<Callout text={seatCues[me].text!} below={false} />{/key}{/if}
       <div class="me-row">
         {#if team(me)}<span class="team {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/if}
         {#if points(me) > 0}<span class="my-points">{points(me)}점</span>{/if}
@@ -1004,6 +1024,9 @@
   }
   .meter.made .fill {
     background: var(--accent);
+  }
+  .meter.made strong {
+    color: var(--accent);
   }
   .meter.lost .fill {
     background: var(--danger);
@@ -1326,6 +1349,24 @@
   .ledger li.total {
     color: var(--ink);
     font-weight: 700;
+  }
+  /* A loss reads quieter, not angrier. */
+  .result.lost .headline {
+    color: var(--ink-muted);
+  }
+  /* 런: the headline turns into one large gold word once the count is done. */
+  .run-word {
+    display: inline-block;
+    font-size: 56px;
+    line-height: 1;
+    color: var(--gold);
+    animation: run-word 520ms var(--ease-settle) both;
+  }
+  @keyframes run-word {
+    from {
+      opacity: 0;
+      transform: scale(0.7);
+    }
   }
   .result.big .headline {
     font-size: 36px;

@@ -111,19 +111,27 @@ export const sound = {
     snap(delay, { freq: 700, length: 0.12, level: 0.55 });
     note(delay, 110, { level: 0.22, length: 0.25, type: 'sine' });
   },
-  /** An ink seal is stamped at a seat; each kind has its own motif. */
-  seal(kind: 'declarer' | 'friend' | 'mighty' | 'joker' | 'call' | 'misdeal' | 'run') {
-    snap(0, { freq: 500, length: 0.09, level: 0.5 });
+  /** A big moment at a seat; each kind has its own short motif. */
+  cue(kind: 'declarer' | 'friend' | 'mighty' | 'joker' | 'call' | 'misdeal' | 'answer') {
     const motifs: Record<typeof kind, number[]> = {
-      declarer: [330, 494],
-      friend: [554, 659, 880],
-      mighty: [220, 440, 659],
-      joker: [494, 466, 494],
+      declarer: [440, 554, 659],
+      // Two notes a fifth apart: the friend, then the 주공 answers.
+      friend: [659],
+      answer: [988],
+      mighty: [330, 659],
+      joker: [494, 523],
       call: [659, 494],
-      misdeal: [262, 247],
-      run: [440, 554, 659, 880, 1109],
+      misdeal: [392, 370],
     };
-    motifs[kind].forEach((f, i) => note(0.05 + i * 0.08, f, { level: 0.13, length: 0.45 }));
+    motifs[kind].forEach((f, i) => note(i * 0.07, f, { level: 0.12, length: 0.5, type: 'sine' }));
+  },
+  /** 런: the scale climbs to the octave. */
+  run() {
+    [440, 494, 554, 659, 740, 880].forEach((f, i) => note(i * 0.07, f, { level: 0.12, length: 0.6, type: 'sine' }));
+  },
+  /** The contract is reached: a resolving chord. */
+  resolve() {
+    [440, 554, 659].forEach((f) => note(0, f, { level: 0.08, length: 0.9, type: 'sine' }));
   },
   /** A quiet label appears: 공약 확정, 런 찬스, 마지막 라운드. */
   tag() {

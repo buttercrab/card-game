@@ -66,3 +66,53 @@ export function pop(el: Element | null, duration: number): Promise<void> {
 export function wait(ms: number): Promise<void> {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
+
+/** Whether motion is wanted at all: off in settings or by the system. */
+function still(): boolean {
+  if (typeof document === 'undefined') return true;
+  return (
+    document.documentElement.dataset.motion === 'off' ||
+    (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
+  );
+}
+
+/**
+ * Balatro's "juice": a squash to `1 - 0.1 * amount`, then a spring back
+ * through a fading wobble with a little tilt, over 0.4 s. `amount` runs from
+ * about 0.2 for a nudge to 1 for the hand's big moment.
+ */
+export function juice(el: Element | null, amount = 0.6, duration = 400): Promise<void> {
+  if (still()) return Promise.resolve();
+  const frames: Keyframe[] = [];
+  const steps = 10;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const decay = (1 - t) ** 3;
+    const s = i === 0 ? 1 - 0.1 * amount : 1 + 0.08 * amount * Math.sin(t * Math.PI * 6.5) * decay;
+    const r = 4 * amount * Math.sin(t * Math.PI * 5) * (1 - t) ** 2;
+    frames.push({ transform: `scale(${s.toFixed(4)}) rotate(${r.toFixed(2)}deg)`, offset: t });
+  }
+  return run(el, frames, { duration, easing: 'linear' });
+}
+
+/** A flat outline that grows from `el` and fades: a heavy card's ghost. */
+export function ring(el: Element | null, color = 'currentColor', duration = 420): Promise<void> {
+  if (still()) return Promise.resolve();
+  return run(
+    el,
+    [
+      { boxShadow: `0 0 0 0 color-mix(in srgb, ${color} 55%, transparent)` },
+      { boxShadow: `0 0 0 14px color-mix(in srgb, ${color} 0%, transparent)` },
+    ],
+    { duration, easing: EASE_STANDARD },
+  );
+}
+
+/** A heavy landing: one overshoot past full size, then settle. */
+export function settle(el: Element | null, duration = 320): Promise<void> {
+  if (still()) return Promise.resolve();
+  return run(el, [{ transform: 'scale(1)' }, { transform: 'scale(1.07)', offset: 0.45 }, { transform: 'scale(1)' }], {
+    duration,
+    easing: EASE_SETTLE,
+  });
+}
