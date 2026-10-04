@@ -135,7 +135,7 @@
 <div class="hand" class:deal bind:clientWidth={width} onclick={(e) => e.target === e.currentTarget && (raised = null)}>
   {#each rows as row, r (r)}
     {@const step = stepFor(row.length)}
-    <div class="row" style:--overlap="{step - cardWidth}px">
+    <div class="row" class:overlapped={step < cardWidth} style:--overlap="{step - cardWidth}px">
       {#each row as card, i (JSON.stringify(card))}
         <div class="spot" class:fresh={kitty.some((k) => sameCard(k, card))} style:--i={i} style:--rot="{((i * 37) % 7) - 3}deg" animate:flip={{ duration: settings.speed === 'off' ? 0 : 240, easing: cubicOut }}>
         <Card
@@ -177,7 +177,7 @@
   }
   /* An overlapped card's corner glyph would peek out from under the next
      card as a stray sliver; only the last card in a row shows its own. */
-  .spot:not(:last-child) :global(.glyph) {
+  .overlapped .spot:not(:last-child) :global(.glyph) {
     visibility: hidden;
   }
   .deal .spot {

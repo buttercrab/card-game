@@ -116,7 +116,9 @@
     grid-template-columns: minmax(0, 1fr);
     justify-items: center;
     gap: 2px;
-    --figure-w: clamp(36px, 6cqw, 64px);
+    /* The figure grows with the table's height (the ring is a size
+       container): small on phones, larger on desktop. */
+    --figure-w: clamp(36px, 10cqh, 64px);
     width: var(--seat-w, 92px);
     padding: 2px 4px;
     color: var(--ink-muted);
@@ -265,7 +267,7 @@
      seat stays about as short as the old plate. */
   .meta {
     position: relative;
-    margin-top: calc(var(--figure-w) * -0.2);
+    margin-top: calc(var(--figure-w) * -0.14);
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -283,6 +285,9 @@
     border-radius: 999px;
     font-size: 12px;
     line-height: 18px;
+    /* A ring of table colour keeps the badge apart from a robe of the
+       same team colour behind it. */
+    box-shadow: 0 0 0 2px var(--table);
   }
   .team.declarer {
     background: var(--team-declarer);
