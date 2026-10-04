@@ -58,9 +58,10 @@
 <main>
   <header>
     <div class="mark" aria-hidden="true">
-      <Card card={{ Joker: 'Black' }} size="mini" seal="joker" />
-      <Card card={{ Normal: ['Spade', 14] }} size="hand" seal="mighty" />
-      <Card size="mini" />
+      <!-- Wide enough (80px and up) that the jester and the 마이티's emblem show. -->
+      <Card card={{ Joker: 'Black' }} width={84} seal="joker" />
+      <Card card={{ Normal: ['Spade', 14] }} width={104} seal="mighty" />
+      <Card width={84} />
     </div>
     <h1>마이티</h1>
     <p class="muted">우리 규칙으로 하는 마이티. 테이블을 만들고 링크를 보내세요. 빈 자리는 봇이 채워요.</p>
@@ -152,10 +153,10 @@
     }
   }
   .mark > :global(.card:first-child) {
-    transform: rotate(-10deg) translate(10px, 4px);
+    transform: rotate(-10deg) translate(18px, 6px);
   }
   .mark > :global(.card:last-child) {
-    transform: rotate(10deg) translate(-10px, 4px);
+    transform: rotate(10deg) translate(-18px, 6px);
   }
   .mark > :global(.card:nth-child(2)) {
     z-index: 1;
