@@ -24,6 +24,9 @@ export type Action =
   | 'Pass'
   | { Bid: Contract }
   | { ChangeTrump: Suit | null }
+  /** Declarer, before discarding, where `bidding.raise_on_exchange`: a
+   * contract higher than keeping trump or ChangeTrump gives. */
+  | { Raise: Contract }
   | { Discard: Card }
   | { CallFriend: FriendCall }
   | { Play: PlayAction };
@@ -53,7 +56,10 @@ export type Doubling = 'Never' | 'Win' | 'Always';
 /** What a made contract is worth before doubling: points − 10 (at least 1),
  * points − the minimum bid, points − the contract, or points − the contract
  * + 2 × how far the bid ranks above the minimum. */
-export type WinScore = 'OverTen' | 'OverMin' | 'OverBid' | 'BidBonus';
+export type WinScore = 'OverTen' | 'OverMin' | 'OverBid' | 'BidBonus' | { BothOver: number };
+/** Who opens the next hand's bidding: the next seat, or last hand's friend
+ * (else its declarer). */
+export type NextDealer = 'Rotate' | 'FriendOrDeclarer';
 /** When a failed contract counts double (백런). */
 export type BackRun = 'Never' | 'DefenceReachesBid' | { TeamAtMost: number } | { ShortBy: number };
 
@@ -65,6 +71,8 @@ export interface Scoring {
   /** Taking all 20 points doubles a win. */
   run: boolean;
   back_run: BackRun;
+  /** When a contract of 20 doubles the score. Older servers leave this out. */
+  full_contract?: Doubling;
   /** Point cards in the declarer's discards count for the declarer's side;
    * otherwise for the defence. */
   discards_to_declarer: boolean;
@@ -90,6 +98,11 @@ export interface Rules {
     after_bidding?: boolean;
     /** The declarer may ask after taking the kitty, before discarding. */
     declarer?: boolean;
+    /** Everyone answers before any bid, from the first bidder on; no
+     * misdeal later. */
+    ask_first?: boolean;
+    /** Whoever calls the misdeal opens the new deal's bidding. */
+    caller_deals?: boolean;
   };
   bidding: {
     min: number;
@@ -105,6 +118,10 @@ export interface Rules {
     /** false: a player who passed may bid again, and the bidding ends when
      * everyone else passes in a row. */
     pass_is_final?: boolean;
+    /** After five passes the first bidder bids once more from this minimum. */
+    last_chance_min?: number | null;
+    /** The declarer may raise the contract after taking the kitty. */
+    raise_on_exchange?: boolean;
   };
   friend?: { by_card: boolean; by_seat: boolean; first_trick: boolean; last_trick: boolean; fake: boolean; alone: boolean };
   policy?: {
@@ -113,20 +130,37 @@ export interface Rules {
     joker: TrickPolicy;
     joker_call: TrickPolicy;
     overrides: [Card, TrickPolicy][];
+    /** false: a held-back lead is released only when nothing but jokers
+     * is left (nine trumps and the mighty lead the mighty). */
+    release_with_mighty?: boolean;
   };
   joker_call: {
     calls: [Card, Card][];
     mighty_defense: boolean;
     called_joker_has_power: boolean;
   };
-  joker_lead?: { by_color: boolean; powerless_passes: boolean };
+  /** `not_first_trick`: a joker may not lead the first trick. */
+  joker_lead?: { by_color: boolean; powerless_passes: boolean; not_first_trick?: boolean };
   /** Older servers leave this out; their scoring is the default here. */
   scoring?: Scoring;
+  /** false: the discards stay hidden after the hand (from all but the declarer). */
+  reveal_discards?: boolean;
+  next_dealer?: NextDealer;
 }
 
 export type PhaseView =
   | 'Dealing'
-  | { Bidding: { to_act: number; best: [number, Contract] | null; passed: boolean[]; has_bid: boolean[] } }
+  | {
+      Bidding: {
+        to_act: number;
+        best: [number, Contract] | null;
+        passed: boolean[];
+        has_bid: boolean[];
+        /** Everyone is answering whether they call a misdeal before any
+         * bid; 'Pass' now means "no misdeal". Older servers leave this out. */
+        asking_misdeal?: boolean;
+      };
+    }
   | {
       Exchange: {
         declarer: number;

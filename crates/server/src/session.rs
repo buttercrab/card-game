@@ -29,8 +29,9 @@ pub trait SessionGame:
     /// Checks settings a player proposes for the table.
     fn validate(settings: &Self::Settings) -> Result<(), String>;
 
-    /// Options for hand number `hand` (0-based) of a session.
-    fn hand_options(settings: &Self::Settings, hand: u32) -> Self::Options;
+    /// Options for hand number `hand` (0-based) of a session; `last` is the
+    /// hand before it in brief, when known.
+    fn hand_options(settings: &Self::Settings, hand: u32, last: Option<&Self::Summary>) -> Self::Options;
 
     /// A bot of this strength for `seat`, which may think for about `think`
     /// (zero for its own default) on `threads` threads. Seats differ a
@@ -103,10 +104,11 @@ impl SessionGame for Mighty {
         settings.rules().validate().map_err(|e| e.to_string())
     }
 
-    /// The first bidder moves one seat to the left each hand.
-    fn hand_options(settings: &MightySettings, hand: u32) -> mighty::Options {
+    /// The first bidder moves one seat to the left each hand, unless the
+    /// rules hand the deal to last hand's friend or declarer.
+    fn hand_options(settings: &MightySettings, hand: u32, last: Option<&mighty::HandSummary>) -> mighty::Options {
         let rules = settings.rules();
-        let first_bidder = hand as usize % rules.players;
+        let first_bidder = rules.first_bidder(hand, last);
         mighty::Options { rules, first_bidder }
     }
 

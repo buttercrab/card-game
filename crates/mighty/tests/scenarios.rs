@@ -593,7 +593,9 @@ const SECOND: &str = "H4 H5 H6 H7 H8 H9 C8 C9 S9 D10";
 #[test]
 fn a_hand_of_only_point_cards_may_be_thrown_in_where_allowed() {
     let rich = "S10 SJ SQ SK D10 DJ DQ DK DA HA";
-    let state = start(Preset::Sshs.rules(), &[rich], "");
+    let mut rules = Rules::default();
+    rules.misdeal.all_points = true;
+    let state = start(rules, &[rich], "");
     assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
     let state = start(Rules::default(), &[rich], "");
     assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
@@ -755,6 +757,54 @@ fn other_player_counts_deal_the_whole_deck() {
             let s = state.summary().unwrap();
             assert_eq!(s.rounds.len(), rules.hand_size, "{players} players");
             assert_eq!(Mighty::payoffs(&state).unwrap().len(), players);
+        }
+    }
+}
+
+#[test]
+fn every_preset_lets_the_declarer_name_a_card_it_holds_or_discarded() {
+    use rand::SeedableRng;
+    for preset in Preset::ALL {
+        assert!(preset.rules().friend.fake, "{preset}");
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(1);
+        let mut state = Mighty::new_game(&Options {
+            rules: preset.rules(),
+            first_bidder: 0,
+        })
+        .unwrap();
+        // Answer no misdeals, bid the cheapest, then pass; discard the first cards.
+        let legal = loop {
+            let legal = Mighty::legal_actions(&state);
+            if legal.iter().any(|a| matches!(a, Action::CallFriend(_))) {
+                break legal;
+            }
+            let action = match Mighty::turn(&state) {
+                Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                _ => legal
+                    .iter()
+                    .find(|a| matches!(a, Action::Bid(_) | Action::Discard(_)))
+                    .or_else(|| legal.iter().find(|a| **a == Action::Pass))
+                    .unwrap_or(&legal[0])
+                    .clone(),
+            };
+            act(&mut state, action);
+        };
+        let PhaseView::Exchange { declarer, .. } = Mighty::view(&state, Viewer::Spectator).phase else {
+            unreachable!()
+        };
+        let own = Mighty::view(&state, Viewer::Seat(declarer));
+        let PhaseView::Exchange {
+            discards: Some(discards),
+            ..
+        } = own.phase
+        else {
+            unreachable!()
+        };
+        for card in own.hand.iter().chain(&discards) {
+            assert!(
+                legal.contains(&Action::CallFriend(FriendCall::Card(*card))),
+                "{preset}: {card}"
+            );
         }
     }
 }

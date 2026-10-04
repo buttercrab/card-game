@@ -260,7 +260,9 @@ fn exchange_candidates(view: &View, legal: &[Action]) -> Vec<Action> {
     if legal.iter().any(|a| matches!(a, Action::Discard(_))) {
         let out: Vec<Action> = legal
             .iter()
-            .filter(|a| !matches!(a, Action::Discard(c) if *c == mighty || c.is_joker()))
+            .filter(|a| {
+                !matches!(a, Action::Discard(c) if *c == mighty || c.is_joker()) && !matches!(a, Action::Raise(_))
+            })
             .cloned()
             .collect();
         return if out.is_empty() { legal.to_vec() } else { out };
@@ -413,6 +415,7 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
             best,
             passed,
             has_bid,
+            asking_misdeal,
         } => {
             state.kitty = down;
             Phase::Bidding(Bidding {
@@ -420,6 +423,7 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
                 best: *best,
                 passed: passed.clone(),
                 has_bid: has_bid.clone(),
+                asking: *asking_misdeal,
             })
         }
         PhaseView::Play {

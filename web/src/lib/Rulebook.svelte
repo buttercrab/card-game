@@ -69,12 +69,16 @@
     const made = points >= c.count;
     let base: number;
     if (made) {
-      base = {
-        OverTen: Math.max(points - 10, 1),
-        OverMin: points - min,
-        OverBid: points - c.count,
-        BidBonus: points - c.count + 2 * (bidValue(r, c) - min),
-      }[s.win];
+      const w = s.win;
+      base =
+        typeof w === 'object'
+          ? Math.max(points - w.BothOver + c.count - w.BothOver, 1)
+          : {
+              OverTen: Math.max(points - 10, 1),
+              OverMin: points - min,
+              OverBid: points - c.count,
+              BidBonus: points - c.count + 2 * (bidValue(r, c) - min),
+            }[w];
     } else {
       const short = c.count - points;
       const b = s.back_run;
@@ -89,19 +93,29 @@
       base = -short * (backRun ? 2 : 1);
     }
     const applies = (d: Scoring['alone']) => d === 'Always' || (d === 'Win' && made);
-    const doubles = [applies(s.no_trump) && c.trump === null, applies(s.alone) && alone, s.run && made && points === 20];
+    const doubles = [
+      applies(s.no_trump) && c.trump === null,
+      applies(s.alone) && alone,
+      s.run && made && points === 20,
+      applies(s.full_contract ?? 'Never') && c.count === 20,
+    ];
     return base * 2 ** doubles.filter(Boolean).length;
   }
 
   /** A made contract's worth: the formula, and a note after it. */
   function winFormula(r: Rules): [string, string] {
     const min = r.bidding.min;
+    const w = scoring(r).win;
+    if (typeof w === 'object') {
+      const n = w.BothOver;
+      return [`(가져온 점수 − ${n}) + (공약 − ${n})`, '(적어도 1)'];
+    }
     return {
       OverTen: ['가져온 점수 − 10', '(적어도 1)'],
       OverMin: [`가져온 점수 − ${min}`, `(최소 공약 ${min}을 넘긴 만큼이라, 공약을 지켜도 0이나 그 아래일 수 있어요)`],
       OverBid: ['가져온 점수 − 공약', ''],
       BidBonus: [`가져온 점수 − 공약 + (공약 − ${min}) × 2`, '(높게 부를수록 더 얻어요)'],
-    }[scoring(r).win] as [string, string];
+    }[w] as [string, string];
   }
 
   /** The rest of the scoring rules as sentences. */
@@ -131,6 +145,10 @@
       alone && s.alone === 'Always' && '노프렌드',
     ].filter((x): x is string => typeof x === 'string');
     if (lossDoubles.length) lines.push(`${lossDoubles.join('와 ')}는 져도 두 배예요.`);
+    const full = s.full_contract ?? 'Never';
+    if (full !== 'Never') lines.push(`공약이 20이면 ${full === 'Always' ? '이기든 지든' : '이겼을 때'} 또 두 배예요.`);
+    if (r.next_dealer === 'FriendOrDeclarer')
+      lines.push('다음 판은 이번 판의 프렌드가, 프렌드가 없었으면 주공이 나누고 먼저 불러요.');
     return lines;
   }
 
@@ -167,13 +185,25 @@
     const say = (who: string, p: CardPolicy) =>
       who === '조커 콜' ? (p === 'Valid' ? null : '할 수 없어요') : policyText(p);
     for (const [who, p] of rows) {
-      const [first, last] = [say(who, p.first), say(who, p.last)];
+      // Trump that may not lead the first trick gets its own line below.
+      const trumpLead = who === '기루다' && p.first === 'NoLead';
+      const [first, last] = [trumpLead ? null : say(who, p.first), say(who, p.last)];
       if (first && first === last) out.push({ who, round: '첫 라운드와 마지막 라운드', text: first });
       else {
         if (first) out.push({ who, round: '첫 라운드', text: first });
         if (last) out.push({ who, round: '마지막 라운드', text: last });
       }
     }
+    if (r.joker_lead?.not_first_trick) out.push({ who: '조커', round: '첫 라운드', text: '먼저 낼 수 없어요' });
+    if (r.policy.trump.first === 'NoLead')
+      out.push({
+        who: '기루다',
+        round: '첫 라운드',
+        text:
+          r.policy.release_with_mighty === false
+            ? '먼저 낼 수 있는 경우가 손패가 기루다뿐이거나 기루다와 조커뿐일 때뿐이에요 (기루다와 마이티뿐이면 마이티를 내요)'
+            : '먼저 낼 수 있는 경우가 손패가 기루다와 마이티, 조커뿐일 때뿐이에요',
+      });
     return out;
   }
 
@@ -201,10 +231,16 @@
     const parts = [`점수 카드 ${signed(m.point_value)}`];
     if (m.joker_value !== 0) parts.push(`조커 ${signed(m.joker_value)}`);
     for (const [card, v] of m.card_values) parts.push(`${cardLabel(card)} ${signed(v)}`);
-    const when = m.after_bidding ? '자기가 부를 차례에, 이미 공약했더라도' : '공약하기 전에';
+    const when = m.ask_first
+      ? '공약을 시작하기 전에 첫 사람부터 모두 딜미스인지 답하고, 그때'
+      : m.after_bidding
+        ? '자기가 부를 차례에, 이미 공약했더라도'
+        : '공약하기 전에';
     const lines = [
       `받은 패가 약하면 ${when} 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${m.threshold}점 이하일 때예요.`,
     ];
+    if (m.ask_first) lines.push('여럿이 딜미스라고 하면 첫 사람에게서 가장 가까운 사람의 딜미스예요. 그 사람은 패를 보여 줘요.');
+    if (m.caller_deals) lines.push('딜미스를 한 사람이 새로 나눈 판에서 먼저 불러요.');
     if (m.all_points) lines.push('받은 카드가 모두 점수 카드여도 딜미스를 할 수 있어요.');
     if (m.declarer) lines.push('주공도 키티를 가져온 뒤 버리기 전에, 가진 카드 전부로 세어 딜미스를 할 수 있어요.');
     return lines;
@@ -307,7 +343,12 @@
           {r.bidding.first_bidder_may_pass
             ? '첫 사람도 패스할 수 있어요.'
             : '첫 사람은 패스할 수 없고 꼭 불러야 해요.'}
-          모두 패스하면 다시 나눠요.
+          {#if r.bidding.last_chance_min != null}
+            모두 패스하면 첫 사람이 한 번 더, {r.bidding.last_chance_min}부터 부를 수 있어요. 또 패스하면 같은 사람이 다시
+            나눠요.
+          {:else}
+            모두 패스하면 다시 나눠요.
+          {/if}
         </li>
         <li>
           아무도 더 높게 부를 수 없는 공약({r.bidding.allow_no_trump ? '풀노' : `${r.bidding.max}`})이 나오면 공약은 바로
@@ -322,7 +363,11 @@
         <li>
           주공이 키티 {kitty(r)}장을 가져가고 {kitty(r)}장을 버려요. 버린 점수 카드는
           {scoring(r).discards_to_declarer ? '여당' : '야당'} 점수가 돼요.
+          {r.reveal_discards === false ? '버린 카드는 끝나도 보여 주지 않아요.' : ''}
         </li>
+        {#if r.bidding.raise_on_exchange}
+          <li>버리기 전에 공약을 올릴 수 있어요. 기루다를 그대로 두면 올리지 않아도 돼요.</li>
+        {/if}
         <li>
           {r.bidding.change_trump_cost > 0
             ? `기루다를 바꾸려면 공약을 ${r.bidding.change_trump_cost} 올려야 해요.`
@@ -383,7 +428,7 @@
         <li>처음 낸 무늬가 있으면 그 무늬를 내야 해요. 없으면 아무 카드나 낼 수 있어요.</li>
         <li>
           마이티와 조커는 언제든 낼 수 있어요. 다만 마이티도 그 무늬의 카드라서, 그 무늬가 나왔는데 가진 게 마이티뿐이면
-          마이티를 내야 해요.
+          마이티를 내야 해요. 조커가 있으면 조커를 내도 돼요. 조커는 낼 의무가 없어요.
         </li>
         <li>
           조커로 시작하면 따라 낼 무늬를 정해요.

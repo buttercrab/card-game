@@ -105,6 +105,7 @@ export function actionLabel(action: Action, name: (seat: number) => string): str
   if (action === 'Pass') return '패스';
   if ('Bid' in action) return contractLabel(action.Bid);
   if ('ChangeTrump' in action) return `기루다를 ${trumpLabel(action.ChangeTrump)}로 바꾸기`;
+  if ('Raise' in action) return `공약을 ${contractLabel(action.Raise)}로 올리기`;
   if ('Discard' in action) return `${cardLabel(action.Discard)} 버리기`;
   if ('CallFriend' in action) return `프렌드 ${friendCallLabel(action.CallFriend, name)}`;
   const p = action.Play;

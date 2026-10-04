@@ -202,6 +202,12 @@ pub struct Room<G: SessionGame> {
 }
 
 impl<G: SessionGame> Room<G> {
+    /// The hand before hand number `hand`, in brief, when every hand so far
+    /// was kept (rooms saved before summaries were kept have fewer).
+    fn last_hand(&self, hand: u32) -> Option<&G::Summary> {
+        (self.hands.len() == hand as usize).then(|| self.hands.last()).flatten()
+    }
+
     pub fn new(id: String, settings: G::Settings, bot_delay: Duration) -> Room<G> {
         let n = G::seats(&settings);
         Room {
@@ -400,7 +406,7 @@ impl<G: SessionGame> Room<G> {
         room.history = s.history;
         room.hands = s.hands;
         if let Some(hand) = s.hand {
-            let options = G::hand_options(&room.settings, hand.number);
+            let options = G::hand_options(&room.settings, hand.number, room.last_hand(hand.number));
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
             for (i, entry) in hand.actions.iter().enumerate() {
                 let action: G::Action =
@@ -585,7 +591,7 @@ impl<G: SessionGame> Room<G> {
                 if self.seats.iter().any(|s| matches!(s, Occupant::Empty)) {
                     return Err("every seat needs a player or a bot".into());
                 }
-                let options = G::hand_options(&self.settings, self.hands_played);
+                let options = G::hand_options(&self.settings, self.hands_played, self.last_hand(self.hands_played));
                 let state = G::new_game(&options).map_err(|e| e.to_string())?;
                 self.game = Some(state);
                 self.log.clear();

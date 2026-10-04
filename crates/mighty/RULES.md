@@ -1,8 +1,58 @@
 # Mighty rules as implemented
 
-House rules are fields of `Rules` (`src/rules.rs`). The nine presets were
-ported from web-mighty's `mighty/src/rule/mod.rs`; the game logic was
+House rules are fields of `Rules` (`src/rules.rs`). 기본 (`default`) is the
+owner's written ruleset, below. The eight school presets were ported from
+web-mighty's `mighty/src/rule/mod.rs` as changes to `Rules::default()`,
+which therefore keeps web-mighty's base values; `tests/presets.json` pins
+every preset, so a change to one is always deliberate. The game logic was
 rewritten.
+
+## 기본
+
+`Preset::Default` follows the owner's text exactly; nothing in it is
+filled in from other rulesets. Each rule and how it is expressed
+(scenario tests in `tests/basic.rs`, scoring in `src/state.rs`):
+
+| Rule | Expressed as |
+| --- | --- |
+| 53 cards, one joker; 20 point cards | `OneJoker` deck |
+| Mighty ♠A (♦A when ♠ is trump), joker call ♣3 (♠3 when ♣ is trump); 노기루다: ♠A and ♣3 | As everywhere |
+| Counterclockwise play | Seat numbers rise in playing order; the table draws them counterclockwise |
+| Deal 1-2-3-4 from the dealer's right, 3 face down | One shuffled deal; the order of handing out does not change what anyone gets |
+| Misdeal: everyone answers at once, nearest the dealer (dealer first) wins | `misdeal.ask_first`: from the dealer round, answers in turn and hidden; the first "misdeal" ends the round. The same caller wins as if all answered at once, and a later answer only ever matters when everyone before said no |
+| Misdeal value ≤ ½: J, Q, K, A 1, 10 ½, ♠A 0, joker −1 | Doubled: `point_value` 2, tens 1, ♠A 0, `joker_value` −2, `threshold` 1 |
+| Misdeal caller shows the hand and deals next | `Redeal::Misdeal` shows it; `misdeal.caller_deals` |
+| Dealer bids first; difficulty = count, +1 for 노기루다; count ≤ 20 | `first_bidder` is the dealer; `no_trump_bonus` 1, `no_trump_wins_ties` off, `max` 20 |
+| First bid difficulty ≥ 14, then strictly higher; a pass is final | `min` 14, `pass_is_final` |
+| 풀노 (difficulty 21) cannot be topped | The bidding ends at once |
+| Five passes: the dealer may bid ≥ 13 once; a second pass redeals with the same dealer, not a misdeal | `bidding.last_chance_min` 13; `Redeal::AllPassed`, `first_bidder` kept |
+| Several bidders go on among themselves | Passes are final, so only they get turns |
+| Contract after the kitty: keep trump and raise or stay; change trump for difficulty +2 or more; ≤ 20 | `ChangeTrump` (the least change: suit→suit +2, suit→노기루다 +1, 노기루다→suit +3) and, with `bidding.raise_on_exchange`, `Raise` to anything higher |
+| Discard any three cards; they count for the declarer; never shown | Any card may be discarded; `scoring.discards_to_declarer`; `reveal_discards` off (only the declarer sees them) |
+| Friend: none, card (own or discarded card: false no-friend), named player, first trick (declarer winning it: false no-friend) | `friend.alone`, `by_card` with `fake`, `by_seat`, `first_trick`; no `last_trick` |
+| Reveal: named at once, card when played, first trick at its end | As the engine always does |
+| Follow suit; mighty and joker any time; never obliged to play the joker | As everywhere |
+| Led suit is the mighty's, the mighty is your only card of it: play it, or the joker if you have one | The mighty counts as its suit; jokers are always free |
+| Trick 1: declarer may not lead the joker, nor trump unless 10 trumps or 9 + joker (9 + mighty: lead the mighty); joker call has no effect; a joker is weak | `joker_lead.not_first_trick`; `policy.trump.first` `NoLead` with `policy.release_with_mighty` off; `policy.joker_call` `NoEffect` on the first trick; `policy.joker` `NoEffect` |
+| Tricks 2–9: a joker lead names one suit; joker call (leader says if on) makes every holder play the joker weak, or the mighty instead | Joker leads name a suit (one joker, no colour leads); `mighty_defense`; called joker powerless |
+| Trick 10: joker call no effect; joker lead names a suit; joker weak | `policy.joker_call` and `policy.joker` `NoEffect` on the last trick |
+| Order: mighty, strong joker, trump, led suit, weak joker, the rest | As everywhere; a weak joker wins only when it led and nothing followed, as `trick::winner` falls back to the leader |
+| P ≥ C wins; run P = 20; back-run P ≤ 10 | `run`, `back_run: TeamAtMost(10)` |
+| B = max(1, (P − 13) + (C − 13)) on a win, P − C on a loss | `scoring.win: BothOver(13)` |
+| M doubles for 노기루다, no friend (not false), run, back-run, C = 20 | `no_trump` and `alone` `Always`, `run`, `back_run`, `full_contract: Always`. "Whichever side wins" is read as applying to all five, since M is one number for the hand |
+| Defenders −BM, friend +BM, declarer the rest | As everywhere: 2BM with a friend, 4BM without |
+| Next dealer: the friend, else the declarer; after a misdeal its caller; after five passes twice the same | `next_dealer: FriendOrDeclarer` (the server passes the last hand's summary), `caller_deals`, `first_bidder` kept |
+| Point cards face down for the declarer and a revealed friend | Display only; the engine gives every seat's points to everyone, as the text says |
+
+Not expressible or left to others:
+
+- The session's first dealer is random in the text; the server starts at
+  seat 0 (it already shuffles nobody's seat, so this only names who
+  deals first).
+- The face-down point piles are for the table UI.
+- The web table does not yet label the misdeal round's pass as "딜미스
+  아님", nor offer `Raise`; both come from `legal` and need the new
+  editor/table work.
 
 ## A hand, step by step
 
@@ -107,7 +157,7 @@ rewritten.
 - **`first_offset`**: every preset set it to 0.
 - **The SKKU friend-reveal timing**: web-mighty left it unimplemented.
 
-## Confirmed for 경기과고 (`gshs`), our default
+## Confirmed for 경기과고 (`gshs`), the table's default
 
 - Bidding goes in turn and every bid must be higher than the last.
 - 노기루다 counts one more than it says: 노기루다 14 is worth ♠ 15, so a suit
@@ -140,9 +190,9 @@ rewritten.
 
 ## Still open
 
-- **Scoring:** every preset still uses web-mighty's formula above. The
-  usual one by 나무위키 (`BidBonus`) is an option; which preset should use
-  it is the owner's call (see below).
+- **Scoring:** 기본 scores as its text says; every school preset still
+  uses web-mighty's formula above. 나무위키's usual one (`BidBonus`) is an
+  option; which school preset should use what is the owner's call.
 - **Bids above 20:** 대구과고 and 연세대 allow bids up to 23, which can never
   be made. 나무위키's 신촌 5마 says that is the point: a bid to sink
   whoever is leading.
@@ -158,7 +208,8 @@ and [마이티/전술 및 전략](https://namu.wiki/w/마이티/전술%20및%20�
 were merged into the main article in August 2026. Struck-through lines
 (rules a group no longer plays) were left out.
 
-"Default" below means `Rules::default()`, the `default` preset.
+"Default" below means `Rules::default()`, web-mighty's base that the school
+presets build on; 기본 is described in its own section above.
 
 | Rule | 나무위키 | We do | Status |
 | --- | --- | --- | --- |
@@ -166,7 +217,7 @@ were merged into the main article in August 2026. Struck-through lines
 | 3마 | 7 to A + joker (33), no friend, joker call ♣7 (♠7) | `Rules::for_players(3)` | Added (engine and sim only) |
 | 4마 | 5 to A + joker + ♣3, ♠3 (43); local min 14–15 | `for_players(4)`; minimum unchanged | Added (engine and sim only) |
 | 6마, 7마 | Main: 5마 with the dealer sitting out; 대전/동대전: 8 each + 5 down, 7 each + 4 down, 7마 calls two friend cards | `for_players(6/7)` deals 8/7 each with one friend | Added in part; sitting out is a server seating rule, two friends missing |
-| Misdeal hand | No point cards; local: only a 10, only one point card, joker + one point card, all ten point cards | Weighted count and threshold; `misdeal.all_points` new | Matches; all-points added (on for sshs, yonsei) |
+| Misdeal hand | No point cards; local: only a 10, only one point card, joker + one point card, all ten point cards | Weighted count and threshold; `misdeal.all_points` new | Matches; all-points added (off everywhere; 나무위키 has it for 서울과고 and 신촌) |
 | When to call misdeal | On your turn to bid, even after bidding (4.3 and its footnote) | Before you have bid; `misdeal.after_bidding` | Differs by default; option added |
 | Declarer's misdeal | Declarer holding 13 cards with no point card may call it | `misdeal.declarer` | Added, off everywhere |
 | Misdeal penalty | Caller −5 into a pot the next winning 여당 shares 3:2; all-pass −1 or 0 | Nothing: payoffs are per hand | Missing (needs session scoring) |
@@ -199,14 +250,14 @@ were merged into the main article in August 2026. Struck-through lines
 Regional rules (지역별 규칙) against the presets, for the owner:
 
 - **서울과고 5마 / `sshs`:** minimum 14 (ours 13), no-trump one lower
-  (ours none), all point cards is a misdeal (now on), no doubling for 노프렌드
+  (ours none), all point cards is a misdeal (`misdeal.all_points`, left off so the preset is unchanged), no doubling for 노프렌드
   mentioned.
 - **민사 5마 / `kmla`:** matches (one point card, joker subtracts one, no
   mighty defence, 백런 at 야당 10+).
 - **신촌 5마 / `yonsei`:** says no-trump may be bid one lower (ours: no
   no-trump at all) and changing to no-trump costs 1; misdeal on a lone
   one-eyed jack (♠J, ♥J) or the mighty, where ours lists ♠10, ♥10 and ♠A;
-  all point cards is a misdeal (now on).
+  all point cards is a misdeal (`misdeal.all_points`, left off so the preset is unchanged).
 - **동대전 5마 / `ddshs`:** the rules match 대전동신과학고 (no no-trump, card
   friend only, +1 to change, ♣3 always calls), so the preset's name 대구동신과고
   may be wrong. Its scoring is |bid − points| with no doubling

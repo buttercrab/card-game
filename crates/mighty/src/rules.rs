@@ -2,6 +2,8 @@
 //! holds the ones ported from web-mighty.
 
 use crate::card::{ACE, Card, DeckKind, Suit};
+use crate::state::HandSummary;
+use engine::Seat;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -28,6 +30,23 @@ pub struct Rules {
     pub joker_lead: JokerLead,
     #[serde(default)]
     pub scoring: Scoring,
+    /// Everyone sees the discards once the hand is over.
+    #[serde(default = "yes")]
+    pub reveal_discards: bool,
+    /// Who opens the bidding next hand.
+    #[serde(default)]
+    pub next_dealer: NextDealer,
+}
+
+/// Who opens the bidding of the next hand. The first bidder doubles as the
+/// dealer where the dealer bids first.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NextDealer {
+    /// One seat on each hand.
+    #[default]
+    Rotate,
+    /// Last hand's friend, or its declarer when there was none.
+    FriendOrDeclarer,
 }
 
 fn two() -> u8 {
@@ -58,6 +77,14 @@ pub struct Misdeal {
     /// judged on every card they then hold.
     #[serde(default)]
     pub declarer: bool,
+    /// Before any bid, everyone from the first bidder on answers whether
+    /// they call a misdeal; nobody may call one later. The first to call
+    /// it is the one nearest the dealer, as when all answer at once.
+    #[serde(default)]
+    pub ask_first: bool,
+    /// Whoever calls a misdeal opens the bidding of the new deal.
+    #[serde(default)]
+    pub caller_deals: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -84,6 +111,14 @@ pub struct Bidding {
     /// and the bidding ends once everyone else has passed in a row.
     #[serde(default = "yes")]
     pub pass_is_final: bool,
+    /// When everyone passes, the first bidder gets one more turn, with
+    /// this as the minimum; a second pass redeals.
+    #[serde(default)]
+    pub last_chance_min: Option<u8>,
+    /// After taking the kitty the declarer may also raise the contract,
+    /// keeping trump or changing it by more than the least it costs.
+    #[serde(default)]
+    pub raise_on_exchange: bool,
 }
 
 /// How the declarer may choose a friend. Each flag enables one way.
@@ -139,6 +174,11 @@ pub struct CardPolicies {
     pub joker_call: TrickPolicy,
     /// Per-card policies that take precedence over the categories above.
     pub overrides: Vec<(Card, TrickPolicy)>,
+    /// A held-back card is released when nothing is left but jokers and
+    /// the mighty; otherwise only when nothing is left but jokers (with
+    /// nine trumps and the mighty, the mighty must lead).
+    #[serde(default = "yes")]
+    pub release_with_mighty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -161,6 +201,9 @@ pub struct JokerLead {
     /// A joker led without power counts as played last, so the next card
     /// sets the suit that wins.
     pub powerless_passes: bool,
+    /// A joker may not lead the first trick unless nothing else may.
+    #[serde(default)]
+    pub not_first_trick: bool,
 }
 
 /// How a finished hand is scored. Groups differ more here than anywhere
@@ -179,6 +222,8 @@ pub struct Scoring {
     pub run: bool,
     /// When a failed contract doubles the loss (백런).
     pub back_run: BackRun,
+    /// When a contract of 20 doubles the score.
+    pub full_contract: Doubling,
     /// Point cards in the declarer's discards count for the declarer's
     /// side; otherwise they count for the defence.
     pub discards_to_declarer: bool,
@@ -196,6 +241,8 @@ pub enum WinScore {
     /// Points taken − the contract + 2 × how far the bid ranks above the
     /// minimum: high bids pay for their risk. 나무위키 calls it the usual one.
     BidBonus,
+    /// (Points taken − n) + (contract − n), at least 1.
+    BothOver(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -237,6 +284,7 @@ impl Default for Scoring {
             alone: Doubling::Win,
             run: true,
             back_run: BackRun::TeamAtMost(10),
+            full_contract: Doubling::Never,
             discards_to_declarer: true,
         }
     }
@@ -265,6 +313,8 @@ impl Default for Rules {
                 all_points: false,
                 after_bidding: false,
                 declarer: false,
+                ask_first: false,
+                caller_deals: false,
             },
             bidding: Bidding {
                 min: 13,
@@ -276,6 +326,8 @@ impl Default for Rules {
                 change_trump_cost: 2,
                 change_to_no_trump_cost: None,
                 pass_is_final: true,
+                last_chance_min: None,
+                raise_on_exchange: false,
             },
             friend: FriendRules {
                 by_card: true,
@@ -291,6 +343,7 @@ impl Default for Rules {
                 joker: TrickPolicy::new(CardPolicy::NoEffect, CardPolicy::NoEffect),
                 joker_call: TrickPolicy::VALID,
                 overrides: Vec::new(),
+                release_with_mighty: true,
             },
             joker_call: JokerCall {
                 calls: vec![(Card::new(Suit::Club, 3), Card::new(Suit::Spade, 3))],
@@ -299,6 +352,8 @@ impl Default for Rules {
             },
             joker_lead: JokerLead::default(),
             scoring: Scoring::default(),
+            reveal_discards: true,
+            next_dealer: NextDealer::Rotate,
         }
     }
 }
@@ -513,13 +568,25 @@ impl Rules {
             CardPolicy::Valid
         }
     }
+
+    /// Who opens the bidding of hand number `hand` (0-based), given how the
+    /// hand before it went, if known.
+    pub fn first_bidder(&self, hand: u32, last: Option<&HandSummary>) -> Seat {
+        match (self.next_dealer, last) {
+            (NextDealer::FriendOrDeclarer, Some(last)) => last.friend.unwrap_or(last.declarer),
+            _ => hand as usize % self.players,
+        }
+    }
 }
 
-/// House rules collected in web-mighty, named after the groups that play them.
+/// 기본, the owner's written base rules, and the school rules collected in
+/// web-mighty, named after the groups that play them. The school presets
+/// are written as changes to [`Rules::default`] (web-mighty's base), which
+/// therefore stays as it was; `tests/presets.json` pins every preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Preset {
-    /// 기본 5마
+    /// 기본 5마: the owner's written rules (RULES.md, "기본")
     Default,
     /// 대구동신과학고등학교
     Ddshs,
@@ -570,7 +637,6 @@ impl Preset {
         use CardPolicy::*;
         let mut r = Rules::default();
         match self {
-            Preset::Default => {}
             Preset::Ddshs => {
                 r.bidding.allow_no_trump = false;
                 r.bidding.change_trump_cost = 1;
@@ -619,6 +685,7 @@ impl Preset {
                 r.joker_lead = JokerLead {
                     by_color: true,
                     powerless_passes: true,
+                    not_first_trick: false,
                 };
             }
             Preset::Skku => {
@@ -638,8 +705,6 @@ impl Preset {
                         .chain([(Card::new(Suit::Spade, ACE), 1)])
                         .collect(),
                     threshold: 1,
-                    // 나무위키 (지역별 규칙, 서울과고 5마): all point cards is a misdeal too.
-                    all_points: true,
                     ..r.misdeal
                 };
                 r.friend.by_seat = false;
@@ -655,8 +720,6 @@ impl Preset {
                         (Card::new(Suit::Spade, ACE), 1),
                     ],
                     threshold: 1,
-                    // 나무위키 (지역별 규칙, 신촌 5마): all point cards is a misdeal too.
-                    all_points: true,
                     ..r.misdeal
                 };
                 r.bidding.allow_no_trump = false;
@@ -664,6 +727,50 @@ impl Preset {
                 r.bidding.min = 14;
                 r.bidding.max = 23;
                 r.policy.joker_call = TrickPolicy::new(NoEffect, Valid);
+            }
+            Preset::Default => {
+                // Values are doubled to stay whole: J, Q, K, A count 1, a ten
+                // ½, ♠A (the card, not the mighty) 0, the joker −1; ½ or less
+                // qualifies. Everyone answers before the bidding, and whoever
+                // throws the deal in deals the next one.
+                r.misdeal = Misdeal {
+                    point_value: 2,
+                    joker_value: -2,
+                    card_values: Suit::ALL
+                        .map(|s| (Card::new(s, 10), 1))
+                        .into_iter()
+                        .chain([(Card::new(Suit::Spade, ACE), 0)])
+                        .collect(),
+                    threshold: 1,
+                    ask_first: true,
+                    caller_deals: true,
+                    ..r.misdeal
+                };
+                // The dealer bids first. 노기루다 counts one more; the first bid
+                // must be worth 14, or 13 on the dealer's turn after five passes.
+                r.bidding.min = 14;
+                r.bidding.no_trump_bonus = 1;
+                r.bidding.no_trump_wins_ties = false;
+                r.bidding.last_chance_min = Some(13);
+                r.bidding.raise_on_exchange = true;
+                r.friend.last_trick = false;
+                // Only the declarer's first lead is limited: no joker, no
+                // trump unless ten trumps or nine and the joker. The joker
+                // call does nothing on the first and last trick.
+                r.policy.joker_call = TrickPolicy::new(NoEffect, NoEffect);
+                r.policy.release_with_mighty = false;
+                r.joker_lead.not_first_trick = true;
+                r.scoring = Scoring {
+                    win: WinScore::BothOver(13),
+                    no_trump: Doubling::Always,
+                    alone: Doubling::Always,
+                    run: true,
+                    back_run: BackRun::TeamAtMost(10),
+                    full_contract: Doubling::Always,
+                    discards_to_declarer: true,
+                };
+                r.reveal_discards = false;
+                r.next_dealer = NextDealer::FriendOrDeclarer;
             }
         }
         r
@@ -695,6 +802,30 @@ mod tests {
     fn every_preset_is_valid() {
         for preset in Preset::ALL {
             preset.rules().validate().unwrap_or_else(|e| panic!("{preset}: {e}"));
+        }
+    }
+
+    /// Writes the presets' rules to `tests/presets.json`; run by hand
+    /// (`--ignored`) only when a preset is meant to change.
+    #[test]
+    #[ignore]
+    fn write_preset_snapshot() {
+        let all: Vec<(String, Rules)> = Preset::ALL.iter().map(|p| (p.name().to_string(), p.rules())).collect();
+        let json = serde_json::to_string_pretty(&all).unwrap();
+        std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/presets.json"), json + "\n").unwrap();
+    }
+
+    /// Every preset plays exactly as pinned: the school presets as they
+    /// were before 기본 became the owner's written rules, and 기본 as that
+    /// text says.
+    #[test]
+    fn presets_match_the_snapshot() {
+        let pinned: Vec<(String, Rules)> =
+            serde_json::from_str(include_str!("../tests/presets.json")).expect("the snapshot parses");
+        assert_eq!(pinned.len(), Preset::ALL.len());
+        for (name, rules) in pinned {
+            let preset: Preset = name.parse().unwrap();
+            assert_eq!(preset.rules(), rules, "{name} changed");
         }
     }
 
