@@ -1,6 +1,7 @@
 <script lang="ts">
   // The player's own cards: one overlapping row, or two when they would not fit.
   import { flip } from 'svelte/animate';
+  import { cubicOut } from 'svelte/easing';
   import Card from './Card.svelte';
   import { sameCard, type Seal } from './cards';
   import { settings } from './settings.svelte';
@@ -18,6 +19,7 @@
     deal = false,
     onplay,
     ontoggle,
+    onrefuse,
   }: {
     cards: CardT[];
     /** 'play' raises then plays one card; 'choose' toggles several, as when discarding. */
@@ -32,7 +34,21 @@
     deal?: boolean;
     onplay?: (card: CardT) => void;
     ontoggle?: (card: CardT) => void;
+    /** A card that cannot be played was tapped; say why. */
+    onrefuse?: (card: CardT) => void;
   } = $props();
+
+  const buzz = (pattern: number | number[]) => settings.haptics && navigator.vibrate?.(pattern);
+
+  /** A refused card shakes its head: ±4px, four times in 300 ms (Wordle, halved). */
+  function shake(card: CardT) {
+    const el = document.querySelector(`.hand [data-card='${JSON.stringify(card)}']`);
+    if (!el || typeof el.animate !== 'function' || settings.speed === 'off') return;
+    el.animate(
+      [0, -4, 4, -4, 4, -2, 0].map((x) => ({ transform: `translateX(${x}px)` })),
+      { duration: 300, easing: 'ease-out' },
+    );
+  }
 
   let width = $state(0);
   // Card width by screen: larger on desktops, smaller on phones held sideways.
@@ -73,15 +89,23 @@
   });
 
   function tap(card: CardT) {
+    if (mode !== 'view' && !playable(card)) {
+      shake(card);
+      buzz([30, 40, 30]);
+      onrefuse?.(card);
+      return;
+    }
     if (mode === 'choose') {
       sound.raise();
       ontoggle?.(card);
     } else if (mode === 'play') {
       if (settings.singleTap || (raised && sameCard(raised, card))) {
         raised = null;
+        buzz(12);
         onplay?.(card);
       } else {
         raised = card;
+        buzz(8);
         sound.raise();
       }
     }
@@ -100,7 +124,7 @@
     {@const step = stepFor(row.length)}
     <div class="row" style:--overlap="{step - cardWidth}px">
       {#each row as card, i (JSON.stringify(card))}
-        <div class="spot" style:--i={i} animate:flip={{ duration: settings.speed === 'off' ? 0 : 200 }}>
+        <div class="spot" style:--i={i} animate:flip={{ duration: settings.speed === 'off' ? 0 : 240, easing: cubicOut }}>
         <Card
           {card}
           width={cardWidth}

@@ -83,6 +83,23 @@
     return 'spade';
   });
   const jokerLabel = $derived(twoJokers ? (joker === 'Red' ? '홍' : '흑') : '조커');
+  // On a desktop, a card under the pointer leans toward it a little, like
+  // a real card picked up by one corner (Balatro, kept to a few degrees).
+  function tilt(e: PointerEvent) {
+    if (e.pointerType !== 'mouse' || unplayable) return;
+    const el = e.currentTarget as HTMLElement;
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    el.style.setProperty('--ry', `${(x * 14).toFixed(1)}deg`);
+    el.style.setProperty('--rx', `${(-y * 14).toFixed(1)}deg`);
+  }
+  function untilt(e: PointerEvent) {
+    const el = e.currentTarget as HTMLElement;
+    el.style.removeProperty('--ry');
+    el.style.removeProperty('--rx');
+  }
+
   const label = $derived.by(() => {
     if (!card) return '뒷면';
     const parts = [cardName(card)];
@@ -140,8 +157,10 @@
     draggable="false"
     aria-label={label}
     aria-pressed={raised}
-    disabled={unplayable}
+    aria-disabled={unplayable}
     {onclick}
+    onpointermove={tilt}
+    onpointerleave={untilt}
   >
     {@render face()}
   </button>
@@ -184,6 +203,9 @@
     overflow: hidden;
     transition:
       transform var(--dur-quick) var(--ease-standard),
+      translate 220ms var(--ease-settle),
+      scale 160ms var(--ease-settle),
+      filter var(--dur-quick) var(--ease-standard),
       box-shadow var(--dur-quick) var(--ease-standard),
       opacity var(--dur-quick) var(--ease-standard);
   }
@@ -462,13 +484,19 @@
     border-radius: 5px;
   }
 
-  /* States. */
+  /* States. Lifts use the separate translate and scale properties, so a
+     tilt (transform) and the motion helpers can combine with them. */
   .raised {
-    transform: translateY(-12px);
+    translate: 0 calc(var(--w) * -0.26);
+    scale: 1.04;
     box-shadow: var(--shadow-raised);
   }
+  /* Cards that cannot be played sink back and lose some colour, rather
+     than greying out; they still answer a tap with the reason. */
   .unplayable {
-    opacity: 0.4;
+    translate: 0 4px;
+    opacity: 0.62;
+    filter: saturate(0.45);
   }
   .won {
     outline: 3px solid var(--accent);
@@ -483,23 +511,24 @@
 
   button.card {
     cursor: pointer;
+    transform: perspective(600px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
   }
   button.card:hover {
     border-color: var(--card-edge);
   }
-  /* Cards do not take the button press; they lift instead. */
-  button.card:active:not(:disabled) {
-    transform: none;
+  /* Touching a card previews the lift. */
+  button.card:active:not(.unplayable):not(.raised) {
+    translate: 0 -6px;
+    scale: 1.04;
     box-shadow: var(--shadow-card);
   }
-  button.card.raised:active:not(:disabled) {
-    transform: translateY(-12px);
+  button.card:active {
+    transform: perspective(600px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  }
+  button.card.raised:active {
     box-shadow: var(--shadow-raised);
   }
-  button.card:disabled {
-    box-shadow: var(--shadow-card);
-  }
-  button.card:disabled {
+  button.card.unplayable {
     cursor: default;
   }
   button.card:focus-visible {
@@ -507,13 +536,16 @@
     outline-offset: 2px;
   }
   @media (hover: hover) {
-    button.card:hover:not(:disabled):not(.raised) {
-      transform: translateY(-6px);
+    button.card:hover:not(.unplayable):not(.raised) {
+      translate: 0 -6px;
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .card {
       transition: none;
+    }
+    button.card {
+      transform: none;
     }
   }
 </style>

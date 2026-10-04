@@ -184,6 +184,13 @@ export class RoomClient {
     this.#send({ type: 'set_settings', settings: rules ? { preset, rules } : { preset } });
   }
 
+  /** Shows a short message in the error toast, as if the server had said it. */
+  notice(text: string) {
+    this.error = text;
+    clearTimeout(this.#errorTimer);
+    this.#errorTimer = setTimeout(() => (this.error = null), 2500);
+  }
+
   askHint() {
     this.#send({ type: 'hint' });
   }

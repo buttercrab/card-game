@@ -152,15 +152,18 @@ button {
   line-height: 1.2;
   cursor: pointer;
   transition:
-    transform var(--dur-quick) var(--ease-standard),
+    transform 180ms var(--ease-settle),
     box-shadow var(--dur-quick) var(--ease-standard),
     background-color var(--dur-quick) var(--ease-standard);
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Pressing pushes the button down onto its lip and squeezes it a little;
+   release springs back (Emil Kowalski's 0.97, M3's fast spring). */
 button:active:not(:disabled) {
-  transform: translateY(3px);
+  transform: translateY(3px) scale(0.97);
   box-shadow: 0 0 0 transparent;
+  transition-duration: 90ms;
 }
 
 button:disabled {
@@ -194,6 +197,19 @@ button.chip[aria-pressed='true'] {
   background: #1c1915;
   color: #fbf8f2;
   box-shadow: 0 3px 0 #000;
+  /* A chip pops as it is chosen (Wordle's tile pop). */
+  animation: chip-pop 200ms var(--ease-settle);
+}
+@keyframes chip-pop {
+  0% {
+    scale: 0.92;
+  }
+  60% {
+    scale: 1.06;
+  }
+  100% {
+    scale: 1;
+  }
 }
 
 input,

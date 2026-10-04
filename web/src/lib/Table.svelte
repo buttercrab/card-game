@@ -208,6 +208,22 @@
     }
   }
 
+  // ---- Idle reminder -----------------------------------------------------------
+  // Waiting on you for a while: the cards you can play give a small wiggle,
+  // after 8 s and then every 10 s, three times at most.
+  $effect(() => {
+    if (!(liveTurn && handMode === 'play')) return;
+    let count = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const nudge = () => {
+      const cards = [...document.querySelectorAll('.tray button.card:not(.unplayable)')];
+      cards.forEach((el, i) => setTimeout(() => void juice(el, 0.15), i * 40));
+      if (++count < 3) timer = setTimeout(nudge, 10_000);
+    };
+    timer = setTimeout(nudge, 8_000);
+    return () => clearTimeout(timer);
+  });
+
   // ---- Contract meter and tags ----------------------------------------------
   /** Points the defence has taken, once the teams are known. */
   const defensePoints = $derived(
@@ -302,6 +318,28 @@
       ? view.hand.filter((c) => !biddingHand!.some((h) => sameCard(h, c)))
       : [],
   );
+
+  /** Why a tapped card cannot be played, in a few words. */
+  function refuse(card: CardT) {
+    const reason = (() => {
+      if (!play || 'Joker' in card) return '지금은 낼 수 없는 카드예요';
+      if (play.called_joker && view.hand.some((c) => 'Joker' in c)) return '조커콜 · 조커를 내야 해요';
+      const trump = play.contract.trump;
+      const suit = card.Normal[0];
+      const black = (s: Suit) => s === 'Spade' || s === 'Club';
+      const lead = play.lead;
+      if (lead && play.plays.length > 0) {
+        const follows = (c: CardT) =>
+          'Normal' in c && ('Suit' in lead ? c.Normal[0] === lead.Suit : black(c.Normal[0]) === (lead.Color === 'Black'));
+        if (view.hand.some(follows)) {
+          return 'Suit' in lead ? `${leadLabel(lead)}를 따라 내야 해요` : `${leadLabel(lead)} 카드를 내야 해요`;
+        }
+      }
+      if (suit === trump && trickNo === 1) return '첫 라운드엔 기루다를 낼 수 없어요';
+      return '지금은 낼 수 없는 카드예요';
+    })();
+    client.notice(reason);
+  }
 
   function playable(card: CardT): boolean {
     return discardable.some((d) => sameCard(d, card)) || plays.some((p) => sameCard(p.card, card));
@@ -652,7 +690,9 @@
       await pop(slotCard(trick.winner), reduced || hurry ? 0 : 360 * k);
       await pause((reduced ? 700 : 250) * k);
       const to = anchor(trick.winner);
-      sound.sweep(trick.plays.filter((p) => isPoint(p.card)).length);
+      // The sweep is heard from the winner's side of the table.
+      const pan = to ? ((to.left + to.width / 2) / innerWidth - 0.5) * 1.2 : 0;
+      sound.sweep(trick.plays.filter((p) => isPoint(p.card)).length, 0, pan);
       if (!reduced && !hurry && to) {
         await Promise.all(trick.plays.map((p, i) => flyTo(slotCard(p.seat), to, 400 * k, i * 40 * k)));
       }
@@ -952,6 +992,7 @@
           deal={dealing}
           onplay={playCard}
           ontoggle={toggle}
+          onrefuse={refuse}
         />
       {/if}
     </div>

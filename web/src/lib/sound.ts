@@ -41,17 +41,23 @@ if (typeof window !== 'undefined') {
 }
 
 /** The output for one cue, or null when sound is off or not yet allowed. */
-function out(at: number, level: number): { ctx: AudioContext; gain: GainNode; t: number } | null {
+function out(at: number, level: number, pan = 0): { ctx: AudioContext; gain: GainNode; t: number } | null {
   if (!ctx || !settings.sound || settings.volume <= 0 || ctx.state !== 'running') return null;
   const gain = ctx.createGain();
   gain.gain.value = level * settings.volume;
-  gain.connect(ctx.destination);
+  if (pan !== 0 && typeof ctx.createStereoPanner === 'function') {
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    gain.connect(panner).connect(ctx.destination);
+  } else {
+    gain.connect(ctx.destination);
+  }
   return { ctx, gain, t: ctx.currentTime + at };
 }
 
 /** A short filtered noise burst: paper on felt. */
-function snap(at: number, { freq = 2400, length = 0.06, level = 0.5 } = {}) {
-  const o = out(at, level);
+function snap(at: number, { freq = 2400, length = 0.06, level = 0.5, pan = 0 } = {}) {
+  const o = out(at, level, pan);
   if (!o || !noise) return;
   const src = o.ctx.createBufferSource();
   src.buffer = noise;
@@ -92,8 +98,8 @@ export const sound = {
     snap(delay, { freq: 1800 + Math.random() * 900 });
   },
   /** A trick slides to its winner, with a rising note per point card in it. */
-  sweep(points: number, delay = 0) {
-    snap(delay, { freq: 900, length: 0.22, level: 0.35 });
+  sweep(points: number, delay = 0, pan = 0) {
+    snap(delay, { freq: 900, length: 0.22, level: 0.35, pan });
     for (let i = 0; i < points; i++) note(delay + 0.08 + i * 0.07, SCALE[Math.min(i, SCALE.length - 1)]);
   },
   /** It is now your turn. */

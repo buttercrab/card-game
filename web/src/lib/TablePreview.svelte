@@ -130,6 +130,7 @@
     act: () => {},
     start: () => {},
     react: () => {},
+    notice: () => {},
     reactions: { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
 

@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Callout from './Callout.svelte';
   import { juice } from './motion';
   let {
@@ -43,6 +44,22 @@
   $effect(() => {
     if (cue) juice(el, 0.6);
   });
+
+  // Points taken float up from the plate as "+2", then the count bumps.
+  let gained = $state<{ n: number; id: number } | null>(null);
+  let before = untrack(() => points);
+  let gainId = 0;
+  $effect(() => {
+    const now = points;
+    if (now > before) {
+      const id = ++gainId;
+      gained = { n: now - before, id };
+      setTimeout(() => {
+        if (gained?.id === id) gained = null;
+      }, 900);
+    }
+    before = now;
+  });
 </script>
 
 <div class="seat" bind:this={el} class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
@@ -50,12 +67,14 @@
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
     <span class="name">{name}</span>
     {#if bot && !name.startsWith('봇')}<span class="bot" title="봇">봇</span>{/if}
+    {#if turn && bot}<span class="thinking" aria-label="생각하는 중"><i></i><i></i><i></i></span>{/if}
   </div>
   <div class="meta">
     {#if team}<span class="team {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/if}
     {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
   </div>
   {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
+  {#if gained}{#key gained.id}<span class="gain" aria-hidden="true">+{gained.n}</span>{/key}{/if}
   {#if cue?.text}{#key cue.id}<Callout text={cue.text} />{/key}{/if}
   {#if reaction}
     {#key reaction.id}
@@ -126,6 +145,66 @@
     white-space: nowrap;
     font-size: 15px;
     font-weight: 600;
+  }
+  /* A bot deciding: three dots breathing in turn. */
+  .thinking {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 2px;
+  }
+  .thinking i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: think 1.2s ease-in-out infinite;
+  }
+  .thinking i:nth-child(2) {
+    animation-delay: 150ms;
+  }
+  .thinking i:nth-child(3) {
+    animation-delay: 300ms;
+  }
+  @keyframes think {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
+  .gain {
+    position: absolute;
+    right: 6px;
+    top: 0;
+    z-index: 5;
+    font-size: 14px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    pointer-events: none;
+    animation: gain 900ms var(--ease-standard) both;
+  }
+  @keyframes gain {
+    0% {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    20% {
+      opacity: 1;
+      transform: translateY(-6px);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-22px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thinking i {
+      animation: none;
+      opacity: 0.6;
+    }
   }
   .bot {
     flex: none;
