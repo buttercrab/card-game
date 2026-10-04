@@ -10,7 +10,14 @@
 set -euo pipefail
 
 export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
-repo=buttercrab/card-game
+# Reports carry players' names, move logs and browser details, so they go
+# only to a private repository, named by REPORTS_REPO on this host. The
+# game's own repository is public: with no private one set, nothing is
+# filed and reports wait on the servers (kept 14 days).
+repo="${REPORTS_REPO:-}"
+if [[ -z $repo ]]; then
+  exit 0
+fi
 state="${XDG_STATE_HOME:-$HOME/.local/state}/card-game"
 filed="$state/reports-filed"
 mkdir -p "$state"
