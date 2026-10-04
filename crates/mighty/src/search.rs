@@ -434,6 +434,8 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
             called_joker,
             tricks,
             discards,
+            // Derived from the plays; the rebuilt state works it out again.
+            leading: _,
         } => {
             for t in tricks {
                 state.taken[t.winner].extend(t.plays.iter().map(|p| p.card));

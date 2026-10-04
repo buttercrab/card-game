@@ -1,6 +1,7 @@
 <script lang="ts">
   // The player's own cards: one overlapping row, or two when they would not fit.
   import { flip } from 'svelte/animate';
+  import { innerHeight } from 'svelte/reactivity/window';
   import { cubicOut } from 'svelte/easing';
   import Card from './Card.svelte';
   import { sameCard, type Seal } from './cards';
@@ -21,6 +22,7 @@
     ontoggle,
     onrefuse,
     hinted = null,
+    raised = $bindable(null),
   }: {
     cards: CardT[];
     /** 'play' raises then plays one card; 'choose' toggles several, as when discarding. */
@@ -39,6 +41,8 @@
     onrefuse?: (card: CardT) => void;
     /** The card the 💡 hint suggests, outlined. */
     hinted?: CardT | null;
+    /** The card lifted by a first tap, so the table can say what a second does. */
+    raised?: CardT | null;
   } = $props();
 
   const buzz = (pattern: number | number[]) => settings.haptics && navigator.vibrate?.(pattern);
@@ -70,9 +74,16 @@
     return () => queries.forEach((q) => q.removeEventListener('change', update));
   });
 
-  const cardWidth = $derived(short ? 46 : wide ? 88 : 60);
   /** Each corner index needs this much showing to stay readable. */
   const MIN_STEP = 26;
+  const cardWidth = $derived.by(() => {
+    if (short) return 46;
+    // Desktops grow the hand with the window's height, which is what runs out.
+    if (wide) return Math.round(Math.min(124, Math.max(88, (innerHeight.current ?? 0) * 0.12)));
+    // Phones take bigger cards while a full hand of ten still fits one row.
+    const big = Math.round(Math.min(76, Math.max(60, width / 5.2)));
+    return (width - big) / 9 >= MIN_STEP ? big : 60;
+  });
 
   function stepFor(count: number): number {
     if (count <= 1 || width === 0) return cardWidth + 6;
@@ -85,7 +96,6 @@
     return [cards.slice(0, half), cards.slice(half)];
   });
 
-  let raised = $state<CardT | null>(null);
   // A raised card that left the hand or became unplayable drops back.
   $effect(() => {
     if (raised && (mode !== 'play' || !cards.some((c) => sameCard(c, raised!)) || !playable(raised))) raised = null;

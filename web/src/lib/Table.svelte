@@ -101,6 +101,20 @@
   function angle(r: number): number {
     return ((90 - (r * 360) / n) * Math.PI) / 180;
   }
+  // Five players sit in fixed bands (me, right, top right, top left, left),
+  // so their cards land on matching, mirror-image spots rather than on a
+  // pentagon, which bunched the trick off-centre on narrow screens.
+  const BANDS: [number, number][] = [
+    [0, 1],
+    [1.15, 0.05],
+    [0.6, -0.9],
+    [-0.6, -0.9],
+    [-1.15, 0.05],
+  ];
+  function slotVector(r: number): [number, number] {
+    if (n === 5) return BANDS[r];
+    return [Math.cos(angle(r)), Math.sin(angle(r))];
+  }
   function seatAt(r: number): number {
     return (bottom + r) % n;
   }
@@ -319,6 +333,8 @@
   );
 
   let chosen = $state<CardT[]>([]);
+  /** The card lifted by a first tap, waiting for the second. */
+  let raisedCard = $state<CardT | null>(null);
   let variants = $state<PlayAction[] | null>(null);
 
   // Forget choices that no longer apply once the server moves on.
@@ -484,7 +500,7 @@
     }
   }
 
-  type Round = { plays: Played[]; tricks: Trick[]; friend: number | null; called_joker?: CardT | null };
+  type Round = { plays: Played[]; tricks: Trick[]; friend: number | null; called_joker?: CardT | null; leading?: number | null };
   function roundOf(p: PhaseView): Round | null {
     if (typeof p !== 'object') return null;
     if ('Play' in p) return p.Play;
@@ -559,7 +575,12 @@
   }
 
   /** Shows `fresh` cards arriving from their players while `apply` updates the table. */
-  async function land(fresh: Played[], apply: () => void, k: number, context?: { all: Played[]; lead: Lead | null; trump: Suit | null }) {
+  async function land(
+    fresh: Played[],
+    apply: () => void,
+    k: number,
+    context?: { all: Played[]; lead: Lead | null; trump: Suit | null },
+  ): Promise<boolean[]> {
     const from = fresh.map((p) => anchor(p.seat, p.card));
     apply();
     await tick();
@@ -571,7 +592,9 @@
         fresh.map((p, i) => {
           const origin = from[i];
           const duration = (p.seat === me ? 220 : 320) * k;
-          if (!heavy[i]) sound.card((i * 60 * k + duration * 0.8) / 1000);
+          // A card landing on others gets an extra edge tick.
+          const onTop = (context?.all.findIndex((q) => q.seat === p.seat) ?? 0) > 0;
+          if (!heavy[i]) sound.card((i * 60 * k + duration * 0.8) / 1000, onTop);
           return origin && !hurry ? flyFrom(slotCard(p.seat), origin, duration, i * 60 * k) : undefined;
         }),
       );
@@ -589,6 +612,7 @@
       if (kind === 'joker') cueAt(p.seat, '조커', 'joker');
       if (!hurry) await pause(110 * k);
     }
+    return heavy.map(Boolean);
   }
 
   /** The latest thing that happened, for anyone who looked away. */
@@ -681,7 +705,7 @@
       const a = roundOf(was);
       const b = roundOf(now);
       if (a && b && b.tricks.length === a.tricks.length) {
-        b.plays.slice(a.plays.length).forEach((_, i) => sound.card(i * 0.06));
+        b.plays.slice(a.plays.length).forEach((_, i) => sound.card(i * 0.06, a.plays.length + i > 0));
       }
     }
   }
@@ -704,11 +728,20 @@
     const trump = typeof nowPhase === 'object' && 'Play' in nowPhase ? nowPhase.Play.contract.trump : null;
     const liveLead = typeof nowPhase === 'object' && 'Play' in nowPhase ? nowPhase.Play.lead : null;
     if (after.tricks.length === before.tricks.length) {
-      await land(after.plays.slice(before.plays.length), () => (shown = next), k, {
+      const fresh = after.plays.slice(before.plays.length);
+      const heavy = await land(fresh, () => (shown = next), k, {
         all: after.plays,
         lead: liveLead,
         trump,
       });
+      // A card that takes the lead gives a small bounce once it has landed;
+      // heavy cards have already made their own entrance.
+      const was = before.leading ?? null;
+      const now = after.leading ?? null;
+      const taker = fresh.findIndex((p) => p.seat === now);
+      if (was !== null && now !== null && now !== was && taker >= 0 && !heavy[taker] && !hurry) {
+        void juice(slotCard(now), 0.15);
+      }
     } else if (after.tricks.length === before.tricks.length + 1) {
       const trick = after.tricks.at(-1)!;
       await land(
@@ -758,6 +791,9 @@
 
   const onTable = $derived(resolving ? resolving.plays : (play?.plays ?? []));
   const onTableLead = $derived(resolving ? resolving.lead : (play?.lead ?? null));
+  /** Who is winning the trick so far, by the server's reckoning; nobody
+   * while a finished trick resolves, when the winner is shown instead. */
+  const leading = $derived(resolving ? null : (play?.leading ?? null));
   const trickKey = $derived(resolving ? `r${resolving.key}` : `p${play?.tricks.length ?? 0}`);
 
   // ---- Where the figures look, and how they feel ---------------------------------
@@ -893,60 +929,67 @@
         <Reactions onreact={(text) => client.react(text)} />
       </span>
     {/if}
-    {#each around as r (r)}
-      {@const s = seatAt(r)}
-      {@const info = room?.seats[s]}
-      <div class="spot pos-{n === 5 ? r : 'free'}" data-seat={s} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
-        <Seat
-          name={seatName(s)}
-          bot={info?.kind === 'bot'}
-          offline={info?.kind === 'human' && !info.connected}
-          team={team(s)}
-          points={points(s)}
-          turn={turn === s}
-          bubble={bubble(s)}
-          reaction={client.reactions?.[s] ?? null}
-          cue={seatCues[s] ?? null}
-          dim={bidding?.passed[s] ?? false}
-          reveal={revealed === s}
-          trumpSuit={contract?.trump ?? null}
-          lookAt={lookAt(r)}
-          mood={mood(s)}
-        />
-      </div>
-    {/each}
-
-    <div class="trick" aria-label={resolving ? '끝난 라운드' : '이번 라운드'}>
-      {#each onTable as p, i (`${trickKey}-${p.seat}`)}
-        {@const r = relative(p.seat)}
-        <div
-          class="slot"
-          class:beaten={winner !== null && p.seat !== winner}
-          data-slot={p.seat}
-          style:--tilt="{((p.seat * 7 + trickNo * 3) % 5) - 2}deg"
-          style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
-          <Card
-            card={p.card}
-            size="trick"
-            seal={seal(p.card)}
-            {twoJokers}
-            powerless={!p.powered}
-            won={p.seat === winner}
+    <!-- The seats and the trick sit in a ring no wider than the felt is tall,
+         so on a wide screen the seats stay near their cards. -->
+    <div class="ring">
+      {#each around as r (r)}
+        {@const s = seatAt(r)}
+        {@const info = room?.seats[s]}
+        <div class="spot pos-{n === 5 ? r : 'free'}" data-seat={s} style:--x={Math.cos(angle(r))} style:--y={Math.sin(angle(r))}>
+          <Seat
+            name={seatName(s)}
+            bot={info?.kind === 'bot'}
+            offline={info?.kind === 'human' && !info.connected}
+            team={team(s)}
+            points={points(s)}
+            turn={turn === s}
+            bubble={bubble(s)}
+            reaction={client.reactions?.[s] ?? null}
+            cue={seatCues[s] ?? null}
+            dim={bidding?.passed[s] ?? false}
+            reveal={revealed === s}
+            trumpSuit={contract?.trump ?? null}
+            lookAt={lookAt(r)}
+            mood={mood(s)}
           />
-          {#if i === 0 && 'Joker' in p.card && onTableLead}<LeadTag lead={onTableLead} />{/if}
         </div>
       {/each}
-    </div>
 
-    {#if resolving && winner !== null}
-      <p class="note below won-note">{winner === me ? '내가' : seatName(winner)} 가져감</p>
-    {:else if play && play.plays.length === 0 && !resolving}
-      <p class="note">{turn === me ? '내가 선' : `${seatName(play.leader)} 선`}</p>
-    {:else if play?.called_joker}
-      <p class="note below alert">조커콜 · 조커를 내야 해요</p>
-    {:else if trickNotes.length > 0}
-      <p class="note below">{trickNotes.join(' · ')}</p>
-    {/if}
+      <div class="trick" aria-label={resolving ? '끝난 라운드' : '이번 라운드'}>
+        {#each onTable as p, i (`${trickKey}-${p.seat}`)}
+          {@const [x, y] = slotVector(relative(p.seat))}
+          <div
+            class="slot"
+            class:beaten={winner !== null && p.seat !== winner}
+            class:leading={p.seat === leading}
+            data-slot={p.seat}
+            style:--tilt="{((p.seat * 7 + trickNo * 3) % 5) - 2}deg"
+            style:--x={x} style:--y={y}>
+            <Card
+              card={p.card}
+              size="trick"
+              seal={seal(p.card)}
+              {twoJokers}
+              powerless={!p.powered}
+              won={p.seat === winner}
+            />
+            {#if i === 0 && 'Joker' in p.card && onTableLead}<LeadTag lead={onTableLead} />{/if}
+          </div>
+        {/each}
+      </div>
+
+      {#if resolving && winner !== null}
+        <p class="note below won-note">{winner === me ? '내가' : seatName(winner)} 가져감</p>
+      {:else if play && play.plays.length === 0 && !resolving}
+        <p class="note">{turn === me ? '내가 선' : `${seatName(play.leader)} 선`}</p>
+      {:else if play?.called_joker}
+        <p class="note below alert">조커콜 · 조커를 내야 해요</p>
+      {:else if leading !== null || trickNotes.length > 0}
+        <p class="note below">
+          {[leading !== null && `${leading === me ? '내가' : seatName(leading)} 이기는 중`, ...trickNotes].filter(Boolean).join(' · ')}
+        </p>
+      {/if}
+    </div>
 
     {#if thrownIn && bidding}
       <div class="sheet review-sheet thrown-in fade-up" role="status" aria-label="딜미스로 보여 준 패">
@@ -1020,7 +1063,10 @@
   </div>
 
   {#if me !== null}
-    <div class="strip">
+    <!-- During play the strip only ever says whose turn it is, so it shrinks
+         to a pill on the tray's edge and gives its height to the felt; the
+         bidding and exchange keep the full panel, which they fill. -->
+    <div class="strip" class:pill={play !== null && !variants && (myTurn || waitingFor !== null)}>
       {#if variants}
         <div class="variants">
           {#each variants as v, i (i)}
@@ -1043,7 +1089,10 @@
           ondiscard={discardChosen}
         />
       {:else if myTurn && play}
-        <p class="prompt"><strong>내 차례</strong> · {settings.singleTap ? '낼 카드를 누르세요' : '낼 카드를 두 번 누르세요'}</p>
+        <p class="prompt">
+          <strong>내 차례</strong> ·
+          {settings.singleTap ? '낼 카드를 누르세요' : raisedCard ? '한 번 더 누르면 내요' : '낼 카드를 두 번 누르세요'}
+        </p>
       {:else if done}
         <div class="next">
           {#if seated && !full}<span class="muted">빈 자리를 채우면 다음 판을 시작할 수 있어요</span>{/if}
@@ -1081,6 +1130,7 @@
           onplay={playCard}
           ontoggle={toggle}
           onrefuse={refuse}
+          bind:raised={raisedCard}
           hinted={client.hint && typeof client.hint === 'object' && 'Play' in client.hint && myTurn ? client.hint.Play.card : null}
         />
       {/if}
@@ -1309,24 +1359,34 @@
   /* The felt: four seats in fixed bands (two on top, one each side), the
      trick in the middle, each card between its player and the centre. */
   .felt {
-    --seat-w: 92px;
-    --seat-h: 64px;
     position: relative;
     min-height: 0;
     container-type: size;
   }
+  /* At most 1.6 times as wide as it is tall: on a wide screen the side
+     seats come in towards the trick instead of hugging the window edges. */
+  .ring {
+    --seat-w: clamp(92px, 10cqw, 148px);
+    --seat-h: 64px;
+    position: absolute;
+    inset: 0;
+    max-width: calc(100cqh * 1.6);
+    margin-inline: auto;
+    container-type: size;
+  }
   /* Card size from the room left between the seats: wide enough that the
-     side cards clear the side seats, short enough that the top cards clear
-     the top seats and the bottom card leaves room for the note. */
+     side cards (1.15 across) clear the side seats, short enough that the top
+     cards (0.9 up) clear the top seats and the bottom card leaves room for
+     the note. */
   .trick,
   .note {
     --card-w: clamp(
       40px,
-      min((100cqw - 2 * var(--seat-w) - 16px) / 3.4, (50cqh - var(--seat-h) - 14px) / 1.84, (50cqh - 40px) / 2.1),
-      84px
+      min((100cqw - 2 * var(--seat-w) - 16px) / 3.55, (50cqh - var(--seat-h) - 14px) / 1.96, (50cqh - 40px) / 2.1),
+      124px
     );
     --card-h: calc(var(--card-w) * 1.4);
-    --tx: calc(var(--card-w) * 1.25);
+    --tx: calc(var(--card-w) * 1.1);
     --ty: calc(var(--card-h) + 6px);
   }
   .spot {
@@ -1370,7 +1430,16 @@
   .trick .slot :global(.card) {
     --w: var(--card-w);
     rotate: var(--tilt, 0deg);
-    transition: opacity var(--dur-quick) var(--ease-standard);
+    transition:
+      opacity var(--dur-quick) var(--ease-standard),
+      translate 220ms var(--ease-settle);
+  }
+  /* The card winning so far sits up a little, outlined in ink: it is news,
+     not a call to act, which is what the accent means. */
+  .trick .slot.leading :global(.card) {
+    translate: 0 -6px;
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
   }
   /* While a round resolves, the cards that lost step back. */
   .trick .slot.beaten :global(.card) {
@@ -1689,6 +1758,27 @@
     text-align: center;
     font-size: 15px;
   }
+  /* Half over the tray's top edge, like a label on its rim. The negative
+     margin hands most of the row back to the felt. */
+  .strip.pill {
+    position: relative;
+    z-index: 7;
+    justify-self: center;
+    min-height: 0;
+    margin-bottom: -22px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--ink-on-card, #1c1915);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  }
+  .strip.pill .prompt {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .strip.pill + .tray {
+    padding-top: 18px;
+  }
   .mine .prompt strong {
     color: var(--accent);
   }
@@ -1825,9 +1915,19 @@
       align-self: stretch;
       overflow-y: auto;
     }
+    .strip.pill {
+      align-self: center;
+      margin-bottom: 0;
+    }
+    .strip.pill + .tray {
+      padding-top: 0;
+    }
+    .ring {
+      max-width: none;
+    }
     .trick,
     .note {
-      --card-w: clamp(36px, min((100cqw - 2 * var(--seat-w) - 16px) / 3.4, (50cqh - 6px) / 2.1), 72px);
+      --card-w: clamp(36px, min((100cqw - 2 * var(--seat-w) - 16px) / 3.55, (50cqh - 6px) / 2.1), 72px);
     }
     .spot.pos-1,
     .spot.pos-2,

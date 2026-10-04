@@ -548,6 +548,20 @@ impl State {
         Phase::Exchange(e)
     }
 
+    /// The seat whose card is winning the trick so far, by the same rule
+    /// that settles a finished trick. None before the first card.
+    pub(crate) fn leading(&self, p: &Play) -> Option<Seat> {
+        let lead = p.lead.filter(|_| !p.plays.is_empty())?;
+        let ctx = TrickContext {
+            trump: p.contract.trump,
+            mighty: self.rules.mighty(p.contract.trump),
+            deck: self.rules.deck,
+            lead,
+            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
+        };
+        Some(p.plays[trick::winner(&ctx, &p.plays)].seat)
+    }
+
     fn step_play(&mut self, mut p: Play, seat: Seat, card: Card, joker_lead: Option<Lead>, call: bool) -> Phase {
         self.hands[seat].retain(|&c| c != card);
         if p.plays.is_empty() {
@@ -570,14 +584,7 @@ impl State {
         }
 
         let lead = p.lead.expect("a finished trick has a lead");
-        let ctx = TrickContext {
-            trump: p.contract.trump,
-            mighty: self.rules.mighty(p.contract.trump),
-            deck: self.rules.deck,
-            lead,
-            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
-        };
-        let winner = p.plays[trick::winner(&ctx, &p.plays)].seat;
+        let winner = self.leading(&p).expect("a finished trick has a leader");
         self.taken[winner].extend(p.plays.iter().map(|pl| pl.card));
         let last = p.trick_no + 1 == self.rules.hand_size;
         let reveals = match p.call {

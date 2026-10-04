@@ -54,6 +54,10 @@ pub enum PhaseView {
         leader: Seat,
         lead: Option<Lead>,
         plays: Vec<Played>,
+        /// Who is winning the trick so far, worked out here so the table
+        /// never has to know the rules. None before the first card.
+        #[serde(default)]
+        leading: Option<Seat>,
         called_joker: Option<Card>,
         /// Completed tricks, oldest first. All of it was played face up.
         tricks: Vec<Trick>,
@@ -103,6 +107,7 @@ impl View {
                 leader: p.leader,
                 lead: p.lead,
                 plays: p.plays.clone(),
+                leading: state.leading(p),
                 called_joker: p.called_joker,
                 tricks: p.tricks.clone(),
                 discards: own_discards(p.declarer, &p.discards),
