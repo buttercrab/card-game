@@ -276,12 +276,35 @@ fn the_mighty_still_counts_as_its_own_suit() {
 }
 
 #[test]
-fn trump_is_held_back_on_the_first_trick() {
+fn trump_may_follow_on_the_first_trick() {
+    // Only leading trump is held back on the first trick: a seat void in
+    // the led suit may trump it.
     let hand = "SA BJ H2 H3 S2 S3 S4 S5 S6 S7";
     let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     lead(&mut state, "D2");
-    assert_eq!(legal_cards(&state), sorted("SA BJ S2 S3 S4 S5 S6 S7"));
+    assert_eq!(legal_cards(&state), sorted(hand));
+}
+
+#[test]
+fn trump_may_not_lead_the_first_trick() {
+    let declarer = "SA BJ H2 H3 H4 D2 D3 D4 C6 C7";
+    let mut state = start(Preset::Gshs.rules(), &[declarer], "C2 C3 C4 C5");
+    act(
+        &mut state,
+        Action::Bid(Contract {
+            trump: Some(Suit::Heart),
+            count: 14,
+        }),
+    );
+    for _ in 1..5 {
+        act(&mut state, Action::Pass);
+    }
+    for card in cards("C2 C3 C4 C5") {
+        act(&mut state, Action::Discard(card));
+    }
+    act(&mut state, Action::CallFriend(FriendCall::FirstTrick));
+    assert_eq!(legal_cards(&state), sorted("SA BJ D2 D3 D4 C6 C7"));
 }
 
 #[test]

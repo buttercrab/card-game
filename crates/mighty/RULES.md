@@ -99,6 +99,7 @@ rewritten.
 - The mighty counts as its own suit: if that suit is led and the mighty is
   your only card of it, you must play the mighty.
 - Jokers have no power on the first and last trick.
+- Trump may not lead the first trick; the other four may play it there.
 - Trick order: the mighty, the joker of trump's colour, trump, the other
   joker, then everything else. With ♠ trump, 홍조커 beats a ♣ lead but
   loses to a ♠ lead, which is trump.
@@ -108,8 +109,9 @@ rewritten.
   card of what it named must play one.
 - A joker led without power counts as played last: the next card sets the
   suit that wins.
-- Trump is held back on the first trick unless forced; holding only trump
-  and a joker counts as forced.
+- Trump may not lead the first trick unless the leader holds nothing else
+  (only trump and a joker counts as nothing else); everyone after the
+  leader may play trump on it.
 
 ## Still open
 

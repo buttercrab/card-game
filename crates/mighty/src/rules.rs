@@ -164,7 +164,7 @@ impl Default for Rules {
             },
             policy: CardPolicies {
                 mighty: TrickPolicy::VALID,
-                trump: TrickPolicy::new(CardPolicy::Invalid, CardPolicy::Valid),
+                trump: TrickPolicy::new(CardPolicy::NoLead, CardPolicy::Valid),
                 joker: TrickPolicy::new(CardPolicy::NoEffect, CardPolicy::NoEffect),
                 joker_call: TrickPolicy::VALID,
                 overrides: Vec::new(),

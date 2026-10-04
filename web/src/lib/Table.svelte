@@ -414,7 +414,7 @@
           return 'Suit' in lead ? `${leadLabel(lead)}를 따라 내야 해요` : `${leadLabel(lead)} 카드를 내야 해요`;
         }
       }
-      if (suit === trump && trickNo === 1) return '첫 라운드엔 기루다를 낼 수 없어요';
+      if (suit === trump && trickNo === 1) return play.plays.length === 0 ? '첫 라운드엔 기루다로 선을 낼 수 없어요' : '첫 라운드엔 기루다를 낼 수 없어요';
       return '지금은 낼 수 없는 카드예요';
     })();
     // Said where the turn is said, in place of the caption or the pill, so
