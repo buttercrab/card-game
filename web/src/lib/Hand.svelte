@@ -20,6 +20,7 @@
     onplay,
     ontoggle,
     onrefuse,
+    hinted = null,
   }: {
     cards: CardT[];
     /** 'play' raises then plays one card; 'choose' toggles several, as when discarding. */
@@ -36,6 +37,8 @@
     ontoggle?: (card: CardT) => void;
     /** A card that cannot be played was tapped; say why. */
     onrefuse?: (card: CardT) => void;
+    /** The card the 💡 hint suggests, outlined. */
+    hinted?: CardT | null;
   } = $props();
 
   const buzz = (pattern: number | number[]) => settings.haptics && navigator.vibrate?.(pattern);
@@ -133,6 +136,7 @@
           {twoJokers}
           kitty={kitty.some((k) => sameCard(k, card))}
           raised={isRaised(card)}
+          hinted={hinted !== null && sameCard(hinted, card)}
           unplayable={mode !== 'view' && !playable(card)}
           onclick={mode === 'view' ? undefined : () => tap(card)}
         />

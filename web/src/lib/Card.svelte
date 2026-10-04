@@ -45,6 +45,7 @@
     seal = null,
     twoJokers = true,
     raised = false,
+    hinted = false,
     unplayable = false,
     won = false,
     kitty = false,
@@ -60,6 +61,8 @@
     /** With one joker in the deck it needs no colour name. */
     twoJokers?: boolean;
     raised?: boolean;
+    /** Suggested by the 💡 hint. */
+    hinted?: boolean;
     unplayable?: boolean;
     won?: boolean;
     kitty?: boolean;
@@ -149,6 +152,7 @@
     class="card {size} ink-{ink}"
     class:back={!card}
     class:raised
+    class:hinted
     class:unplayable
     class:won
     class:powerless
@@ -513,6 +517,10 @@
     translate: 0 4px;
     opacity: 0.62;
     filter: saturate(0.45);
+  }
+  .hinted {
+    outline: 2px dashed var(--accent);
+    outline-offset: 3px;
   }
   .won {
     outline: 3px solid var(--accent);

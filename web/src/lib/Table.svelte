@@ -865,7 +865,7 @@
     </div>
   {/if}
 
-  <div class="felt" class:tense={deciding} bind:this={felt}>
+  <div class="felt" bind:this={felt}>
     {#if me !== null}
       <span class="react-spot">
         {@render hintTools()}
@@ -1033,6 +1033,12 @@
     </div>
 
     <div class="tray" class:reveal={revealed === me} bind:this={tray}>
+      {#if client.reactions?.[me]}
+        {@const mine = client.reactions[me]}
+        {#key mine.id}
+          <span class="my-reaction" class:emoji={/^\p{Extended_Pictographic}/u.test(mine.text)}>{mine.text}</span>
+        {/key}
+      {/if}
       {#if seatCues[me]?.text}{#key seatCues[me].id}<Callout text={seatCues[me].text!} below={false} />{/key}{/if}
       <div class="me-row">
         {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}{/if}
@@ -1051,6 +1057,7 @@
           onplay={playCard}
           ontoggle={toggle}
           onrefuse={refuse}
+          hinted={client.hint && typeof client.hint === 'object' && 'Play' in client.hint && myTurn ? client.hint.Play.card : null}
         />
       {/if}
     </div>
@@ -1277,21 +1284,6 @@
 
   /* The felt: four seats in fixed bands (two on top, one each side), the
      trick in the middle, each card between its player and the centre. */
-  /* A deciding round: a soft light gathers on the middle of the table,
-     fading to nothing before any edge, so it never draws a box. */
-  .felt::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    background: radial-gradient(closest-side, color-mix(in srgb, var(--card) 14%, transparent), transparent);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 600ms var(--ease-standard);
-  }
-  .felt.tense::before {
-    opacity: 1;
-  }
   .felt {
     --seat-w: 92px;
     --seat-h: 64px;
@@ -1698,6 +1690,48 @@
     outline: 3px solid transparent;
     outline-offset: -3px;
     transition: outline-color var(--dur-quick) var(--ease-standard);
+  }
+  /* Your own reaction rises over your hand, as others' rise over their seats. */
+  .my-reaction {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    z-index: 6;
+    padding: 4px 12px;
+    border-radius: 16px;
+    background: var(--card);
+    color: var(--ink-on-card, #1c1915);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+    animation: my-reaction 2.8s var(--ease-standard) both;
+  }
+  .my-reaction.emoji {
+    padding: 2px 8px;
+    font-size: 28px;
+  }
+  @keyframes my-reaction {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -40%) scale(0.6);
+    }
+    12%,
+    82% {
+      opacity: 1;
+      transform: translate(-50%, -100%) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -130%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .my-reaction {
+      animation: none !important;
+    }
   }
   /* Only the hand's container (its direct child), never the cards, which
      also carry a "hand" size class. */

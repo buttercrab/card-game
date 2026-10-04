@@ -28,7 +28,7 @@ interface Settings {
 }
 
 const KEY = 'mighty.settings';
-const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, music: false, musicVolume: 0.5, haptics: true, volume: 0.7, speed: 'normal', hints: false, tips: false, cardBack: 'charcoal', tableTone: 'hanji' };
+const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, music: false, musicVolume: 0.5, haptics: true, volume: 0.7, speed: 'normal', hints: true, tips: false, cardBack: 'charcoal', tableTone: 'hanji' };
 
 function load(): Settings {
   try {
