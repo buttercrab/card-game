@@ -8,12 +8,39 @@ import { withAudio } from './sound';
 const TRACKS = ['/music/candlelit-at-70-bpm.mp3', '/music/stacks-of-quiet-books.mp3'];
 const FADE = 4;
 
+/**
+ * The music follows the hand without changing its notes (they are
+ * recordings): muffled while people bid, open in play, a little brighter and
+ * louder on a deciding round, and dipped under the result.
+ */
+export type Mood = 'lobby' | 'bidding' | 'play' | 'deciding' | 'result';
+const MOODS: Record<Mood, { cutoff: number; level: number }> = {
+  lobby: { cutoff: 18000, level: 1 },
+  bidding: { cutoff: 1400, level: 0.85 },
+  play: { cutoff: 9000, level: 1 },
+  deciding: { cutoff: 18000, level: 1.2 },
+  result: { cutoff: 2200, level: 0.55 },
+};
+let mood: Mood = 'lobby';
+
+/** Glides the music toward `next` over about a second. */
+export function setMood(next: Mood) {
+  if (next === mood) return;
+  mood = next;
+  if (!ctx || !bus) return;
+  const t = ctx.currentTime;
+  bus.filter.frequency.setTargetAtTime(MOODS[next].cutoff, t, 0.35);
+  bus.gain.gain.setTargetAtTime(MOODS[next].level, t, 0.35);
+}
+
 interface Deck {
   el: HTMLAudioElement;
   gain: GainNode;
 }
 
 let decks: [Deck, Deck] | null = null;
+/** Shared by both decks: a low-pass filter and a level that follow the hand. */
+let bus: { filter: BiquadFilterNode; gain: GainNode } | null = null;
 let current = 0;
 let order: string[] = [];
 let ctx: AudioContext | null = null;
@@ -29,7 +56,16 @@ function deck(ctx: AudioContext): Deck {
   // Routed through Web Audio because iOS ignores element.volume.
   const gain = ctx.createGain();
   gain.gain.value = 0;
-  ctx.createMediaElementSource(el).connect(gain).connect(ctx.destination);
+  if (!bus) {
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = MOODS[mood].cutoff;
+    const level = ctx.createGain();
+    level.gain.value = MOODS[mood].level;
+    filter.connect(level).connect(ctx.destination);
+    bus = { filter, gain: level };
+  }
+  ctx.createMediaElementSource(el).connect(gain).connect(bus.filter);
   el.addEventListener('timeupdate', () => {
     if (decks?.[current].el === el && el.duration - el.currentTime < FADE) play();
   });

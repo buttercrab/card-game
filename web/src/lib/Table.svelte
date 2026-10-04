@@ -8,14 +8,17 @@
   import HandReplay from './HandReplay.svelte';
   import LeadTag from './LeadTag.svelte';
   import Reactions from './Reactions.svelte';
+  import ShareCard from './ShareCard.svelte';
   import Seat, { TEAM_LABEL, type Team } from './Seat.svelte';
   import Callout from './Callout.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import type { RoomClient } from './client.svelte';
   import { flyFrom, flyTo, juice, pop, ring, settle } from './motion';
+  import { setMood } from './music.svelte';
   import { settings } from './settings.svelte';
-  import { recordHand } from './stats';
+  import { BACK_NAMES, TABLE_NAMES, checkHand, type Achievement } from './achievements';
+  import { loadStats, recordHand } from './stats';
   import { sound } from './sound';
   import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, StateMsg, Suit, Trick } from './types';
 
@@ -45,7 +48,7 @@
     if (!done || me === null || !room || room.id === 'preview') return;
     const role = me === done.declarer ? 'declarer' : me === done.friend ? 'friend' : 'defense';
     const declarerWon = done.team_points >= done.contract.count;
-    recordHand({
+    const fresh = recordHand({
       key: `${room.id}-${room.hands_played}`,
       at: Date.now(),
       role,
@@ -54,6 +57,20 @@
       contract: done.contract,
       teamPoints: done.team_points,
     });
+    if (fresh) earned = [...untrack(() => earned), ...checkHand(done, me, loadStats())];
+  });
+
+  // Newly earned achievements show one at a time, after the result settles.
+  let earned = $state<Achievement[]>([]);
+  const showing = $derived(earned[0] ?? null);
+  $effect(() => {
+    if (!showing) return;
+    const start = setTimeout(() => sound.achieve(), 1800);
+    const next = setTimeout(() => (earned = earned.slice(1)), 5200);
+    return () => {
+      clearTimeout(start);
+      clearTimeout(next);
+    };
   });
   const stage = $derived(exchange ?? play ?? done);
   const contract = $derived(stage?.contract ?? null);
@@ -236,9 +253,29 @@
     if (defensePoints !== null && 20 - defensePoints < contract.count) return 'lost';
     return null;
   });
+  // The music follows the hand; see music.svelte.ts.
+  $effect(() => {
+    setMood(done ? 'result' : deciding ? 'deciding' : play ? 'play' : bidding || exchange ? 'bidding' : 'lobby');
+  });
+  $effect(() => () => setMood('lobby'));
+
+  /**
+   * This round decides the contract: the points on the table would make it
+   * for the 여당, or, taken by the 야당, would leave it out of reach.
+   */
+  const deciding = $derived.by(() => {
+    if (!play || !contract || resolving || contractState) return false;
+    const onTablePoints = play.plays.filter((p) => isPoint(p.card)).length;
+    if (onTablePoints === 0) return false;
+    const need = contract.count - teamPoints;
+    const makes = need <= onTablePoints;
+    const breaks = defensePoints !== null && 20 - defensePoints - onTablePoints < contract.count;
+    return makes || breaks;
+  });
   const tags = $derived.by(() => {
     const list: { text: string; tone: 'accent' | 'danger' | 'gold' | 'plain' }[] = [];
     if (!play) return list;
+    if (deciding) list.push({ text: '결정적 라운드', tone: 'gold' });
     if (contractState === 'made') list.push({ text: '공약 확정', tone: 'accent' });
     if (contractState === 'lost') list.push({ text: '공약 불가', tone: 'danger' });
     if (defensePoints === 0 && teamPoints > 0 && play.tricks.length >= 5 && trickNo <= view.rules.hand_size) {
@@ -749,6 +786,7 @@
   });
   let review = $state(false);
   let replay = $state(false);
+  let sharing = $state(false);
   const lastTrick = $derived(play?.tricks.at(-1) ?? null);
 
   const callLabel = $derived.by(() => {
@@ -827,7 +865,7 @@
     </div>
   {/if}
 
-  <div class="felt" bind:this={felt}>
+  <div class="felt" class:tense={deciding} bind:this={felt}>
     {#if me !== null}
       <span class="react-spot">
         {@render hintTools()}
@@ -986,6 +1024,7 @@
         <div class="next">
           {#if seated && !full}<span class="muted">빈 자리를 채우면 다음 판을 시작할 수 있어요</span>{/if}
           {#if done.tricks.length}<button onclick={() => (replay = true)}>다시 보기</button>{/if}
+          {#if room}<button onclick={() => (sharing = true)}>결과 카드</button>{/if}
           <button class="primary" disabled={!seated || !full} onclick={() => client.start()}>다음 판</button>
         </div>
       {:else if waitingFor}
@@ -1017,6 +1056,24 @@
     </div>
   {:else}
     <p class="prompt muted spectating">구경하는 중{waitingFor ? ` · ${waitingFor}` : ''}</p>
+  {/if}
+  {#if showing}
+    {#key showing.id}
+      <div class="achieved" role="status">
+        <span class="kicker">업적 달성</span>
+        <strong>{showing.title}</strong>
+        <span class="how">{showing.how}</span>
+        {#if showing.reward}
+          <span class="reward">
+            {showing.reward.kind === 'back' ? '카드 뒷면' : '테이블 색'}
+            ‘{showing.reward.kind === 'back' ? BACK_NAMES[showing.reward.id] : TABLE_NAMES[showing.reward.id]}’을 쓸 수 있어요 · 설정
+          </span>
+        {/if}
+      </div>
+    {/key}
+  {/if}
+  {#if sharing && room}
+    <ShareCard {room} onclose={() => (sharing = false)} />
   {/if}
   {#if replay && done}
     <HandReplay
@@ -1220,6 +1277,22 @@
 
   /* The felt: four seats in fixed bands (two on top, one each side), the
      trick in the middle, each card between its player and the centre. */
+  /* A deciding round: the edges of the table darken a little, drawing the
+     eye to the cards in the middle. */
+  .felt::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    z-index: 0;
+    border-radius: 24px;
+    background: radial-gradient(ellipse at center, transparent 45%, rgb(0 0 0 / 0.14) 100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 500ms var(--ease-standard);
+  }
+  .felt.tense::before {
+    opacity: 1;
+  }
   .felt {
     --seat-w: 92px;
     --seat-h: 64px;
@@ -1427,6 +1500,67 @@
   .ledger li.total {
     color: var(--ink);
     font-weight: 700;
+  }
+  /* An earned achievement slides down from the top after the result. */
+  .achieved {
+    position: fixed;
+    left: 50%;
+    top: calc(64px + env(safe-area-inset-top));
+    z-index: 30;
+    display: grid;
+    justify-items: center;
+    gap: 1px;
+    min-width: 220px;
+    padding: 10px 18px 12px;
+    border-radius: 16px;
+    background: var(--ink);
+    color: var(--table);
+    text-align: center;
+    pointer-events: none;
+    transform: translateX(-50%);
+    animation: achieved 5200ms var(--ease-standard) both;
+    animation-delay: 1.6s;
+  }
+  .achieved .kicker {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--gold);
+  }
+  .achieved strong {
+    font-family: var(--font-display);
+    font-size: 20px;
+  }
+  .achieved .how,
+  .achieved .reward {
+    font-size: 12px;
+    opacity: 0.8;
+  }
+  .achieved .reward {
+    margin-top: 4px;
+    color: var(--gold);
+    opacity: 1;
+  }
+  /* Without motion the banner just shows for its few seconds. */
+  @media (prefers-reduced-motion: reduce) {
+    .achieved {
+      animation: none !important;
+    }
+  }
+  @keyframes achieved {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -14px);
+    }
+    8%,
+    88% {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -8px);
+    }
   }
   /* A loss reads quieter, not angrier. */
   .result.lost .headline {

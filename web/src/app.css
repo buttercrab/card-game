@@ -106,6 +106,25 @@
   color-scheme: dark;
 }
 
+/* Looks earned through 업적: card backs and table colours. */
+:root[data-back='plum'] { --card-back: #5a2445; }
+:root[data-back='indigo'] { --card-back: #22305c; }
+:root[data-back='gold'] { --card-back: #6a4c10; }
+:root[data-back='ink'] { --card-back: #0d0d0e; }
+:root[data-back='jade'] { --card-back: #1e4a3e; }
+
+:root[data-table='celadon'] { --table: #e2eae2; --panel: #d6dfd7; }
+:root[data-table='indigo'] { --table: #e3e7ef; --panel: #d7dce6; }
+:root[data-table='blush'] { --table: #f1e8e4; --panel: #e7dcd7; }
+@media (prefers-color-scheme: dark) {
+  :root[data-table='celadon']:not([data-theme='light']) { --table: #151b18; --panel: #1d2621; }
+  :root[data-table='indigo']:not([data-theme='light']) { --table: #15181f; --panel: #1d222c; }
+  :root[data-table='blush']:not([data-theme='light']) { --table: #1c1718; --panel: #272022; }
+}
+:root[data-table='celadon'][data-theme='dark'] { --table: #151b18; --panel: #1d2621; }
+:root[data-table='indigo'][data-theme='dark'] { --table: #15181f; --panel: #1d222c; }
+:root[data-table='blush'][data-theme='dark'] { --table: #1c1718; --panel: #272022; }
+
 * {
   box-sizing: border-box;
 }

@@ -159,6 +159,8 @@ export interface RoomMsg {
   scores: number[];
   hands_played: number;
   in_hand: boolean;
+  /** Each finished hand's payoffs, in order. Older servers leave this out. */
+  history?: number[][];
 }
 
 export interface StateMsg {

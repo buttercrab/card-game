@@ -27,15 +27,17 @@ export function loadStats(): HandRecord[] {
   }
 }
 
-export function recordHand(hand: HandRecord) {
+/** Records a finished hand once; returns whether it was new. */
+export function recordHand(hand: HandRecord): boolean {
   const all = loadStats();
-  if (all.some((h) => h.key === hand.key)) return;
+  if (all.some((h) => h.key === hand.key)) return false;
   all.push(hand);
   try {
     localStorage.setItem(KEY, JSON.stringify(all.slice(-LIMIT)));
   } catch {
     // Storage full or refused: this hand goes unrecorded.
   }
+  return true;
 }
 
 export function clearStats() {

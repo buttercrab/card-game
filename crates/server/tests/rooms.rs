@@ -118,6 +118,17 @@ async fn one_player_and_four_bots_finish_a_hand() {
     send(&mut ws, json!({ "type": "start" })).await;
     let room = next_where(&mut ws, "room", |r| r["hands_played"] == 1).await;
     assert_eq!(room["in_hand"], true, "the next hand deals");
+    let history = room["history"].as_array().expect("hands are remembered");
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        history[0]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_i64().unwrap())
+            .sum::<i64>(),
+        0
+    );
 }
 
 #[tokio::test]

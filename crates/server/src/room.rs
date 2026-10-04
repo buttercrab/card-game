@@ -167,6 +167,8 @@ pub struct Room<G: SessionGame> {
     hand_no: u32,
     hands_played: u32,
     scores: Vec<i64>,
+    /// Each finished hand's payoffs, in order, for the session summary.
+    history: Vec<Vec<i64>>,
     rng: StdRng,
     /// A 보통 bot's move time; see [`pace`].
     bot_delay: Duration,
@@ -194,6 +196,7 @@ impl<G: SessionGame> Room<G> {
             hand_no: 0,
             hands_played: 0,
             scores: vec![0; n],
+            history: Vec::new(),
             rng: StdRng::from_os_rng(),
             bot_delay,
             think_cap: None,
@@ -278,6 +281,7 @@ impl<G: SessionGame> Room<G> {
             "seats": self.seats,
             "scores": self.scores,
             "hands_played": self.hands_played,
+            "history": self.history,
             "hand": self.game.as_ref().map(|_| json!({ "number": self.hand_no, "actions": self.log })),
         })
     }
@@ -314,6 +318,8 @@ impl<G: SessionGame> Room<G> {
             seats: Vec<Occupant>,
             scores: Vec<i64>,
             hands_played: u32,
+            #[serde(default)]
+            history: Vec<Vec<i64>>,
             hand: Option<Hand>,
         }
         let s: Snapshot<G::Settings> = serde_json::from_value(snapshot).map_err(|e| e.to_string())?;
@@ -327,6 +333,7 @@ impl<G: SessionGame> Room<G> {
         room.seats = s.seats;
         room.scores = s.scores;
         room.hands_played = s.hands_played;
+        room.history = s.history;
         if let Some(hand) = s.hand {
             let options = G::hand_options(&room.settings, hand.number);
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
@@ -677,9 +684,10 @@ impl<G: SessionGame> Room<G> {
         if G::turn(game) == Turn::Over
             && let Some(payoffs) = G::payoffs(game)
         {
-            for (score, payoff) in self.scores.iter_mut().zip(payoffs) {
+            for (score, payoff) in self.scores.iter_mut().zip(&payoffs) {
                 *score += payoff;
             }
+            self.history.push(payoffs);
             self.hands_played += 1;
         }
     }
@@ -706,6 +714,7 @@ impl<G: SessionGame> Room<G> {
             "scores": self.scores,
             "hands_played": self.hands_played,
             "in_hand": self.in_hand(),
+            "history": self.history,
         })
     }
 

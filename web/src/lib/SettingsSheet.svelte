@@ -1,6 +1,14 @@
 <script lang="ts">
   import Card from './Card.svelte';
+  import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './achievements';
   import { settings, type Speed } from './settings.svelte';
+
+  const unlocked = loadUnlocked();
+  const BACKS = Object.keys(BACK_NAMES) as CardBack[];
+  const TONES = Object.keys(TABLE_NAMES) as TableTone[];
+  /** What earns a look, for a locked one. */
+  const howTo = (kind: 'back' | 'table', id: string) =>
+    ACHIEVEMENTS.find((a) => a.reward?.kind === kind && a.reward.id === id)?.how ?? '';
 
   let { onclose, onreport }: { onclose: () => void; onreport?: () => void } = $props();
 
@@ -83,6 +91,44 @@
     </span>
   </div>
 
+  <div class="row looks">
+    <span>
+      <strong>카드 뒷면</strong>
+      <span class="muted">업적으로 더 얻을 수 있어요</span>
+    </span>
+    <div class="swatches" role="radiogroup" aria-label="카드 뒷면">
+      {#each BACKS as id (id)}
+        {@const open = isUnlocked({ kind: 'back', id }, unlocked)}
+        <button
+          class="swatch back-{id}"
+          role="radio"
+          aria-checked={settings.cardBack === id}
+          aria-disabled={!open}
+          title={open ? BACK_NAMES[id] : `잠김 · ${howTo('back', id)}`}
+          aria-label={open ? BACK_NAMES[id] : `${BACK_NAMES[id]}, 잠김: ${howTo('back', id)}`}
+          onclick={() => open && (settings.cardBack = id)}
+        >{#if !open}🔒{/if}</button>
+      {/each}
+    </div>
+  </div>
+  <div class="row looks">
+    <strong>테이블 색</strong>
+    <div class="swatches" role="radiogroup" aria-label="테이블 색">
+      {#each TONES as id (id)}
+        {@const open = isUnlocked({ kind: 'table', id }, unlocked)}
+        <button
+          class="swatch table-{id}"
+          role="radio"
+          aria-checked={settings.tableTone === id}
+          aria-disabled={!open}
+          title={open ? TABLE_NAMES[id] : `잠김 · ${howTo('table', id)}`}
+          aria-label={open ? TABLE_NAMES[id] : `${TABLE_NAMES[id]}, 잠김: ${howTo('table', id)}`}
+          onclick={() => open && (settings.tableTone = id)}
+        >{#if !open}🔒{/if}</button>
+      {/each}
+    </div>
+  </div>
+
   <div class="row">
     <strong>애니메이션</strong>
     <div class="chips" role="radiogroup" aria-label="애니메이션">
@@ -156,6 +202,41 @@
     gap: 6px;
     padding-bottom: 12px;
   }
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .swatch {
+    width: 30px;
+    min-width: 0;
+    height: 30px;
+    min-height: 0;
+    padding: 0;
+    border-radius: 8px;
+    box-shadow: none;
+    border: 2px solid var(--line);
+    font-size: 11px;
+  }
+  .swatch[aria-checked='true'] {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .swatch[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .back-charcoal { background: #2a2622; }
+  .back-plum { background: #5a2445; }
+  .back-indigo { background: #22305c; }
+  .back-gold { background: #6a4c10; }
+  .back-ink { background: #0d0d0e; }
+  .back-jade { background: #1e4a3e; }
+  .table-hanji { background: #efebe3; }
+  .table-celadon { background: #e2eae2; }
+  .table-indigo { background: #e3e7ef; }
+  .table-blush { background: #f1e8e4; }
   .chips {
     display: flex;
     gap: 6px;

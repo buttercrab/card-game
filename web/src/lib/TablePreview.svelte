@@ -118,6 +118,11 @@
     ],
     scores: [12, -3, 5, -8, -6],
     hands_played: 3,
+    history: [
+      [4, -1, -1, -1, -1],
+      [-2, -2, 6, 2, -4],
+      [10, -1, 0, -7, -2],
+    ],
     in_hand: which !== 'done' && which !== 'won' && which !== 'run',
   };
 

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { contractLabel } from './cards';
+  import { ACHIEVEMENTS, loadUnlocked } from './achievements';
   import { clearStats, loadStats, type Role } from './stats';
+
+  const unlocked = loadUnlocked();
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -68,6 +71,15 @@
       {/each}
     </ol>
   {/if}
+  <h3>업적 <span class="muted">{ACHIEVEMENTS.filter((a) => a.id in unlocked).length}/{ACHIEVEMENTS.length}</span></h3>
+  <ul class="achievements">
+    {#each ACHIEVEMENTS as a (a.id)}
+      <li class:got={a.id in unlocked}>
+        <strong>{a.title}</strong>
+        <span>{a.how}</span>
+      </li>
+    {/each}
+  </ul>
   <form method="dialog">
     {#if hands.length}<button type="button" class="ghost reset" onclick={reset}>기록 지우기</button>{/if}
     <button class="primary">닫기</button>
@@ -164,6 +176,32 @@
   .recent li.won {
     background: var(--accent-soft);
     color: var(--accent);
+  }
+  .achievements {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .achievements li {
+    display: grid;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: var(--bg);
+    opacity: 0.5;
+  }
+  .achievements li.got {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1.5px var(--gold);
+  }
+  .achievements strong {
+    font-size: 14px;
+  }
+  .achievements span {
+    font-size: 11px;
+    color: var(--ink-muted);
   }
   form {
     display: flex;

@@ -139,6 +139,10 @@ export const sound = {
   resolve() {
     [440, 554, 659].forEach((f) => note(0, f, { level: 0.08, length: 0.9, type: 'sine' }));
   },
+  /** An achievement is earned: a bright little rising figure. */
+  achieve() {
+    [659, 880, 1109, 1319].forEach((f, i) => note(i * 0.06, f, { level: 0.1, length: 0.5, type: 'sine' }));
+  },
   /** A quiet label appears: 공약 확정, 런 찬스, 마지막 라운드. */
   tag() {
     note(0, 988, { level: 0.06, length: 0.3, type: 'sine' });
