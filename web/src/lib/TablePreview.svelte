@@ -1,6 +1,6 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
-  // /preview?state=bidding | misdeal | exchange | play | sweep | done | won | run
+  // /preview?state=bidding | misdeal | exchange | play | late | sweep | done | won | run
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
   import type { Card, PhaseView, Played, RoomMsg, Rules, StateMsg } from './types';
@@ -41,13 +41,18 @@
     { seat: 3, card: n('Club', 9), powered: true },
     { seat: 4, card: n('Heart', 6), powered: true },
   ];
-  const playPhase = (plays: Played[], tricks: { plays: Played[]; lead: { Suit: 'Club' }; winner: number }[]): PhaseView => ({
+  const playPhase = (
+    plays: Played[],
+    tricks: { plays: Played[]; lead: { Suit: 'Club' }; winner: number }[],
+    friend: number | null = null,
+    trickNo = tricks.length,
+  ): PhaseView => ({
     Play: {
       declarer: 2,
       contract,
       call: { Card: { Joker: 'Black' } },
-      friend: null,
-      trick_no: tricks.length,
+      friend,
+      trick_no: trickNo,
       leader: 1,
       lead: plays.length ? { Suit: 'Club' } : null,
       plays,
@@ -62,6 +67,8 @@
     bidding: { Bidding: { to_act: 0, best: [2, { trump: 'Heart', count: 15 }], passed: [false, true, false, true, false], has_bid: [false, false, true, false, false] } },
     exchange: { Exchange: { declarer: 0, contract, trump_changed: false, discards: [] } },
     play: playPhase(trickPlays, []),
+    // Later in the hand: the 프렌드 is out and both sides have points.
+    late: playPhase(trickPlays, [], 3, 7),
     done: {
       Done: {
         declarer: 2,
@@ -88,6 +95,7 @@
     bidding: ['Pass', ...[15, 16, 17].map((count) => ({ Bid: { trump: 'Spade' as const, count } }))],
     exchange: hand.map((card) => ({ Discard: card })),
     play: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
+    late: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     done: [],
     won: [],
     run: [],
@@ -100,7 +108,16 @@
       first_bidder: 0,
       hand: key === 'exchange' ? [...hand, n('Club', 2), n('Heart', 5), n('Diamond', 4), n('Spade', 6)] : hand,
       hand_sizes: [10, 10, 10, 10, 10],
-      points_taken: [[], [n('Heart', 10)], [n('Spade', 13), n('Club', 12)], [], [n('Diamond', 14)]],
+      points_taken:
+        key === 'late'
+          ? [
+              [n('Club', 10), n('Heart', 11)],
+              [n('Heart', 10), n('Diamond', 11)],
+              [n('Spade', 13), n('Club', 12), n('Diamond', 10), n('Spade', 12), n('Heart', 13)],
+              [n('Heart', 14), n('Club', 13), n('Diamond', 13)],
+              [n('Diamond', 14), n('Club', 14)],
+            ]
+          : [[n('Club', 10)], [n('Heart', 10)], [n('Spade', 13), n('Club', 12)], [], [n('Diamond', 14)]],
       phase,
     },
     legal: legal[key] ?? [],

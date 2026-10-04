@@ -1,6 +1,18 @@
 <script lang="ts" module>
   export type Team = 'declarer' | 'friend' | 'defense';
   export const TEAM_LABEL: Record<Team, string> = { declarer: '주공', friend: '프렌드', defense: '야당' };
+
+  /** A name with its subject particle: 재용이, 민수가, 봇 3이; 나 is 내가. */
+  export function subject(name: string): string {
+    if (name === '나') return '내가';
+    const last = name.charCodeAt(name.length - 1);
+    let batchim: boolean;
+    if (last >= 0xac00 && last <= 0xd7a3) batchim = (last - 0xac00) % 28 !== 0;
+    // Digits read as 영 일 이 삼 사 오 육 칠 팔 구.
+    else if (last >= 48 && last <= 57) batchim = [0, 1, 3, 6, 7, 8].includes(last - 48);
+    else batchim = true;
+    return name + (batchim ? '이' : '가');
+  }
 </script>
 
 <script lang="ts">
@@ -24,6 +36,8 @@
     trumpSuit = null,
     lookAt = null,
     mood = null,
+    pointsOpen = false,
+    onpoints = null,
   }: {
     name: string;
     bot?: boolean;
@@ -48,6 +62,10 @@
     /** Where the figure's eyes glance, as a screen-direction vector. */
     lookAt?: { x: number; y: number } | null;
     mood?: 'happy' | 'down' | null;
+    /** The point cards this seat took are showing. */
+    pointsOpen?: boolean;
+    /** Makes the points a button that shows the point cards taken. */
+    onpoints?: ((anchor: HTMLElement) => void) | null;
   } = $props();
 
   let el: HTMLElement;
@@ -90,7 +108,20 @@
   <div class="meta">
     <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
     {#if team}{#key team}<span class="team pop {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/key}{/if}
-    {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
+    {#if points > 0}
+      {#if onpoints}
+        <button
+          type="button"
+          class="points peek-btn"
+          aria-expanded={pointsOpen}
+          aria-haspopup="dialog"
+          aria-label="{subject(name)} 가져온 점수 카드 {points}장 보기"
+          onclick={(e) => onpoints(e.currentTarget)}
+        >{#key points}<span class="bump">{points}점</span>{/key}</button>
+      {:else}
+        {#key points}<span class="points bump">{points}점</span>{/key}
+      {/if}
+    {/if}
   </div>
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
@@ -304,6 +335,31 @@
     background: var(--table);
     color: var(--ink);
     line-height: 18px;
+  }
+  /* A button only by its hit area: it looks like the pill beside it. */
+  .peek-btn {
+    position: relative;
+    display: inline-block;
+    min-height: 0;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--table);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 18px;
+    /* A hairline says it opens; no lip, it is a label first. */
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  /* A 44px target round an 18px pill. */
+  .peek-btn::before {
+    content: '';
+    position: absolute;
+    inset: -13px -8px;
+  }
+  .peek-btn[aria-expanded='true'] {
+    background: var(--ink);
+    color: var(--table);
+    box-shadow: none;
   }
   /* Rises above the seat, holds, then fades; the client drops it after 2.8 s. */
   .reaction {
