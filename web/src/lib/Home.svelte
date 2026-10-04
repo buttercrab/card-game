@@ -168,7 +168,10 @@
     font-weight: 800;
   }
   header p {
-    margin: 8px 0 0;
+    margin: 8px auto 0;
+    max-width: 30em;
+    text-wrap: balance;
+    word-break: keep-all;
   }
   .panel {
     display: grid;
@@ -183,13 +186,23 @@
     font-size: 14px;
     color: var(--ink-muted);
   }
+  /* A quiet panel, not a cream slab: the page's one bright button is the
+     plum one above. */
   .learn {
     display: grid;
     gap: 2px;
     justify-items: start;
     padding: 14px 20px;
     border-radius: 16px;
+    background: var(--panel);
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line);
     text-align: left;
+  }
+  @media (hover: hover) {
+    .learn:hover {
+      box-shadow: inset 0 0 0 1px var(--ink-muted);
+    }
   }
   .learn .muted {
     font-size: 14px;
@@ -204,6 +217,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+  /* The ghost's label ends at the panel's text edge, not 10px inside it. */
+  .panel-head .small {
+    margin-right: -10px;
   }
   h2 {
     margin: 0;

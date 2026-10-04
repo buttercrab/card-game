@@ -56,28 +56,29 @@
   });
 </script>
 
-<dialog bind:this={dialog} onclose={onclose} aria-labelledby="tutorial-title">
-  <p class="count muted">{step + 1} / {STEPS.length}</p>
-  {#key step}
-    <div class="step fade-up">
-      <h2 id="tutorial-title">{s.title}</h2>
-      {#if s.cards.length}
-        <div class="cards" aria-hidden="true">
-          {#each s.cards as c, i (i)}<Card card={c.card} size="hand" seal={c.seal ?? null} />{/each}
-        </div>
-      {/if}
-      <p>{s.body}</p>
+<dialog class="sheet tutorial" bind:this={dialog} onclose={onclose} aria-labelledby="tutorial-title">
+  <div class="sheet-body">
+    <p class="count muted">{step + 1} / {STEPS.length}</p>
+    {#key step}
+      <div class="step fade-up">
+        <h2 id="tutorial-title">{s.title}</h2>
+        {#if s.cards.length}
+          <div class="cards" aria-hidden="true">
+            {#each s.cards as c, i (i)}<Card card={c.card} size="hand" seal={c.seal ?? null} />{/each}
+          </div>
+        {/if}
+        <p>{s.body}</p>
+      </div>
+    {/key}
+    <div class="dots" aria-hidden="true">
+      {#each STEPS as _, i (i)}<span class:on={i === step}></span>{/each}
     </div>
-  {/key}
-  <div class="dots" aria-hidden="true">
-    {#each STEPS as _, i (i)}<span class:on={i === step}></span>{/each}
   </div>
-  <div class="actions">
-    {#if step > 0}
-      <button onclick={() => step--}>이전</button>
-    {:else}
-      <button class="ghost" onclick={() => dialog.close()}>닫기</button>
-    {/if}
+  <!-- Every button keeps its place from step to step: 이전 is only hidden
+       on the first. -->
+  <div class="sheet-foot">
+    <button class="ghost" onclick={() => dialog.close()}>닫기</button>
+    <button class="prev" class:hidden={step === 0} onclick={() => step--} aria-hidden={step === 0} tabindex={step === 0 ? -1 : 0}>이전</button>
     {#if last}
       <button class="primary" onclick={() => (dialog.close(), onpractice())}>봇이랑 연습하기</button>
     {:else}
@@ -87,17 +88,8 @@
 </dialog>
 
 <style>
-  dialog {
-    width: min(100% - 32px, 420px);
+  .tutorial {
     overflow-x: hidden;
-    padding: 20px;
-    border: none;
-    border-radius: 16px;
-    background: var(--panel);
-    color: var(--ink);
-  }
-  dialog::backdrop {
-    background: rgb(23 25 28 / 0.4);
   }
   .count {
     margin: 0;
@@ -117,10 +109,11 @@
     font-size: 26px;
     font-weight: 800;
   }
-  /* Up to five cards share the dialog's width; none overflows it. */
+  /* Up to five cards share the dialog's width; none overflows it. They
+     start at the text's left edge. */
   .cards {
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 6px;
     padding: 6px 0;
     container-type: inline-size;
@@ -135,26 +128,26 @@
   .dots {
     display: flex;
     justify-content: center;
-    gap: 6px;
-    margin: 12px 0;
+    align-items: center;
+    gap: 8px;
+    margin: 16px 0 0;
   }
   .dots span {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: var(--line);
+    background: color-mix(in srgb, var(--ink) 22%, transparent);
+    transition: width var(--dur-move) var(--ease-standard);
   }
   .dots span.on {
-    width: 18px;
-    border-radius: 3px;
-    background: var(--accent);
+    width: 20px;
+    border-radius: 4px;
+    background: var(--ink);
   }
-  .actions {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
+  .hidden {
+    visibility: hidden;
   }
-  .actions .primary {
+  .sheet-foot .primary {
     min-width: 140px;
   }
 </style>

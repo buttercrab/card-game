@@ -71,7 +71,7 @@
         </div>
 
         <h3>큰 카드</h3>
-        <div class="row">
+        <div class="row wrap">
           {#each deck.filter((c) => 'Joker' in c || [14, 13, 12, 11, 10, 7, 3].includes(c.Normal[1])).slice(0, 9) as card, i (i)}
             <Card {card} width={140} seal={sealOf(card, rules, trump)} />
           {/each}

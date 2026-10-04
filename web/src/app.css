@@ -31,6 +31,21 @@
   --shadow-card: 0 2px 0 rgb(28 25 21 / 0.1);
   --shadow-raised: 0 6px 0 rgb(28 25 21 / 0.07);
 
+  /* Sheets: a dimmed page behind, the dialog a surface of its own. */
+  --scrim: rgb(28 25 21 / 0.4);
+  --raised: var(--panel);
+  --raised-line: var(--line);
+  /* Text fields, and the plain (secondary) button with its lip. */
+  --field: var(--card);
+  --on-field: #1c1915;
+  --btn: var(--card);
+  --on-btn: #1c1915;
+  --btn-lip: var(--card-edge);
+  /* A chosen chip is filled with ink; its lip a shade darker. */
+  --chip-lip: #000;
+  /* A control that cannot be used yet: no colour, no lip. */
+  --off: color-mix(in srgb, var(--ink) 10%, var(--table));
+
   --dur-quick: 120ms;
   --dur-move: 220ms;
   --dur-travel: 320ms;
@@ -85,6 +100,16 @@
     --shadow-card: 0 2px 0 rgb(0 0 0 / 0.35);
     --shadow-raised: 0 6px 0 rgb(0 0 0 / 0.3);
     --card-ink: #1c1915;
+    --scrim: rgb(0 0 0 / 0.62);
+    --raised: color-mix(in srgb, var(--panel) 93%, #fff);
+    --raised-line: #3d434a;
+  --raised-line: #3d434a;
+    --field: color-mix(in srgb, var(--table) 80%, #000);
+    --on-field: var(--ink);
+    --btn: #31353b;
+    --on-btn: var(--ink);
+    --btn-lip: #0f1113;
+    --chip-lip: #9a958b;
     color-scheme: dark;
   }
 }
@@ -108,7 +133,16 @@
   --danger: #ef6b62;
   --shadow-card: 0 2px 0 rgb(0 0 0 / 0.35);
   --shadow-raised: 0 6px 0 rgb(0 0 0 / 0.3);
-  --card-ink: #1c1915;
+    --card-ink: #1c1915;
+  --scrim: rgb(0 0 0 / 0.62);
+  --raised: color-mix(in srgb, var(--panel) 93%, #fff);
+  --raised-line: #3d434a;
+  --field: color-mix(in srgb, var(--table) 80%, #000);
+  --on-field: var(--ink);
+  --btn: #31353b;
+  --on-btn: var(--ink);
+  --btn-lip: #0f1113;
+  --chip-lip: #9a958b;
   color-scheme: dark;
 }
 
@@ -153,7 +187,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -169,9 +204,9 @@ button {
   padding: 10px 16px;
   border: none;
   border-radius: 12px;
-  background: var(--card);
-  color: #1c1915;
-  box-shadow: 0 3px 0 var(--card-edge);
+  background: var(--btn);
+  color: var(--on-btn);
+  box-shadow: 0 3px 0 var(--btn-lip);
   font-size: 15px;
   font-weight: 600;
   line-height: 1.2;
@@ -202,6 +237,13 @@ button.primary {
   color: var(--on-accent);
   box-shadow: 0 3px 0 var(--accent-deep);
 }
+/* Plum means "act now"; a primary that cannot act yet goes neutral. */
+button.primary:disabled {
+  opacity: 1;
+  box-shadow: none;
+  background: var(--off);
+  color: var(--ink-muted);
+}
 
 button.ghost {
   background: transparent;
@@ -219,9 +261,9 @@ button.chip {
 
 button.chip[aria-checked='true'],
 button.chip[aria-pressed='true'] {
-  background: #1c1915;
-  color: #fbf8f2;
-  box-shadow: 0 3px 0 #000;
+  background: var(--ink);
+  color: var(--table);
+  box-shadow: 0 3px 0 var(--chip-lip);
   /* A chip pops as it is chosen (Wordle's tile pop). */
   animation: chip-pop 200ms var(--ease-settle);
 }
@@ -249,22 +291,94 @@ button.chip[aria-pressed='true'] {
 }
 
 input,
-select {
+select,
+textarea {
   border: 1px solid var(--line);
-  background: var(--card);
-  color: #1c1915;
+  background: var(--field);
+  color: var(--on-field);
   border-radius: 12px;
   padding: 10px 12px;
   min-height: 44px;
 }
 
+::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+
+/* Checkboxes, sliders and focus rings are ink: plum is kept for "act now". */
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'] {
+  accent-color: var(--ink);
+}
+
 :focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 3px solid var(--ink);
   outline-offset: 2px;
 }
 
 .muted {
   color: var(--ink-muted);
+}
+
+/* Sheets (dialogs) share one look: a raised surface with a hairline, over a
+   scrim, and one footer pattern: a ghost action at the left edge, then the
+   plain and primary buttons at the right. The footer sticks to the bottom
+   of a sheet taller than the window. */
+dialog.sheet {
+  --pad: 20px;
+  /* Hairlines one step up, so they still show on the raised surface. */
+  --line: var(--raised-line);
+  width: min(100% - 32px, 420px);
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--raised);
+  color: var(--ink);
+  overflow: hidden;
+}
+dialog.sheet[open] {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+dialog.sheet::backdrop {
+  background: var(--scrim);
+}
+.sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--pad) var(--pad) 16px;
+  scrollbar-width: thin;
+}
+.sheet-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  padding: 12px var(--pad);
+  border-top: 1px solid var(--line);
+  background: var(--raised);
+}
+/* The ghost's label lines up with the text above it. */
+.sheet-foot > .ghost:first-child,
+.sheet-foot > .lead {
+  margin-inline-start: -16px;
+  margin-inline-end: auto;
+  color: var(--ink-muted);
+}
+.sheet-foot > .lead > .ghost {
+  color: var(--ink-muted);
+}
+.sheet-foot .primary {
+  min-width: 108px;
+}
+@media (max-width: 380px) {
+  dialog.sheet {
+    --pad: 16px;
+  }
 }
 
 /* Two-colour deck: diamonds red and clubs black everywhere suits appear. */

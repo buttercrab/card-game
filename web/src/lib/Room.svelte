@@ -113,12 +113,16 @@
     <div class="title">
       <strong>{room ? (PRESET_NAME[room.settings.preset] ?? room.settings.preset) : '마이티'}</strong>
       <span class="code">{id}</span>
-      <span class="status" data-status={client.status} title={client.status === 'open' ? '연결됨' : '연결 중'}></span>
+      <span class="status" data-status={client.status} title={client.status === 'open' ? '연결됨' : '연결 중'} aria-hidden="true"></span>
+      <span class="sr">{client.status === 'open' ? '연결됨' : client.status === 'closed' ? '연결 끊김' : '연결 중'}</span>
     </div>
     {#if showTable && !inHand && seated}
       <button class="ghost small" aria-pressed={showSeats} onclick={() => (showSeats = !showSeats)}>자리</button>
     {/if}
-    <button class="ghost small" onclick={() => (showRules = true)} disabled={!room}>규칙</button>
+    <!-- In the lobby the rules sit by the seats instead. -->
+    {#if !showLobby || !room}
+      <button class="ghost small" onclick={() => (showRules = true)} disabled={!room}>규칙</button>
+    {/if}
     <button class="ghost small" onclick={copyLink}>{copied ? '복사됨' : '링크 복사'}</button>
     <button class="ghost icon" onclick={() => (showSettings = true)} aria-label="설정">⚙︎</button>
   </header>
@@ -150,11 +154,10 @@
         <div class="lobby-head">
           <h2 id="lobby-title">{room.hands_played === 0 ? '자리' : `${room.hands_played}판 끝`}</h2>
           <div class="rules-line">
-            <span>
+            <button class="ghost small" onclick={() => (showRules = true)} aria-label="{PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙 보기">
               {PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙
               {#if room.settings.rules}<span class="tag">바꾼 규칙</span>{/if}
-            </span>
-            <button class="ghost small" onclick={() => (showRules = true)}>보기</button>
+            </button>
             {#if seated}<button class="ghost small" onclick={() => (editRules = true)}>바꾸기</button>{/if}
           </div>
         </div>
@@ -169,20 +172,22 @@
           {#snippet centre()}
             {#if seated && room.hands_played === 0}
               <button class="primary start" disabled={!full} onclick={() => client.start()}>시작</button>
-              <span class="count" aria-label="{filled}명 앉음, 5명이 필요해요">{filled} / {room.seats.length}</span>
+              <span class="count">
+                <span class="num">{filled}/{room.seats.length}</span>{#if !full}{' · '}빈 자리를 친구나 봇으로 채우면 시작할 수 있어요{/if}
+              </span>
             {:else if seated}
               <span class="centre-note">{room.hands_played}판 끝</span>
             {:else if full}
               <span class="centre-note">자리가 다 찼어요</span>
-            {:else}
+            {:else if editingName && pending === null}
+              <span class="centre-note">이름을 적고 빈 자리를 눌러 앉으세요</span>
+            {:else if !editingName}
               <span class="centre-note">빈 자리를 눌러 앉으세요</span>
+            {:else if pending !== null}
+              <span class="centre-note">{pending + 1}번 자리에 앉으려면 이름을 적어 주세요</span>
             {/if}
           {/snippet}
         </LobbyTable>
-
-        {#if seated && !full}
-          <p class="muted hint">빈 자리를 친구나 봇으로 채우면 시작할 수 있어요.</p>
-        {/if}
 
         {#if !seated}
           {#if full}
@@ -197,9 +202,11 @@
                 maxlength="24"
                 autocomplete="nickname"
               />
-              <button class="primary" type="submit" disabled={!name.trim()}>
-                {pending === null ? '자리에 앉기' : `${pending + 1}번 자리에 앉기`}
-              </button>
+              <!-- The seats are the way to sit; the button only appears once a
+                   seat was tapped before a name was given. -->
+              {#if pending !== null}
+                <button class="primary" type="submit" disabled={!name.trim()}>{pending + 1}번 자리에 앉기</button>
+              {/if}
             </form>
           {:else}
             <p class="as-name">
@@ -238,8 +245,11 @@
 {/if}
 
 <style>
+  /* Out of a hand the page is the lobby's column: the header lines up with
+     the seat tiles, whose width grows with the window. */
   .page {
-    max-width: 1100px;
+    --tile: clamp(136px, 12vw, 200px);
+    max-width: calc(5 * var(--tile) + 40px + 32px);
     margin: 0 auto;
     padding: 8px 16px 16px;
     display: grid;
@@ -250,6 +260,21 @@
      window gets a wider table instead of a fixed column with empty felt. */
   .page.playing {
     max-width: max(1100px, calc((100dvh - 64px) * 1.7));
+  }
+  /* The arrow and the gear sit on the content's edges, not 12px inside. */
+  header > .icon:first-child {
+    margin-left: -12px;
+  }
+  header > .icon:last-child {
+    margin-right: -12px;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   header {
@@ -302,15 +327,17 @@
       display: none;
     }
   }
+  /* Connected: a small ink dot. Connecting: an empty ring. Lost: red. */
   .status {
     flex: none;
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--ink-muted);
+    box-shadow: inset 0 0 0 1.5px var(--ink-muted);
   }
   .status[data-status='open'] {
-    background: var(--suit-club);
+    background: var(--ink-muted);
+    box-shadow: none;
   }
   .status[data-status='closed'] {
     background: var(--danger);
@@ -332,7 +359,7 @@
   .lobby {
     display: grid;
     gap: 12px;
-    max-width: 720px;
+    max-width: calc(5 * var(--tile) + 40px);
     width: 100%;
     justify-self: center;
     padding-top: 4px;
@@ -363,9 +390,15 @@
     min-width: min(120px, 100%);
   }
   .count {
-    font-size: 13px;
+    max-width: 32em;
+    font-size: 14px;
     font-weight: 600;
     color: var(--ink-muted);
+    word-break: keep-all;
+    text-wrap: balance;
+  }
+  .count .num {
+    color: var(--ink);
     font-variant-numeric: tabular-nums;
   }
   .centre-note {
@@ -404,11 +437,8 @@
     gap: 4px;
     font-size: 14px;
   }
-  .rules-line > span {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    color: var(--ink-muted);
+  .rules-line > button:last-child {
+    margin-right: -10px;
   }
   .leave {
     justify-self: center;

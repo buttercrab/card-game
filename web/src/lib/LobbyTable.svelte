@@ -169,13 +169,16 @@
   }
   /* All tiles one width, so a wrapped second row lines up with the first;
      their content sits in the middle. */
+  /* One frame for every tile, 2px: a filled seat is a panel with a solid
+     edge, an empty one a dashed outline, yours an ink edge (and the 나 tag). */
   .tile {
     position: relative;
     display: grid;
     align-content: center;
     flex: 0 0 calc((100% - 40px) / 5);
-    min-height: 168px;
+    min-height: clamp(168px, 14vw, 224px);
     padding: 22px 8px 14px;
+    border: 2px solid var(--line);
     border-radius: 16px;
     background: var(--panel);
   }
@@ -187,10 +190,10 @@
   }
   .tile.empty {
     background: none;
-    box-shadow: inset 0 0 0 2px var(--line);
+    border-style: dashed;
   }
   .tile.me {
-    box-shadow: inset 0 0 0 2px var(--ink-muted);
+    border-color: var(--ink);
   }
   .no {
     position: absolute;
@@ -218,7 +221,7 @@
   }
   .fig {
     display: block;
-    width: 64px;
+    width: clamp(56px, 40%, 80px);
     margin-bottom: 4px;
   }
   /* An empty seat: the dashed outline of a figure waiting to be filled. */
@@ -290,7 +293,7 @@
     line-height: 1.2;
   }
   .act {
-    box-shadow: 0 2px 0 var(--card-edge);
+    box-shadow: 0 2px 0 var(--btn-lip);
   }
   .levels {
     display: grid;
@@ -314,9 +317,9 @@
     font-weight: 600;
   }
   .levels button[aria-checked='true'] {
-    background: var(--card);
-    color: #1c1915;
-    box-shadow: 0 1px 0 var(--card-edge);
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow: 0 1px 0 var(--btn-lip);
   }
 
   /* Not seated: an empty seat is one big button that seats you there. */
@@ -335,9 +338,9 @@
   .sit-cue {
     padding: 4px 12px;
     border-radius: 999px;
-    background: var(--card);
-    color: #1c1915;
-    box-shadow: 0 2px 0 var(--card-edge);
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow: 0 2px 0 var(--btn-lip);
     font-size: 13px;
   }
   @media (hover: hover) {

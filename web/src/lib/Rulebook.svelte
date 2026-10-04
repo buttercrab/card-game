@@ -10,16 +10,27 @@
   let { preset, rules: given = null }: { preset: string; rules?: Rules | null } = $props();
 
   let rules = $state<Rules | null>(null);
-  let failed = $state(false);
+  /** Why the rules are missing: an id no preset has, or a failed fetch. */
+  let failed = $state<'unknown' | 'network' | null>(null);
+  let attempt = $state(0);
+  const known = $derived(preset in PRESET_NAME);
+  // On its own page (/rules/…) the book offers a way home; in a sheet the
+  // sheet's own footer does that.
+  const standalone = typeof location !== 'undefined' && location.pathname.startsWith('/rules/');
 
   $effect(() => {
+    void attempt;
     rules = given;
-    failed = false;
+    failed = null;
     if (given) return;
+    if (!known) {
+      failed = 'unknown';
+      return;
+    }
     fetch(`/api/presets/${preset}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((r: Rules) => (rules = r))
-      .catch(() => (failed = true));
+      .catch((status) => (failed = status === 404 ? 'unknown' : 'network'));
   });
 
   const n = (suit: 'Spade' | 'Diamond' | 'Heart' | 'Club', rank: number): CardT => ({ Normal: [suit, rank] });
@@ -90,7 +101,11 @@
 
 <article class="book">
   <header>
-    <h1>{PRESET_NAME[preset] ?? preset} 규칙{#if given}<span class="changed">바꾼 규칙</span>{/if}</h1>
+    <h1>
+      {#if failed === 'unknown'}규칙을 찾을 수 없어요{:else}{PRESET_NAME[preset] ?? preset} 규칙{/if}{#if given}<span
+          class="changed">바꾼 규칙</span
+        >{/if}
+    </h1>
     {#if rules}
       <ul class="facts">
         <li>{rules.players}명</li>
@@ -102,7 +117,19 @@
   </header>
 
   {#if failed}
-    <p class="muted">규칙을 불러오지 못했어요.</p>
+    <div class="failed" role="alert">
+      <p class="muted">
+        {#if failed === 'unknown'}
+          ‘{preset}’라는 규칙은 없어요. 주소를 다시 확인해 주세요.
+        {:else}
+          규칙을 불러오지 못했어요. 연결을 확인하고 다시 해 보세요.
+        {/if}
+      </p>
+      <div class="failed-actions">
+        {#if standalone}<a class="home" href="/">홈으로</a>{/if}
+        {#if failed === 'network'}<button onclick={() => attempt++}>다시 시도</button>{/if}
+      </div>
+    </div>
   {:else if !rules}
     <p class="muted">불러오는 중…</p>
   {:else}
@@ -290,6 +317,8 @@
 
 <style>
   .book {
+    /* A fill that reads on the page and on a sheet alike. */
+    --tint: color-mix(in srgb, var(--ink) 7%, transparent);
     display: grid;
     gap: 20px;
     line-height: 1.6;
@@ -306,10 +335,11 @@
   }
   .changed {
     margin-left: 8px;
-    padding: 2px 8px;
+    padding: 1px 8px;
+    border: 1px solid var(--line);
     border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent);
+    color: var(--ink-muted);
+    font-weight: 600;
     font-family: var(--font);
     font-size: 13px;
     vertical-align: middle;
@@ -325,7 +355,7 @@
   .facts li {
     padding: 2px 10px;
     border-radius: 999px;
-    background: var(--panel);
+    background: var(--tint);
     font-size: 13px;
     font-weight: 700;
   }
@@ -370,7 +400,7 @@
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: var(--panel);
+    background: var(--tint);
     display: grid;
     place-items: center;
     font-size: 13px;
@@ -379,10 +409,35 @@
   .ladder strong {
     margin-right: 4px;
   }
+  .failed {
+    display: grid;
+    gap: 16px;
+  }
+  .failed-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .failed-actions:empty {
+    display: none;
+  }
+  /* 홈으로 is a link dressed as the plain button. */
+  .home {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow: 0 3px 0 var(--btn-lip);
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+  }
   .example {
     padding: 10px 14px;
     border-radius: 12px;
-    background: var(--panel);
+    background: var(--tint);
     font-size: 14px;
   }
 </style>
