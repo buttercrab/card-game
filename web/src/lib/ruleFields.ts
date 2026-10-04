@@ -13,8 +13,8 @@
 //
 // Values are compared as JSON, so a field can be a number, a flag, a card
 // pair or a whole sub-object.
-import { cardLabel, jokers } from './cards';
-import type { Card, CardPolicy, Rules, TrickPolicy } from './types';
+import { cardLabel, deckSize, jokers } from './cards';
+import type { BackRun, Card, CardPolicy, Doubling, Rules, TrickPolicy, WinScore } from './types';
 
 export type GroupId = 'deal' | 'bidding' | 'friend' | 'power' | 'score';
 
@@ -23,10 +23,11 @@ export const GROUPS: { id: GroupId; label: string; note?: string }[] = [
   { id: 'bidding', label: '공약' },
   { id: 'friend', label: '키티와 프렌드' },
   { id: 'power', label: '카드의 힘' },
+  // Older servers send no scoring; the note says what all of them score by.
   {
     id: 'score',
     label: '점수',
-    note: '여당이 이기면 가져온 점수 − 10, 노기루다·노프렌드·20점 모두는 두 배씩이에요. 아직 모든 규칙이 같아요.',
+    note: '여당이 이기면 가져온 점수 − 10, 노기루다·노프렌드·20점 모두는 두 배씩이에요.',
   },
 ];
 
@@ -38,9 +39,12 @@ export interface Option<V = unknown> {
 export type Control =
   /** A switch; `on` and `off` say the value in the compare view. */
   | { kind: 'toggle'; on: string; off: string }
-  /** One of a few values, side by side. */
-  | { kind: 'segment'; options: Option[] }
+  /** One of a few values, side by side; `stack` puts long ones one per line. */
+  | { kind: 'segment'; options: Option[]; stack?: boolean }
   | { kind: 'stepper'; min: number; max: number; signed?: boolean; unit?: string }
+  /** A number or null: a switch, and a stepper while it is on. `off` says
+   * null, `on` a number; switching on starts at `start`. */
+  | { kind: 'maybe'; min: number; max: number; start: number; off: string; on: (v: number) => string }
   /** An object of flags, each a chip that can be on or off. */
   | { kind: 'flags'; options: { key: string; label: string }[] }
   /** A TrickPolicy: one segment for the first round, one for the last. */
@@ -63,8 +67,9 @@ export interface Field {
   /** A short trait for a preset whose value differs from `base` (기본's),
    * or null to leave it out. Defaults to "label say(v)". */
   trait?: (v: any, base: any, r: Rules) => string | null;
-  /** Higher comes first in a trait line. */
-  weight?: number;
+  /** Higher comes first in a trait line; a function where how telling a
+   * difference is depends on the values. */
+  weight?: number | ((v: any, base: any) => number);
   /** Runs after the value is set, to keep dependent values whole. */
   apply?: (r: Rules) => void;
 }
@@ -112,6 +117,50 @@ const FRIEND_WAYS = [
   { key: 'alone', label: '노프렌드' },
   { key: 'fake', label: '가짜 프렌드' },
 ];
+
+const DOUBLING: Option<Doubling>[] = [
+  { value: 'Never', label: '없음' },
+  { value: 'Win', label: '이기면' },
+  { value: 'Always', label: '언제나' },
+];
+
+/** "노기루다는 이겨야 두 배" for a doubling that differs from base. */
+function doublingTrait(who: string, topic: string) {
+  return (v: Doubling) => (v === 'Never' ? `${who} 두 배 없음` : v === 'Win' ? `${topic} 이겨야 두 배` : `${topic} 져도 두 배`);
+}
+
+const WIN: Option<WinScore>[] = [
+  { value: 'OverTen', label: '가져온 점수 − 10, 적어도 1' },
+  { value: { BothOver: 13 }, label: '(가져온 점수 − 13) + (공약 − 13), 적어도 1' },
+  { value: 'OverBid', label: '가져온 점수 − 공약' },
+  { value: 'OverMin', label: '가져온 점수 − 최소 공약' },
+  { value: 'BidBonus', label: '가져온 점수 − 공약 + (공약 − 최소 공약) × 2' },
+];
+
+function winTrait(v: WinScore): string {
+  if (typeof v === 'object') return `이기면 (점수 − ${v.BothOver}) + (공약 − ${v.BothOver})`;
+  const words: Record<string, string> = {
+    OverTen: '이기면 점수 − 10',
+    OverMin: '이기면 점수 − 최소 공약',
+    OverBid: '이기면 점수 − 공약',
+    BidBonus: '높은 공약에 보너스',
+  };
+  return words[v];
+}
+
+const BACK_RUN: Option<BackRun>[] = [
+  { value: { TeamAtMost: 10 }, label: '여당 10점 이하' },
+  { value: { ShortBy: 5 }, label: '5점 이상 모자람' },
+  { value: 'DefenceReachesBid', label: '야당이 공약만큼' },
+  { value: 'Never', label: '없음' },
+];
+
+function backRunSay(v: BackRun): string {
+  if (v === 'Never') return '없음';
+  if (v === 'DefenceReachesBid') return '야당이 공약만큼';
+  if ('TeamAtMost' in v) return `여당 ${v.TeamAtMost}점 이하`;
+  return `${v.ShortBy}점 이상 모자람`;
+}
 
 export const RULE_FIELDS: Field[] = [
   // 덱과 딜 미스
@@ -179,6 +228,67 @@ export const RULE_FIELDS: Field[] = [
     trait: () => '딜 미스 셈 다름',
     weight: 1,
   },
+  {
+    path: 'misdeal.all_points',
+    group: 'deal',
+    label: '점수 카드만 받아도 딜미스',
+    help: '10·J·Q·K·A만 받은 패도 다시 나눌 수 있어요',
+    control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
+    trait: (v) => (v ? '점수 카드만 받아도 딜미스' : '점수 카드만으론 딜미스 안 됨'),
+    weight: 2,
+  },
+  {
+    path: 'misdeal.ask_first',
+    group: 'deal',
+    label: '공약 전 딜미스 확인',
+    help: '공약 전에 딜러부터 모두 딜미스인지 답하고, 그 뒤로는 못 해요',
+    control: { kind: 'toggle', on: '해요', off: '안 해요' },
+    trait: (v) => (v ? '공약 전 딜미스 확인' : '공약하며 딜미스'),
+    weight: 1.6,
+  },
+  {
+    path: 'misdeal.after_bidding',
+    group: 'deal',
+    label: '공약 뒤에도 딜미스',
+    help: '이미 공약한 사람도 자기 차례에 딜미스할 수 있어요',
+    control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
+    show: (r) => !r.misdeal?.ask_first,
+    trait: (v) => (v ? '공약 뒤에도 딜미스' : '공약 전에만 딜미스'),
+    weight: 2,
+  },
+  {
+    path: 'misdeal.declarer',
+    group: 'deal',
+    label: '주공 딜미스',
+    help: '주공이 키티까지 받은 패로 버리기 전에 딜미스할 수 있어요',
+    control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
+    trait: (v) => (v ? '주공 딜미스' : '주공 딜미스 없음'),
+    weight: 2,
+  },
+  {
+    path: 'misdeal.caller_deals',
+    group: 'deal',
+    label: '딜미스한 사람이 딜러',
+    help: '딜미스를 부른 사람이 다시 나누고 먼저 공약해요',
+    control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
+    trait: (v) => (v ? '딜미스한 사람이 딜러' : null),
+    weight: 1,
+  },
+  {
+    path: 'next_dealer',
+    group: 'deal',
+    label: '다음 딜러',
+    help: '다음 판에 먼저 공약하는 사람이에요',
+    control: {
+      kind: 'segment',
+      options: [
+        { value: 'Rotate', label: '한 자리씩' },
+        { value: 'FriendOrDeclarer', label: '프렌드, 없으면 주공' },
+      ],
+    },
+    trait: (v) => (v === 'Rotate' ? '딜러는 한 자리씩' : '프렌드가 다음 딜러'),
+    weight: 1,
+  },
 
   // 공약
   {
@@ -188,7 +298,8 @@ export const RULE_FIELDS: Field[] = [
     help: '이보다 낮게는 부를 수 없어요',
     control: { kind: 'stepper', min: 1, max: 20 },
     trait: (v) => `최소 공약 ${v}`,
-    weight: 9,
+    // One off from 기본 is common; two or more tells a table apart.
+    weight: (v: number, base: number | undefined) => (base !== undefined && Math.abs(v - base) < 2 ? 4.5 : 9),
   },
   {
     path: 'bidding.max',
@@ -215,8 +326,8 @@ export const RULE_FIELDS: Field[] = [
     help: '노기루다 n은 기루다 n+보너스와 같은 높이예요',
     control: { kind: 'stepper', min: 0, max: 5, signed: true },
     show: (r) => r.bidding.allow_no_trump,
-    trait: (v) => `노기루다 ${signed(v)}`,
-    weight: 7,
+    trait: (v) => (v ? `노기루다 ${signed(v)}` : '노기루다도 같은 높이'),
+    weight: 2,
   },
   {
     path: 'bidding.no_trump_wins_ties',
@@ -226,7 +337,7 @@ export const RULE_FIELDS: Field[] = [
     control: { kind: 'toggle', on: '덮어요', off: '못 덮어요' },
     show: (r) => r.bidding.allow_no_trump,
     trait: (v) => (v ? '같은 높이 노기루다가 덮음' : '같은 높이 노기루다 못 덮음'),
-    weight: 4,
+    weight: 1.5,
   },
   {
     path: 'bidding.first_bidder_may_pass',
@@ -236,6 +347,24 @@ export const RULE_FIELDS: Field[] = [
     control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
     trait: (v) => (v ? '첫 사람 패스 가능' : '첫 사람 패스 불가'),
     weight: 5,
+  },
+  {
+    path: 'bidding.pass_is_final',
+    group: 'bidding',
+    label: '패스하면 끝',
+    help: '끄면 패스한 사람도 누가 더 높이 부르면 다시 부를 수 있어요',
+    control: { kind: 'toggle', on: '끝이에요', off: '다시 불러요' },
+    trait: (v) => (v ? '패스하면 끝' : '패스해도 다시 공약'),
+    weight: 5,
+  },
+  {
+    path: 'bidding.last_chance_min',
+    group: 'bidding',
+    label: '모두 패스하면 딜러 한 번 더',
+    help: '다섯 명 모두 패스하면 딜러가 이 수부터 한 번 더 불러요. 또 패스하면 다시 나눠요',
+    control: { kind: 'maybe', min: 1, max: 20, start: 13, off: '다시 나눠요', on: (v) => `${v}부터` },
+    trait: (v) => (v === null ? '모두 패스하면 다시 나눔' : `모두 패스하면 딜러가 ${v}부터 한 번 더`),
+    weight: 1.4,
   },
 
   // 키티와 프렌드
@@ -250,6 +379,34 @@ export const RULE_FIELDS: Field[] = [
     weight: 5,
   },
   {
+    path: 'bidding.change_to_no_trump_cost',
+    group: 'friend',
+    label: '노기루다로 바꿀 때',
+    help: '켜면 노기루다로 바꿀 때만 공약 수에 이만큼 더해요',
+    control: { kind: 'maybe', min: 0, max: 5, start: 1, off: '다른 무늬와 같아요', on: (v) => `공약 +${v}` },
+    show: (r) => r.bidding.allow_no_trump,
+    trait: (v) => (v === null ? null : `노기루다로 바꾸기 +${v}`),
+    weight: 2,
+  },
+  {
+    path: 'bidding.raise_on_exchange',
+    group: 'friend',
+    label: '키티 뒤 공약 올리기',
+    help: '주공이 키티를 본 뒤, 버리기 전에 공약 수를 올릴 수 있어요',
+    control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
+    trait: (v) => (v ? '키티 뒤 공약 올리기' : '키티 뒤 공약 못 올림'),
+    weight: 1.4,
+  },
+  {
+    path: 'reveal_discards',
+    group: 'friend',
+    label: '버린 카드 공개',
+    help: '끄면 판이 끝나도 주공이 버린 카드는 주공만 알아요',
+    control: { kind: 'toggle', on: '판 끝에 보여요', off: '주공만 알아요' },
+    trait: (v) => (v ? '버린 카드 공개' : '버린 카드 비공개'),
+    weight: 1,
+  },
+  {
     path: 'friend',
     group: 'friend',
     label: '프렌드 정하기',
@@ -262,7 +419,9 @@ export const RULE_FIELDS: Field[] = [
       const on = FRIEND_WAYS.filter((w) => v[w.key] && base && !base[w.key]).map((w) => w.label);
       return [off.length && `${off.join('·')} 프렌드 없음`, on.length && `${on.join('·')} 프렌드 있음`].filter(Boolean).join(' · ') || null;
     },
-    weight: 6,
+    // Only the last-trick friend differing is what every school has against 기본.
+    weight: (v: Record<string, boolean>, base: Record<string, boolean> | undefined) =>
+      FRIEND_WAYS.every((w) => w.key === 'last_trick' || v[w.key] === base?.[w.key]) ? 1.5 : 6,
   },
 
   // 카드의 힘
@@ -294,13 +453,22 @@ export const RULE_FIELDS: Field[] = [
     weight: 6,
   },
   {
+    path: 'policy.release_with_mighty',
+    group: 'power',
+    label: '첫 라운드 기루다 예외에 마이티 포함',
+    help: '첫 라운드에 막힌 기루다도 조커·마이티 말고 낼 게 없으면 낼 수 있어요. 끄면 마이티는 빼고 세서, 기루다 9장과 마이티면 마이티로 선을 내요',
+    control: { kind: 'toggle', on: '포함해요', off: '빼요' },
+    trait: (v) => (v ? '첫 선 예외에 마이티 포함' : '첫 선 예외에 마이티 빼요'),
+    weight: 1,
+  },
+  {
     path: 'policy.joker_call',
     group: 'power',
     label: '조커콜',
     help: '첫 라운드와 마지막 라운드에 조커콜을 할 수 있나요',
     control: { kind: 'rounds', options: CALL_POLICY },
     trait: roundsTrait('조커콜', CALL_POLICY),
-    weight: 6,
+    weight: 2.5,
   },
   {
     path: 'joker_call.calls.0',
@@ -318,8 +486,9 @@ export const RULE_FIELDS: Field[] = [
     help: '이 카드로 라운드를 시작하며 콜하면 홍조커를 내야 해요',
     control: { kind: 'segment', options: callOptions(n('Heart', 3), n('Diamond', 3)) },
     show: (r) => jokers(r).length > 1,
-    trait: (v: [Card, Card]) => `홍조커콜 ${cardLabel(v[0])}`,
-    weight: 2,
+    trait: (v: [Card, Card], base: [Card, Card] | undefined) =>
+      base ? `홍조커콜 ${cardLabel(v[0])}` : `조커콜 ${cardLabel(v[0])} 추가`,
+    weight: 9,
   },
   {
     path: 'joker_call.mighty_defense',
@@ -356,6 +525,82 @@ export const RULE_FIELDS: Field[] = [
     control: { kind: 'toggle', on: '다음 카드가 정해요', off: '조커가 정해요' },
     trait: (v) => (v ? '힘 없는 조커 선은 넘김' : '힘 없는 조커도 무늬 정함'),
     weight: 4,
+  },
+  {
+    path: 'joker_lead.not_first_trick',
+    group: 'power',
+    label: '첫 라운드 조커 선 금지',
+    help: '주공은 첫 라운드를 조커로 시작할 수 없어요',
+    control: { kind: 'toggle', on: '금지', off: '돼요' },
+    trait: (v) => (v ? '첫 라운드 조커 선 금지' : '첫 라운드 조커 선 가능'),
+    weight: 1.2,
+  },
+
+  // 점수
+  {
+    path: 'scoring.win',
+    group: 'score',
+    label: '이긴 점수',
+    help: '여당이 공약을 이루면 야당 한 사람이 내는 점수예요. 두 배는 아래에서 따로 붙어요',
+    control: { kind: 'segment', options: WIN, stack: true },
+    say: (v: WinScore) => WIN.find((o) => same(o.value, v))?.label ?? winTrait(v),
+    trait: winTrait,
+    weight: 3,
+  },
+  {
+    path: 'scoring.no_trump',
+    group: 'score',
+    label: '노기루다 두 배',
+    help: '노기루다 공약이면 점수가 두 배예요',
+    control: { kind: 'segment', options: DOUBLING },
+    trait: doublingTrait('노기루다', '노기루다는'),
+    weight: 1,
+  },
+  {
+    path: 'scoring.alone',
+    group: 'score',
+    label: '노프렌드 두 배',
+    help: '드러내고 혼자 하면 점수가 두 배예요. 가짜 프렌드는 해당 없어요',
+    control: { kind: 'segment', options: DOUBLING },
+    trait: doublingTrait('노프렌드', '노프렌드는'),
+    weight: 1,
+  },
+  {
+    path: 'scoring.full_contract',
+    group: 'score',
+    label: '공약 20 두 배',
+    help: '공약이 20이면 점수가 두 배예요',
+    control: { kind: 'segment', options: DOUBLING },
+    trait: doublingTrait('공약 20', '공약 20은'),
+    weight: 1,
+  },
+  {
+    path: 'scoring.run',
+    group: 'score',
+    label: '런 두 배',
+    help: '여당이 점수 카드 20장을 모두 가져가 이기면 두 배예요',
+    control: { kind: 'toggle', on: '두 배', off: '그대로' },
+    trait: (v) => (v ? '런 두 배' : '런 두 배 없음'),
+    weight: 1,
+  },
+  {
+    path: 'scoring.back_run',
+    group: 'score',
+    label: '백런',
+    help: '여당이 지고 이렇게 되면 잃는 점수가 두 배예요',
+    control: { kind: 'segment', options: BACK_RUN, stack: true },
+    say: backRunSay,
+    trait: (v: BackRun) => (v === 'Never' ? '백런 없음' : `백런: ${backRunSay(v)}`),
+    weight: 1,
+  },
+  {
+    path: 'scoring.discards_to_declarer',
+    group: 'score',
+    label: '버린 점수 카드는 여당 것',
+    help: '끄면 주공이 버린 점수 카드는 야당 점수로 세요',
+    control: { kind: 'toggle', on: '여당 것', off: '야당 것' },
+    trait: (v) => (v ? '버린 점수 카드는 여당 것' : '버린 점수 카드는 야당 것'),
+    weight: 2,
   },
 ];
 
@@ -413,6 +658,8 @@ export function say(field: Field, r: Rules): string {
       return c.options.find((o) => same(o.value, v))?.label ?? '다른 값';
     case 'stepper':
       return c.signed ? signed(v) : String(v);
+    case 'maybe':
+      return v === null ? c.off : c.on(v);
     case 'flags': {
       const on = c.options.filter((o) => v[o.key]).map((o) => o.label);
       return on.length ? on.join(' · ') : '없음';
@@ -450,12 +697,15 @@ export function otherDifferences(a: Rules, b: Rules): number {
 export function traits(r: Rules, base: Rules): string[] {
   const out: { text: string; weight: number }[] = [];
   for (const f of differences(r, base)) {
-    // A field hidden under the base, like the second joker's call card, is
-    // implied by the trait that revealed it.
-    if (!shown(f, base) || !shown(f, r)) continue;
+    // A field the base hides, like the no-trump bonus without no-trump, is
+    // implied by the trait that revealed it; one the base has no value for
+    // at all, like a second joker's call card, is news of its own.
+    const b = getPath(base, f.path);
+    if ((!shown(f, base) && b !== undefined) || !shown(f, r)) continue;
     const v = getPath(r, f.path);
-    const text = f.trait ? f.trait(v, getPath(base, f.path), r) : `${f.label} ${say(f, r)}`;
-    if (text && !out.some((o) => o.text === text)) out.push({ text, weight: f.weight ?? 1 });
+    const text = f.trait ? f.trait(v, b, r) : `${f.label} ${say(f, r)}`;
+    const weight = typeof f.weight === 'function' ? f.weight(v, b) : (f.weight ?? 1);
+    if (text && !out.some((o) => o.text === text)) out.push({ text, weight });
   }
   out.sort((x, y) => y.weight - x.weight);
   const other = otherDifferences(r, base);
@@ -468,9 +718,18 @@ export function traits(r: Rules, base: Rules): string[] {
  * crates/mighty/src/rules.rs; each problem names the fields to fix. */
 export function problems(r: Rules): { paths: string[]; message: string }[] {
   const out: { paths: string[]; message: string }[] = [];
-  const deck = 52 + jokers(r).length;
+  const lowest = r.lowest_rank ?? 2;
+  const extra = r.extra_cards ?? [];
+  if (lowest < 2 || lowest > 10) out.push({ paths: [], message: '점수 카드(10~A)는 모두 덱에 있어야 해요' });
+  const rank = (c: Card) => ('Normal' in c ? c.Normal[1] : null);
+  const distinct = new Set(extra.map((c) => JSON.stringify(c))).size === extra.length;
+  if (!distinct || !extra.every((c) => (rank(c) ?? 99) < lowest))
+    out.push({ paths: [], message: '더 넣는 카드는 가장 낮은 숫자보다 낮은 서로 다른 카드여야 해요' });
   if (r.players < 2 || r.players > 8 || r.hand_size === 0) out.push({ paths: [], message: '인원이나 패 장수가 맞지 않아요' });
-  if (r.players * r.hand_size > deck) out.push({ paths: ['deck'], message: '나눠 줄 카드가 모자라요' });
+  if (r.players * r.hand_size > deckSize(r)) out.push({ paths: ['deck'], message: '나눠 줄 카드가 모자라요' });
+  const inDeck = (c: Card) => (rank(c) ?? 99) >= lowest || extra.some((x) => same(x, c));
+  if (!r.joker_call.calls.flat().every(inDeck))
+    out.push({ paths: ['joker_call.calls.0', 'joker_call.calls.1'], message: '조커콜 카드가 덱에 없어요' });
   if (r.bidding.min === 0 || r.bidding.min > r.bidding.max)
     out.push({ paths: ['bidding.min', 'bidding.max'], message: '최소 공약이 최대 공약보다 클 수 없어요' });
   if (r.bidding.no_trump_bonus >= r.bidding.min)

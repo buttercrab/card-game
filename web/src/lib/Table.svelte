@@ -24,9 +24,20 @@
   import { BACK_NAMES, TABLE_NAMES, checkHand, type Achievement } from './achievements';
   import { loadStats, recordHand } from './stats';
   import { sound } from './sound';
-  import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, StateMsg, Suit, Trick } from './types';
+  import type { Action, Card as CardT, Doubling, FriendCall, Lead, PhaseView, Played, PlayAction, Scoring, StateMsg, Suit, Trick } from './types';
 
   let { client }: { client: RoomClient } = $props();
+
+  /** What servers that send no scoring score by (Scoring::default). */
+  const DEFAULT_SCORING: Scoring = {
+    win: 'OverTen',
+    no_trump: 'Win',
+    alone: 'Win',
+    run: true,
+    back_run: { TeamAtMost: 10 },
+    full_contract: 'Never',
+    discards_to_declarer: true,
+  };
 
   // What is drawn lags the server by the animations still playing: each new
   // state waits in a queue, and the difference to the one on screen is
@@ -148,8 +159,26 @@
     done ? done.team_points : declarer === null ? 0 : points(declarer) + (friend !== null ? points(friend) : 0),
   );
 
+  // ---- The misdeal round and the dealer's extra turn -------------------------
+  /** Everyone answers 딜미스 or 딜미스 아님 before any bid (misdeal.ask_first). */
+  const asking = $derived(bidding?.asking_misdeal ?? false);
+  /** The dealer's extra turn after five passes, from this count; else null. */
+  const lastChance = $derived.by(() => {
+    const min = view.rules.bidding.last_chance_min;
+    if (!bidding || asking || bidding.best || min == null) return null;
+    return (view.bids ?? []).length === n ? min : null;
+  });
+  /** Answers are not recorded as bids: those from the dealer up to the seat
+   * to answer now have said 딜미스 아님. */
+  function saidNoMisdeal(seat: number): boolean {
+    if (!bidding?.asking_misdeal) return false;
+    const from = view.first_bidder;
+    return (seat - from + n) % n < (bidding.to_act - from + n) % n;
+  }
+
   function bubble(seat: number): string | null {
     if (!bidding) return null;
+    if (saidNoMisdeal(seat)) return '딜미스 아님';
     if (bidding.best && bidding.best[0] === seat) return contractLabel(bidding.best[1]);
     if (bidding.passed[seat]) return '패스';
     return null;
@@ -159,34 +188,67 @@
   // The result is counted out step by step, as 맞고 and mahjong results are:
   // the points, over or short, each ×2, then everyone's payoff.
   type Done = Extract<PhaseView, { Done: unknown }>['Done'];
+  /** The count as the rules score it (state.rs, hand_value): what one
+   * opponent pays, then each doubling on its own line. */
   function ledger(d: Done) {
-    const made = d.team_points >= d.contract.count;
+    const s = view.rules.scoring ?? DEFAULT_SCORING;
+    const min = view.rules.bidding.min;
+    const p = d.team_points;
+    const c = d.contract.count;
+    const made = p >= c;
     const lines: string[] = [];
     let value: number;
     if (made) {
-      const base = Math.max(d.team_points - 10, 1);
-      lines.push(`여당 ${d.team_points}점 − 10 = ${base}`);
-      value = base;
-      const doubles = [
-        d.contract.trump === null && '노기루다',
-        d.call === 'Alone' && '노프렌드',
-        d.team_points === 20 && '런',
-      ].filter((x): x is string => !!x);
-      for (const why of doubles) {
+      const win = s.win;
+      if (typeof win === 'object') {
+        const k = win.BothOver;
+        value = Math.max(p - k + c - k, 1);
+        lines.push(`(여당 ${p} − ${k}) + (공약 ${c} − ${k}) = ${value}`);
+      } else if (win === 'OverMin') {
+        value = p - min;
+        lines.push(`여당 ${p}점 − 최소 ${min} = ${value}`);
+      } else if (win === 'OverBid') {
+        value = p - c;
+        lines.push(`여당 ${p}점 − 공약 ${c} = ${value}`);
+      } else if (win === 'BidBonus') {
+        const bonus = 2 * (c + (d.contract.trump === null ? view.rules.bidding.no_trump_bonus : 0) - min);
+        value = p - c + bonus;
+        lines.push(`여당 ${p} − 공약 ${c} + 보너스 ${bonus} = ${value}`);
+      } else {
+        value = Math.max(p - 10, 1);
+        lines.push(`여당 ${p}점 − 10 = ${value}`);
+      }
+    } else {
+      const short = c - p;
+      lines.push(short === 1 ? `아깝게 1점 모자람` : `공약 ${c}에서 ${short}점 모자람`);
+      value = short;
+      const back = s.back_run;
+      const why =
+        back === 'Never'
+          ? null
+          : back === 'DefenceReachesBid'
+            ? 20 - p >= c && '야당이 공약만큼'
+            : 'TeamAtMost' in back
+              ? p <= back.TeamAtMost && `${back.TeamAtMost}점 이하`
+              : short >= back.ShortBy && `${back.ShortBy}점 이상 모자람`;
+      if (why) {
         value *= 2;
         lines.push(`${why} ×2 = ${value}`);
       }
-    } else {
-      const short = d.contract.count - d.team_points;
-      lines.push(short === 1 ? `아깝게 1점 모자람` : `공약 ${d.contract.count}에서 ${short}점 모자람`);
-      value = short;
-      if (d.team_points <= 10) {
-        value *= 2;
-        lines.push(`10점 이하 ×2 = ${value}`);
-      }
     }
-    const margin = d.team_points - d.contract.count;
-    return { made, lines, value, run: d.team_points === 20, margin };
+    const applies = (x: Doubling | undefined) => x === 'Always' || (x === 'Win' && made);
+    const doubles = [
+      applies(s.no_trump) && d.contract.trump === null && '노기루다',
+      applies(s.alone) && d.call === 'Alone' && '노프렌드',
+      s.run && made && p === 20 && '런',
+      applies(s.full_contract) && c === 20 && '공약 20',
+    ].filter((x): x is string => !!x);
+    for (const why of doubles) {
+      value *= 2;
+      lines.push(`${why} ×2 = ${value}`);
+    }
+    const margin = p - c;
+    return { made, lines, value, run: p === 20, margin };
   }
   const result = $derived(done ? ledger(done) : null);
 
@@ -341,10 +403,16 @@
     if (bidding)
       return bidding.best
         ? `${contractLabel(bidding.best[1])}보다 높게 부르거나 패스. 센 카드가 많으면 도전!`
-        : '많이 가진 무늬를 기루다로 골라 불러요. 자신 없으면 패스.';
+        : asking
+          ? legal.includes('Misdeal')
+            ? '패가 약해 딜미스할 수 있어요. 다시 나누려면 딜미스.'
+            : '딜미스할 만큼 약한 패가 아니에요. 딜미스 아님을 눌러요.'
+          : lastChance !== null
+            ? `모두 패스했어요. ${lastChance}부터 부르거나, 또 패스하면 다시 나눠요.`
+            : '많이 가진 무늬를 기루다로 골라 불러요. 자신 없으면 패스.';
     if (exchange)
       return toDiscard > 0
-        ? `필요 없는 카드 ${toDiscard}장을 버려요. 버린 점수 카드도 여당 점수예요.`
+        ? `필요 없는 카드 ${toDiscard}장을 버려요. 버린 점수 카드${view.rules.scoring?.discards_to_declarer === false ? '는 야당 점수가 돼요.' : '도 여당 점수예요.'}`
         : '프렌드를 불러요. 보통 마이티나 조커를 불러요.';
     if (play) {
       if (play.plays.length === 0) return '내가 선이에요. 아무 카드나 내도 돼요.';
@@ -401,6 +469,9 @@
   /** Why a tapped card cannot be played, in a few words. */
   function refuse(card: CardT) {
     const reason = (() => {
+      if (play && 'Joker' in card && play.trick_no === 0 && play.plays.length === 0 && view.rules.joker_lead?.not_first_trick) {
+        return '첫 라운드엔 조커로 선을 낼 수 없어요';
+      }
       if (!play || 'Joker' in card) return '지금은 낼 수 없는 카드예요';
       if (play.called_joker && view.hand.some((c) => 'Joker' in c)) return '조커콜 · 조커를 내야 해요';
       const trump = play.contract.trump;
@@ -593,6 +664,10 @@
     }
     if ('Bidding' in now) {
       if (!(typeof was === 'object' && 'Bidding' in was)) return null;
+      // An answer in the misdeal round moves the turn on and records nothing.
+      if (was.Bidding.asking_misdeal && was.Bidding.to_act !== now.Bidding.to_act) {
+        return `${seatName(was.Bidding.to_act)} · 딜미스 아님`;
+      }
       const passed = now.Bidding.passed.findIndex((p, i) => p && !was.Bidding.passed[i]);
       if (passed >= 0) return `${seatName(passed)} · 패스`;
       const best = now.Bidding.best;
@@ -610,6 +685,7 @@
       if (before.trump !== after.trump) {
         return `기루다 변경 · ${contractLabel(after)}`;
       }
+      if (before.count !== after.count) return `공약 올리기 · ${contractLabel(after)}`;
       return null;
     }
     if ('Play' in now && typeof was === 'object' && 'Exchange' in was) {
@@ -755,7 +831,8 @@
     }
     if (typeof was === 'object' && 'Bidding' in was && typeof now === 'object' && 'Bidding' in now) {
       const moved = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best) ||
-        was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length;
+        was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length ||
+        (was.Bidding.asking_misdeal && was.Bidding.to_act !== now.Bidding.to_act);
       if (moved) {
         const raised = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best);
         const raises = (next.view.bids ?? []).filter((b) => b.contract !== null).length;
@@ -930,6 +1007,8 @@
     if (turn === null) return null;
     const name = seatName(turn);
     if (exchange) return { pre: '주공 ', name, post: ' · 키티 정리 중' };
+    if (asking) return { pre: '', name, post: ' · 딜미스 확인 중' };
+    if (lastChance !== null) return { pre: '모두 패스했어요 · 딜러 ', name, post: ` 한 번 더 (${lastChance}부터)` };
     if (bidding) return { pre: '', name, post: ' · 공약 고르는 중' };
     return { pre: '', name, post: ' 차례' };
   });
@@ -973,7 +1052,7 @@
   <!-- 상황판: everything about the hand on one line. -->
   {#snippet hintTools()}
     {#if client.hint && myTurn}
-      <span class="hint-text pop" role="status"><Icon name="hint" /> 봇이라면 <strong>{actionLabel(client.hint, seatName)}</strong></span>
+      <span class="hint-text pop" role="status"><Icon name="hint" /> 봇이라면 <strong>{asking && client.hint === 'Pass' ? '딜미스 아님' : actionLabel(client.hint, seatName)}</strong></span>
     {:else if settings.hints && liveTurn}
       <button class="hint-btn" aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}><Icon name="hint" /></button>
     {/if}
@@ -997,12 +1076,15 @@
   {/snippet}
   <div class="status" aria-live="polite">
     {#if bidding}
-      {#if bidding.best}
+      {#if asking}
+        <span class="item">딜미스 확인</span>
+        <span class="item muted">공약 전</span>
+      {:else if bidding.best}
         <span class="item">최고 공약 <strong class="contract">{contractLabel(bidding.best[1])}</strong></span>
         <span class="item muted">{seatName(bidding.best[0])}</span>
       {:else}
         <span class="item">공약 없음</span>
-        <span class="item muted">최소 {view.rules.bidding.min}</span>
+        <span class="item muted">최소 {lastChance ?? view.rules.bidding.min}</span>
       {/if}
     {:else if contract}
       <span class="item">
@@ -1051,8 +1133,10 @@
             </span>
             <span class="big-num">{best.count}</span>
             <span class="big-sub">최고 공약<br /><strong>{seatName(bidding.best[0])}</strong></span>
+          {:else if asking}
+            <span class="big-sub">딜미스 확인<br /><strong>공약 전</strong></span>
           {:else}
-            <span class="big-sub">공약 없음<br /><strong>최소 {view.rules.bidding.min}</strong></span>
+            <span class="big-sub">공약 없음<br /><strong>최소 {lastChance ?? view.rules.bidding.min}</strong></span>
           {/if}
         </div>
       {:else if contract}
@@ -1318,7 +1402,7 @@
               <button class="ghost" onclick={() => (variants = null)}>취소</button>
             </div>
           {:else if bidding}
-            <BidPanel {legal} onact={act} />
+            <BidPanel {legal} {asking} {lastChance} onact={act} />
           {:else if exchange}
             <ExchangePanel
               {legal}
@@ -1402,6 +1486,7 @@
     <HandReplay
       tricks={done.tricks}
       discards={done.discards ?? []}
+      hiddenDiscards={view.rules.reveal_discards === false && done.declarer !== me}
       declarer={done.declarer}
       friend={done.friend}
       {seatName}

@@ -1,8 +1,8 @@
 <script lang="ts">
   // The declarer's strip during the exchange: put cards back, maybe change
-  // trump, then name the friend.
+  // trump or raise the contract, then name the friend.
   import Card from './Card.svelte';
-  import { cardLabel, friendCallLabel, mightyCard, sameCard, sealOf, SUITS, trumpLabel } from './cards';
+  import { cardLabel, contractLabel, friendCallLabel, mightyCard, sameCard, sealOf, SUITS, trumpLabel } from './cards';
   import type { Action, Card as CardT, Contract, FriendCall, Rules, Suit } from './types';
 
   let {
@@ -79,10 +79,31 @@
     chosenCall !== null && typeof chosenCall === 'object' && 'Card' in chosenCall && isMine(chosenCall.Card),
   );
 
+  /** The contract's number after the least change to `t`, as
+   * Rules::changed_contract works it out. */
   function changedCount(t: Suit | null): number {
+    const toNoTrump = rules.bidding.change_to_no_trump_cost;
+    if (t === null && toNoTrump != null) return contract.count + toNoTrump;
     const bonus = (x: Suit | null) => (x === null ? rules.bidding.no_trump_bonus : 0);
-    return contract.count + rules.bidding.change_trump_cost + bonus(contract.trump) - bonus(t);
+    return Math.max(0, contract.count + rules.bidding.change_trump_cost + bonus(contract.trump) - bonus(t));
   }
+
+  // Where the contract may also be raised (공약 올리기), a trump chip picks
+  // the trump instead of changing at once, and the row under it offers the
+  // contracts for that trump: the least change first, then every raise.
+  const raises = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Raise' in a ? [a.Raise] : [])));
+  let target = $state<Suit | null | undefined>(undefined);
+  const picked = $derived(target !== undefined && trumpChanges.includes(target) ? target : contract.trump);
+  const offers = $derived.by(() => {
+    const out: { action: Action; contract: Contract }[] = [];
+    if (picked !== contract.trump) {
+      out.push({ action: { ChangeTrump: picked }, contract: { trump: picked, count: changedCount(picked) } });
+    }
+    for (const c of raises.filter((r) => r.trump === picked).sort((a, b) => a.count - b.count)) {
+      out.push({ action: { Raise: c }, contract: c });
+    }
+    return out;
+  });
 </script>
 
 {#if calls.length > 0}
@@ -159,11 +180,28 @@
       <span class="muted">버릴 카드를 고르세요</span>
       <button class="primary" class:ready={chosen === toDiscard} disabled={chosen !== toDiscard} onclick={ondiscard}>버리기</button>
     </div>
-    {#if trumpChanges.length > 0}
+    {#if trumpChanges.length > 0 && raises.length > 0}
+      <div class="chips change" role="radiogroup" aria-label="기루다 변경">
+        <span class="muted">기루다 변경</span>
+        {#each trumpChanges as t (t ?? 'nt')}
+          <button class="chip" role="radio" aria-checked={t === picked} onclick={() => (target = t === picked ? undefined : t)}>
+            {trumpLabel(t)} {changedCount(t)}
+          </button>
+        {/each}
+      </div>
+    {:else if trumpChanges.length > 0}
       <div class="chips change">
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
           <button class="chip" onclick={() => onact({ ChangeTrump: t })}>{trumpLabel(t)} {changedCount(t)}</button>
+        {/each}
+      </div>
+    {/if}
+    {#if offers.length > 0}
+      <div class="chips change">
+        <span class="muted">{picked === contract.trump ? '공약 올리기' : `${trumpLabel(picked)}로 바꾸기`}</span>
+        {#each offers as o (JSON.stringify(o.action))}
+          <button class="chip num" onclick={() => onact(o.action)}>{contractLabel(o.contract)}</button>
         {/each}
       </div>
     {/if}
@@ -243,6 +281,9 @@
   .change .muted {
     flex: none;
     font-size: 13px;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
   }
   /* Enough cards chosen: the button wakes up once. */
   .ready {

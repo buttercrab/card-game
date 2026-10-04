@@ -50,9 +50,11 @@ Not expressible or left to others:
   seat 0 (it already shuffles nobody's seat, so this only names who
   deals first).
 - The face-down point piles are for the table UI.
-- The web table does not yet label the misdeal round's pass as "딜미스
-  아님", nor offer `Raise`; both come from `legal` and need the new
-  editor/table work.
+- The web table shows the misdeal round as 딜미스 / 딜미스 아님, the
+  dealer's extra turn, `Raise` beside the trump change, and says when the
+  discards stay hidden; the rule editor has every option above except the
+  player-count ones (`lowest_rank`, `extra_cards`), since the table seats
+  five and a five-player deck needs all 53 cards.
 
 ## A hand, step by step
 

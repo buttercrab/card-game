@@ -3,7 +3,19 @@
   import SuitIcon from './SuitIcon.svelte';
   import type { Action, Contract, Suit } from './types';
 
-  let { legal, onact }: { legal: Action[]; onact: (a: Action) => void } = $props();
+  let {
+    legal,
+    asking = false,
+    lastChance = null,
+    onact,
+  }: {
+    legal: Action[];
+    /** Answering whether to call a misdeal before any bid: 'Pass' says no. */
+    asking?: boolean;
+    /** Everyone passed and this is the dealer's extra turn, from this count. */
+    lastChance?: number | null;
+    onact: (a: Action) => void;
+  } = $props();
 
   const bids = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Bid' in a ? [a.Bid] : [])));
   const trumps = $derived([...SUITS, null].filter((t) => bids.some((b) => b.trump === t)) as (Suit | null)[]);
@@ -35,6 +47,11 @@
 <!-- Phones: the suits and counts on one row, the buttons full width under
      them. Wider screens: one centred row. -->
 <div class="bid">
+  {#if asking}
+    <p class="caption">공약 전에 딜미스인지 답해요</p>
+  {:else if lastChance !== null}
+    <p class="caption">모두 패스했어요 · 딜러가 한 번 더 ({lastChance}부터)</p>
+  {/if}
   {#if bids.length > 0}
     <div class="picks" class:more bind:this={picks} onscroll={measure}>
       <div class="chips" role="radiogroup" aria-label="기루다">
@@ -59,7 +76,11 @@
   {/if}
   <div class="actions">
     {#if canMisdeal}<button onclick={() => onact('Misdeal')} title="패가 약하면 다시 돌릴 수 있어요">딜미스</button>{/if}
-    {#if canPass}<button onclick={() => onact('Pass')}>패스</button>{/if}
+    {#if asking}
+      <button class="primary" onclick={() => onact('Pass')}>딜미스 아님</button>
+    {:else if canPass}
+      <button onclick={() => onact('Pass')}>패스</button>
+    {/if}
     {#if bids.length > 0}
       <button class="primary" onclick={() => onact({ Bid: bid })}>공약 {trumpLabel(bid.trump)} {bid.count}</button>
     {/if}
@@ -125,6 +146,12 @@
     display: flex;
     gap: 8px;
   }
+  .caption {
+    margin: 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
   .actions > button:not(.primary) {
     flex: none;
     min-width: 88px;
@@ -154,6 +181,10 @@
     .actions .primary {
       flex: none;
       min-width: 180px;
+    }
+    /* The caption over the row, on a line of its own. */
+    .caption {
+      flex: 1 0 100%;
     }
   }
 </style>

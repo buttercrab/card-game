@@ -121,7 +121,7 @@
     dialog.querySelector(`[data-path="${path}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
-  const INLINE = new Set(['toggle', 'stepper']);
+  const INLINE = new Set(['toggle', 'stepper', 'maybe']);
 </script>
 
 {#snippet stepper(value: number, min: number, max: number, onset: (v: number) => void, label: string, signed = false)}
@@ -132,8 +132,8 @@
   </span>
 {/snippet}
 
-{#snippet segment(options: { value: unknown; label: string }[], value: unknown, onset: (v: unknown) => void, label: string)}
-  <span class="segment" role="radiogroup" aria-label={label}>
+{#snippet segment(options: { value: unknown; label: string }[], value: unknown, onset: (v: unknown) => void, label: string, stack = false)}
+  <span class="segment" class:stack role="radiogroup" aria-label={label}>
     {#each options as o (o.label)}
       <button type="button" role="radio" aria-checked={same(o.value, value)} onclick={() => onset(o.value)}>{o.label}</button>
     {/each}
@@ -150,7 +150,12 @@
   {:else if c.kind === 'stepper'}
     {@render stepper(v, c.min, c.max, (x) => set(f, x), f.label, c.signed)}
   {:else if c.kind === 'segment'}
-    {@render segment(c.options, v, (x) => set(f, x), f.label)}
+    {@render segment(c.options, v, (x) => set(f, x), f.label, c.stack)}
+  {:else if c.kind === 'maybe'}
+    <!-- The switch; its number's stepper goes under the label (see below). -->
+    <button type="button" class="switch" role="switch" aria-checked={v !== null} aria-label={f.label} onclick={() => set(f, v === null ? c.start : null)}>
+      <span class="word">{v === null ? c.off : c.on(v)}</span><span class="track" aria-hidden="true"><span class="knob"></span></span>
+    </button>
   {:else if c.kind === 'rounds'}
     <div class="rounds">
       {#each [['first', '첫 라운드'], ['last', '마지막 라운드']] as [which, word] (which)}
@@ -267,6 +272,12 @@
                   {#if INLINE.has(f.control.kind)}{@render control(f, d)}{/if}
                 </div>
                 {#if !INLINE.has(f.control.kind)}{@render control(f, d)}{/if}
+                {#if f.control.kind === 'maybe' && getPath(d, f.path) !== null}
+                  {@const c = f.control}
+                  <div class="maybe">
+                    {@render stepper(getPath(d, f.path), c.min, c.max, (x) => set(f, x), f.label)}
+                  </div>
+                {/if}
                 {#if isChanged}
                   <div class="was">
                     <span>{baseName}: {say(f, b)}</span>
@@ -541,6 +552,19 @@
     padding: 2px;
     border-radius: 12px;
     background: color-mix(in srgb, var(--ink) 8%, transparent);
+  }
+  /* Long choices, such as a scoring formula, one per line. */
+  .segment.stack {
+    grid-auto-flow: row;
+  }
+  .segment.stack button {
+    padding: 6px 10px;
+  }
+  .maybe {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
   }
   .segment button {
     min-height: 36px;

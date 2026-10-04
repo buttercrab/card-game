@@ -153,6 +153,17 @@
   }
 
   /** How much the contract's number rises to change to 노기루다 from a suit. */
+  /** 은/는 or 과/와 after a number, by how it is read: 13 (십삼) takes 은. */
+  function josa(n: number, closed: string, open: string): string {
+    return `${n}${[0, 1, 3, 6, 7, 8].includes(n % 10) ? closed : open}`;
+  }
+
+  /** How much the number rises from 노기루다 to a suit: the cost, plus
+   * what 노기루다 counted extra. */
+  function fromNoTrumpCost(r: Rules): number {
+    return r.bidding.change_trump_cost + r.bidding.no_trump_bonus;
+  }
+
   function toNoTrumpCost(r: Rules): number {
     const b = r.bidding;
     return b.change_to_no_trump_cost ?? Math.max(b.change_trump_cost - b.no_trump_bonus, 0);
@@ -228,16 +239,25 @@
   function misdealText(r: Rules): string[] {
     const m = r.misdeal;
     if (!m) return [];
-    const parts = [`점수 카드 ${signed(m.point_value)}`];
-    if (m.joker_value !== 0) parts.push(`조커 ${signed(m.joker_value)}`);
-    for (const [card, v] of m.card_values) parts.push(`${cardLabel(card)} ${signed(v)}`);
+    // Values kept whole by doubling (a point card 2, a ten 1) read better
+    // halved, as players count them: 1 and ½.
+    const halve = m.point_value === 2 && m.joker_value % 2 === 0;
+    const num = (v: number) => {
+      if (!halve) return String(v);
+      const whole = Math.trunc(v / 2);
+      return v % 2 === 0 ? String(whole) : `${v < 0 ? '-' : ''}${whole !== 0 ? Math.abs(whole) : ''}½`;
+    };
+    const value = (v: number) => (v > 0 ? `+${num(v)}` : num(v));
+    const parts = [`점수 카드 ${value(m.point_value)}`];
+    if (m.joker_value !== 0) parts.push(`조커 ${value(m.joker_value)}`);
+    for (const [card, v] of m.card_values) parts.push(`${cardLabel(card)} ${value(v)}`);
     const when = m.ask_first
       ? '공약을 시작하기 전에 첫 사람부터 모두 딜미스인지 답하고, 그때'
       : m.after_bidding
         ? '자기가 부를 차례에, 이미 공약했더라도'
         : '공약하기 전에';
     const lines = [
-      `받은 패가 약하면 ${when} 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${m.threshold}점 이하일 때예요.`,
+      `받은 패가 약하면 ${when} 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${num(m.threshold)}점 이하일 때예요.`,
     ];
     if (m.ask_first) lines.push('여럿이 딜미스라고 하면 첫 사람에게서 가장 가까운 사람의 딜미스예요. 그 사람은 패를 보여 줘요.');
     if (m.caller_deals) lines.push('딜미스를 한 사람이 새로 나눈 판에서 먼저 불러요.');
@@ -328,7 +348,7 @@
           <li>
             노기루다(기루다 없음)도 부를 수 있어요.
             {#if r.bidding.no_trump_bonus > 0}
-              노기루다 {r.bidding.min - r.bidding.no_trump_bonus}는 기루다 {r.bidding.min}와 같은 높이예요.
+              노기루다 {josa(r.bidding.min - r.bidding.no_trump_bonus, '은', '는')} 기루다 {josa(r.bidding.min, '과', '와')} 같은 높이예요.
             {/if}
             {#if r.bidding.no_trump_wins_ties}
               높이가 같으면 노기루다가 이겨요.
@@ -366,7 +386,7 @@
           {r.reveal_discards === false ? '버린 카드는 끝나도 보여 주지 않아요.' : ''}
         </li>
         {#if r.bidding.raise_on_exchange}
-          <li>버리기 전에 공약을 올릴 수 있어요. 기루다를 그대로 두면 올리지 않아도 돼요.</li>
+          <li>버리기 전에 공약 수를 올릴 수 있어요. 기루다를 바꾸면서 더 올려도 돼요.</li>
         {/if}
         <li>
           {r.bidding.change_trump_cost > 0
@@ -374,6 +394,9 @@
             : '공약을 올리지 않고 기루다를 바꿀 수 있어요.'}
           {#if r.bidding.allow_no_trump && toNoTrumpCost(r) !== r.bidding.change_trump_cost}
             노기루다로 바꿀 때는 {toNoTrumpCost(r) > 0 ? `${toNoTrumpCost(r)}만 올려요` : '올리지 않아도 돼요'}.
+          {/if}
+          {#if r.bidding.allow_no_trump && fromNoTrumpCost(r) !== r.bidding.change_trump_cost}
+            노기루다에서 무늬로 바꿀 때는 {fromNoTrumpCost(r)} 올려요.
           {/if}
         </li>
       </ul>

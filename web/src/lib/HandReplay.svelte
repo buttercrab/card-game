@@ -10,6 +10,7 @@
   let {
     tricks,
     discards,
+    hiddenDiscards = false,
     declarer,
     friend,
     seatName,
@@ -19,6 +20,8 @@
   }: {
     tricks: Trick[];
     discards: CardT[];
+    /** The rules keep the discards from all but the declarer. */
+    hiddenDiscards?: boolean;
     declarer: number;
     friend: number | null;
     seatName: (seat: number) => string;
@@ -123,6 +126,11 @@
             <span class="row">
               {#each discards as c, i (i)}<Card card={c} size="mini" seal={seal(c)} {twoJokers} />{/each}
             </span>
+          </li>
+        {:else if hiddenDiscards}
+          <li>
+            <span class="who">주공이 버린 카드</span>
+            <span class="muted hidden-note">버린 카드는 주공만 알아요</span>
           </li>
         {/if}
       </ul>
@@ -268,6 +276,9 @@
     display: flex;
     flex-wrap: wrap;
     gap: 3px;
+  }
+  .hidden-note {
+    font-size: 14px;
   }
   form {
     display: flex;
