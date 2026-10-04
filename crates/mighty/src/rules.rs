@@ -11,6 +11,14 @@ pub struct Rules {
     pub players: usize,
     pub hand_size: usize,
     pub deck: DeckKind,
+    /// The lowest rank dealt: 3마 plays from 7 and 4마 from 5 (see
+    /// [`Rules::for_players`]). Point cards (10 to A) are always dealt.
+    #[serde(default = "two")]
+    pub lowest_rank: u8,
+    /// Cards below `lowest_rank` dealt anyway: 4마 keeps ♣3 and ♠3 for the
+    /// joker call.
+    #[serde(default)]
+    pub extra_cards: Vec<Card>,
     pub misdeal: Misdeal,
     pub bidding: Bidding,
     pub friend: FriendRules,
@@ -18,6 +26,16 @@ pub struct Rules {
     pub joker_call: JokerCall,
     #[serde(default)]
     pub joker_lead: JokerLead,
+    #[serde(default)]
+    pub scoring: Scoring,
+}
+
+fn two() -> u8 {
+    2
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// A player may ask for a redeal when their hand is weak.
@@ -30,6 +48,16 @@ pub struct Misdeal {
     pub joker_value: i8,
     pub card_values: Vec<(Card, i8)>,
     pub threshold: i8,
+    /// A hand of nothing but point cards qualifies too (서울과고, 신촌).
+    #[serde(default)]
+    pub all_points: bool,
+    /// A player who has already bid may still ask, on their turn to bid.
+    #[serde(default)]
+    pub after_bidding: bool,
+    /// The declarer may ask after taking the kitty and before discarding,
+    /// judged on every card they then hold.
+    #[serde(default)]
+    pub declarer: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -47,6 +75,15 @@ pub struct Bidding {
     pub first_bidder_may_pass: bool,
     /// Extra points the declarer must promise to change trump after taking the kitty.
     pub change_trump_cost: u8,
+    /// How much the contract's number rises to change to no-trump. `None`
+    /// treats it like any change: what the bid is worth rises by
+    /// `change_trump_cost`.
+    #[serde(default)]
+    pub change_to_no_trump_cost: Option<u8>,
+    /// A pass is final. Otherwise a player who passed may bid again later,
+    /// and the bidding ends once everyone else has passed in a row.
+    #[serde(default = "yes")]
+    pub pass_is_final: bool,
 }
 
 /// How the declarer may choose a friend. Each flag enables one way.
@@ -126,6 +163,85 @@ pub struct JokerLead {
     pub powerless_passes: bool,
 }
 
+/// How a finished hand is scored. Groups differ more here than anywhere
+/// else; the default is web-mighty's formula.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Scoring {
+    /// What a made contract is worth before doubling.
+    pub win: WinScore,
+    /// When a no-trump contract doubles the score.
+    pub no_trump: Doubling,
+    /// When playing openly alone (노프렌드) doubles the score. Without
+    /// it, the declarer still collects from every opponent.
+    pub alone: Doubling,
+    /// Taking all 20 points (런) doubles a win.
+    pub run: bool,
+    /// When a failed contract doubles the loss (백런).
+    pub back_run: BackRun,
+    /// Point cards in the declarer's discards count for the declarer's
+    /// side; otherwise they count for the defence.
+    pub discards_to_declarer: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum WinScore {
+    /// Points taken − 10, at least 1.
+    #[default]
+    OverTen,
+    /// Points taken − the minimum bid; can be zero or less.
+    OverMin,
+    /// Points taken − the contract.
+    OverBid,
+    /// Points taken − the contract + 2 × how far the bid ranks above the
+    /// minimum: high bids pay for their risk. 나무위키 calls it the usual one.
+    BidBonus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Doubling {
+    Never,
+    /// Only when the contract is made.
+    Win,
+    /// Made or not.
+    Always,
+}
+
+impl Doubling {
+    pub fn applies(self, made: bool) -> bool {
+        match self {
+            Doubling::Never => false,
+            Doubling::Win => made,
+            Doubling::Always => true,
+        }
+    }
+}
+
+/// When a failed contract counts double (백런).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BackRun {
+    Never,
+    /// The declarer's side took at most this many points.
+    TeamAtMost(u8),
+    /// The contract was missed by at least this many points.
+    ShortBy(u8),
+    /// The defence took at least as many points as the contract.
+    DefenceReachesBid,
+}
+
+impl Default for Scoring {
+    fn default() -> Scoring {
+        Scoring {
+            win: WinScore::OverTen,
+            no_trump: Doubling::Win,
+            alone: Doubling::Win,
+            run: true,
+            back_run: BackRun::TeamAtMost(10),
+            discards_to_declarer: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Contract {
     /// `None` is no-trump.
@@ -139,11 +255,16 @@ impl Default for Rules {
             players: 5,
             hand_size: 10,
             deck: DeckKind::OneJoker,
+            lowest_rank: 2,
+            extra_cards: Vec::new(),
             misdeal: Misdeal {
                 point_value: 1,
                 joker_value: 0,
                 card_values: Vec::new(),
                 threshold: 0,
+                all_points: false,
+                after_bidding: false,
+                declarer: false,
             },
             bidding: Bidding {
                 min: 13,
@@ -153,6 +274,8 @@ impl Default for Rules {
                 no_trump_wins_ties: true,
                 first_bidder_may_pass: true,
                 change_trump_cost: 2,
+                change_to_no_trump_cost: None,
+                pass_is_final: true,
             },
             friend: FriendRules {
                 by_card: true,
@@ -175,6 +298,7 @@ impl Default for Rules {
                 called_joker_has_power: false,
             },
             joker_lead: JokerLead::default(),
+            scoring: Scoring::default(),
         }
     }
 }
@@ -185,16 +309,90 @@ pub struct InvalidRules(pub &'static str);
 
 impl Rules {
     pub fn kitty_size(&self) -> usize {
-        self.deck.cards().len().saturating_sub(self.players * self.hand_size)
+        self.cards().len().saturating_sub(self.players * self.hand_size)
+    }
+
+    /// Every card dealt: the deck from `lowest_rank` up, the jokers, and
+    /// `extra_cards`.
+    pub fn cards(&self) -> Vec<Card> {
+        let mut cards: Vec<Card> = self
+            .deck
+            .cards()
+            .into_iter()
+            .filter(|c| c.rank().is_none_or(|r| r >= self.lowest_rank) || self.extra_cards.contains(c))
+            .collect();
+        cards.sort();
+        cards
+    }
+
+    /// The usual rules for `players` at the table, from these five-player
+    /// rules (나무위키, 타 인원수 플레이방법): 3마 deals 7 to A to three
+    /// players with no friend and calls the joker with ♣7; 4마 deals 5 to A
+    /// plus the joker-call threes; 6마 and 7마 deal 8 and 7 cards each, as
+    /// 대전 and 동대전 do. `None` for other counts.
+    pub fn for_players(&self, players: usize) -> Option<Rules> {
+        let mut r = self.clone();
+        r.players = players;
+        let calls: Vec<Card> = r.joker_call.calls.iter().flat_map(|&(a, b)| [a, b]).collect();
+        match players {
+            3 => {
+                r.lowest_rank = 7;
+                r.extra_cards.clear();
+                r.hand_size = 10;
+                r.friend = FriendRules {
+                    by_card: false,
+                    by_seat: false,
+                    first_trick: false,
+                    last_trick: false,
+                    fake: false,
+                    alone: true,
+                };
+                // Everyone plays alone, so playing alone cannot double.
+                r.scoring.alone = Doubling::Never;
+                // The threes are gone: the same suits' sevens call instead.
+                let seven = |c: Card| c.suit().map_or(c, |s| Card::new(s, 7));
+                r.joker_call.calls = r.joker_call.calls.iter().map(|&(a, b)| (seven(a), seven(b))).collect();
+            }
+            4 => {
+                r.lowest_rank = 5;
+                r.extra_cards = calls.into_iter().filter(|c| c.rank().is_some_and(|x| x < 5)).collect();
+                r.extra_cards.sort();
+                r.extra_cards.dedup();
+                r.hand_size = 10;
+            }
+            5 => {}
+            6 => r.hand_size = 8,
+            7 => r.hand_size = 7,
+            _ => return None,
+        }
+        Some(r)
     }
 
     pub fn validate(&self) -> Result<(), InvalidRules> {
-        let deck = self.deck.cards().len();
+        if !(2..=10).contains(&self.lowest_rank) {
+            return Err(InvalidRules("the deck must keep every point card"));
+        }
+        let mut extra = self.extra_cards.clone();
+        extra.sort();
+        extra.dedup();
+        let extras_ok = self
+            .extra_cards
+            .iter()
+            .all(|c| c.rank().is_some_and(|r| r < self.lowest_rank));
+        if extra.len() != self.extra_cards.len() || !extras_ok {
+            return Err(InvalidRules("extra cards must be distinct cards below the lowest rank"));
+        }
+        let cards = self.cards();
+        let deck = cards.len();
         if !(2..=8).contains(&self.players) || self.hand_size == 0 {
             return Err(InvalidRules("player count or hand size out of range"));
         }
         if self.players * self.hand_size > deck {
             return Err(InvalidRules("not enough cards to deal"));
+        }
+        let mut call_cards = self.joker_call.calls.iter().flat_map(|&(a, b)| [a, b]);
+        if call_cards.any(|c| !cards.contains(&c)) {
+            return Err(InvalidRules("joker-call cards must be in the deck"));
         }
         if self.bidding.min == 0 || self.bidding.min > self.bidding.max {
             return Err(InvalidRules("bidding range is empty"));
@@ -237,7 +435,27 @@ impl Rules {
                 i32::from(value)
             })
             .sum();
-        total <= i32::from(m.threshold)
+        let all_points = m.all_points && !hand.is_empty() && hand.iter().all(|c| c.is_point());
+        total <= i32::from(m.threshold) || all_points
+    }
+
+    /// The contract after changing trump to `trump` once the kitty is seen.
+    pub fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
+        if trump.is_none()
+            && let Some(cost) = self.bidding.change_to_no_trump_cost
+        {
+            return Contract {
+                trump,
+                count: contract.count + cost,
+            };
+        }
+        // What the bid is worth rises by the cost, whatever it says.
+        let value = self.bid_value(contract) + self.bidding.change_trump_cost;
+        let bonus = self.bid_value(Contract { trump, count: 0 });
+        Contract {
+            trump,
+            count: value.saturating_sub(bonus),
+        }
     }
 
     /// Bids are compared by this key; higher wins.
@@ -390,6 +608,7 @@ impl Preset {
                     joker_value: -1,
                     card_values: vec![(Card::new(Suit::Spade, ACE), -2)],
                     threshold: 1,
+                    ..r.misdeal
                 };
                 r.bidding.min = 14;
                 r.bidding.no_trump_bonus = 1;
@@ -419,6 +638,9 @@ impl Preset {
                         .chain([(Card::new(Suit::Spade, ACE), 1)])
                         .collect(),
                     threshold: 1,
+                    // 나무위키 (지역별 규칙, 서울과고 5마): all point cards is a misdeal too.
+                    all_points: true,
+                    ..r.misdeal
                 };
                 r.friend.by_seat = false;
                 r.policy.joker_call = TrickPolicy::new(NoEffect, Valid);
@@ -433,6 +655,9 @@ impl Preset {
                         (Card::new(Suit::Spade, ACE), 1),
                     ],
                     threshold: 1,
+                    // 나무위키 (지역별 규칙, 신촌 5마): all point cards is a misdeal too.
+                    all_points: true,
+                    ..r.misdeal
                 };
                 r.bidding.allow_no_trump = false;
                 r.bidding.first_bidder_may_pass = false;
@@ -515,5 +740,85 @@ mod tests {
         ];
         assert!(r.is_misdeal(&hand));
         assert!(!r.is_misdeal(&[Card::new(Suit::Heart, 13)]));
+    }
+
+    #[test]
+    fn other_player_counts() {
+        let five = Rules::default();
+        let sizes = |r: &Rules| (r.cards().len(), r.hand_size, r.kitty_size());
+        let three = five.for_players(3).unwrap();
+        // 7 to A and the joker: 33 cards, 10 each and 3 in the kitty.
+        assert_eq!(sizes(&three), (33, 10, 3));
+        assert_eq!(three.cards().iter().filter(|c| c.is_point()).count(), 20);
+        let black = Card::Joker(crate::card::Color::Black);
+        assert_eq!(
+            three.joker_call_card(black, Some(Suit::Heart)),
+            Some(Card::new(Suit::Club, 7))
+        );
+        assert_eq!(
+            three.joker_call_card(black, Some(Suit::Club)),
+            Some(Card::new(Suit::Spade, 7))
+        );
+        // 5 to A, the joker, ♣3 and ♠3: 43 cards.
+        let four = five.for_players(4).unwrap();
+        assert_eq!(sizes(&four), (43, 10, 3));
+        assert!(four.cards().contains(&Card::new(Suit::Club, 3)) && four.cards().contains(&Card::new(Suit::Spade, 3)));
+        assert_eq!(sizes(&five.for_players(6).unwrap()), (53, 8, 5));
+        assert_eq!(sizes(&five.for_players(7).unwrap()), (53, 7, 4));
+        assert_eq!(five.for_players(2), None);
+        for preset in Preset::ALL {
+            for players in 3..=7 {
+                let r = preset.rules().for_players(players).unwrap();
+                r.validate().unwrap_or_else(|e| panic!("{preset} for {players}: {e}"));
+            }
+        }
+    }
+
+    #[test]
+    fn impossible_decks_are_rejected() {
+        let r = Rules {
+            lowest_rank: 11,
+            ..Rules::default()
+        };
+        assert!(r.validate().is_err(), "the tens must stay");
+        let mut r = Rules::default().for_players(4).unwrap();
+        r.extra_cards.push(Card::new(Suit::Heart, 9));
+        assert!(r.validate().is_err(), "a nine is already dealt");
+        let mut r = Rules::default().for_players(3).unwrap();
+        r.joker_call.calls = vec![(Card::new(Suit::Club, 3), Card::new(Suit::Spade, 3))];
+        assert!(r.validate().is_err(), "♣3 is not in a 3마 deck");
+    }
+
+    #[test]
+    fn rules_saved_before_the_new_options_still_load() {
+        let mut json = serde_json::to_value(Preset::Gshs.rules()).unwrap();
+        let object = json.as_object_mut().unwrap();
+        for key in ["lowest_rank", "extra_cards", "scoring"] {
+            object.remove(key);
+        }
+        for key in ["all_points", "after_bidding", "declarer"] {
+            object["misdeal"].as_object_mut().unwrap().remove(key);
+        }
+        for key in ["change_to_no_trump_cost", "pass_is_final"] {
+            object["bidding"].as_object_mut().unwrap().remove(key);
+        }
+        let loaded: Rules = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded, Preset::Gshs.rules());
+    }
+
+    #[test]
+    fn changing_trump_raises_what_the_bid_is_worth() {
+        let r = Preset::Gshs.rules();
+        let c = |trump, count| Contract { trump, count };
+        // 노기루다 counts one more: to it costs 1, from it 3 (나무위키, 서울과고 5마).
+        assert_eq!(r.changed_contract(c(Some(Suit::Heart), 15), None), c(None, 16));
+        assert_eq!(
+            r.changed_contract(c(None, 15), Some(Suit::Heart)),
+            c(Some(Suit::Heart), 18)
+        );
+        assert_eq!(
+            r.changed_contract(c(Some(Suit::Heart), 15), Some(Suit::Club)),
+            c(Some(Suit::Club), 17)
+        );
     }
 }

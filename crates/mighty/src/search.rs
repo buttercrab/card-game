@@ -382,7 +382,7 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
         }
         _ => return None,
     };
-    let mut unseen: Vec<Card> = rules.deck.cards().into_iter().filter(|c| !seen.contains(c)).collect();
+    let mut unseen: Vec<Card> = rules.cards().into_iter().filter(|c| !seen.contains(c)).collect();
     let mut capacity: Vec<usize> = view.hand_sizes.clone();
     capacity[me] = 0;
 

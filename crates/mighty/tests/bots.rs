@@ -31,7 +31,7 @@ fn view(hand: &[Card], others: &[Card], plays: &[Played]) -> View {
         .chain(plays.iter().map(|p| &p.card))
         .copied()
         .collect();
-    let gone: Vec<Card> = rules.deck.cards().into_iter().filter(|c| !held.contains(c)).collect();
+    let gone: Vec<Card> = rules.cards().into_iter().filter(|c| !held.contains(c)).collect();
     let (discards, played) = gone.split_at(4);
     let tricks: Vec<Trick> = played
         .chunks(5)

@@ -43,7 +43,7 @@ fn start(rules: Rules, fixed: &[&str], kitty: &str) -> State {
     let mut hands: Vec<Vec<Card>> = fixed.iter().map(|h| cards(h)).collect();
     let mut kitty = cards(kitty);
     let used: Vec<Card> = hands.iter().flatten().chain(&kitty).copied().collect();
-    let mut rest = rules.deck.cards().into_iter().filter(|c| !used.contains(c));
+    let mut rest = rules.cards().into_iter().filter(|c| !used.contains(c));
     while hands.len() < rules.players {
         hands.push(rest.by_ref().take(rules.hand_size).collect());
     }
@@ -553,5 +553,208 @@ fn a_finished_hand_sums_up_every_trick() {
         assert_eq!(s.made, s.team_points >= s.contract.count);
         assert_eq!(s.friend.is_some(), s.friend_revealed.is_some(), "seed {seed}: {s:?}");
         assert!(s.friend_revealed.is_none_or(|r| r < 10));
+    }
+}
+
+#[test]
+fn a_bid_nobody_can_top_ends_the_bidding() {
+    // 풀노 (no-trump 20) can never be outbid: the bidding ends at once, so
+    // nobody after it can throw the deal in (나무위키, 선거과정).
+    let weak = "S2 S3 S4 S5 S6 S7 S8 H2 H3 C2";
+    let mut state = start(Rules::default(), &[DECLARER, weak], KITTY);
+    act(&mut state, Action::Bid(Contract { trump: None, count: 20 }));
+    let view = Mighty::view(&state, Viewer::Seat(1));
+    assert!(
+        matches!(view.phase, PhaseView::Exchange { declarer: 0, .. }),
+        "{:?}",
+        view.phase
+    );
+    assert_eq!(view.bids.len(), 1);
+
+    // A suit 20 can still be topped by 풀노, so the bidding goes on.
+    let mut state = start(Rules::default(), &[DECLARER, weak], KITTY);
+    act(
+        &mut state,
+        Action::Bid(Contract {
+            trump: Some(Suit::Spade),
+            count: 20,
+        }),
+    );
+    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+}
+
+fn bid(trump: Option<Suit>, count: u8) -> Action {
+    Action::Bid(Contract { trump, count })
+}
+
+const WEAK: &str = "S2 S3 S4 S5 S6 S7 S8 H2 H3 C2";
+const SECOND: &str = "H4 H5 H6 H7 H8 H9 C8 C9 S9 D10";
+
+#[test]
+fn a_hand_of_only_point_cards_may_be_thrown_in_where_allowed() {
+    let rich = "S10 SJ SQ SK D10 DJ DQ DK DA HA";
+    let state = start(Preset::Sshs.rules(), &[rich], "");
+    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    let state = start(Rules::default(), &[rich], "");
+    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+}
+
+#[test]
+fn passing_need_not_be_final() {
+    // 나무위키's own example (딜 미스, footnote): 을 and 병 pass, then bid
+    // again, and 병 throws the deal in after having bid.
+    let mut rules = Rules::default();
+    rules.bidding.pass_is_final = false;
+    rules.misdeal.after_bidding = true;
+    let (c, d, h, s) = (
+        Some(Suit::Club),
+        Some(Suit::Diamond),
+        Some(Suit::Heart),
+        Some(Suit::Spade),
+    );
+    let mut state = start(rules.clone(), &[DECLARER, SECOND, WEAK], KITTY);
+    for action in [
+        bid(c, 13),
+        Action::Pass,
+        Action::Pass,
+        Action::Pass,
+        bid(d, 14),
+        Action::Pass,
+        Action::Pass,
+        bid(h, 15),
+        bid(s, 16),
+        Action::Pass,
+        Action::Pass,
+        Action::Pass,
+    ] {
+        act(&mut state, action);
+    }
+    assert_eq!(Mighty::turn(&state), Turn::Seat(2));
+    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+
+    // When everyone else passes in a row, the last bidder declares.
+    let mut state = start(rules.clone(), &[DECLARER, SECOND, WEAK], KITTY);
+    for action in [bid(c, 13), Action::Pass, bid(d, 14), Action::Pass, Action::Pass] {
+        act(&mut state, action);
+    }
+    assert_eq!(Mighty::turn(&state), Turn::Seat(0));
+    act(&mut state, Action::Pass);
+    // Seat 1 passed before seat 2's bid, and may answer it.
+    assert_eq!(Mighty::turn(&state), Turn::Seat(1));
+    assert!(Mighty::legal_actions(&state).contains(&bid(h, 15)));
+    act(&mut state, Action::Pass);
+    assert!(matches!(
+        Mighty::view(&state, Viewer::Spectator).phase,
+        PhaseView::Exchange { declarer: 2, .. }
+    ));
+
+    // By default a pass is final and a bidder can no longer call a misdeal.
+    let mut state = start(Rules::default(), &[DECLARER, SECOND, WEAK], KITTY);
+    for action in [
+        bid(c, 13),
+        Action::Pass,
+        bid(d, 14),
+        Action::Pass,
+        Action::Pass,
+        Action::Pass,
+    ] {
+        act(&mut state, action);
+    }
+    assert!(matches!(
+        Mighty::view(&state, Viewer::Spectator).phase,
+        PhaseView::Exchange { declarer: 2, .. }
+    ));
+    let mut state = start(Rules::default(), &[WEAK], KITTY);
+    for action in [bid(c, 13), bid(d, 14), Action::Pass, Action::Pass, Action::Pass] {
+        act(&mut state, action);
+    }
+    assert_eq!(Mighty::turn(&state), Turn::Seat(0));
+    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+}
+
+#[test]
+fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
+    let mut rules = Rules::default();
+    rules.misdeal.declarer = true;
+    let mut state = start(rules, &[WEAK], "C3 C4 C5");
+    act(&mut state, bid(Some(Suit::Spade), 13));
+    for _ in 1..5 {
+        act(&mut state, Action::Pass);
+    }
+    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    act(&mut state, Action::Misdeal);
+    assert_eq!(Mighty::turn(&state), Turn::Chance);
+    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    act(&mut state, deal);
+    let why = Mighty::view(&state, Viewer::Seat(1)).redealt.unwrap().why;
+    assert!(matches!(why, Redeal::Misdeal { seat: 0, ref hand } if hand.len() == 13));
+
+    // Not once a card is discarded, and never without the rule.
+    let mut rules = Rules::default();
+    rules.misdeal.declarer = true;
+    let mut state = start(rules, &[WEAK], "C3 C4 C5");
+    act(&mut state, bid(Some(Suit::Spade), 13));
+    for _ in 1..5 {
+        act(&mut state, Action::Pass);
+    }
+    act(&mut state, Action::Discard(cards("C3")[0]));
+    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    let mut state = start(Rules::default(), &[WEAK], "C3 C4 C5");
+    act(&mut state, bid(Some(Suit::Spade), 13));
+    for _ in 1..5 {
+        act(&mut state, Action::Pass);
+    }
+    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+}
+
+#[test]
+fn changing_to_no_trump_may_cost_less() {
+    // 나무위키 (선거과정): 셋다리 may become 섯삽 or 넷노.
+    let mut rules = Rules::default();
+    rules.bidding.change_to_no_trump_cost = Some(1);
+    let changes = |rules: Rules| {
+        let mut state = start(rules, &[DECLARER], KITTY);
+        act(&mut state, bid(Some(Suit::Diamond), 13));
+        for _ in 1..5 {
+            act(&mut state, Action::Pass);
+        }
+        let mut no_trump = state.clone();
+        act(&mut no_trump, Action::ChangeTrump(None));
+        act(&mut state, Action::ChangeTrump(Some(Suit::Spade)));
+        let contract = |s: &State| match Mighty::view(s, Viewer::Spectator).phase {
+            PhaseView::Exchange { contract, .. } => contract.count,
+            other => panic!("not exchanging: {other:?}"),
+        };
+        (contract(&state), contract(&no_trump))
+    };
+    assert_eq!(changes(rules), (15, 14));
+    assert_eq!(changes(Rules::default()), (15, 15));
+}
+
+#[test]
+fn other_player_counts_deal_the_whole_deck() {
+    use rand::SeedableRng;
+    use rand::seq::IndexedRandom;
+    for players in [3, 4, 6, 7] {
+        let rules = Rules::default().for_players(players).unwrap();
+        for seed in 0..30 {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            let mut state = Mighty::new_game(&Options {
+                rules: rules.clone(),
+                first_bidder: 0,
+            })
+            .unwrap();
+            while Mighty::turn(&state) != Turn::Over {
+                let action = match Mighty::turn(&state) {
+                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                    _ => Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone(),
+                };
+                act(&mut state, action);
+                Mighty::check_invariants(&state).unwrap();
+            }
+            let s = state.summary().unwrap();
+            assert_eq!(s.rounds.len(), rules.hand_size, "{players} players");
+            assert_eq!(Mighty::payoffs(&state).unwrap().len(), players);
+        }
     }
 }
