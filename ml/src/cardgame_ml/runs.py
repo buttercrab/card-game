@@ -44,7 +44,18 @@ def record(
         encoding=encoding,
         artifacts=artifacts(store, paths),
     )
-    path = checkout.root / "research" / "manifests" / f"{run.name}.json"
+    path = manifest_path(checkout, run.name)
     text = json.dumps(manifest.to_json(), indent=2, sort_keys=True, ensure_ascii=False)
     path.write_text(text + "\n", encoding="utf-8")
     return path
+
+
+def rerecord(run: Path, checkout: Checkout) -> Path:
+    """Rewrites the manifest of ``run`` after files were added to it, with
+    the config, seeds and encoding training recorded."""
+    old = Manifest.load(manifest_path(checkout, run.name))
+    return record(run, checkout, old.config, old.seeds, old.encoding or "")
+
+
+def manifest_path(checkout: Checkout, name: str) -> Path:
+    return checkout.root / "research" / "manifests" / f"{name}.json"

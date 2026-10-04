@@ -152,6 +152,32 @@ pub trait Encode: Game {
     fn belief_targets(state: &Self::State, viewer: Seat) -> Vec<i32>;
 }
 
+/// A learned model of where hidden cards are: the predictions that
+/// [`Encode::belief_targets`] trains. Bots that deal the unseen cards (a
+/// determinised search) can deal them by its beliefs instead of
+/// uniformly. Implemented outside the games, by an inference runtime
+/// (`crates/infer`).
+pub trait Belief: Send + Sync {
+    /// For each observation, `[cards, belief_classes]` logits, row-major.
+    /// A card's distribution is the softmax of its row over the classes
+    /// that can hold a hidden card in that position; which can is for the
+    /// caller to say (the model is trained with the impossible ones
+    /// masked, so their logits mean nothing).
+    fn logits(&self, observations: &[&Observation]) -> Result<Vec<Vec<f32>>, BeliefError>;
+}
+
+/// Why a [`Belief`] model could not answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BeliefError(pub String);
+
+impl fmt::Display for BeliefError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "belief model: {}", self.0)
+    }
+}
+
+impl std::error::Error for BeliefError {}
+
 /// Builds a feature vector and, on request, the name of every feature in
 /// the same pass, so names and values cannot drift apart: a game writes
 /// each group once, and its spec is that code run with names on.
