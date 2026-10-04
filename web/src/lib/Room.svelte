@@ -280,14 +280,27 @@
     white-space: nowrap;
     overflow: hidden;
   }
+  /* When the header is tight the room code gives way first, so the rule
+     set's name stays whole. */
   .title strong {
+    flex: 0 1 auto;
+    min-width: 2.5em;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .code {
+    flex: 0 100 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 13px;
     color: var(--ink-muted);
     font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 420px) {
+    .code {
+      display: none;
+    }
   }
   .status {
     flex: none;

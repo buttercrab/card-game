@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The lobby drawn as the table itself: five seats around an oval, in the
+  // The lobby drawn as the table itself: five seats around a paper mat, in the
   // places they will have once the hand is dealt (you at the bottom, then
   // right, top right, top left, left; see Table.svelte). Empty seats are a
   // dashed outline waiting to be filled; a human who sits down slides in and
@@ -79,7 +79,7 @@
 
 <div class="frame">
 <div class="room-table">
-  <div class="oval" aria-hidden="true"></div>
+  <div class="mat" aria-hidden="true"></div>
   <div class="centre">{@render centre?.()}</div>
 
   {#each order as i, r (i)}
@@ -154,7 +154,7 @@
 </div>
 
 <style>
-  /* The table: seats on the rim of a flat oval, the middle left for what
+  /* The table: seats around a flat paper mat, the middle left for what
      happens next. Seats are sized from the width, so a phone gets 84px
      seats and a desktop up to 128px. */
   .frame {
@@ -166,11 +166,12 @@
     position: relative;
     height: clamp(430px, 64cqw, 520px);
   }
-  .oval {
+  /* A sheet of paper laid on the table, not a card-room oval: a soft
+     rounded rectangle in the panel tone, like the game's other surfaces. */
+  .mat {
     position: absolute;
     inset: 13% calc(var(--seat-w) * 0.5) 17%;
-    border: 2px solid var(--line);
-    border-radius: 50%;
+    border-radius: 28px;
     background: var(--panel);
   }
   .centre {
@@ -216,7 +217,7 @@
     top: 47%;
     transform: translateY(-50%);
   }
-  /* Any other count: round the oval, seat 0 at the bottom. */
+  /* Any other count: round the mat, seat 0 at the bottom. */
   .pos-free {
     left: calc(50% + var(--x) * 40%);
     top: calc(50% + var(--y) * 38%);

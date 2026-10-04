@@ -91,7 +91,7 @@
 </script>
 
 <div class="seat" bind:this={el} class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
-  <!-- The figure stands on an oval floor, which lights up on its turn. -->
+  <!-- On its turn a plum ring circles the figure. -->
   <div class="stand">
     <span class="floor" aria-hidden="true"></span>
     <PlayerFigure
@@ -159,24 +159,28 @@
   .seat.turn {
     color: var(--ink);
   }
-  /* The figure, standing on an oval floor that lights up on its turn. */
+  /* The figure, circled by a plum ring on its turn. */
   .stand {
     position: relative;
     width: var(--figure-w);
   }
   .floor {
     position: absolute;
-    left: -14%;
-    right: -14%;
-    bottom: -3px;
-    height: 26%;
+    left: 50%;
+    top: 50%;
+    width: 128%;
+    aspect-ratio: 1;
     border: 3px solid var(--accent);
     border-radius: 50%;
     opacity: 0;
-    transition: opacity var(--dur-quick) var(--ease-standard);
+    transform: translate(-50%, -50%) scale(0.9);
+    transition:
+      opacity var(--dur-quick) var(--ease-standard),
+      transform var(--dur-move) var(--ease-settle);
   }
   .seat.turn .floor {
     opacity: 1;
+    transform: translate(-50%, -50%);
   }
   .stand :global(.figure) {
     position: relative;

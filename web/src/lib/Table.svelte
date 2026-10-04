@@ -62,17 +62,21 @@
     if (fresh) earned = [...untrack(() => earned), ...checkHand(done, me, loadStats())];
   });
 
-  // Newly earned achievements show one at a time, after the result settles.
+  // Newly earned achievements appear at the foot of the result, once it
+  // settles, so they never cover the headline; they go with the next hand.
   let earned = $state<Achievement[]>([]);
-  const showing = $derived(earned[0] ?? null);
+  const anyEarned = $derived(earned.length > 0);
   $effect(() => {
-    if (!showing) return;
-    const start = setTimeout(() => sound.achieve(), 1800);
-    const next = setTimeout(() => (earned = earned.slice(1)), 5200);
-    return () => {
-      clearTimeout(start);
-      clearTimeout(next);
-    };
+    if (!done && untrack(() => earned.length)) earned = [];
+  });
+  $effect(() => {
+    if (!anyEarned) return;
+    const start = setTimeout(() => {
+      sound.achieve();
+      // On a short phone the result scrolls; bring the award into view.
+      document.querySelector('.result .achieved')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 1800);
+    return () => clearTimeout(start);
   });
   const stage = $derived(exchange ?? play ?? done);
   const contract = $derived(stage?.contract ?? null);
@@ -1004,7 +1008,8 @@
         <span class="item meter">
           <span class="meter-label">여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}</span>
           <!-- One tick per point card: 여당 from the left, 야당 from the right.
-               The tall line is the contract; the low one is where 야당 breaks it. -->
+               The line is the contract. (Where 야당 would break it is always the
+               tick just before, so it needs no mark of its own.) -->
           <span
             class="tally"
             role="img"
@@ -1019,7 +1024,6 @@
               ></span>
             {/each}
             <span class="goal" style:left={tickEdge(contract.count)}></span>
-            <span class="break" style:left={tickEdge(contract.count - 1)}></span>
           </span>
           {#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}
         </span>
@@ -1044,7 +1048,7 @@
 
   <div class="felt" bind:this={felt}>
     {#if me !== null}
-      <span class="react-spot">
+      <span class="react-spot" class:over-result={done !== null}>
         {@render hintTools()}
         <Reactions onreact={(text) => client.react(text)} />
       </span>
@@ -1190,6 +1194,22 @@
             {/each}
           </tbody>
         </table>
+        {#if earned.length}
+          <div class="achieved" role="status">
+            {#each earned as a (a.id)}
+              <div class="award" title={a.how}>
+                <span class="kicker">업적 달성</span>
+                <strong>{a.title}</strong>
+                {#if a.reward}
+                  <span class="reward">
+                    {a.reward.kind === 'back' ? '카드 뒷면' : '테이블 색'}
+                    ‘{a.reward.kind === 'back' ? BACK_NAMES[a.reward.id] : TABLE_NAMES[a.reward.id]}’을 쓸 수 있어요 · 설정
+                  </span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -1282,21 +1302,6 @@
   {:else}
     <p class="prompt muted spectating">구경하는 중{waitingFor ? ` · ${waitingFor}` : ''}</p>
   {/if}
-  {#if showing}
-    {#key showing.id}
-      <div class="achieved" role="status">
-        <span class="kicker">업적 달성</span>
-        <strong>{showing.title}</strong>
-        <span class="how">{showing.how}</span>
-        {#if showing.reward}
-          <span class="reward">
-            {showing.reward.kind === 'back' ? '카드 뒷면' : '테이블 색'}
-            ‘{showing.reward.kind === 'back' ? BACK_NAMES[showing.reward.id] : TABLE_NAMES[showing.reward.id]}’을 쓸 수 있어요 · 설정
-          </span>
-        {/if}
-      </div>
-    {/key}
-  {/if}
   {#if sharing && room}
     <ShareCard {room} onclose={() => (sharing = false)} />
   {/if}
@@ -1354,7 +1359,7 @@
     grid-area: event;
   }
   /* The point cards as twenty ticks: 여당 from the left, 야당 from the right,
-     the contract and its break point marked between them. */
+     the contract marked between them. */
   .meter {
     display: inline-flex;
     align-items: center;
@@ -1398,22 +1403,14 @@
       transform: translateY(0);
     }
   }
-  /* The contract: a tall ink line. 야당 past the low line breaks it. */
-  .tally .goal,
-  .tally .break {
-    position: absolute;
-    width: 2px;
-    border-radius: 1px;
-  }
+  /* The contract: a tall ink line. */
   .tally .goal {
+    position: absolute;
     top: -4px;
     bottom: -4px;
+    width: 2px;
+    border-radius: 1px;
     background: var(--ink);
-  }
-  .tally .break {
-    top: 3px;
-    bottom: -4px;
-    background: var(--team-defense);
   }
   /* On phones the tally takes its own row, as wide as the row allows. */
   @media (max-width: 599px) {
@@ -1539,6 +1536,12 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+  /* Over the result the buttons move to the top corner, where the
+     centred headline leaves room, instead of covering the score table. */
+  .react-spot.over-result {
+    top: 4px;
+    bottom: auto;
   }
   .react-status {
     align-items: center;
@@ -1863,63 +1866,47 @@
   }
   /* An earned achievement slides down from the top after the result. */
   .achieved {
-    position: fixed;
-    left: 50%;
-    top: calc(64px + env(safe-area-inset-top));
-    z-index: 30;
     display: grid;
-    justify-items: center;
-    gap: 1px;
-    min-width: 220px;
-    padding: 10px 18px 12px;
-    border-radius: 16px;
+    gap: 6px;
+    margin-top: 12px;
+    animation: achieved 420ms var(--ease-settle) 1.6s both;
+  }
+  /* One line where it fits: kicker, title, then the reward. */
+  .award {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    column-gap: 8px;
+    padding: 8px 14px;
+    border-radius: 12px;
     background: var(--ink);
     color: var(--table);
     text-align: center;
-    pointer-events: none;
-    transform: translateX(-50%);
-    animation: achieved 5200ms var(--ease-standard) both;
-    animation-delay: 1.6s;
   }
-  .achieved .kicker {
+  .award .kicker {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     color: var(--gold);
   }
-  .achieved strong {
+  .award strong {
     font-family: var(--font-display);
-    font-size: 20px;
+    font-size: 16px;
   }
-  .achieved .how,
-  .achieved .reward {
+  .award .reward {
     font-size: 12px;
-    opacity: 0.8;
-  }
-  .achieved .reward {
-    margin-top: 4px;
     color: var(--gold);
-    opacity: 1;
   }
-  /* Without motion the banner just shows for its few seconds. */
   @media (prefers-reduced-motion: reduce) {
     .achieved {
-      animation: none !important;
+      animation: none;
     }
   }
   @keyframes achieved {
-    0% {
+    from {
       opacity: 0;
-      transform: translate(-50%, -14px);
-    }
-    8%,
-    88% {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
-    100% {
-      opacity: 0;
-      transform: translate(-50%, -8px);
+      transform: translateY(10px);
     }
   }
   /* A loss reads quieter, not angrier. */
