@@ -1670,7 +1670,9 @@
       min(
         (100cqw - 2 * var(--seat-w) - 16px) / 3.55,
         (50cqh - var(--seat-h) / 2 - 23px) / 2.04,
-        (50cqh - var(--seat-h) / 2 - 24px) / 2.18
+        /* Under the bottom card: a lead tag's 20px, the note's 20px and the
+           turn pill's 46px, so the note never has to sit on a card. */
+        (50cqh - var(--seat-h) / 2 - 82px) / 2.18
       ),
       var(--trick-max)
     );
@@ -1762,7 +1764,7 @@
   .note.below {
     /* Clear of a joker's lead tag (it hangs 14px under its card), but
        never down into the turn pill on the tray's rim. */
-    top: min(calc(var(--cy) + var(--ty) + var(--card-h) / 2 + 20px), calc(100% - 46px));
+    top: min(calc(var(--cy) + var(--ty) + var(--card-h) / 2 + 20px), calc(100% - 30px));
     transform: translateX(-50%);
     max-width: calc(100cqw - 16px);
     overflow: hidden;

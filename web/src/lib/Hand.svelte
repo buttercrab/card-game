@@ -142,6 +142,7 @@
 <div
   class="hand"
   class:deal
+  class:choose={mode === 'choose'}
   class:two={rows.length > 1}
   style:--row-h="{Math.round(cardWidth * 1.4)}px"
   bind:clientWidth={width}
@@ -193,6 +194,15 @@
   }
   .spot:has(:global(.raised)) {
     z-index: 1;
+  }
+  /* Choosing discards: a chosen card lifts only a little, inside the tray
+     (the exchange controls sit just above its rim), and an ink outline
+     says it is picked. */
+  .choose :global(.card.raised) {
+    translate: 0 -12px;
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    animation: none;
   }
   /* An overlapped card's corner glyph would peek out from under the next
      card as a stray sliver; only the last card in a row shows its own. */
