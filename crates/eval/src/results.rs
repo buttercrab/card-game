@@ -71,7 +71,6 @@ pub struct TableResult {
     /// SHA-256 of every deal's payoffs, so two runs can be checked for
     /// identical play without storing them.
     pub digest: String,
-    pub seconds: f64,
 }
 
 /// Several tables and their equal-weight average ([`Estimate::average`]).

@@ -17,9 +17,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 /// One table: a rule set, the bot in every other seat and the seeds.
-pub struct Table<'a, G: EvalGame> {
-    pub rules: &'a G::Rules,
-    pub field: &'a G::Spec,
+pub struct Table<G: EvalGame> {
+    pub rules: G::Rules,
+    pub field: G::Spec,
     /// Deal `d` is played on seed `seed + d`.
     pub seed: u64,
     pub deals: u64,
@@ -35,15 +35,28 @@ pub struct Deal {
     pub baseline: Option<(i64, Vec<Duration>)>,
 }
 
-/// Plays every deal of `table` with `bot` (and `baseline`) in the measured
-/// seat, on `threads` workers (all cores when `None`).
-pub fn play_table<G: EvalGame>(
-    table: &Table<G>,
+/// Plays every deal of every table with `bot` (and `baseline`) in the
+/// measured seat, on `threads` workers (all cores when `None`). The deals
+/// of all tables share the workers, so none idles while a table finishes.
+pub fn play_tables<G: EvalGame>(
+    tables: &[Table<G>],
     bot: &G::Spec,
     baseline: Option<&G::Spec>,
     threads: Option<usize>,
-) -> Result<Vec<Deal>, Failure> {
-    sim::parallel(table.deals, threads, |deal| {
+) -> Result<Vec<Vec<Deal>>, Failure> {
+    // Job `i` is deal `i - starts[k]` of the last table `k` starting at or
+    // before it.
+    let starts: Vec<u64> = (tables.iter())
+        .scan(0, |next, t| {
+            let start = *next;
+            *next += t.deals;
+            Some(start)
+        })
+        .collect();
+    let total = tables.iter().map(|t| t.deals).sum();
+    let mut played = sim::parallel(total, threads, |job| {
+        let k = starts.partition_point(|&start| start <= job) - 1;
+        let (table, deal) = (&tables[k], job - starts[k]);
         let (payoff, times) = play_deal(table, bot, deal)?;
         let baseline = baseline.map(|b| play_deal(table, b, deal)).transpose()?;
         Ok(Deal {
@@ -52,14 +65,17 @@ pub fn play_table<G: EvalGame>(
             baseline,
         })
     })
-    .into_iter()
-    .collect()
+    .into_iter();
+    tables
+        .iter()
+        .map(|t| played.by_ref().take(t.deals as usize).collect())
+        .collect()
 }
 
 /// The measured seat's payoff and think times in deal `deal` of `table`.
 fn play_deal<G: EvalGame>(table: &Table<G>, bot: &G::Spec, deal: u64) -> Result<(i64, Vec<Duration>), Failure> {
-    let options = G::options(table.rules, deal);
-    let seats = G::seats(table.rules);
+    let options = G::options(&table.rules, deal);
+    let seats = G::seats(&table.rules);
     let focus = (deal as usize / seats) % seats;
     let clock = Rc::new(RefCell::new(Clock::default()));
     let mut bots: Vec<Box<dyn Bot<G>>> = (0..seats)
@@ -70,7 +86,7 @@ fn play_deal<G: EvalGame>(table: &Table<G>, bot: &G::Spec, deal: u64) -> Result<
                     clock: clock.clone(),
                 })
             } else {
-                G::bot(table.field, seat)
+                G::bot(&table.field, seat)
             }
         })
         .collect();

@@ -1,7 +1,7 @@
 //! Plays a suite: every part asked for, in order, into [`Results`].
 
 use crate::machine::{self, Machine};
-use crate::play::{Deal, Table, play_table};
+use crate::play::{Deal, Table, play_tables};
 use crate::puzzle;
 use crate::results::{
     CostResult, LadderResult, PartResult, PuzzleResult, PuzzlesResult, Results, RunInfo, SCHEMA, SuiteInfo, Summary,
@@ -94,6 +94,14 @@ pub fn run<G: EvalGame>(request: &Request, progress: &mut dyn FnMut(&str)) -> Re
     Ok(results)
 }
 
+/// A table to play, and how to name it in the results.
+struct Planned<G: EvalGame> {
+    name: String,
+    rules: String,
+    field: String,
+    table: Table<G>,
+}
+
 struct Runner<'p, G: EvalGame> {
     bot: (String, G::Spec),
     baseline: Option<(String, G::Spec)>,
@@ -110,35 +118,47 @@ impl<G: EvalGame> Runner<'_, G> {
         Ok(spec)
     }
 
-    /// Plays one table and sums it up; `label` names its rules.
-    fn table(
+    /// Plays `tables` together and sums each up.
+    fn play(&mut self, tables: Vec<Planned<G>>) -> Result<Vec<TableResult>, String> {
+        if let Some(t) = tables.iter().find(|t| t.table.deals == 0) {
+            return Err(format!("{}: no deals to play", t.name));
+        }
+        let (plans, tables): (Vec<_>, Vec<_>) = tables
+            .into_iter()
+            .map(|t| ((t.name, t.rules, t.field), t.table))
+            .unzip();
+        let baseline = self.baseline.as_ref().map(|b| &b.1);
+        let played = play_tables(&tables, &self.bot.1, baseline, self.threads).map_err(|f| f.to_string())?;
+        let results: Vec<TableResult> = (plans.into_iter().zip(&tables).zip(&played))
+            .map(|(((name, rules, field), table), deals)| summarise(name, rules, field, table.seed, deals))
+            .collect();
+        for t in &results {
+            let diff = t.diff.map_or(String::new(), |d| format!(", {d} over the baseline"));
+            (self.progress)(&format!("{}: {} deals, bot {}{diff}", t.name, t.deals, t.bot));
+        }
+        Ok(results)
+    }
+
+    /// A table to play; `rules` names its rule set for the report.
+    fn plan(
         &mut self,
-        name: &str,
-        (label, rules): (String, &G::Rules),
+        name: String,
+        rules: (String, G::Rules),
         field: &str,
         seed: u64,
         deals: u64,
-    ) -> Result<TableResult, String> {
-        if deals == 0 {
-            return Err(format!("{name}: no deals to play"));
-        }
-        let started = Instant::now();
-        let spec = self.field(field)?;
-        let table = Table::<G> {
-            rules,
-            field: &spec,
-            seed,
-            deals,
-        };
-        let played = play_table(&table, &self.bot.1, self.baseline.as_ref().map(|b| &b.1), self.threads)
-            .map_err(|failure| format!("{name}: {failure}"))?;
-        let result = summarise(name, label, field, seed, &played, started);
-        let mut line = format!("{name}: {} deals, bot {}", result.deals, result.bot);
-        if let Some(diff) = result.diff {
-            line += &format!(", {diff} over the baseline");
-        }
-        (self.progress)(&format!("{line} ({:.0} s)", result.seconds));
-        Ok(result)
+    ) -> Result<Planned<G>, String> {
+        Ok(Planned {
+            name,
+            rules: rules.0,
+            field: field.to_string(),
+            table: Table {
+                rules: rules.1,
+                field: self.field(field)?,
+                seed,
+                deals,
+            },
+        })
     }
 
     fn ladder(&mut self, suite: &Loaded, quick: bool) -> Result<LadderResult, String> {
@@ -146,12 +166,19 @@ impl<G: EvalGame> Runner<'_, G> {
         let ladder = suite.suite.ladder.as_ref().expect("the suite has a ladder");
         let rules = preset::<G>(&ladder.rules)?;
         let n = deals(ladder.deals, ladder.quick_deals, quick);
-        let rungs = (ladder.rungs.iter().enumerate())
+        let tables = (ladder.rungs.iter().enumerate())
             .map(|(k, rung)| {
-                let rules = (ladder.rules.clone(), &rules);
-                self.table(&rung.name, rules, &rung.field, ladder.seed + k as u64 * ladder.deals, n)
+                let seed = ladder.seed + k as u64 * ladder.deals;
+                self.plan(
+                    rung.name.clone(),
+                    (ladder.rules.clone(), rules.clone()),
+                    &rung.field,
+                    seed,
+                    n,
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let rungs = self.play(tables)?;
         Ok(LadderResult {
             rating: Summary::average(&rungs),
             rungs,
@@ -165,11 +192,16 @@ impl<G: EvalGame> Runner<'_, G> {
         let n = deals(p.deals, p.quick_deals, quick);
         let tables = (p.presets.iter().enumerate())
             .map(|(k, id)| {
-                let rules = preset::<G>(id)?;
-                self.table(id, (id.clone(), &rules), &p.field, p.seed + k as u64 * p.deals, n)
+                self.plan(
+                    id.clone(),
+                    (id.clone(), preset::<G>(id)?),
+                    &p.field,
+                    p.seed + k as u64 * p.deals,
+                    n,
+                )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(part(tables, started))
+        Ok(part(self.play(tables)?, started))
     }
 
     fn heldout(&mut self, suite: &Loaded, quick: bool) -> Result<PartResult, String> {
@@ -183,12 +215,12 @@ impl<G: EvalGame> Runner<'_, G> {
             sets.len()
         };
         let n = deals(h.deals, h.quick_deals, quick);
-        let tables = (sets.iter().enumerate().take(count))
+        let tables = (sets.into_iter().enumerate().take(count))
             .map(|(k, rules)| {
-                G::validate(rules).map_err(|e| format!("held-out set {k}: {e}"))?;
-                let label = G::describe(rules);
-                self.table(
-                    &format!("set {k}"),
+                G::validate(&rules).map_err(|e| format!("held-out set {k}: {e}"))?;
+                let label = G::describe(&rules);
+                self.plan(
+                    format!("set {k}"),
                     (label, rules),
                     &h.field,
                     h.seed + k as u64 * h.deals,
@@ -196,37 +228,44 @@ impl<G: EvalGame> Runner<'_, G> {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(part(tables, started))
+        Ok(part(self.play(tables)?, started))
     }
 
     fn matches(&mut self, suite: &Loaded, quick: bool) -> Result<Vec<TableResult>, String> {
         let matches = suite.suite.matches.as_ref().expect("the suite has matches");
-        matches
-            .iter()
+        let tables = (matches.iter())
             .map(|m| {
                 let n = deals(m.deals, m.quick_deals, quick);
-                let rules = preset::<G>(&m.rules)?;
-                self.table(&m.name, (m.rules.clone(), &rules), &m.field, m.seed, n)
+                self.plan(
+                    m.name.clone(),
+                    (m.rules.clone(), preset::<G>(&m.rules)?),
+                    &m.field,
+                    m.seed,
+                    n,
+                )
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        self.play(tables)
     }
 
     fn cost(&mut self, suite: &Loaded, quick: bool) -> Result<CostResult, String> {
         let started = Instant::now();
         let c = suite.suite.cost.as_ref().expect("the suite has a cost part");
-        let rules = preset::<G>(&c.rules)?;
-        let field = self.field(&c.field)?;
         let n = deals(c.deals, c.quick_deals, quick);
-        let table = Table::<G> {
-            rules: &rules,
-            field: &field,
-            seed: c.seed,
-            deals: n,
-        };
+        let table = self
+            .plan(
+                "cost".into(),
+                (c.rules.clone(), preset::<G>(&c.rules)?),
+                &c.field,
+                c.seed,
+                n,
+            )?
+            .table;
         // One thread: each deal with the bot, then with the baseline, so
         // both meet the same load.
-        let played = play_table(&table, &self.bot.1, self.baseline.as_ref().map(|b| &b.1), Some(1))
-            .map_err(|failure| format!("cost: {failure}"))?;
+        let baseline = self.baseline.as_ref().map(|b| &b.1);
+        let played = play_tables(&[table], &self.bot.1, baseline, Some(1)).map_err(|f| format!("cost: {f}"))?;
+        let played = &played[0];
         let bot: Vec<_> = played.iter().flat_map(|d| d.times.iter().copied()).collect();
         let baseline: Vec<_> = (played.iter().filter_map(|d| d.baseline.as_ref()))
             .flat_map(|(_, times)| times.iter().copied())
@@ -291,7 +330,7 @@ fn part(tables: Vec<TableResult>, started: Instant) -> PartResult {
     }
 }
 
-fn summarise(name: &str, rules: String, field: &str, seed: u64, played: &[Deal], started: Instant) -> TableResult {
+fn summarise(name: String, rules: String, field: String, seed: u64, played: &[Deal]) -> TableResult {
     let bot: Vec<f64> = played.iter().map(|d| d.payoff as f64).collect();
     let baseline: Option<Vec<f64>> = played.iter().map(|d| Some(d.baseline.as_ref()?.0 as f64)).collect();
     let diff = baseline
@@ -302,15 +341,14 @@ fn summarise(name: &str, rules: String, field: &str, seed: u64, played: &[Deal],
         digest += &format!("{} {:?}\n", d.payoff, d.baseline.as_ref().map(|b| b.0));
     }
     TableResult {
-        name: name.into(),
+        name,
         rules,
-        field: field.into(),
+        field,
         seed,
         deals: played.len() as u64,
         bot: Estimate::of(&bot),
         baseline: baseline.as_deref().map(Estimate::of),
         diff: diff.as_deref().map(Estimate::of),
         digest: crate::suite::sha256(digest.as_bytes()),
-        seconds: started.elapsed().as_secs_f64(),
     }
 }
