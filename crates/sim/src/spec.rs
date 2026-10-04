@@ -1,11 +1,12 @@
 //! Bots named on the command line and in eval suites: `random`, `simple`
 //! or `search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]`, with `@name=value,...`
-//! settings, and the table's levels `easy`, `normal` and `hard`. See
-//! `sim --help`.
+//! settings, the table's levels `easy`, `normal` and `hard`, and
+//! `belief:MODEL_DIR:SAMPLES`: `hard` at that many samples, dealing by a
+//! belief model (needs the `belief` feature). See `sim --help`.
 
 use engine::{Bot, RandomBot, Seat};
 use mighty::bot::SimpleBot;
-use mighty::search::{Reading, SearchBot};
+use mighty::search::{Reading, Sampler, SearchBot};
 use mighty::{Action, Mighty, View};
 use rand::RngCore;
 use rand::seq::IndexedRandom;
@@ -42,6 +43,9 @@ impl FromStr for Spec {
 
     fn from_str(s: &str) -> Result<Spec, String> {
         let (name, settings) = s.split_once('@').unwrap_or((s, ""));
+        if let Some(rest) = name.strip_prefix("belief:") {
+            return belief(rest, settings);
+        }
         // The table's levels, as the server builds them. 고수 thinks
         // until a time budget runs out there; here it deals a fixed 200
         // times instead, so runs reproduce.
@@ -105,6 +109,58 @@ impl FromStr for Spec {
         };
         Ok(Spec { kind, temper })
     }
+}
+
+/// `belief:MODEL_DIR:SAMPLES@SETTINGS`: the table's 고수 (seat temper
+/// included) at `SAMPLES` deals, dealing by the model in `MODEL_DIR`.
+fn belief(rest: &str, settings: &str) -> Result<Spec, String> {
+    let (dir, samples) = rest
+        .rsplit_once(':')
+        .ok_or(format!("belief:{rest}: expected belief:MODEL_DIR:SAMPLES"))?;
+    let samples: usize = samples.parse().map_err(|_| format!("bad sample count {samples:?}"))?;
+    let mut spec: Spec = format!("search:{samples}:1:0@{settings}").parse()?;
+    let Kind::Search(bot) = &mut spec.kind else {
+        unreachable!("parsed as a search")
+    };
+    bot.sampler = load_belief(dir)?;
+    spec.temper = true;
+    Ok(spec)
+}
+
+/// The belief model in directory `dir`, checked to read Mighty's encoding.
+/// Loaded once per directory and kept for the life of the process.
+#[cfg(feature = "belief")]
+fn load_belief(dir: &str) -> Result<Sampler, String> {
+    use std::collections::BTreeMap;
+    use std::sync::{Mutex, PoisonError};
+    static LOADED: Mutex<BTreeMap<String, &'static infer::BeliefNet>> = Mutex::new(BTreeMap::new());
+    let mut loaded = LOADED.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(&net) = loaded.get(dir) {
+        return Ok(Sampler::Belief(net));
+    }
+    let net = infer::BeliefNet::open(std::path::Path::new(dir)).map_err(|e| e.to_string())?;
+    let options = mighty::Options {
+        rules: mighty::rules::Preset::Default.rules(),
+        first_bidder: 0,
+    };
+    let spec = <Mighty as engine::Encode>::spec(&options).map_err(|e| e.to_string())?;
+    if net.spec() != &spec {
+        return Err(format!(
+            "{dir}: the model reads {}, not {}",
+            net.spec().version,
+            spec.version
+        ));
+    }
+    let net: &'static infer::BeliefNet = Box::leak(Box::new(net));
+    loaded.insert(dir.to_string(), net);
+    Ok(Sampler::Belief(net))
+}
+
+#[cfg(not(feature = "belief"))]
+fn load_belief(dir: &str) -> Result<Sampler, String> {
+    Err(format!(
+        "{dir}: this build has no belief models (build with --features belief)"
+    ))
 }
 
 impl Spec {
@@ -243,5 +299,27 @@ mod tests {
         assert!(spec("search:200:1:0@threads=4").reproducible());
         assert!(!spec("search").reproducible());
         assert!(!spec("search:60000:1:1280@threads=4").reproducible());
+    }
+
+    /// `belief:` is `hard` at its own sample count, dealing by the model.
+    #[cfg(feature = "belief")]
+    #[test]
+    fn belief_bots_are_hard_dealing_by_a_model() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny");
+        let parsed = spec(&format!("belief:{dir}:50@read.on=false"));
+        let Kind::Search(bot) = parsed.kind else {
+            panic!("a belief bot searches")
+        };
+        assert!(parsed.temper && parsed.reproducible());
+        assert_eq!((bot.samples, bot.confidence, bot.budget), (50, 1.0, None));
+        assert!(!bot.reading.on);
+        assert!(matches!(bot.sampler, Sampler::Belief(_)));
+        // Loaded once: the same model for every spec naming it.
+        let Kind::Search(again) = spec(&format!("belief:{dir}:10")).kind else {
+            panic!("a belief bot searches")
+        };
+        assert_eq!(again.sampler, bot.sampler);
+        assert!("belief:/no/such/model:50".parse::<Spec>().is_err());
+        assert!(format!("belief:{dir}").parse::<Spec>().is_err());
     }
 }
