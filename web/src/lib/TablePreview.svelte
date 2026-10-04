@@ -1,6 +1,7 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
-  // /preview?state=bidding | misdeal | exchange | play | late | sweep | done | won | run
+  // /preview?state=bidding | waiting | misdeal | exchange | play | watch | late | sweep | done | won | run
+  // (waiting and watch are the bidding and the play on someone else's turn).
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
   import type { Bid, Card, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
@@ -34,6 +35,7 @@
     n('Club', 11),
     n('Club', 7),
   ];
+  const kittyCards: Card[] = [n('Club', 2), n('Heart', 5), n('Diamond', 4), n('Spade', 6)];
   const contract = { trump: 'Spade' as const, count: 15 };
   const trickPlays: Played[] = [
     { seat: 1, card: n('Club', 3), powered: true },
@@ -87,6 +89,7 @@
     bidding: { Bidding: { to_act: 0, best: [2, { trump: 'Heart', count: 15 }], passed: [false, true, false, true, false], has_bid: [false, false, true, false, false] } },
     exchange: { Exchange: { declarer: 0, contract, trump_changed: false, discards: [] } },
     play: playPhase(trickPlays, []),
+    watch: playPhase(trickPlays.slice(0, 2), []),
     // Later in the hand: the 프렌드 is out and both sides have points.
     late: playPhase(trickPlays, lateTricks, 3, 7),
     done: {
@@ -113,7 +116,7 @@
   };
   const legal: Record<string, StateMsg['legal']> = {
     bidding: ['Pass', ...[15, 16, 17].map((count) => ({ Bid: { trump: 'Spade' as const, count } }))],
-    exchange: hand.map((card) => ({ Discard: card })),
+    exchange: [...hand, ...kittyCards].map((card) => ({ Discard: card })),
     play: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     late: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     done: [],
@@ -126,7 +129,8 @@
       viewer: { Seat: 0 },
       rules,
       first_bidder: 0,
-      hand: key === 'exchange' ? [...hand, n('Club', 2), n('Heart', 5), n('Diamond', 4), n('Spade', 6)] : hand,
+      // Every card has been played by the result.
+      hand: key === 'exchange' ? [...hand, ...kittyCards] : key === 'done' || key === 'won' || key === 'run' ? [] : hand,
       hand_sizes: [10, 10, 10, 10, 10],
       points_taken:
         key === 'late'
@@ -166,10 +170,14 @@
     in_hand: which !== 'done' && which !== 'won' && which !== 'run',
   };
 
-  const key = which === 'sweep' ? 'play' : which === 'misdeal' ? 'bidding' : which;
+  const alias: Record<string, string> = { sweep: 'play', misdeal: 'bidding', waiting: 'bidding' };
+  const key = alias[which] ?? which;
+  const turn: StateMsg['turn'] =
+    key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' ? { Seat: 4 } : which === 'watch' ? { Seat: 3 } : { Seat: 0 };
   const client = $state({
     room,
-    game: msg(phases[key] ?? phases.play, key, key === 'done' || key === 'won' || key === 'run' ? 'Over' : { Seat: 0 }),
+    // The exchange opens on the bidding, so the table sees which cards came from the kitty.
+    game: key === 'exchange' ? msg(phases.bidding, 'bidding', { Seat: 0 }) : msg(phases[key] ?? phases.play, key, turn),
     seat: 0,
     error: null,
     act: () => {},
@@ -192,6 +200,11 @@
     }, 300);
   }
 
+  if (which === 'exchange') {
+    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+    setTimeout(() => (client.game = msg(phases.exchange, 'exchange', { Seat: 0 })), 300);
+  }
+
   if (which === 'sweep') {
     // Finish the trick so the table plays its sweep, holding the note on screen.
     Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
@@ -203,6 +216,8 @@
 </script>
 
 <div class="page">
+  <!-- Where the room's header sits (Room.svelte), so the table gets the same height. -->
+  <header class="mock" aria-hidden="true">← 미리보기 · {which}</header>
   <Table client={client as unknown as RoomClient} />
 </div>
 
@@ -211,6 +226,15 @@
     /* As wide as the room page at the table (see Room.svelte). */
     max-width: max(1100px, calc((100dvh - 64px) * 1.7));
     margin: 0 auto;
-    padding: 64px 16px 16px;
+    padding: 8px 16px 16px;
+  }
+  .mock {
+    display: flex;
+    align-items: center;
+    height: 48px;
+    margin-bottom: 8px;
+    padding: 0 8px;
+    font-size: 14px;
+    color: var(--ink-muted);
   }
 </style>

@@ -196,6 +196,20 @@
     flex: 1;
     font-size: 14px;
   }
+  /* Not enough cards chosen yet: a plain, quiet button, not a faded plum. */
+  .discard .primary:disabled {
+    opacity: 1;
+    background: var(--panel);
+    color: var(--ink-muted);
+    box-shadow: 0 3px 0 var(--line);
+  }
+  @media (min-width: 600px) {
+    .panel {
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto;
+    }
+  }
   .count {
     font-family: var(--font-display);
     font-size: 20px;

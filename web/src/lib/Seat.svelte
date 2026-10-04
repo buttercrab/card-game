@@ -32,6 +32,7 @@
     turn = false,
     bubble = null,
     reaction = null,
+    reactSide = 'up',
     cue = null,
     dim = false,
     reveal = false,
@@ -55,6 +56,9 @@
     bubble?: string | null;
     /** A reaction the player just sent; `id` replays it when repeated. */
     reaction?: { text: string; id: number } | null;
+    /** Where a reaction rises: over the seat, or beside it, outwards, for the
+     * top seats, whose space above is the status line. */
+    reactSide?: 'up' | 'left' | 'right';
     /** A big moment at this seat: it wiggles, with a short label under it
      * when `text` is set. A new `id` plays it again. */
     cue?: { text: string | null; id: number } | null;
@@ -117,6 +121,8 @@
       {mood}
       {offline}
     />
+    <!-- A bid or 패스, beside the figure, clear of the neighbours. -->
+    {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
   </div>
   <div class="meta">
     <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
@@ -137,12 +143,12 @@
       {/if}
     {/if}
   </div>
-  {#if taken.length > 0}
-    <!-- The cards themselves, fanned like a won pile. The pill beside the
-         badge is the button for keys and screen readers; this is the same
-         thing for a pointer. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div
+  <!-- The cards themselves, fanned like a won pile (its place is kept while
+       empty, so the plate never changes height). The pill beside the badge
+       is the button for keys and screen readers; this is the same thing for
+       a pointer. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <div
       class="fan"
       class:open={pointsOpen}
       class:live={!!onpoints}
@@ -154,19 +160,16 @@
         <span class="fan-card" style:--i={i} style:--tilt="{((i * 5) % 7) - 3}deg"><Card card={c} size="mini" width={FAN_CARD} seal={seal(c)} {twoJokers} /></span>
       {/each}
     </div>
-  {/if}
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
     <span class="name">{name}</span>
-    {#if bot && !name.startsWith('봇')}<span class="bot" title="봇">봇</span>{/if}
     {#if turn && bot}<span class="thinking" aria-label="생각하는 중"><i></i><i></i><i></i></span>{/if}
   </div>
-  {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
   {#if gained}{#key gained.id}<span class="gain" aria-hidden="true">+{gained.n}</span>{/key}{/if}
   {#if cue?.text}{#key cue.id}<Callout text={cue.text} />{/key}{/if}
   {#if reaction}
     {#key reaction.id}
-      <span class="reaction" class:emoji={/^\p{Extended_Pictographic}/u.test(reaction.text)} aria-live="polite">{reaction.text}</span>
+      <span class="reaction side-{reactSide}" class:emoji={/^\p{Extended_Pictographic}/u.test(reaction.text)} aria-live="polite">{reaction.text}</span>
     {/key}
   {/if}
 </div>
@@ -243,9 +246,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 15px;
+    max-width: 7em;
+    font-size: var(--name-size, 15px);
     font-weight: 600;
-    line-height: 19px;
+    line-height: 1.27;
   }
   /* A bot deciding: three dots breathing in turn. */
   .thinking {
@@ -307,15 +311,6 @@
       opacity: 0.6;
     }
   }
-  .bot {
-    flex: none;
-    padding: 0 5px;
-    border: 1px solid currentColor;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 16px;
-  }
   .dot {
     flex: none;
     width: 7px;
@@ -337,8 +332,9 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
-  .meta:empty {
-    display: none;
+  /* Kept even when empty, so every seat is the same height in every phase. */
+  .meta {
+    min-height: 20px;
   }
   .team {
     padding: 1px 8px;
@@ -357,12 +353,14 @@
     background: var(--team-defense);
     color: var(--on-team-defense);
   }
+  /* Points won: always the same small pill, a button or not. */
   .points {
     padding: 0 6px;
     border-radius: 999px;
     background: var(--table);
     color: var(--ink);
     line-height: 18px;
+    box-shadow: 0 0 0 1px var(--line);
   }
   /* A button only by its hit area: it looks like the pill beside it. */
   .peek-btn {
@@ -412,6 +410,38 @@
     padding: 2px 8px;
     font-size: 28px;
   }
+  .reaction.side-left,
+  .reaction.side-right {
+    top: 2px;
+    transform: none;
+    animation-name: react-side;
+  }
+  .reaction.side-right {
+    left: calc(50% + var(--figure-w) / 2 + 4px);
+  }
+  .reaction.side-left {
+    left: auto;
+    right: calc(50% + var(--figure-w) / 2 + 4px);
+  }
+  @keyframes react-side {
+    0% {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    10% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+    16%,
+    82% {
+      opacity: 1;
+      transform: none;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-12px);
+    }
+  }
   @keyframes react {
     0% {
       opacity: 0;
@@ -433,9 +463,9 @@
   }
   .bubble {
     position: absolute;
-    left: 50%;
-    bottom: -12px;
-    transform: translate(-50%, 50%);
+    left: calc(100% - 6px);
+    top: 0;
+    z-index: 4;
     padding: 2px 9px;
     border-radius: 999px;
     background: var(--ink);
@@ -445,18 +475,29 @@
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
+  /* Tablets: the seats grow with the table instead of staying phone-sized. */
+  @media (min-width: 600px) {
+    .seat {
+      --figure-w: var(--seat-figure, clamp(40px, 9cqh, 84px));
+      --name-size: clamp(15px, 2.3cqw, 19px);
+    }
+    .meta {
+      font-size: clamp(13px, 1.8cqw, 15px);
+    }
+  }
   /* The won pile: hidden on phones, where the pill says the same. */
   .fan {
     display: none;
   }
   @media (min-width: 1024px) and (min-height: 640px) {
-    /* Desktop: a plate with the figure on the left and the name, badges and
-       won pile stacked beside it, so a seat carries more at a glance. */
+    /* Desktop: a plate with the name across its top, the figure on the left
+       and the badges and won pile stacked beside it, so a seat carries more
+       at a glance and a long name has the plate's whole width. */
     .seat {
       --figure-w: var(--seat-figure, clamp(56px, 14cqh, 80px));
       grid-template-columns: auto minmax(0, 1fr);
       grid-template-areas:
-        'stand name'
+        'name name'
         'stand meta'
         'stand fan';
       align-content: center;
@@ -483,9 +524,8 @@
       flex-wrap: nowrap;
       justify-content: flex-start;
     }
-    .meta:empty {
-      display: flex;
-      min-height: 18px;
+    .meta {
+      min-height: 20px;
     }
     .fan {
       grid-area: fan;
@@ -520,8 +560,19 @@
         translate: 0 -8px;
       }
     }
+    /* Plates: beside the whole plate, not over the name. */
+    .reaction.side-right {
+      left: calc(100% + 4px);
+    }
+    .reaction.side-left {
+      right: calc(100% + 4px);
+    }
+    /* On a plate the name is beside the figure: the bubble hangs under it. */
     .bubble {
-      left: calc(var(--figure-w) / 2 + 6px);
+      left: 50%;
+      top: auto;
+      bottom: -10px;
+      transform: translate(-50%, 50%);
     }
   }
   @media (prefers-reduced-motion: reduce) {
