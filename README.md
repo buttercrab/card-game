@@ -11,6 +11,7 @@ before anyone plays it.
 | [`engine`](crates/engine) | The `Game` trait every game implements and the `Bot` trait; `Encode` (positions as model inputs) and `DynGame` (any game through JSON) |
 | [`mighty`](crates/mighty) | Mighty rules, nine regional presets, bots (a simple one and a search bot that plays at the table) and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
 | [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
+| [`eval`](crates/eval) | Runs the eval suites in [`research/evals`](research/evals): bots measured on fixed deals, with a JSON record and a report |
 | [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats |
 | [`web`](web) | The table in the browser (Svelte 5 + Vite), in Korean; its look is specified in [DESIGN.md](docs/DESIGN.md) |
 | [`ml`](ml) | Python training for learned bots (uv, PyTorch as an extra) |
@@ -125,6 +126,7 @@ cargo run --release -p sim -- --players 4             # 3 to 7 players
 cargo run --release -p sim -- --vary --bots random    # random optional rules each game
 cargo run --release -p sim -- --games 2500 --bots search   # search bot vs simple bots
 cargo run --release -p sim -- --preset gshs --bots search --focus search:100 --field search  # any two bots
+cargo run --release -p eval -- run --suite v1 --bot hard --quick   # the eval suite, a few deals of each part
 (cd web && npm run check)
 (cd ml && uv sync --locked && uv run ruff check && uv run pyright && uv run pytest)
 ```
