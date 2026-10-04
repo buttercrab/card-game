@@ -175,6 +175,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def artifacts(store: Path, paths: list[str]) -> tuple[Artifact, ...]:
+    """Records the files at ``paths`` (relative to ``store``) as they are now."""
+    return tuple(
+        Artifact(path, (store / path).stat().st_size, sha256_file(store / path)) for path in paths
+    )
+
+
 def load_all(directory: Path) -> list[Manifest]:
     """Every manifest under ``directory``, sorted by path."""
     return [Manifest.load(p) for p in sorted(directory.rglob("*.json"))]
