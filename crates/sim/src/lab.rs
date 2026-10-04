@@ -1018,7 +1018,6 @@ pub fn audit(rules: &Rules, record: &Record) -> Audit {
             plays,
             leading,
             contract,
-            discards: _,
             ..
         } = &view.phase
         else {
