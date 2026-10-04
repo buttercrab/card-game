@@ -91,8 +91,10 @@
   .suit-Club {
     color: var(--suit-club);
   }
+  /* Selected: the shared ink chip; its text is the table colour, which
+     flips with the theme, so it reads in light and dark. */
   .chip[aria-checked='true'] {
-    color: var(--card);
+    color: var(--table);
   }
   .num {
     min-width: 44px;

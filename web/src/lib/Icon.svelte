@@ -11,6 +11,7 @@
 
   const GOLD = '#A77A12';
   const SKIN = '#F3E3CF';
+  const INK = '#2B2620';
 </script>
 
 <svg viewBox="0 0 24 24" width={size} height={size} class="icon" aria-hidden="true">
@@ -27,10 +28,11 @@
     </g>
   {:else if name === 'smile'}
     <!-- A figure's head: skin, an ink outline, two dot eyes and a smile. -->
-    <circle cx="12" cy="12" r="9.6" fill={SKIN} stroke="currentColor" stroke-width="1.8" />
-    <circle cx="8.9" cy="10.2" r="1.25" fill="currentColor" />
-    <circle cx="15.1" cy="10.2" r="1.25" fill="currentColor" />
-    <path d="M8 14 q4 4 8 0" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" />
+    <!-- The face is skin in every theme, so its features stay dark ink. -->
+    <circle cx="12" cy="12" r="9.6" fill={SKIN} stroke={INK} stroke-width="1.8" />
+    <circle cx="8.9" cy="10.2" r="1.25" fill={INK} />
+    <circle cx="15.1" cy="10.2" r="1.25" fill={INK} />
+    <path d="M8 14 q4 4 8 0" stroke={INK} stroke-width="1.8" fill="none" stroke-linecap="round" />
   {:else if name === 'lock'}
     <!-- A padlock: an ink shackle over a gold body with a keyhole. -->
     <path d="M7.5 11 V8 a4.5 4.5 0 0 1 9 0 V11" stroke="currentColor" stroke-width="2.2" fill="none" />
