@@ -36,6 +36,7 @@
 </script>
 
 <script lang="ts">
+  import CourtArt from './CourtArt.svelte';
   import SuitIcon from './SuitIcon.svelte';
   import { settings } from './settings.svelte';
 
@@ -129,9 +130,11 @@
     <span class="corner top">{@render index()}</span>
     <span class="corner bottom">{@render index()}</span>
     {#if joker}
-      <span class="centre joker-motif" class:ring={joker === 'Red'}><SuitIcon suit="Star" /></span>
+      <span class="centre art" class:ring={joker === 'Red'}><CourtArt figure="joker" /></span>
     {:else if suit && rank >= 11 && rank <= 13}
-      <span class="centre court"><span class="court-letter">{rankText(rank)}</span><SuitIcon {suit} class="court-suit" /></span>
+      <span class="centre art"><CourtArt figure={rank === 13 ? 'K' : rank === 12 ? 'Q' : 'J'} {suit} /></span>
+    {:else if suit && rank === 14 && seal === 'mighty'}
+      <span class="centre art mighty-art"><CourtArt figure="mighty" {suit} /></span>
     {:else if suit && rank === 14}
       <span class="centre ace"><SuitIcon {suit} /></span>
     {:else if suit}
@@ -379,6 +382,20 @@
   .ace :global(svg) {
     width: 48cqw;
     height: 48cqw;
+  }
+  /* Court figures, jokers and the 마이티: a figure filling the middle of the
+     card, clear of the corner indexes. */
+  .centre.art {
+    inset: 15cqw 14cqw 13cqw;
+  }
+  /* The red joker keeps a third difference from the black one: a ring. */
+  .centre.art.ring::after {
+    content: '';
+    position: absolute;
+    inset: -4cqw;
+    border: 1.5cqw dashed currentColor;
+    border-radius: 12cqw;
+    opacity: 0.5;
   }
   .court {
     flex-direction: column;

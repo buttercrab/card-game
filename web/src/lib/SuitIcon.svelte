@@ -2,7 +2,7 @@
   import type { Suit } from './types';
 
   // Drawn on a 100 × 100 grid so every suit has the same visual weight.
-  const PATHS: Record<Suit | 'Star', string> = {
+  export const PATHS: Record<Suit | 'Star', string> = {
     Spade:
       'M50 4C67 24 96 40 96 63c0 14-10 24-23 24-9 0-16-4-20-11 1 10 5 17 13 22H34c8-5 12-12 13-22-4 7-11 11-20 11C14 87 4 77 4 63 4 40 33 24 50 4Z',
     Heart: 'M50 94C24 72 4 56 4 33 4 17 16 6 29 6c10 0 17 6 21 14 4-8 11-14 21-14 13 0 25 11 25 27 0 23-20 39-46 61Z',
