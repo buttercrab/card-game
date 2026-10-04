@@ -6,6 +6,9 @@
   import LobbyTable from './LobbyTable.svelte';
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
+  import { differences, traits } from './ruleFields';
+  import { presetRules, takePending } from './rulesets';
+  import type { Rules } from './types';
   import SettingsSheet from './SettingsSheet.svelte';
   import { sound } from './sound';
   import Table from './Table.svelte';
@@ -62,6 +65,25 @@
     if (empty >= 0) client.addBot(empty, 'easy');
     else client.start();
   });
+  // Rules picked on the home page start once their maker sits down.
+  $effect(() => {
+    if (!room || client.seat === null || room.in_hand || client.status !== 'open') return;
+    const pending = untrack(() => takePending(id));
+    if (pending) client.setRules(pending.base, pending.rules);
+  });
+  // What this table changed from its preset, for the rules line.
+  let presetBase = $state<Rules | null>(null);
+  $effect(() => {
+    const preset = room?.settings.preset;
+    if (!preset) return;
+    presetRules(preset)
+      .then((r) => (presetBase = r))
+      .catch(() => (presetBase = null));
+  });
+  const custom = $derived(room?.settings.rules && presetBase ? room.settings.rules : null);
+  const changedCount = $derived(custom && presetBase ? differences(custom, presetBase).length : 0);
+  const changedTraits = $derived(custom && presetBase ? traits(custom, presetBase) : []);
+
   const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
   const showTable = $derived(client.game !== null && (inHand || (room?.hands_played ?? 0) > 0));
   const showLobby = $derived(!showTable || (!inHand && (showSeats || !seated)));
@@ -154,12 +176,20 @@
         <div class="lobby-head">
           <h2 id="lobby-title">{room.hands_played === 0 ? '자리' : `${room.hands_played}판 끝`}</h2>
           <div class="rules-line">
-            <button class="ghost small" onclick={() => (showRules = true)} aria-label="{PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙 보기">
+            <button class="ghost small" onclick={() => (showRules = true)} aria-label="{PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙 보기{room.settings.rules ? ', 바꾼 규칙' : ''}">
               {PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙
               {#if room.settings.rules}<span class="tag">바꾼 규칙</span>{/if}
             </button>
             {#if seated}<button class="ghost small" onclick={() => (editRules = true)}>바꾸기</button>{/if}
           </div>
+          {#if changedTraits.length}
+            <!-- Friends who join read what this table plays differently;
+                 a tap opens the rulebook with the changes on top. -->
+            <button class="changes-line" onclick={() => (showRules = true)}>
+              <span class="muted">바꾼 것 {changedCount}개</span>
+              {changedTraits.join(' · ')}
+            </button>
+          {/if}
         </div>
 
         <LobbyTable
@@ -236,7 +266,7 @@
   <RuleEditor
     preset={room.settings.preset}
     rules={room.settings.rules ?? null}
-    onsave={(rules) => client.setRules(room.settings.preset, rules)}
+    onsave={(base, rules) => client.setRules(base, rules)}
     onclose={() => (editRules = false)}
   />
 {/if}
@@ -439,6 +469,27 @@
   }
   .rules-line > button:last-child {
     margin-right: -10px;
+  }
+  .changes-line {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    min-height: 32px;
+    padding: 4px 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    word-break: keep-all;
+  }
+  .changes-line {
+    align-items: baseline;
+  }
+  .changes-line .muted {
+    flex: none;
+  }
+  .changes-line:active:not(:disabled) {
+    transform: none;
   }
   .leave {
     justify-self: center;
