@@ -2,6 +2,7 @@
 // (github.com/btahir/open-lofi), shuffled and crossfaded. Off by default and
 // fetched only once someone turns it on.
 
+import { later } from './clock';
 import { settings } from './settings.svelte';
 import { setKey, withAudio } from './sound';
 
@@ -86,8 +87,10 @@ function deck(ctx: AudioContext): Deck {
   return { el, gain };
 }
 
+// The same whether or not the tab is in front: the table plays on in the
+// background, and so does its music.
 function level() {
-  return settings.music && !document.hidden ? settings.musicVolume * 0.6 : 0;
+  return settings.music ? settings.musicVolume * 0.6 : 0;
 }
 
 /** Fades the next track in over the one playing. */
@@ -98,7 +101,7 @@ function play() {
   const to = decks[current];
   const t = ctx.currentTime;
   from.gain.gain.setTargetAtTime(0, t, FADE / 4);
-  setTimeout(() => from.el.pause(), FADE * 1000);
+  later(() => from.el.pause(), FADE * 1000);
   const track = nextTrack();
   to.el.src = track.src;
   key = track.key;
@@ -123,7 +126,7 @@ function update() {
   const d = decks[current];
   d.gain.gain.setTargetAtTime(level(), ctx.currentTime, 0.3);
   if (on && d.el.paused) void d.el.play().catch(() => {});
-  if (!on) setTimeout(() => level() === 0 && d.el.pause(), 1200);
+  if (!on) later(() => level() === 0 && d.el.pause(), 1200);
 }
 
 if (typeof window !== 'undefined') {
@@ -131,7 +134,6 @@ if (typeof window !== 'undefined') {
     ctx = c;
     update();
   });
-  document.addEventListener('visibilitychange', update);
   $effect.root(() => {
     $effect(() => {
       void settings.music;
