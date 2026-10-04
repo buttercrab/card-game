@@ -11,13 +11,17 @@
 
 ### Run the Python checks
 
-`ml/` is a [uv](https://docs.astral.sh/uv/) project. CI runs the same:
+`ml/` is a [uv](https://docs.astral.sh/uv/) project. It depends on the
+environment's bindings, `crates/env-py`, which `uv sync` builds with
+maturin, so it needs a Rust toolchain too; uv rebuilds them whenever the
+Rust they are made of changes. CI runs the same:
 
 ```sh
 cd ml
 uv sync --locked            # without PyTorch: lint, types and tests need none
-uv run ruff check && uv run ruff format --check
-uv run pyright              # strict
+uv run ruff check . ../crates/env-py/python
+uv run ruff format --check . ../crates/env-py/python
+uv run pyright              # strict, the bindings' Python included
 uv run pytest
 ```
 
@@ -38,6 +42,43 @@ defines every model's input, so it changes only on purpose:
 
 `ml/` reads the same pinned spec (`crates/mighty/tests/encoding.json`), so
 the Python tests see the change too.
+
+### Run the environment from Python
+
+```python
+import numpy as np
+from cardgame_env import Env
+
+env = Env(num_envs=256, seed=0, rules="varied")    # the caller plays every seat
+step = env.reset()                                  # arrays, batch first
+rng = np.random.default_rng(0)
+for _ in range(1000):
+    scores = rng.random(step["legal"].shape)
+    scores[~step["legal"]] = -1                      # a random legal action
+    step = env.step(scores.argmax(axis=1))           # rewards when step["done"]
+```
+
+`controlled=[0], bots={"hard:50": 1, "보통": 2}` plays seat 0 against
+bots; `exclude="research/evals/v1/heldout-rules.json"` keeps held-out
+rule sets out. The module docstring of `cardgame_env` has the rest: rule
+sources, bot names, the reward convention. In Rust it is `env::Env`;
+`cargo run --release -p env --example throughput` measures it.
+
+### Generate self-play data
+
+A dataset is a config in an experiment folder (see
+`research/experiments/2026-10-04-selfplay-v1/config.toml`). From a clean
+checkout:
+
+```sh
+nice -n 10 cargo run --release -p env --bin selfplay -- \
+    --config research/experiments/<folder>/config.toml
+```
+
+Shards go to `$CARDGAME_ARTIFACTS/selfplay/<name>/` (by default
+`~/card-game-artifacts`) and the manifest to `research/manifests/`; commit
+the manifest. The same config and commit give the same bytes.
+`cardgame_ml.data.shards.Dataset.open(path).batches(...)` reads it.
 
 ### Record an artifact kept outside git
 
