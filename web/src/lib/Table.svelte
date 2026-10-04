@@ -759,6 +759,40 @@
   const onTable = $derived(resolving ? resolving.plays : (play?.plays ?? []));
   const onTableLead = $derived(resolving ? resolving.lead : (play?.lead ?? null));
   const trickKey = $derived(resolving ? `r${resolving.key}` : `p${play?.tricks.length ?? 0}`);
+
+  // ---- Where the figures look, and how they feel ---------------------------------
+  // Everyone watches the player whose turn it is (you, on yours), and glances
+  // at the middle for a moment when a card lands there.
+  let glanceMiddle = $state(false);
+  let landed = 0;
+  let glanceTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const count = onTable.length;
+    const grew = count > landed;
+    landed = count;
+    if (!grew) return;
+    glanceMiddle = true;
+    clearTimeout(glanceTimer);
+    glanceTimer = setTimeout(() => (glanceMiddle = false), 900);
+  });
+  $effect(() => () => clearTimeout(glanceTimer));
+  function lookAt(r: number): { x: number; y: number } | null {
+    const from = { x: Math.cos(angle(r)), y: Math.sin(angle(r)) };
+    const toward = (x: number, y: number) => (x === from.x && y === from.y ? null : { x: x - from.x, y: y - from.y });
+    if (glanceMiddle || (turn !== null && relative(turn) === r)) return toward(0, 0);
+    if (turn === null) return null;
+    const t = myTurn ? 0 : relative(turn);
+    return toward(Math.cos(angle(t)), Math.sin(angle(t)));
+  }
+  function mood(seat: number): 'happy' | 'down' | null {
+    if (done) {
+      const declarerWon = done.team_points >= done.contract.count;
+      return (seat === done.declarer || seat === done.friend) === declarerWon ? 'happy' : 'down';
+    }
+    if (winner === null) return null;
+    if (seat === winner) return 'happy';
+    return resolving?.plays.some((p) => p.seat === seat && isPoint(p.card)) ? 'down' : null;
+  }
   const trickNo = $derived(resolving ? resolving.key : play ? play.trick_no + 1 : 0);
   /** Why a card on the table is hatched: it has no power here. The suit a
    * led joker named is shown on the joker itself. */
@@ -875,6 +909,9 @@
           cue={seatCues[s] ?? null}
           dim={bidding?.passed[s] ?? false}
           reveal={revealed === s}
+          trumpSuit={contract?.trump ?? null}
+          lookAt={lookAt(r)}
+          mood={mood(s)}
         />
       </div>
     {/each}

@@ -7,6 +7,8 @@
   import { untrack } from 'svelte';
   import Callout from './Callout.svelte';
   import { juice } from './motion';
+  import PlayerFigure from './PlayerFigure.svelte';
+  import type { Suit } from './types';
   let {
     name,
     bot = false,
@@ -19,6 +21,9 @@
     cue = null,
     dim = false,
     reveal = false,
+    trumpSuit = null,
+    lookAt = null,
+    mood = null,
   }: {
     name: string;
     bot?: boolean;
@@ -38,15 +43,16 @@
     dim?: boolean;
     /** Just revealed as the friend. */
     reveal?: boolean;
+    /** The trump, for the 주공's crown. */
+    trumpSuit?: Suit | null;
+    /** Where the figure's eyes glance, as a screen-direction vector. */
+    lookAt?: { x: number; y: number } | null;
+    mood?: 'happy' | 'down' | null;
   } = $props();
 
   let el: HTMLElement;
   $effect(() => {
     if (cue) juice(el, 0.6);
-  });
-  // The turn arriving gives the plate a small nudge, so the eye follows it.
-  $effect(() => {
-    if (turn) juice(el, 0.2);
   });
 
   // Points taken float up from the plate as "+2", then the count bumps.
@@ -67,16 +73,30 @@
 </script>
 
 <div class="seat" bind:this={el} class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
-  <div class="name-row">
-    {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
-    <span class="name">{name}</span>
-    {#if bot && !name.startsWith('봇')}<span class="bot" title="봇">봇</span>{/if}
-    {#if turn && bot}<span class="thinking" aria-label="생각하는 중"><i></i><i></i><i></i></span>{/if}
+  <!-- The figure stands on an oval floor, which lights up on its turn. -->
+  <div class="stand">
+    <span class="floor" aria-hidden="true"></span>
+    <PlayerFigure
+      {team}
+      {trumpSuit}
+      isBot={bot}
+      thinking={turn && bot}
+      active={turn}
+      {lookAt}
+      {mood}
+      {offline}
+    />
   </div>
   <div class="meta">
     <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
     {#if team}{#key team}<span class="team pop {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/key}{/if}
     {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
+  </div>
+  <div class="name-row">
+    {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
+    <span class="name">{name}</span>
+    {#if bot && !name.startsWith('봇')}<span class="bot" title="봇">봇</span>{/if}
+    {#if turn && bot}<span class="thinking" aria-label="생각하는 중"><i></i><i></i><i></i></span>{/if}
   </div>
   {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
   {#if gained}{#key gained.id}<span class="gain" aria-hidden="true">+{gained.n}</span>{/key}{/if}
@@ -95,24 +115,39 @@
     /* One column no wider than the seat, so long names end in an ellipsis. */
     grid-template-columns: minmax(0, 1fr);
     justify-items: center;
-    gap: 3px;
+    gap: 2px;
+    --figure-w: clamp(36px, 6cqw, 64px);
     width: var(--seat-w, 92px);
-    padding: 6px 6px 7px;
-    border-radius: 12px;
-    background: var(--panel);
+    padding: 2px 4px;
     color: var(--ink-muted);
     text-align: center;
-    transition:
-      color var(--dur-quick) var(--ease-standard),
-      outline-color var(--dur-quick) var(--ease-standard);
-    outline: 3px solid transparent;
-    outline-offset: 2px;
+    transition: color var(--dur-quick) var(--ease-standard);
   }
   .seat.turn {
     color: var(--ink);
-    outline-color: var(--accent);
   }
-  /* The friend's plate turns over like a card and comes up in the team colour. */
+  /* The figure, standing on an oval floor that lights up on its turn. */
+  .stand {
+    position: relative;
+    width: var(--figure-w);
+  }
+  .floor {
+    position: absolute;
+    left: -14%;
+    right: -14%;
+    bottom: -3px;
+    height: 26%;
+    border: 3px solid transparent;
+    border-radius: 50%;
+    transition: border-color var(--dur-quick) var(--ease-standard);
+  }
+  .seat.turn .floor {
+    border-color: var(--accent);
+  }
+  .stand :global(.figure) {
+    position: relative;
+  }
+  /* The friend's plate turns over like a card. */
   .seat.reveal {
     animation: reveal 520ms var(--ease-standard);
   }
@@ -125,13 +160,11 @@
     }
     100% {
       transform: perspective(500px) rotateX(0);
-      box-shadow: 0 0 0 3px var(--team-declarer);
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .seat.reveal {
       animation: none;
-      outline-color: var(--team-declarer);
     }
   }
   .seat.dim {
@@ -150,6 +183,7 @@
     white-space: nowrap;
     font-size: 15px;
     font-weight: 600;
+    line-height: 19px;
   }
   /* A bot deciding: three dots breathing in turn. */
   .thinking {
@@ -227,13 +261,16 @@
     border-radius: 50%;
     background: var(--danger);
   }
+  /* Team badge and points are pinned on the robe, like a name tag, so the
+     seat stays about as short as the old plate. */
   .meta {
+    position: relative;
+    margin-top: calc(var(--figure-w) * -0.2);
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
     gap: 4px;
-    min-height: 20px;
     font-size: 13px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -256,7 +293,11 @@
     color: var(--on-team-defense);
   }
   .points {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--table);
     color: var(--ink);
+    line-height: 18px;
   }
   /* Rises above the seat, holds, then fades; the client drops it after 2.8 s. */
   .reaction {
