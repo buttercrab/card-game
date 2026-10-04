@@ -77,6 +77,43 @@ docker build -t card-game .
 docker run --rm -p 3030:3030 card-game   # http://localhost:3030
 ```
 
+Caddy ([`deploy/seoul/Caddyfile`](deploy/seoul/Caddyfile)) adds HSTS and
+a Content Security Policy. The client needs a `blob:` worker (its
+background timer), `blob:` images (the share card), its own fonts and
+music, and Cloudflare's beacon; change the policy when the client starts
+loading anything new. The server itself rate-limits table creation,
+reports, client errors and WebSocket connects per client address.
+
+### Stats and analytics
+
+The server notes tables, seats, hands (finished or abandoned), reports and
+client errors in `stats.jsonl` in its data directory: no cookies, IPs or
+names, and players only as a salted hash of the id their browser keeps to
+reclaim a seat. The salt is made on first run (`stats-salt`, next to the
+log) unless `STATS_SALT` is set. The owner reads it at `/stats` (and as
+JSON at `/api/stats`), which exist only when `STATS_TOKEN` is set: open
+`/stats?token=<token>` once and a cookie keeps you in, or send
+`Authorization: Bearer <token>`.
+
+With `CF_BEACON_TOKEN` set, every page loads Cloudflare Web Analytics
+(cookieless). On the Seoul instance both go in `~/card-game/site.env`,
+which compose reads if present and which never enters the repository:
+
+```sh
+# on cards-seoul
+cat > ~/card-game/site.env <<EOF
+STATS_TOKEN=$(openssl rand -hex 32)
+CF_BEACON_TOKEN=<token from Cloudflare: Analytics & Logs > Web Analytics > Add a site, "manual JS">
+EOF
+chmod 600 ~/card-game/site.env
+cd ~/card-game && docker compose up --detach
+```
+
+Browsers report uncaught errors to `/api/errors`; each new kind (by
+message and top stack frame, the first time in a day) is saved under
+`errors/` in the data volume, and [`deploy/reports.sh`](deploy/reports.sh)
+files it as a GitHub issue labelled `error`, beside player reports.
+
 ## Test
 
 ```sh
