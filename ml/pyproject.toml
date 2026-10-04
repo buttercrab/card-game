@@ -1,0 +1,39 @@
+[project]
+name = "cardgame-ml"
+version = "0.1.0"
+description = "Training, export and scaling studies for the card-game bots"
+requires-python = ">=3.13"
+license = "MIT"
+dependencies = []
+
+[project.optional-dependencies]
+# Kept out of the default install so CI and checks stay light; training
+# needs it: `uv sync --extra torch` (MPS on the Mac).
+torch = ["numpy>=2.3", "torch>=2.8"]
+
+[dependency-groups]
+dev = ["pyright>=1.1.400", "pytest>=8.4", "ruff>=0.13"]
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "PT", "PL"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests compare against literal values by design.
+"tests/**" = ["PLR2004"]
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "strict"
+pythonVersion = "3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers"]
