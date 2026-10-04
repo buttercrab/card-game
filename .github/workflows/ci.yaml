@@ -46,6 +46,25 @@ jobs:
           # The search bot is slow; a few games still catch illegal moves.
           cargo run --release -p sim -- --games 30 --bots search
 
+  # Lint, types and tests for the Python side. Installs without the torch
+  # extra, which nothing here needs yet.
+  ml:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run pyright
+      - run: uv run pytest
+
   web:
     runs-on: ubuntu-latest
     defaults:
