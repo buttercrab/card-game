@@ -129,6 +129,13 @@ async fn one_player_and_four_bots_finish_a_hand() {
             .sum::<i64>(),
         0
     );
+    let hands = room["hands"].as_array().expect("hands are summarized");
+    assert_eq!(hands.len(), 1);
+    let rounds: Vec<i64> = serde_json::from_value(hands[0]["rounds"].clone()).unwrap();
+    assert_eq!(rounds.len(), 10, "one entry per trick");
+    let taken: i64 = rounds.iter().filter(|&&r| r > 0).sum();
+    assert!(taken <= hands[0]["team_points"].as_i64().unwrap());
+    assert!(rounds.iter().map(|r| r.abs()).sum::<i64>() <= 20);
 }
 
 #[tokio::test]

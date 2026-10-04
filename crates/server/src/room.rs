@@ -169,6 +169,9 @@ pub struct Room<G: SessionGame> {
     scores: Vec<i64>,
     /// Each finished hand's payoffs, in order, for the session summary.
     history: Vec<Vec<i64>>,
+    /// Each finished hand in brief, in order. Rooms saved before these were
+    /// kept have fewer of them than `history`.
+    hands: Vec<G::Summary>,
     rng: StdRng,
     /// A 보통 bot's move time; see [`pace`].
     bot_delay: Duration,
@@ -197,6 +200,7 @@ impl<G: SessionGame> Room<G> {
             hands_played: 0,
             scores: vec![0; n],
             history: Vec::new(),
+            hands: Vec::new(),
             rng: StdRng::from_os_rng(),
             bot_delay,
             think_cap: None,
@@ -282,7 +286,8 @@ impl<G: SessionGame> Room<G> {
             "scores": self.scores,
             "hands_played": self.hands_played,
             "history": self.history,
-            "hand": self.game.as_ref().map(|_| json!({ "number": self.hand_no, "actions": self.log })),
+            "hands": self.hands,
+            "hand":self.game.as_ref().map(|_| json!({ "number": self.hand_no, "actions": self.log })),
         })
     }
 
@@ -310,7 +315,7 @@ impl<G: SessionGame> Room<G> {
             actions: Vec<Value>,
         }
         #[derive(Deserialize)]
-        struct Snapshot<S> {
+        struct Snapshot<S, T> {
             format: u32,
             id: String,
             game: String,
@@ -320,9 +325,11 @@ impl<G: SessionGame> Room<G> {
             hands_played: u32,
             #[serde(default)]
             history: Vec<Vec<i64>>,
+            #[serde(default = "Vec::new")]
+            hands: Vec<T>,
             hand: Option<Hand>,
         }
-        let s: Snapshot<G::Settings> = serde_json::from_value(snapshot).map_err(|e| e.to_string())?;
+        let s: Snapshot<G::Settings, G::Summary> = serde_json::from_value(snapshot).map_err(|e| e.to_string())?;
         if s.format != SNAPSHOT_FORMAT || s.game != G::NAME {
             return Err(format!("not a {} room in format {SNAPSHOT_FORMAT}", G::NAME));
         }
@@ -334,6 +341,7 @@ impl<G: SessionGame> Room<G> {
         room.scores = s.scores;
         room.hands_played = s.hands_played;
         room.history = s.history;
+        room.hands = s.hands;
         if let Some(hand) = s.hand {
             let options = G::hand_options(&room.settings, hand.number);
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
@@ -688,6 +696,7 @@ impl<G: SessionGame> Room<G> {
                 *score += payoff;
             }
             self.history.push(payoffs);
+            self.hands.extend(G::summary(game));
             self.hands_played += 1;
         }
     }
@@ -715,6 +724,7 @@ impl<G: SessionGame> Room<G> {
             "hands_played": self.hands_played,
             "in_hand": self.in_hand(),
             "history": self.history,
+            "hands": self.hands,
         })
     }
 

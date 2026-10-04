@@ -1,36 +1,64 @@
 <script lang="ts">
-  // The session so far as one image to send to the group chat: standings,
-  // the MVP and the biggest hand. Drawn on a canvas, shared through the
-  // phone's share sheet, or saved where sharing files is not supported.
+  // The session so far as one image to send to the group chat, Wordle style:
+  // one row per hand, one square per trick, coloured by the side that took
+  // its point cards, then the standings. Drawn on a canvas, shared through
+  // the phone's share sheet or saved, or copied as text for KakaoTalk.
   import { botName } from './names';
   import { PRESET_NAME } from './presets';
-  import type { RoomMsg } from './types';
+  import { PATHS } from './SuitIcon.svelte';
+  import type { HandSummary, RoomMsg, Suit } from './types';
 
   let { room, onclose }: { room: RoomMsg; onclose: () => void } = $props();
 
   const W = 1080;
   const H = 1350;
+  /** The most hands the card shows; earlier ones are counted, not drawn. */
+  const MAX_ROWS = 8;
   let url = $state<string | null>(null);
   let file: File | null = null;
   let status = $state<string | null>(null);
 
   const names = $derived(room.seats.map((s, i) => (s.kind === 'human' ? s.name : s.kind === 'bot' ? botName(i) : `자리 ${i + 1}`)));
-  const history = $derived(room.history ?? []);
+  const hands = $derived(room.hands ?? []);
+  const shown = $derived(hands.slice(-MAX_ROWS));
+  const hidden = $derived(hands.length - shown.length);
   const standings = $derived(
     room.scores.map((score, seat) => ({ seat, score, name: names[seat] })).sort((a, b) => b.score - a.score),
   );
-  /** The hand with the largest single payoff, and whose it was. */
-  const biggest = $derived.by(() => {
-    let best: { hand: number; seat: number; payoff: number } | null = null;
-    history.forEach((pays, hand) =>
-      pays.forEach((payoff, seat) => {
-        if (!best || Math.abs(payoff) > Math.abs(best.payoff)) best = { hand, seat, payoff };
-      }),
-    );
-    return best as { hand: number; seat: number; payoff: number } | null;
-  });
+  const top = $derived(room.hands_played > 0 ? Math.max(...room.scores) : null);
+  const ruleset = $derived(PRESET_NAME[room.settings.preset] ?? room.settings.preset);
 
   const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+  const short = (name: string) => (name.length > 10 ? `${name.slice(0, 10)}…` : name);
+
+  const PAPER = '#efebe3';
+  const CARD = '#fbf8f2';
+  const INK = '#1c1915';
+  const MUTED = '#645d53';
+  const LINE = '#d6cfc1';
+  const DECLARER = '#e69f00';
+  const DEFENSE = '#3b4a6b';
+  const GOLD = '#a77a12';
+  const ACCENT = '#8e2f6b';
+  const DANGER = '#b3261e';
+  const SUIT_INK: Record<Suit, string> = { Spade: INK, Heart: '#a3271f', Diamond: '#c2620a', Club: '#1d5fb0' };
+  const SUIT_TEXT: Record<Suit, string> = { Spade: '♠', Heart: '♥', Diamond: '♦', Club: '♣' };
+
+  /** The session as text for a chat, with emoji squares in place of the grid. */
+  function asText(date: Date): string {
+    const lines = [`마이티 ${date.getMonth() + 1}/${date.getDate()} · ${ruleset} · ${room.hands_played}판`];
+    if (hidden > 0) lines.push(`(+${hidden}판)`);
+    for (const h of shown) {
+      const contract = `${h.contract.trump ? SUIT_TEXT[h.contract.trump] : '노'}${h.contract.count}`;
+      const squares = h.rounds.map((r) => (r > 0 ? '🟧' : r < 0 ? '🟦' : '⬜')).join('');
+      lines.push(`${contract} ${h.made ? '✓' : '✗'} ${squares}`);
+    }
+    lines.push('');
+    for (const row of standings) {
+      lines.push(`${row.score === top ? '👑 ' : ''}${row.name} ${signed(row.score)}`);
+    }
+    return lines.join('\n');
+  }
 
   async function draw() {
     await document.fonts?.ready;
@@ -39,91 +67,99 @@
     canvas.height = H;
     const g = canvas.getContext('2d')!;
     const display = getComputedStyle(document.documentElement).getPropertyValue('--font-display') || 'sans-serif';
-    const paper = '#efebe3';
-    const ink = '#1c1915';
-    const muted = '#645d53';
-    // The card is always paper, whatever the app's theme.
-    const accent = '#8e2f6b';
-    const danger = '#b3261e';
-    const gold = '#a77a12';
+    const date = new Date();
 
-    g.fillStyle = paper;
+    g.fillStyle = PAPER;
     g.fillRect(0, 0, W, H);
 
-    // A tilted 마이티 card in the corner.
-    g.save();
-    g.translate(890, 200);
-    g.rotate(0.12);
-    g.fillStyle = '#fbf8f2';
-    g.strokeStyle = '#d9d1c2';
-    g.lineWidth = 4;
-    g.beginPath();
-    g.roundRect(-90, -125, 180, 250, 18);
-    g.fill();
-    g.stroke();
-    g.fillStyle = ink;
-    g.font = `800 64px ${display}`;
-    g.textAlign = 'center';
-    g.fillText('♠', 0, 22);
-    g.font = `800 36px ${display}`;
-    g.textAlign = 'left';
-    g.fillText('A', -72, -78);
-    g.restore();
+    const left = 80;
+    const right = W - 80;
+    // Squares fill the grid's width, however many tricks a hand has.
+    const tricks = Math.max(10, ...shown.map((h) => h.rounds.length));
+    const gap = 12;
+    const gridLeft = 332;
+    const sq = Math.min(56, Math.floor((right - gridLeft + gap) / tricks) - gap);
+    const rowH = sq + gap;
+    const standH = 64;
 
+    // Lay out first so the whole card sits in the middle.
+    const headerH = 150;
+    const noteH = hidden > 0 ? 48 : 0;
+    const gridH = shown.length ? noteH + shown.length * rowH - gap : 40;
+    const total = headerH + 64 + gridH + 64 + 64 + standings.length * standH - 20;
+    let y = Math.max(80, (H - total) / 2);
+
+    // Header.
     g.textAlign = 'left';
-    g.fillStyle = muted;
+    g.textBaseline = 'alphabetic';
+    g.fillStyle = INK;
+    g.font = `800 104px ${display}`;
+    g.fillText('마이티', left - 4, y + 92);
+    g.fillStyle = MUTED;
     g.font = `600 34px ${display}`;
-    const date = new Date();
-    g.fillText(`${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()} · ${PRESET_NAME[room.settings.preset] ?? room.settings.preset} · ${room.hands_played}판`, 90, 150);
-    g.fillStyle = ink;
-    g.font = `800 96px ${display}`;
-    g.fillText('오늘의 마이티', 90, 260);
+    g.fillText(`${date.getMonth() + 1}월 ${date.getDate()}일 · ${ruleset} · ${room.hands_played}판`, left, y + 150);
+    y += headerH + 64;
+
+    // The grid: a row per hand.
+    if (!shown.length) {
+      g.fillStyle = MUTED;
+      g.font = `600 34px ${display}`;
+      g.fillText('아직 끝난 판이 없어요', left, y + 30);
+      y += gridH;
+    } else {
+      if (hidden > 0) {
+        g.fillStyle = MUTED;
+        g.font = `700 32px ${display}`;
+        g.fillText(`+${hidden}판`, left, y + 24);
+        y += noteH;
+      }
+      for (const hand of shown) {
+        drawLabel(g, display, hand, left, y, sq);
+        hand.rounds.forEach((r, i) => {
+          const x = gridLeft + i * (sq + gap);
+          g.beginPath();
+          if (r === 0) {
+            g.roundRect(x + 2, y + 2, sq - 4, sq - 4, 8);
+            g.strokeStyle = LINE;
+            g.lineWidth = 4;
+            g.stroke();
+          } else {
+            g.roundRect(x, y, sq, sq, 10);
+            g.fillStyle = r > 0 ? DECLARER : DEFENSE;
+            g.fill();
+          }
+          if (hand.friend_revealed === i) {
+            g.beginPath();
+            g.arc(x + sq / 2, y + sq / 2, sq * 0.13, 0, Math.PI * 2);
+            g.fillStyle = r === 0 ? MUTED : CARD;
+            g.fill();
+          }
+        });
+        y += rowH;
+      }
+      y -= gap;
+    }
+    y += 64;
+
+    g.fillStyle = LINE;
+    g.fillRect(left, y, right - left, 3);
+    y += 64;
 
     // Standings.
-    let y = 420;
-    standings.forEach((row, rank) => {
-      const top = rank === 0;
-      g.fillStyle = top ? '#fbf8f2' : 'transparent';
-      if (top) {
-        g.beginPath();
-        g.roundRect(70, y - 74, W - 140, 112, 24);
-        g.fill();
-      }
-      g.fillStyle = muted;
-      g.font = `700 40px ${display}`;
-      g.fillText(String(rank + 1), 110, y);
-      g.fillStyle = ink;
-      g.font = `${top ? 800 : 700} 52px ${display}`;
-      const name = row.name.length > 10 ? `${row.name.slice(0, 10)}…` : row.name;
-      g.fillText(name, 180, y);
-      if (top && room.hands_played > 0) {
-        const w = g.measureText(name).width;
-        g.fillStyle = gold;
-        g.font = `800 30px ${display}`;
-        g.fillText('MVP', 200 + w, y - 6);
-      }
-      g.textAlign = 'right';
-      g.fillStyle = row.score > 0 ? accent : row.score < 0 ? danger : muted;
-      g.font = `800 56px ${display}`;
-      g.fillText(signed(row.score), W - 110, y);
+    g.textBaseline = 'middle';
+    for (const row of standings) {
+      const mid = y + 22;
+      if (row.score === top) drawCrown(g, left, mid);
       g.textAlign = 'left';
-      y += 132;
-    });
-
-    // The biggest hand.
-    if (biggest) {
-      y += 20;
-      g.fillStyle = muted;
-      g.font = `600 34px ${display}`;
-      g.fillText('가장 큰 판', 90, y);
-      g.fillStyle = ink;
-      g.font = `800 46px ${display}`;
-      g.fillText(`${names[biggest.seat]} ${signed(biggest.payoff)} · ${biggest.hand + 1}판째`, 90, y + 64);
+      g.fillStyle = INK;
+      g.font = `${row.score === top ? 800 : 700} 44px ${display}`;
+      g.fillText(short(row.name), left + 72, mid);
+      g.textAlign = 'right';
+      g.fillStyle = row.score > 0 ? ACCENT : row.score < 0 ? DANGER : MUTED;
+      g.font = `800 48px ${display}`;
+      g.fillText(signed(row.score), right, mid);
+      y += standH;
     }
-
-    g.fillStyle = muted;
-    g.font = `600 30px ${display}`;
-    g.fillText('cards.buttercrab.io', 90, H - 80);
 
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
     if (!blob) return;
@@ -131,11 +167,78 @@
     url = URL.createObjectURL(blob);
   }
 
+  /** The contract (suit and count) and whether it was made, left of a row. */
+  function drawLabel(g: CanvasRenderingContext2D, display: string, hand: HandSummary, x: number, y: number, sq: number) {
+    const mid = y + sq / 2;
+    const trump = hand.contract.trump;
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    if (trump) {
+      const size = 44;
+      g.save();
+      g.translate(x, mid - size / 2);
+      g.scale(size / 100, size / 100);
+      g.fillStyle = SUIT_INK[trump];
+      g.fill(new Path2D(PATHS[trump]));
+      g.restore();
+    } else {
+      g.fillStyle = INK;
+      g.font = `800 44px ${display}`;
+      g.fillText('노', x, mid + 3);
+    }
+    g.fillStyle = INK;
+    g.font = `800 46px ${display}`;
+    g.fillText(String(hand.contract.count), x + 56, mid + 3);
+
+    // ✓ or ✗, as strokes.
+    const cx = x + 186;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.lineWidth = 7;
+    g.beginPath();
+    if (hand.made) {
+      g.strokeStyle = INK;
+      g.moveTo(cx - 15, mid + 1);
+      g.lineTo(cx - 4, mid + 12);
+      g.lineTo(cx + 16, mid - 12);
+    } else {
+      g.strokeStyle = DANGER;
+      g.moveTo(cx - 12, mid - 12);
+      g.lineTo(cx + 12, mid + 12);
+      g.moveTo(cx + 12, mid - 12);
+      g.lineTo(cx - 12, mid + 12);
+    }
+    g.stroke();
+  }
+
+  /** A flat paper crown for the leader, centred on `mid`. */
+  function drawCrown(g: CanvasRenderingContext2D, x: number, mid: number) {
+    const w = 48;
+    const h = 36;
+    const t = mid - h / 2;
+    g.fillStyle = GOLD;
+    g.beginPath();
+    g.moveTo(x, t + 8);
+    g.lineTo(x + w * 0.27, t + h * 0.55);
+    g.lineTo(x + w / 2, t);
+    g.lineTo(x + w * 0.73, t + h * 0.55);
+    g.lineTo(x + w, t + 8);
+    g.lineTo(x + w - 4, t + h);
+    g.lineTo(x + 4, t + h);
+    g.closePath();
+    g.fill();
+    for (const px of [x, x + w / 2, x + w]) {
+      g.beginPath();
+      g.arc(px, px === x + w / 2 ? t : t + 8, 4.5, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
   async function share() {
     if (!file) return;
     if (navigator.canShare?.({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: '오늘의 마이티' });
+        await navigator.share({ files: [file], title: '마이티' });
         status = null;
       } catch {
         // Closing the share sheet is not an error worth showing.
@@ -149,24 +252,53 @@
     }
   }
 
+  let copied: ReturnType<typeof setTimeout> | undefined;
+  async function copyText() {
+    const text = asText(new Date());
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Older browsers, or a page without clipboard permission.
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      dialog.append(area);
+      area.select();
+      const ok = document.execCommand('copy');
+      area.remove();
+      if (!ok) {
+        status = '복사하지 못했어요';
+        return;
+      }
+    }
+    status = '복사했어요';
+    clearTimeout(copied);
+    copied = setTimeout(() => status === '복사했어요' && (status = null), 2000);
+  }
+
   let dialog: HTMLDialogElement;
   $effect(() => {
     dialog.showModal();
     void draw();
-    return () => url && URL.revokeObjectURL(url);
+    return () => {
+      clearTimeout(copied);
+      if (url) URL.revokeObjectURL(url);
+    };
   });
 </script>
 
 <dialog bind:this={dialog} onclose={onclose} aria-labelledby="share-title">
   <h2 id="share-title">결과 카드</h2>
   {#if url}
-    <img src={url} alt="오늘의 마이티 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
+    <img src={url} alt="마이티 {room.hands_played}판 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
   {:else}
     <p class="muted">그리는 중…</p>
   {/if}
-  {#if status}<p class="muted status">{status}</p>{/if}
+  <p class="muted status" role="status">{status ?? ''}</p>
   <div class="actions">
     <form method="dialog"><button>닫기</button></form>
+    <button onclick={copyText}>텍스트 복사</button>
     <button class="primary" disabled={!url} onclick={share}>공유하기</button>
   </div>
 </dialog>
@@ -198,6 +330,7 @@
     animation: fade-up 260ms var(--ease-standard) both;
   }
   .status {
+    min-height: 1.4em;
     margin: 8px 0 0;
     font-size: 13px;
   }
@@ -205,9 +338,12 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    margin-top: 14px;
+    margin-top: 6px;
+  }
+  .actions form {
+    margin-right: auto;
   }
   .actions .primary {
-    min-width: 120px;
+    min-width: 108px;
   }
 </style>
