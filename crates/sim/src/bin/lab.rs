@@ -63,6 +63,9 @@ enum Command {
         /// Only the first this many records.
         #[arg(long)]
         limit: Option<usize>,
+        /// Skip this many records first.
+        #[arg(long, default_value_t = 0)]
+        skip: usize,
     },
     /// Bidding: the declarer passing instead of its winning bid, the
     /// closest pass bidding instead, and what playouts thought of both.
@@ -81,6 +84,14 @@ enum Command {
     Audit {
         #[arg(long)]
         records: PathBuf,
+    },
+    /// Hindsight regret of every card played in recorded hands.
+    Regret {
+        #[arg(long)]
+        records: PathBuf,
+        /// Tricks at the end solved exactly.
+        #[arg(long, default_value_t = 4)]
+        endgame: usize,
     },
     /// Replay the declarer's exchange another way, then the card play
     /// with the recorded bot.
@@ -169,8 +180,10 @@ fn main() {
             variant,
             rotate,
             limit,
+            skip,
         } => {
-            let records = load(records, *limit);
+            let mut records = load(records, *limit);
+            records.drain(..(*skip).min(records.len()));
             let base = actor(base);
             let variants: Vec<(String, Actor)> = named(variant).into_iter().map(|(n, s)| (n, actor(&s))).collect();
             let seats = rules.players;
@@ -199,6 +212,12 @@ fn main() {
             let bot = actor(bot);
             run(&records, threads, &args.out, |record| {
                 vec![lab::bid_experiment(&rules, record, bot, *worlds)]
+            });
+        }
+        Command::Regret { records, endgame } => {
+            let records = load(records, None);
+            run(&records, threads, &args.out, |record| {
+                vec![lab::regret(&rules, record, *endgame)]
             });
         }
         Command::Audit { records } => {

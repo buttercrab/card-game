@@ -12,7 +12,7 @@ use engine::{Game, Seat, Turn, Viewer};
 use mighty::bot::SimpleBot;
 use mighty::card::{ACE, Card, Suit};
 use mighty::rules::{Contract, Rules};
-use mighty::search::{SearchBot, playout};
+use mighty::search::{SearchBot, finish, playout};
 use mighty::{Action, FriendCall, Mighty, Options, PhaseView, State, View};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -1106,4 +1106,140 @@ pub fn audit(rules: &Rules, record: &Record) -> Audit {
         }
     }
     a
+}
+
+/// One card-play decision of a recorded hand, judged in hindsight.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Regret {
+    pub trick_no: usize,
+    pub seat: Seat,
+    pub attacking: bool,
+    pub leading: bool,
+    /// What kind of card was played: `joker`, `mighty`, `call` (a joker
+    /// call), `trump` or `plain`.
+    pub kind: String,
+    /// The audit's flags on this play, if any.
+    pub flags: Vec<String>,
+    /// The seat's payoff after the best legal play minus after the one
+    /// made, both played on with every hand known: simple bots, the last
+    /// `endgame` tricks solved exactly.
+    pub regret: i64,
+    /// The play that did best, when it was not the one made.
+    pub best: Option<Action>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegretResult {
+    pub deal: u64,
+    pub declarer: Seat,
+    pub decisions: Vec<Regret>,
+}
+
+/// Hindsight regret of every card-play decision with a choice in `record`:
+/// how much better the seat would have done, seeing every hand, by playing
+/// otherwise, the rest of the hand played by simple bots that also see
+/// everything and, for the last `endgame` tricks, perfectly. Cheaper than
+/// replaying with a stronger bot, and it says which decisions cost most;
+/// but it credits knowledge no seat had, so it bounds what a bot could gain.
+pub fn regret(rules: &Rules, record: &Record, endgame: usize) -> RegretResult {
+    let mut state = replay(rules, record, record.play_at);
+    let side = |s: Seat| s == record.declarer || record.friend == Some(s);
+    let policy = SimpleBot::default();
+    let mut rng = stream(record.deal, TAG_LAB, 11);
+    let mut decisions = Vec::new();
+    for action in &record.log[record.play_at..] {
+        let Turn::Seat(seat) = Mighty::turn(&state) else { break };
+        let legal = Mighty::legal_actions(&state);
+        let view = Mighty::view(&state, Viewer::Seat(seat));
+        let PhaseView::Play {
+            trick_no,
+            plays,
+            leading,
+            contract,
+            ..
+        } = &view.phase
+        else {
+            break;
+        };
+        if legal.len() > 1 {
+            let mut value = |a: &Action| {
+                let mut s = state.clone();
+                Mighty::apply(&mut s, a.clone()).expect("legal");
+                finish(policy, endgame, s, seat, &mut rng)
+            };
+            let made = value(action);
+            let (best_value, best) = legal
+                .iter()
+                .map(|a| (value(a), a))
+                .max_by_key(|(v, _)| *v)
+                .expect("a choice");
+            let Action::Play { card, call_joker, .. } = action else {
+                break;
+            };
+            let mighty = rules.mighty(contract.trump);
+            let kind = if card.is_joker() {
+                "joker"
+            } else if *card == mighty {
+                "mighty"
+            } else if *call_joker {
+                "call"
+            } else if card.suit() == contract.trump && contract.trump.is_some() {
+                "trump"
+            } else {
+                "plain"
+            };
+            let partner_winning = leading.is_some_and(|w| side(w) == side(seat) && w != seat);
+            let points = plays.iter().filter(|p| p.card.is_point()).count();
+            let mut flags = Vec::new();
+            if partner_winning && (card.is_joker() || *card == mighty) && trick_no + 1 < rules.hand_size {
+                flags.push(
+                    if card.is_joker() {
+                        "joker_on_partner"
+                    } else {
+                        "mighty_on_partner"
+                    }
+                    .to_string(),
+                );
+            }
+            if (card.is_joker() || *card == mighty)
+                && points == 0
+                && !plays.is_empty()
+                && trick_no + 3 < rules.hand_size
+            {
+                flags.push("special_on_empty".to_string());
+            }
+            if *call_joker {
+                let called = rules
+                    .deck
+                    .jokers()
+                    .iter()
+                    .copied()
+                    .find(|&j| rules.joker_call_card(j, contract.trump) == Some(*card));
+                let holder = called.and_then(|j| {
+                    (0..rules.players).find(|&s| Mighty::view(&state, Viewer::Seat(s)).hand.contains(&j))
+                });
+                match holder {
+                    Some(h) if h == seat => flags.push("call_own_hand".to_string()),
+                    Some(h) if side(h) == side(seat) => flags.push("call_own_side".to_string()),
+                    _ => {}
+                }
+            }
+            decisions.push(Regret {
+                trick_no: *trick_no,
+                seat,
+                attacking: side(seat),
+                leading: plays.is_empty(),
+                kind: kind.to_string(),
+                flags,
+                regret: best_value - made,
+                best: (best != action && best_value > made).then(|| best.clone()),
+            });
+        }
+        Mighty::apply(&mut state, action.clone()).expect("recorded");
+    }
+    RegretResult {
+        deal: record.deal,
+        declarer: record.declarer,
+        decisions,
+    }
 }
