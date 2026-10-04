@@ -195,21 +195,23 @@
   .spot:has(:global(.raised)) {
     z-index: 1;
   }
-  /* Choosing discards: a chosen card lifts only a little, inside the tray
-     (the exchange controls sit just above its rim), and keeps its place in
-     the fan: it does not come forward over the next card or cast the raised
-     shadow, which would show under it as a second edge. An ink outline
-     drawn just inside its edge says it is picked. */
+  /* Choosing discards: a chosen card lifts clear of the row, as far as the
+     tray's top padding allows (the exchange controls sit just above its
+     rim). It keeps its place in the fan and casts no raised shadow, which
+     would show under it as a second edge; the lift alone says it is picked. */
   .choose .spot:has(:global(.raised)) {
     z-index: auto;
   }
   .choose :global(.card.raised) {
-    translate: 0 -12px;
+    translate: 0 -18px;
     box-shadow: var(--shadow-card);
-    /* Card ink, not table ink: it sits on the card face in either theme. */
-    outline: 3px solid var(--card-ink);
-    outline-offset: -3px;
     animation: none;
+  }
+  /* A phone's tray has less room above the row, under your role tag. */
+  @media (max-width: 599px) {
+    .choose :global(.card.raised) {
+      translate: 0 -10px;
+    }
   }
   /* An overlapped card's corner glyph would peek out from under the next
      card as a stray sliver; only the last card in a row shows its own. */
