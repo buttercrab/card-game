@@ -137,8 +137,6 @@ After every step the simulator checks that:
 
 ## Roadmap
 
-1. Engine core, Mighty, simulator
-2. **Playable with friends**: rooms, table UI, bots in empty seats (this)
-3. Poker, to prove the engine is general
-4. AI-written house rules, gated by the simulator
-5. Public
+[docs/PLAN.md](docs/PLAN.md) is the plan: the game-agnostic service, the
+learned bots (evals, RL environment, scaling studies, an experiment loop),
+poker as the second game, and the order of work.
