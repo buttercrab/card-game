@@ -19,8 +19,10 @@
   import { untrack } from 'svelte';
   import Callout from './Callout.svelte';
   import { juice } from './motion';
+  import Card from './Card.svelte';
+  import type { Seal } from './cards';
   import PlayerFigure from './PlayerFigure.svelte';
-  import type { Suit } from './types';
+  import type { Card as CardT, Suit } from './types';
   let {
     name,
     bot = false,
@@ -38,6 +40,9 @@
     mood = null,
     pointsOpen = false,
     onpoints = null,
+    taken = [],
+    seal = () => null,
+    twoJokers = true,
   }: {
     name: string;
     bot?: boolean;
@@ -66,7 +71,16 @@
     pointsOpen?: boolean;
     /** Makes the points a button that shows the point cards taken. */
     onpoints?: ((anchor: HTMLElement) => void) | null;
+    /** The point cards won, drawn as a small fan beside the seat on desktop. */
+    taken?: CardT[];
+    seal?: (card: CardT) => Seal | null;
+    twoJokers?: boolean;
   } = $props();
+
+  /** The fan stays within about 112px however many cards it holds. */
+  const FAN_CARD = 30;
+  const fanStep = $derived(taken.length <= 1 ? 0 : Math.min(15, (112 - FAN_CARD) / (taken.length - 1)));
+  let pill = $state<HTMLElement>();
 
   let el: HTMLElement;
   $effect(() => {
@@ -110,6 +124,7 @@
     {#if points > 0}
       {#if onpoints}
         <button
+          bind:this={pill}
           type="button"
           class="points peek-btn"
           aria-expanded={pointsOpen}
@@ -122,6 +137,24 @@
       {/if}
     {/if}
   </div>
+  {#if taken.length > 0}
+    <!-- The cards themselves, fanned like a won pile. The pill beside the
+         badge is the button for keys and screen readers; this is the same
+         thing for a pointer. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div
+      class="fan"
+      class:open={pointsOpen}
+      class:live={!!onpoints}
+      aria-hidden="true"
+      style:--step="{fanStep}px"
+      onclick={() => pill && onpoints?.(pill)}
+    >
+      {#each taken as c, i (JSON.stringify(c))}
+        <span class="fan-card" style:--i={i} style:--tilt="{((i * 5) % 7) - 3}deg"><Card card={c} size="mini" width={FAN_CARD} seal={seal(c)} {twoJokers} /></span>
+      {/each}
+    </div>
+  {/if}
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
     <span class="name">{name}</span>
@@ -148,7 +181,7 @@
     gap: 2px;
     /* The figure grows with the table's height (the ring is a size
        container): small on phones, larger on desktop. */
-    --figure-w: clamp(36px, 10cqh, 64px);
+    --figure-w: var(--seat-figure, clamp(36px, 10cqh, 64px));
     width: var(--seat-w, 92px);
     padding: 2px 4px;
     color: var(--ink-muted);
@@ -411,5 +444,89 @@
     font-weight: 700;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+  }
+  /* The won pile: hidden on phones, where the pill says the same. */
+  .fan {
+    display: none;
+  }
+  @media (min-width: 1024px) and (min-height: 640px) {
+    /* Desktop: a plate with the figure on the left and the name, badges and
+       won pile stacked beside it, so a seat carries more at a glance. */
+    .seat {
+      --figure-w: var(--seat-figure, clamp(56px, 14cqh, 80px));
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-areas:
+        'stand name'
+        'stand meta'
+        'stand fan';
+      align-content: center;
+      justify-items: start;
+      column-gap: 10px;
+      row-gap: 3px;
+      padding: 4px 6px;
+      text-align: left;
+    }
+    .stand {
+      grid-area: stand;
+      align-self: center;
+    }
+    .name-row {
+      grid-area: name;
+      align-self: end;
+    }
+    .name {
+      font-size: 16px;
+    }
+    .meta {
+      grid-area: meta;
+      margin-top: 0;
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+    }
+    .meta:empty {
+      display: flex;
+      min-height: 18px;
+    }
+    .fan {
+      grid-area: fan;
+      display: flex;
+      align-self: start;
+      height: 44px;
+      padding-top: 2px;
+    }
+    .fan.live {
+      cursor: pointer;
+    }
+    .fan-card {
+      display: block;
+      rotate: var(--tilt);
+      transition: translate var(--dur-quick) var(--ease-standard);
+      animation: fan-in var(--dur-move) var(--ease-settle) both;
+    }
+    .fan-card + .fan-card {
+      margin-left: calc(var(--step) - 30px);
+    }
+    /* Pointing at the pile lifts it a little, as the cards in hand do. */
+    .fan.live:hover .fan-card,
+    .fan.open .fan-card {
+      translate: 0 -3px;
+    }
+    .fan-card :global(.card) {
+      box-shadow: 0 1px 0 rgb(28 25 21 / 0.12);
+    }
+    @keyframes fan-in {
+      from {
+        opacity: 0;
+        translate: 0 -8px;
+      }
+    }
+    .bubble {
+      left: calc(var(--figure-w) / 2 + 6px);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fan-card {
+      animation: none;
+    }
   }
 </style>

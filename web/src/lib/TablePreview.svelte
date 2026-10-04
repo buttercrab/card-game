@@ -3,7 +3,7 @@
   // /preview?state=bidding | misdeal | exchange | play | late | sweep | done | won | run
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
-  import type { Card, PhaseView, Played, RoomMsg, Rules, StateMsg } from './types';
+  import type { Bid, Card, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
 
   const which = new URLSearchParams(location.search).get('state') ?? 'play';
 
@@ -43,7 +43,7 @@
   ];
   const playPhase = (
     plays: Played[],
-    tricks: { plays: Played[]; lead: { Suit: 'Club' }; winner: number }[],
+    tricks: Trick[],
     friend: number | null = null,
     trickNo = tricks.length,
   ): PhaseView => ({
@@ -63,12 +63,32 @@
       discards: null,
     },
   });
+  // A few rounds already played, for the log and the last round.
+  const round = (lead: Trick['lead'], winner: number, cards: [number, Card][]): Trick => ({
+    plays: cards.map(([seat, card]) => ({ seat, card, powered: true })),
+    lead,
+    winner,
+  });
+  const lateTricks: Trick[] = [
+    round({ Suit: 'Club' }, 2, [[1, n('Club', 4)], [2, n('Club', 12)], [3, n('Club', 2)], [4, n('Club', 5)], [0, n('Club', 10)]]),
+    round({ Suit: 'Diamond' }, 2, [[2, n('Diamond', 14)], [3, n('Diamond', 3)], [4, n('Diamond', 10)], [0, n('Diamond', 5)], [1, n('Diamond', 6)]]),
+    round({ Suit: 'Heart' }, 3, [[2, n('Heart', 4)], [3, n('Heart', 14)], [4, n('Heart', 2)], [0, n('Heart', 11)], [1, n('Heart', 10)]]),
+    round({ Suit: 'Heart' }, 3, [[3, { Joker: 'Black' }], [4, n('Heart', 5)], [0, n('Heart', 7)], [1, n('Heart', 13)], [2, n('Heart', 8)]]),
+  ];
+  const bids: Bid[] = [
+    { seat: 0, contract: null },
+    { seat: 1, contract: { trump: 'Heart', count: 14 } },
+    { seat: 2, contract: { trump: 'Spade', count: 15 } },
+    { seat: 3, contract: null },
+    { seat: 4, contract: null },
+    { seat: 1, contract: null },
+  ];
   const phases: Record<string, PhaseView> = {
     bidding: { Bidding: { to_act: 0, best: [2, { trump: 'Heart', count: 15 }], passed: [false, true, false, true, false], has_bid: [false, false, true, false, false] } },
     exchange: { Exchange: { declarer: 0, contract, trump_changed: false, discards: [] } },
     play: playPhase(trickPlays, []),
     // Later in the hand: the 프렌드 is out and both sides have points.
-    late: playPhase(trickPlays, [], 3, 7),
+    late: playPhase(trickPlays, lateTricks, 3, 7),
     done: {
       Done: {
         declarer: 2,
@@ -119,6 +139,7 @@
             ]
           : [[n('Club', 10)], [n('Heart', 10)], [n('Spade', 13), n('Club', 12)], [], [n('Diamond', 14)]],
       phase,
+      bids: key === 'bidding' ? bids.slice(0, 3) : bids,
     },
     legal: legal[key] ?? [],
     turn,
@@ -187,7 +208,8 @@
 
 <style>
   .page {
-    max-width: 1100px;
+    /* As wide as the room page at the table (see Room.svelte). */
+    max-width: max(1100px, calc((100dvh - 64px) * 1.7));
     margin: 0 auto;
     padding: 64px 16px 16px;
   }

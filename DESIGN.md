@@ -209,7 +209,7 @@ Phone portrait is the primary layout; desktop is the same table with more room.
 - **Top display (상황판).** Top centre, one line: `공약 15 ♠` · `프렌드 ♠A` or `?` · `라운드 4/10` · `여당 10/15`.
 - **Action strip.** One fixed 64px slot between the table and the hand. Its content changes by phase: bid chips and 패스; the exchange counter `3장 선택` with 기루다 변경; friend shortcuts; `내 차례` hints during play. No dropdowns, no modals except the result sheet and settings.
 - **Hand tray.** Docked at the bottom, about 30% of the viewport height on phones including the strip. One flat row of 10 cards, overlapping so each corner index stays visible; the declarer's 13 cards wrap to two rows. Sorted by suit with trump first.
-- **Breakpoints.** Phone below 600px; tablet 600–1023px; desktop 1024px and up adds a 300px side column for the event log, spectators and running scores.
+- **Breakpoints.** Phone below 600px; tablet 600–1023px; desktop 1024px and up turns seats into plates (figure up to 80px, name, badges and a small fan of the point cards won) and puts your own seat at the tray's left and your tools at its right; from 1100px wide in landscape a 260–300px column of stacked panels (상황판, 점수판, 기록, 직전 라운드) replaces the top line.
 - **Spacing.** A 4px base: 4, 8, 12, 16, 24, 32. Page gutter 16px on phones.
 - **Touch targets.** At least 44×44px; hand cards on phones are at least 56px wide.
 
