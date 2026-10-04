@@ -4,6 +4,7 @@
 use crate::card::{ACE, Card, DeckKind, Suit};
 use crate::state::HandSummary;
 use engine::Seat;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -436,6 +437,50 @@ impl Rules {
             _ => return None,
         }
         Some(r)
+    }
+
+    /// These rules with the optional rules drawn at random: the player
+    /// count (3 to 7, through [`Rules::for_players`]), misdeal, bidding,
+    /// card-policy and scoring variants. `sim --vary` plays one draw per
+    /// game; tests and model training use it to reach rule combinations no
+    /// preset has.
+    pub fn varied<R: Rng + ?Sized>(&self, rng: &mut R) -> Rules {
+        let mut r = self.for_players(rng.random_range(3..=7)).expect("3 to 7 players");
+        r.misdeal.all_points = rng.random();
+        r.misdeal.after_bidding = rng.random();
+        r.misdeal.declarer = rng.random();
+        r.bidding.pass_is_final = rng.random();
+        r.misdeal.ask_first = rng.random();
+        r.misdeal.caller_deals = rng.random();
+        r.bidding.change_to_no_trump_cost = [None, Some(0), Some(1), Some(2)][rng.random_range(0..4)];
+        r.bidding.last_chance_min = rng.random::<bool>().then(|| r.bidding.min.saturating_sub(1).max(1));
+        r.bidding.raise_on_exchange = rng.random();
+        r.policy.release_with_mighty = rng.random();
+        r.joker_lead.not_first_trick = rng.random();
+        r.reveal_discards = rng.random();
+        let doubling = |rng: &mut R| [Doubling::Never, Doubling::Win, Doubling::Always][rng.random_range(0..3)];
+        r.scoring = Scoring {
+            win: [
+                WinScore::OverTen,
+                WinScore::OverMin,
+                WinScore::OverBid,
+                WinScore::BidBonus,
+                WinScore::BothOver(13),
+            ][rng.random_range(0..5)],
+            no_trump: doubling(rng),
+            alone: doubling(rng),
+            run: rng.random(),
+            back_run: match rng.random_range(0..4) {
+                0 => BackRun::Never,
+                1 => BackRun::TeamAtMost(rng.random_range(8..=10)),
+                2 => BackRun::ShortBy(rng.random_range(3..=6)),
+                _ => BackRun::DefenceReachesBid,
+            },
+            full_contract: doubling(rng),
+            discards_to_declarer: rng.random(),
+        };
+        r.validate().expect("varied rules are valid");
+        r
     }
 
     pub fn validate(&self) -> Result<(), InvalidRules> {

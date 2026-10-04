@@ -1,9 +1,9 @@
 use clap::{Parser, ValueEnum};
 use engine::{Bot, RandomBot};
 use mighty::bot::SimpleBot;
-use mighty::rules::{BackRun, Doubling, Preset, Rules, Scoring, WinScore};
+use mighty::rules::Preset;
 use mighty::{Action, Mighty, Options, View};
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use sim::spec::Spec;
 use sim::{Checks, Failure};
@@ -60,47 +60,6 @@ struct Args {
     /// bidding, scoring and player-count variants) on top of the preset.
     #[arg(long)]
     vary: bool,
-}
-
-/// The preset's rules with the optional rules drawn at random for one game.
-fn vary(rules: &Rules, seed: u64) -> Rules {
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut r = rules.for_players(rng.random_range(3..=7)).expect("3 to 7 players");
-    r.misdeal.all_points = rng.random();
-    r.misdeal.after_bidding = rng.random();
-    r.misdeal.declarer = rng.random();
-    r.bidding.pass_is_final = rng.random();
-    r.misdeal.ask_first = rng.random();
-    r.misdeal.caller_deals = rng.random();
-    r.bidding.change_to_no_trump_cost = [None, Some(0), Some(1), Some(2)][rng.random_range(0..4)];
-    r.bidding.last_chance_min = rng.random::<bool>().then(|| r.bidding.min.saturating_sub(1).max(1));
-    r.bidding.raise_on_exchange = rng.random();
-    r.policy.release_with_mighty = rng.random();
-    r.joker_lead.not_first_trick = rng.random();
-    r.reveal_discards = rng.random();
-    let doubling = |rng: &mut ChaCha8Rng| [Doubling::Never, Doubling::Win, Doubling::Always][rng.random_range(0..3)];
-    r.scoring = Scoring {
-        win: [
-            WinScore::OverTen,
-            WinScore::OverMin,
-            WinScore::OverBid,
-            WinScore::BidBonus,
-            WinScore::BothOver(13),
-        ][rng.random_range(0..5)],
-        no_trump: doubling(&mut rng),
-        alone: doubling(&mut rng),
-        run: rng.random(),
-        back_run: match rng.random_range(0..4) {
-            0 => BackRun::Never,
-            1 => BackRun::TeamAtMost(rng.random_range(8..=10)),
-            2 => BackRun::ShortBy(rng.random_range(3..=6)),
-            _ => BackRun::DefenceReachesBid,
-        },
-        full_contract: doubling(&mut rng),
-        discards_to_declarer: rng.random(),
-    };
-    r.validate().expect("varied rules are valid");
-    r
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -200,7 +159,7 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                             return done;
                         }
                         let rules = if args.vary {
-                            vary(&rules, args.seed + game)
+                            rules.varied(&mut ChaCha8Rng::seed_from_u64(args.seed + game))
                         } else {
                             rules.clone()
                         };
