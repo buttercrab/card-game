@@ -13,8 +13,14 @@ services:
     # A nano instance earns little sustained CPU; cap bot thinking near what
     # 200 sampled deals take, so long bot games do not drain its burst credit.
     command: ["--bot-think-ms", "150"]
-    # BOT_TOKEN, the secret the home server's bot worker presents.
-    env_file: bots.env
+    # Secrets live on the instance, next to this file, never in the repository.
+    env_file:
+      # BOT_TOKEN, the secret the home server's bot worker presents.
+      - bots.env
+      # Optional: STATS_TOKEN opens /stats; CF_BEACON_TOKEN adds Cloudflare
+      # Web Analytics to every page. See README.md, "Stats and analytics".
+      - path: site.env
+        required: false
     restart: unless-stopped
     read_only: true
     security_opt:

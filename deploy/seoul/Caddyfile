@@ -3,10 +3,21 @@ cards.buttercrab.io {
 	encode zstd gzip
 
 	# Built files carry a content hash in their name, so they never change.
+	# Pages are marked no-cache by the server itself.
 	@hashed path /assets/*
 	header @hashed Cache-Control "public, max-age=31536000, immutable"
-	@page path / /index.html /r/*
-	header @page Cache-Control "no-cache"
+
+	# The client needs: its own scripts, styles (Svelte sets inline
+	# styles), fonts and music; a WebSocket to this host; a blob: worker
+	# for its background timer (web/src/lib/clock.ts); blob: images for the
+	# share card; and Cloudflare Web Analytics when CF_BEACON_TOKEN is set.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' wss://cards.buttercrab.io https://cloudflareinsights.com; worker-src 'self' blob:; child-src 'self' blob:; media-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	}
 
 	reverse_proxy cards:3030
 }

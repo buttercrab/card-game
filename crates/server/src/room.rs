@@ -4,6 +4,7 @@
 
 use crate::bots::RemoteBots;
 use crate::session::{BotLevel, SessionGame};
+use crate::stats::{Event, Hand, Stats};
 use engine::{Turn, Viewer};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -66,6 +67,10 @@ pub enum Command {
     Report {
         reply: tokio::sync::oneshot::Sender<Value>,
     },
+    /// The preset and empty seats, for a share link's preview.
+    Describe {
+        reply: tokio::sync::oneshot::Sender<Value>,
+    },
     /// A bot's chosen action (a boxed `G::Action`), for game `version`.
     BotMove {
         version: u64,
@@ -84,6 +89,10 @@ pub enum ClientMsg {
         token: Option<String>,
         #[serde(default)]
         seat: Option<usize>,
+        /// An id the browser keeps across tables, if it sends one; only its
+        /// salted hash is kept, to count returning players.
+        #[serde(default)]
+        device: Option<String>,
     },
     /// Give up your seat; a bot takes over if a hand is in progress.
     Leave,
@@ -122,6 +131,9 @@ enum Occupant {
     Human {
         name: String,
         token: String,
+        /// The player's id in the stats: a salted hash, never the raw id.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        player: Option<String>,
     },
     Bot {
         #[serde(default)]
@@ -184,6 +196,9 @@ pub struct Room<G: SessionGame> {
     thinking: bool,
     /// Weak so the room still ends when every other sender is gone.
     me: Option<WeakUnboundedSender<Command>>,
+    stats: Option<Arc<Stats>>,
+    /// When the current hand was dealt, in Unix seconds, if known.
+    hand_started: Option<u64>,
 }
 
 impl<G: SessionGame> Room<G> {
@@ -208,7 +223,39 @@ impl<G: SessionGame> Room<G> {
             version: 0,
             thinking: false,
             me: None,
+            stats: None,
+            hand_started: None,
         }
+    }
+
+    /// Notes what happens here in the stats log; see [`crate::stats`].
+    pub fn use_stats(&mut self, stats: Arc<Stats>) {
+        self.stats = Some(stats);
+    }
+
+    fn record(&self, event: Event) {
+        if let Some(stats) = &self.stats {
+            stats.record(event);
+        }
+    }
+
+    /// The current hand's table and seats, for the stats.
+    fn hand_stats(&self) -> Hand {
+        Hand {
+            table: self.id.clone(),
+            preset: G::preset_id(&self.settings).to_string(),
+            custom: G::customized(&self.settings),
+            humans: self
+                .seats
+                .iter()
+                .filter(|s| matches!(s, Occupant::Human { .. }))
+                .count(),
+            bots: self.seats.iter().filter(|s| matches!(s, Occupant::Bot { .. })).count(),
+        }
+    }
+
+    fn hand_secs(&self) -> Option<u64> {
+        self.hand_started.map(|t| crate::stats::now().saturating_sub(t))
     }
 
     /// Caps how long a 고수 bot thinks here, for small servers. A bot worker
@@ -269,6 +316,12 @@ impl<G: SessionGame> Room<G> {
                 (false, _) => None,
             };
         }
+        if self.in_hand() {
+            self.record(Event::HandAbandoned {
+                hand: self.hand_stats(),
+                secs: self.hand_secs(),
+            });
+        }
         if let Some(path) = &save {
             let _ = std::fs::remove_file(path);
         }
@@ -287,7 +340,9 @@ impl<G: SessionGame> Room<G> {
             "hands_played": self.hands_played,
             "history": self.history,
             "hands": self.hands,
-            "hand":self.game.as_ref().map(|_| json!({ "number": self.hand_no, "actions": self.log })),
+            "hand": self.game.as_ref().map(|_| json!({
+                "number": self.hand_no, "actions": self.log, "started": self.hand_started,
+            })),
         })
     }
 
@@ -310,9 +365,11 @@ impl<G: SessionGame> Room<G> {
     /// Rebuilds a room from [`Room::snapshot`] by replaying its hand.
     pub fn restore(snapshot: Value, bot_delay: Duration) -> Result<Room<G>, String> {
         #[derive(Deserialize)]
-        struct Hand {
+        struct SavedHand {
             number: u32,
             actions: Vec<Value>,
+            #[serde(default)]
+            started: Option<u64>,
         }
         #[derive(Deserialize)]
         struct Snapshot<S, T> {
@@ -327,7 +384,7 @@ impl<G: SessionGame> Room<G> {
             history: Vec<Vec<i64>>,
             #[serde(default = "Vec::new")]
             hands: Vec<T>,
-            hand: Option<Hand>,
+            hand: Option<SavedHand>,
         }
         let s: Snapshot<G::Settings, G::Summary> = serde_json::from_value(snapshot).map_err(|e| e.to_string())?;
         if s.format != SNAPSHOT_FORMAT || s.game != G::NAME {
@@ -353,6 +410,7 @@ impl<G: SessionGame> Room<G> {
             room.game = Some(game);
             room.log = hand.actions;
             room.hand_no = hand.number;
+            room.hand_started = hand.started;
         }
         Ok(room)
     }
@@ -388,6 +446,15 @@ impl<G: SessionGame> Room<G> {
                 let _ = reply.send(self.report());
                 return;
             }
+            Command::Describe { reply } => {
+                let empty = self.seats.iter().filter(|s| matches!(s, Occupant::Empty)).count();
+                let _ = reply.send(json!({
+                    "preset": G::preset_id(&self.settings),
+                    "custom": G::customized(&self.settings),
+                    "empty": empty,
+                }));
+                return;
+            }
             Command::BotMove { version, seat, action } => {
                 self.thinking = false;
                 if !self.bot_move(version, seat, action) {
@@ -401,7 +468,12 @@ impl<G: SessionGame> Room<G> {
     fn on_message(&mut self, conn: ConnId, msg: ClientMsg) -> Result<(), String> {
         let my_seat = self.conns.get(&conn).and_then(|c| c.seat);
         match msg {
-            ClientMsg::Join { name, token, seat } => self.join(conn, name, token, seat),
+            ClientMsg::Join {
+                name,
+                token,
+                seat,
+                device,
+            } => self.join(conn, name, token, seat, device),
             ClientMsg::Leave => {
                 let seat = my_seat.ok_or("you are not seated")?;
                 self.seats[seat] = if self.in_hand() {
@@ -422,6 +494,14 @@ impl<G: SessionGame> Room<G> {
                 };
                 if !free {
                     return Err("that seat is taken".into());
+                }
+                if !matches!(self.seats[seat], Occupant::Bot { .. }) {
+                    self.record(Event::SeatFilled {
+                        table: self.id.clone(),
+                        seat,
+                        bot: Some(level),
+                        player: None,
+                    });
                 }
                 self.seats[seat] = Occupant::Bot { level };
                 Ok(())
@@ -510,6 +590,19 @@ impl<G: SessionGame> Room<G> {
                 self.game = Some(state);
                 self.log.clear();
                 self.hand_no = self.hands_played;
+                self.hand_started = Some(crate::stats::now());
+                let players = self
+                    .seats
+                    .iter()
+                    .filter_map(|s| match s {
+                        Occupant::Human { player, .. } => player.clone(),
+                        _ => None,
+                    })
+                    .collect();
+                self.record(Event::HandStarted {
+                    hand: self.hand_stats(),
+                    players,
+                });
                 self.advance();
                 Ok(())
             }
@@ -531,7 +624,14 @@ impl<G: SessionGame> Room<G> {
         }
     }
 
-    fn join(&mut self, conn: ConnId, name: String, token: Option<String>, seat: Option<usize>) -> Result<(), String> {
+    fn join(
+        &mut self,
+        conn: ConnId,
+        name: String,
+        token: Option<String>,
+        seat: Option<usize>,
+        device: Option<String>,
+    ) -> Result<(), String> {
         let name = name.trim().chars().take(24).collect::<String>();
         if name.is_empty() {
             return Err("pick a name".into());
@@ -553,13 +653,30 @@ impl<G: SessionGame> Room<G> {
         };
         // A newer connection for the same seat wins; the old tab becomes a spectator.
         self.detach(seat);
-        let token = match (&self.seats[seat], reclaimed) {
-            (Occupant::Human { token, .. }, Some(_)) => token.clone(),
-            _ => format!("{:032x}", self.rng.random::<u128>()),
+        let (token, player) = match (&self.seats[seat], reclaimed) {
+            (Occupant::Human { token, player, .. }, Some(_)) => (token.clone(), player.clone()),
+            _ => (format!("{:032x}", self.rng.random::<u128>()), None),
         };
+        // The browser's own id if it sends one, else the seat's token, which
+        // the browser keeps for this table.
+        let device = device.filter(|d| !d.is_empty() && d.len() <= 128);
+        let player = match (&self.stats, device) {
+            (Some(stats), Some(device)) => Some(stats.player(&device)),
+            (Some(stats), None) => player.or_else(|| Some(stats.player(&token))),
+            (None, _) => player,
+        };
+        if reclaimed.is_none() {
+            self.record(Event::SeatFilled {
+                table: self.id.clone(),
+                seat,
+                bot: None,
+                player: player.clone(),
+            });
+        }
         self.seats[seat] = Occupant::Human {
             name,
             token: token.clone(),
+            player,
         };
         if let Some(c) = self.conns.get_mut(&conn) {
             c.seat = Some(seat);
@@ -698,6 +815,12 @@ impl<G: SessionGame> Room<G> {
             self.history.push(payoffs);
             self.hands.extend(G::summary(game));
             self.hands_played += 1;
+            let outcome = G::outcome(game).to_string();
+            self.record(Event::HandFinished {
+                hand: self.hand_stats(),
+                outcome,
+                secs: self.hand_secs(),
+            });
         }
     }
 
