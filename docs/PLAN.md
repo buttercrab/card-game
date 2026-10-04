@@ -233,8 +233,8 @@ checks pass); no `mighty::` outside the Mighty plugin and its web module.
 
 ### P7 — Second game: poker
 
-- Engine, presets (limit and no-limit hold'em to start), a simple table,
-  bots, `Encode`, eval suite.
+- Texas hold'em only (owner, 2026-10-05): engine, presets (limit and
+  no-limit), a simple table, bots, `Encode`, eval suite.
 
 Exit: poker playable with friends and bots; the env, evals and a baseline
 model work for it unchanged.
@@ -265,8 +265,8 @@ model work for it unchanged.
 - **Over-generalising from one game:** keep P6/P7 honest by building poker,
   not by guessing what a second game needs.
 
-## Open questions for the owner
+## Decisions
 
-- Poker variants for P7: hold'em only, or others your group plays?
-- Ratings: show players a rating (for bots and people) on the site, or keep
-  ratings internal to the evals?
+- 2026-10-05: P7 is Texas hold'em only.
+- 2026-10-05: ratings stay internal to the evals; players see none on the
+  site for now.
