@@ -1,9 +1,8 @@
 <script lang="ts">
-  // The lobby drawn as the table itself: five seats around a paper mat, in the
-  // places they will have once the hand is dealt (you at the bottom, then
-  // right, top right, top left, left; see Table.svelte). Empty seats are a
-  // dashed outline waiting to be filled; a human who sits down slides in and
-  // a bot bows as it is added.
+  // The lobby as a row of seat tiles, like a character select: one tile per
+  // seat in table order, starting from yours. Empty seats are dashed tiles
+  // waiting to be filled; a human who sits down slides in and a bot bows as
+  // it is added. The start button sits below.
   import type { Snippet } from 'svelte';
   import { prefersReducedMotion } from 'svelte/motion';
   import { EASE_SETTLE, EASE_STANDARD } from './motion';
@@ -32,6 +31,7 @@
   } = $props();
 
   const LEVEL: Record<BotLevel, string> = { easy: '초보', normal: '보통', hard: '고수' };
+  const LEVELS: BotLevel[] = ['easy', 'normal', 'hard'];
 
   const n = $derived(room.seats.length);
   const seated = $derived(me !== null);
@@ -78,150 +78,135 @@
 </script>
 
 <div class="frame">
-<div class="room-table">
-  <div class="mat" aria-hidden="true"></div>
-  <div class="centre">{@render centre?.()}</div>
-
-  {#each order as i, r (i)}
-    {@const s = room.seats[i]}
-    <div class="seat pos-{n === 5 ? r : 'free'}"
-      style:--x={Math.cos(((90 - (r * 360) / n) * Math.PI) / 180)}
-      style:--y={Math.sin(((90 - (r * 360) / n) * Math.PI) / 180)}
-      class:me={me === i} role="group" aria-label={label(i)}>
-      <div class="body" bind:this={bodies[i]}>
-        {#if s.kind === 'empty' && !seated}
-          <button class="sit" onclick={() => onsit(i)} aria-label="{i + 1}번 자리에 앉기">
-            <span class="fig"><svg class="outline" viewBox="0 0 120 110" aria-hidden="true"><path d="M20 108 Q22 76 60 72 Q98 76 100 108" /><circle cx="60" cy="48" r="20" /></svg></span>
-            <span class="name muted">빈 자리</span>
-            <span class="sit-cue">앉기</span>
-          </button>
-        {:else}
-          <span class="fig" bind:this={figures[i]}>
-            {#if s.kind === 'empty'}
-              <svg class="outline" viewBox="0 0 120 110" aria-hidden="true"><path d="M20 108 Q22 76 60 72 Q98 76 100 108" /><circle cx="60" cy="48" r="20" /></svg>
-            {:else}
-              <PlayerFigure still isBot={s.kind === 'bot'} offline={s.kind === 'human' && !s.connected} />
-            {/if}
+  <ol class="tiles">
+    {#each order as i (i)}
+      {@const s = room.seats[i]}
+      <li class="tile" class:me={me === i} class:empty={s.kind === 'empty'} aria-label={label(i)}>
+        <span class="no" aria-hidden="true">{i + 1}</span>
+        <div class="body" bind:this={bodies[i]}>
+          {#if s.kind === 'empty' && !seated}
+            <button class="sit" onclick={() => onsit(i)} aria-label="{i + 1}번 자리에 앉기">
+              <span class="fig">{@render outline()}</span>
+              <span class="name muted">빈 자리</span>
+              <span class="sit-cue">앉기</span>
+            </button>
+          {:else}
+            <span class="fig" bind:this={figures[i]}>
+              {#if s.kind === 'empty'}
+                {@render outline()}
+              {:else}
+                <PlayerFigure still isBot={s.kind === 'bot'} offline={s.kind === 'human' && !s.connected} />
+              {/if}
+            </span>
             {#if s.kind === 'bot' && seated && !room.in_hand}
               <button class="remove" onclick={() => onremovebot(i)} aria-label="{botName(i)} 빼기">
                 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3 L9 9 M9 3 L3 9" /></svg>
               </button>
             {/if}
-          </span>
 
-          {#if s.kind === 'empty'}
-            <span class="name muted">빈 자리</span>
-          {:else}
-            <span class="name">{s.kind === 'bot' ? botName(i) : s.name}</span>
-          {/if}
+            {#if s.kind === 'empty'}
+              <span class="name muted">빈 자리</span>
+            {:else}
+              <span class="name">{s.kind === 'bot' ? botName(i) : s.name}</span>
+            {/if}
 
-          {#if me === i || (s.kind === 'human' && !s.connected)}
-            <span class="tags">
-              {#if me === i}<span class="tag">나</span>{/if}
-              {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>{/if}
-            </span>
-          {/if}
+            {#if me === i || (s.kind === 'human' && !s.connected)}
+              <span class="tags">
+                {#if me === i}<span class="tag">나</span>{/if}
+                {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>{/if}
+              </span>
+            {/if}
 
-          {#if room.hands_played > 0}
-            <span class="score" class:neg={room.scores[i] < 0} title="누적 점수" aria-label="누적 점수 {room.scores[i]}점">
-              {room.scores[i] > 0 ? '+' : ''}{room.scores[i]}
-            </span>
-          {/if}
+            {#if room.hands_played > 0}
+              <span class="score" class:neg={room.scores[i] < 0} title="누적 점수" aria-label="누적 점수 {room.scores[i]}점">
+                {room.scores[i] > 0 ? '+' : ''}{room.scores[i]}
+              </span>
+            {/if}
 
-          {#if s.kind === 'empty' && seated}
-            <button class="act" onclick={() => onaddbot(i)}>봇 넣기</button>
-          {:else if s.kind === 'bot' && seated}
-            <select
-              class="level"
-              aria-label="{botName(i)} 실력"
-              value={s.level ?? 'hard'}
-              onchange={(e) => onaddbot(i, e.currentTarget.value as BotLevel)}
-            >
-              <option value="easy">초보</option>
-              <option value="normal">보통</option>
-              <option value="hard">고수</option>
-            </select>
-          {:else if s.kind === 'bot'}
-            <span class="tag">{LEVEL[s.level ?? 'hard']}</span>
-          {:else if s.kind === 'human' && !s.connected && seated}
-            <button class="act" onclick={() => onaddbot(i)}>봇으로 바꾸기</button>
+            {#if s.kind === 'empty' && seated}
+              <button class="act" onclick={() => onaddbot(i)}>봇 넣기</button>
+            {:else if s.kind === 'bot' && seated}
+              <!-- The level as three small chips, not a dropdown. -->
+              <span class="levels" role="radiogroup" aria-label="{botName(i)} 실력">
+                {#each LEVELS as l (l)}
+                  <button
+                    role="radio"
+                    aria-checked={(s.level ?? 'hard') === l}
+                    onclick={() => (s.level ?? 'hard') !== l && onaddbot(i, l)}>{LEVEL[l]}</button>
+                {/each}
+              </span>
+            {:else if s.kind === 'bot'}
+              <span class="tag">{LEVEL[s.level ?? 'hard']}</span>
+            {:else if s.kind === 'human' && !s.connected && seated}
+              <button class="act" onclick={() => onaddbot(i)}>봇으로 바꾸기</button>
+            {/if}
           {/if}
-        {/if}
-      </div>
-    </div>
-  {/each}
+        </div>
+      </li>
+    {/each}
+  </ol>
+  <div class="centre">{@render centre?.()}</div>
 </div>
-</div>
+
+{#snippet outline()}
+  <svg class="outline" viewBox="0 0 120 110" aria-hidden="true"><path d="M20 108 Q22 76 60 72 Q98 76 100 108" /><circle cx="60" cy="48" r="20" /></svg>
+{/snippet}
 
 <style>
-  /* The table: seats around a flat paper mat, the middle left for what
-     happens next. Seats are sized from the width, so a phone gets 84px
-     seats and a desktop up to 128px. */
+  /* Five seat tiles in a row on desktop; on a phone they wrap three and
+     two, centred. */
   .frame {
-    container-type: inline-size;
     min-width: 0;
   }
-  .room-table {
-    --seat-w: clamp(84px, 17cqw, 128px);
-    position: relative;
-    height: clamp(430px, 64cqw, 520px);
+  .tiles {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
-  /* A sheet of paper laid on the table, not a card-room oval: a soft
-     rounded rectangle in the panel tone, like the game's other surfaces. */
-  .mat {
-    position: absolute;
-    inset: 13% calc(var(--seat-w) * 0.5) 17%;
-    border-radius: 28px;
+  /* All tiles one width, so a wrapped second row lines up with the first;
+     their content sits in the middle. */
+  .tile {
+    position: relative;
+    display: grid;
+    align-content: center;
+    flex: 0 0 calc((100% - 40px) / 5);
+    min-height: 168px;
+    padding: 22px 8px 14px;
+    border-radius: 16px;
     background: var(--panel);
   }
-  .centre {
+  @media (max-width: 599px) {
+    .tile {
+      flex-basis: calc((100% - 20px) / 3);
+      min-height: 150px;
+    }
+  }
+  .tile.empty {
+    background: none;
+    box-shadow: inset 0 0 0 2px var(--line);
+  }
+  .tile.me {
+    box-shadow: inset 0 0 0 2px var(--ink-muted);
+  }
+  .no {
     position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: calc(100% - 2 * var(--seat-w) - 16px);
+    top: 8px;
+    left: 11px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .centre {
     display: grid;
     justify-items: center;
     gap: 6px;
+    margin-top: 20px;
     text-align: center;
-  }
-
-  .seat {
-    position: absolute;
-    width: var(--seat-w);
-  }
-  /* The same bands as the table: bottom, right, top right, top left, left. */
-  .pos-0 {
-    left: 50%;
-    bottom: 0;
-    transform: translateX(-50%);
-  }
-  .pos-1 {
-    right: 0;
-    top: 47%;
-    transform: translateY(-50%);
-  }
-  .pos-2,
-  .pos-3 {
-    top: 0;
-    transform: translateX(-50%);
-  }
-  .pos-2 {
-    left: 72%;
-  }
-  .pos-3 {
-    left: 28%;
-  }
-  .pos-4 {
-    left: 0;
-    top: 47%;
-    transform: translateY(-50%);
-  }
-  /* Any other count: round the mat, seat 0 at the bottom. */
-  .pos-free {
-    left: calc(50% + var(--x) * 40%);
-    top: calc(50% + var(--y) * 38%);
-    transform: translate(-50%, -50%);
   }
 
   .body {
@@ -232,10 +217,9 @@
     word-break: keep-all;
   }
   .fig {
-    position: relative;
     display: block;
-    width: 72%;
-    max-width: 76px;
+    width: 64px;
+    margin-bottom: 4px;
   }
   /* An empty seat: the dashed outline of a figure waiting to be filled. */
   .outline {
@@ -296,8 +280,7 @@
   }
 
   /* Seat controls are small chips so five seats fit a phone. */
-  .act,
-  .level {
+  .act {
     min-height: 36px;
     max-width: 100%;
     padding: 6px 10px;
@@ -309,14 +292,31 @@
   .act {
     box-shadow: 0 2px 0 var(--card-edge);
   }
-  .level {
+  .levels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
     width: 100%;
-    max-width: 92px;
-    border: 1px solid var(--line);
+    max-width: 150px;
+    margin-top: 4px;
+    padding: 2px;
+    border-radius: 999px;
     background: var(--table);
-    color: var(--ink);
-    text-align: center;
-    text-align-last: center;
+  }
+  .levels button {
+    min-height: 30px;
+    padding: 2px 0;
+    border-radius: 999px;
+    background: none;
+    box-shadow: none;
+    color: var(--ink-muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .levels button[aria-checked='true'] {
+    background: var(--card);
+    color: #1c1915;
+    box-shadow: 0 1px 0 var(--card-edge);
   }
 
   /* Not seated: an empty seat is one big button that seats you there. */
@@ -331,9 +331,6 @@
     background: transparent;
     box-shadow: none;
     color: var(--ink);
-  }
-  .sit .fig {
-    width: 72%;
   }
   .sit-cue {
     padding: 4px 12px;
@@ -353,8 +350,8 @@
      44px touch target around it. */
   .remove {
     position: absolute;
-    top: 6%;
-    right: -12%;
+    top: 8px;
+    right: 8px;
     width: 26px;
     height: 26px;
     min-height: 0;

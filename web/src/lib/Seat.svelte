@@ -91,9 +91,8 @@
 </script>
 
 <div class="seat" bind:this={el} class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
-  <!-- On its turn a plum ring circles the figure. -->
+  <!-- On its turn the name tag lights up in plum. -->
   <div class="stand">
-    <span class="floor" aria-hidden="true"></span>
     <PlayerFigure
       {team}
       {trumpSuit}
@@ -159,28 +158,10 @@
   .seat.turn {
     color: var(--ink);
   }
-  /* The figure, circled by a plum ring on its turn. */
+  /* The figure; on its turn the name tag below lights up. */
   .stand {
     position: relative;
     width: var(--figure-w);
-  }
-  .floor {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 128%;
-    aspect-ratio: 1;
-    border: 3px solid var(--accent);
-    border-radius: 50%;
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.9);
-    transition:
-      opacity var(--dur-quick) var(--ease-standard),
-      transform var(--dur-move) var(--ease-settle);
-  }
-  .seat.turn .floor {
-    opacity: 1;
-    transform: translate(-50%, -50%);
   }
   .stand :global(.figure) {
     position: relative;
@@ -213,6 +194,16 @@
     align-items: center;
     gap: 4px;
     max-width: 100%;
+    padding: 1px 8px;
+    border-radius: 999px;
+    transition:
+      background-color var(--dur-quick) var(--ease-standard),
+      color var(--dur-quick) var(--ease-standard);
+  }
+  /* Whose turn it is: the name tag fills with plum. */
+  .seat.turn .name-row {
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .name {
     min-width: 0;
