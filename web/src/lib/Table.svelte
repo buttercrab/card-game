@@ -621,7 +621,7 @@
     }
     const kind = (p: PhaseView) => (typeof p === 'object' ? Object.keys(p)[0] : p);
     if (kind(now) !== kind(was)) {
-      if (kind(now) === 'Exchange' && typeof now === 'object' && 'Exchange' in now) cueAt(now.Exchange.declarer, '주공', 'declarer');
+      if (kind(now) === 'Exchange' && typeof now === 'object' && 'Exchange' in now) cueAt(now.Exchange.declarer, null, 'declarer');
       if (kind(now) === 'Play' && kind(was) === 'Exchange') sound.call();
       if (kind(now) === 'Bidding') sound.shuffle();
     }
@@ -711,7 +711,7 @@
     }
     if (before.friend === null && after.friend !== null && after.friend !== undefined) {
       revealed = after.friend;
-      cueAt(after.friend, '프렌드', 'friend');
+      cueAt(after.friend, null, 'friend');
       // The 주공's seat answers, linking the two.
       const partner = typeof next.view.phase === 'object' && 'Play' in next.view.phase ? next.view.phase.Play.declarer : null;
       if (partner !== null) setTimeout(() => cueAt(partner, null, 'answer'), 260 * k);
@@ -984,7 +984,7 @@
     <div class="tray" class:reveal={revealed === me} bind:this={tray}>
       {#if seatCues[me]?.text}{#key seatCues[me].id}<Callout text={seatCues[me].text!} below={false} />{/key}{/if}
       <div class="me-row">
-        {#if team(me)}<span class="team {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/if}
+        {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}{/if}
         {#if points(me) > 0}<span class="my-points">{points(me)}점</span>{/if}
       </div>
       {#if view.hand.length > 0}

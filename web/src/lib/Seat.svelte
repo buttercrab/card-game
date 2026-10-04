@@ -74,7 +74,8 @@
     {#if turn && bot}<span class="thinking" aria-label="생각하는 중"><i></i><i></i><i></i></span>{/if}
   </div>
   <div class="meta">
-    {#if team}<span class="team {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/if}
+    <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
+    {#if team}{#key team}<span class="team pop {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/key}{/if}
     {#if points > 0}{#key points}<span class="points bump">{points}점</span>{/key}{/if}
   </div>
   {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}

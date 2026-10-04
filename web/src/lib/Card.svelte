@@ -269,9 +269,12 @@
     font-weight: 800;
     letter-spacing: -0.02em;
   }
+  /* Two digits in a one-digit column: condense them instead of letting
+     them spill into the pips or off the edge. */
   .index-rank.ten {
-    letter-spacing: -0.1em;
-    margin-left: -0.08em;
+    display: inline-block;
+    letter-spacing: -0.06em;
+    transform: scaleX(0.74);
   }
   .corner :global(.index-suit) {
     width: 20cqw;
