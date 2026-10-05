@@ -287,7 +287,17 @@ beats 고수, alone or inside the search, is the report's headline.
 Exit: a report in `research/` choosing the served model sizes under the
 think-time budget and the cheaper next step (games, size or compute).
 
-### P5 — Experiment loop
+### P5 — Experiment loop (owner, 2026-10-05: now, autonomous, 24/7)
+
+Moved up: once the P3b DMC baseline exists, every method, hybrid, ablation,
+hyperparameter sweep and scaling study runs as an experiment in this loop.
+Compute: this Mac around the clock (one GPU job at a time) and the home
+server's CPU at low priority; the research agent queues experiments within
+the agenda on its own and writes a daily report. Agenda:
+`research/loop/agenda.md`.
+
+#### Original scope
+
 
 - `research/loop`: an experiment spec (hypothesis, config, budget, suite), a
   queue run on the Mac and the home server (low priority beside the live bot
