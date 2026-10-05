@@ -490,8 +490,9 @@ impl Dealer {
                 called_joker,
                 tricks,
                 discards,
-                // Derived from the plays; the rebuilt state works it out again.
+                // Derived from the plays; the rebuilt state works them out again.
                 leading: _,
+                no_friend: _,
             } => {
                 for t in tricks {
                     state.taken[t.winner].extend(t.plays.iter().map(|p| p.card));

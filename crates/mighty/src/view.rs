@@ -1,6 +1,6 @@
 use crate::card::Card;
 use crate::rules::{Contract, Rules};
-use crate::state::{Bid, FriendCall, Phase, Redealt, State};
+use crate::state::{Bid, FriendCall, Phase, Play, Redealt, State};
 use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,11 @@ pub enum PhaseView {
         call: FriendCall,
         /// Set once the friend is publicly known.
         friend: Option<Seat>,
+        /// The viewer knows there is no friend: called alone, the 주공 took
+        /// the first trick that named the friend, or played the called card,
+        /// or (for the 주공) the called card is in their hand or discards.
+        #[serde(default)]
+        no_friend: bool,
         trick_no: usize,
         leader: Seat,
         lead: Option<Lead>,
@@ -137,6 +142,7 @@ impl View {
                 contract: p.contract,
                 call: p.call,
                 friend: p.friend,
+                no_friend: no_friend(state, p, me),
                 trick_no: p.trick_no,
                 leader: p.leader,
                 lead: p.lead,
@@ -172,5 +178,22 @@ impl View {
             bids: Vec::new(),
             redealt: None,
         }
+    }
+}
+
+/// Whether `me` can tell the 주공 has no friend, as far as what they have
+/// seen allows: everyone once it shows at the table, the 주공 at once when
+/// they named a card of their own.
+fn no_friend(state: &State, p: &Play, me: Option<Seat>) -> bool {
+    match p.call {
+        FriendCall::Alone => true,
+        FriendCall::FirstTrick => p.tricks.first().is_some_and(|t| t.winner == p.declarer),
+        FriendCall::Card(card) => {
+            let played = p.tricks.iter().flat_map(|t| &t.plays).chain(&p.plays);
+            let shown = played.clone().any(|pl| pl.card == card && pl.seat == p.declarer);
+            let own = me == Some(p.declarer) && (state.hands[p.declarer].contains(&card) || p.discards.contains(&card));
+            shown || own
+        }
+        FriendCall::Seat(_) | FriendCall::LastTrick => false,
     }
 }

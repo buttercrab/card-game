@@ -1,6 +1,6 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
-  // /preview?state=bidding | waiting | misdeal | exchange | friend | play | watch | late | sweep | done | won | run
+  // /preview?state=bidding | waiting | misdeal | exchange | friend | secret | nofriend | play | watch | late | sweep | done | won | run
   // (waiting and watch are the bidding and the play on someone else's turn).
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
@@ -91,6 +91,16 @@
     // The discards are down; the declarer names the friend.
     friend: { Exchange: { declarer: 0, contract, trump_changed: false, discards: kittyCards } },
     play: playPhase(trickPlays, []),
+    // You hold the called card (the 홍조커): the 프렌드 only you know about.
+    secret: { Play: { ...(playPhase(trickPlays, []) as { Play: object }).Play, call: { Card: { Joker: 'Red' } } } } as PhaseView,
+    // The 주공 took the first trick that named the friend: nobody is.
+    nofriend: {
+      Play: {
+        ...(playPhase([], lateTricks.slice(0, 1).map((t) => ({ ...t, winner: 2 })), null, 1) as { Play: object }).Play,
+        call: 'FirstTrick',
+        no_friend: true,
+      },
+    } as PhaseView,
     watch: playPhase(trickPlays.slice(0, 2), []),
     // Later in the hand: the 프렌드 is out and both sides have points.
     late: playPhase(trickPlays, lateTricks, 3, 7),
@@ -131,6 +141,8 @@
     ],
     play: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     late: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
+    secret: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
+    nofriend: hand.slice(1, 5).map((card) => ({ Play: { card, joker_lead: null, call_joker: false } })),
     done: [],
     won: [],
     run: [],

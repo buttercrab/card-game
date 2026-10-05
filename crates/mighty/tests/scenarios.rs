@@ -824,3 +824,51 @@ fn every_preset_lets_the_declarer_name_a_card_it_holds_or_discarded() {
         }
     }
 }
+
+/// Whether `seat` is shown that the 주공 plays without a friend.
+fn sees_no_friend(state: &State, seat: usize) -> bool {
+    match Mighty::view(state, Viewer::Seat(seat)).phase {
+        PhaseView::Play { no_friend, .. } => no_friend,
+        other => panic!("not in play: {other:?}"),
+    }
+}
+
+/// The seats after the leader play their first legal card.
+fn others_follow(state: &mut State) {
+    for _ in 1..5 {
+        let action = Mighty::legal_actions(state)[0].clone();
+        act(state, action);
+    }
+}
+
+#[test]
+fn everyone_sees_no_friend_once_the_declarer_takes_the_first_trick_friend() {
+    let declarer = "SA D2 D3 D4 D5 D6 D7 D8 D9 C3";
+    let mut state = start(Rules::default(), &[declarer], KITTY);
+    to_play(&mut state, FriendCall::FirstTrick);
+    assert!((0..5).all(|s| !sees_no_friend(&state, s)));
+    // The mighty takes the first trick: the friend would be its winner.
+    lead(&mut state, "SA");
+    others_follow(&mut state);
+    assert!((0..5).all(|s| sees_no_friend(&state, s)));
+}
+
+#[test]
+fn a_card_of_the_declarers_own_is_no_friend_to_them_at_once_and_to_all_once_played() {
+    let declarer = "SK D2 D3 D4 D5 D6 D7 D8 D9 C3";
+    let mut state = start(Rules::default(), &[declarer], KITTY);
+    to_play(&mut state, FriendCall::Card(cards("SK")[0]));
+    assert!(sees_no_friend(&state, 0));
+    assert!((1..5).all(|s| !sees_no_friend(&state, s)));
+    lead(&mut state, "SK");
+    assert!((0..5).all(|s| sees_no_friend(&state, s)));
+}
+
+#[test]
+fn a_friend_by_seat_or_by_the_last_trick_is_never_no_friend_in_play() {
+    for call in [FriendCall::Seat(2), FriendCall::LastTrick] {
+        let mut state = start(Rules::default(), &[DECLARER], KITTY);
+        to_play(&mut state, call);
+        assert!((0..5).all(|s| !sees_no_friend(&state, s)), "{call:?}");
+    }
+}

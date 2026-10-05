@@ -73,6 +73,7 @@ fn view(hand: &[Card], others: &[Card], plays: &[Played]) -> View {
             },
             call: FriendCall::Card(Card::new(Suit::Spade, 14)),
             friend: Some(1),
+            no_friend: false,
             trick_no: 8,
             leader,
             lead: plays.first().map(|p| match p.card.suit() {

@@ -147,7 +147,24 @@
   }
 
   // ---- Teams and points ----------------------------------------------------
-  const friendKnown = $derived(friend !== null || call === 'Alone' || done !== null);
+  // The engine says when the viewer can tell there is no friend: called
+  // alone, the 주공 took the first trick that named it or played the called
+  // card, or (on the 주공's own screen) the called card is theirs.
+  const noFriend = $derived(friend === null && (call === 'Alone' || (play?.no_friend ?? false) || done !== null));
+  const friendKnown = $derived(friend !== null || noFriend);
+  // You hold the card the 주공 called: you are the 프렌드, and so far only
+  // you know it. It shows on your own seat until the card is played.
+  const secretFriend = $derived(
+    me !== null &&
+      me !== declarer &&
+      friend === null &&
+      !noFriend &&
+      play !== null &&
+      typeof call === 'object' &&
+      call !== null &&
+      'Card' in call &&
+      view.hand.some((c) => sameCard(c, call.Card)),
+  );
   function team(seat: number): Team | null {
     if (declarer === null) return null;
     if (seat === declarer) return 'declarer';
@@ -631,7 +648,7 @@
     }
   }
 
-  type Round = { plays: Played[]; tricks: Trick[]; friend: number | null; called_joker?: CardT | null; leading?: number | null };
+  type Round = { plays: Played[]; tricks: Trick[]; friend: number | null; no_friend?: boolean; called_joker?: CardT | null; leading?: number | null };
   function roundOf(p: PhaseView): Round | null {
     if (typeof p !== 'object') return null;
     if ('Play' in p) return p.Play;
@@ -696,6 +713,7 @@
     const b = roundOf(now);
     if (a && b) {
       if (b.friend !== null && a.friend === null) return `${seatName(b.friend)} 프렌드 공개`;
+      if (b.no_friend && !a.no_friend) return '프렌드 없음 · 주공 혼자';
       if (b.called_joker && !a.called_joker) return '조커콜 · 조커를 가진 사람은 조커를 내야 해요';
       if (b.tricks.length > a.tricks.length) {
         const t = b.tricks.at(-1)!;
@@ -996,6 +1014,7 @@
   const callLabel = $derived.by(() => {
     if (!call) return null;
     if (friend !== null) return seatName(friend);
+    if (noFriend && call !== 'Alone') return '없음';
     if (typeof call === 'object' && 'Card' in call && contract && sameCard(call.Card, mightyCard(contract.trump))) {
       return '마이티';
     }
@@ -1154,7 +1173,7 @@
               <div>
                 <dt>프렌드</dt>
                 <dd>
-                  {#if friend === null && call && typeof call === 'object' && 'Card' in call}
+                  {#if friend === null && !noFriend && call && typeof call === 'object' && 'Card' in call}
                     <Card card={call.Card} size="mini" width={22} seal={seal(call.Card)} {twoJokers} />
                   {/if}
                   <span class="clip">{callLabel}</span>
@@ -1445,6 +1464,7 @@
         <Seat
           name={myName}
           team={team(me)}
+          {secretFriend}
           points={points(me)}
           turn={myTurn}
           trumpSuit={contract?.trump ?? null}
@@ -1457,7 +1477,8 @@
         <Reactions onreact={(text) => client.react(text)} />
       </div>
       <div class="me-row">
-        {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}{/if}
+        {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}
+        {:else if secretFriend}<span class="team secret pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요">프렌드</span>{/if}
         {#if points(me) > 0}
           <span class="my-points">{points(me)}점</span>
         {/if}
@@ -2333,6 +2354,12 @@
   .team.defense {
     background: var(--team-defense);
     color: var(--on-team-defense);
+  }
+  /* The 프렌드 only you know about (see Seat.svelte). */
+  .team.secret {
+    color: var(--ink);
+    background: var(--table);
+    box-shadow: inset 0 0 0 1.5px var(--team-declarer);
   }
 
   /* The action strip: one fixed slot whose content follows the phase. It

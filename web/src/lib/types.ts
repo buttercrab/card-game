@@ -175,6 +175,8 @@ export type PhaseView =
         contract: Contract;
         call: FriendCall;
         friend: number | null;
+        /** The viewer knows the 주공 has no friend (older servers omit it). */
+        no_friend?: boolean;
         trick_no: number;
         leader: number;
         lead: Lead | null;

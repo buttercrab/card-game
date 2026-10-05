@@ -26,6 +26,7 @@
     bot = false,
     offline = false,
     team = null,
+    secretFriend = false,
     points = 0,
     turn = false,
     bubble = null,
@@ -42,6 +43,8 @@
     bot?: boolean;
     offline?: boolean;
     team?: Team | null;
+    /** You hold the called card: the 프렌드, known only to you so far. */
+    secretFriend?: boolean;
     /** Point cards won this hand. */
     points?: number;
     turn?: boolean;
@@ -107,7 +110,8 @@
   </div>
   <div class="meta">
     <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
-    {#if team}{#key team}<span class="team pop {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/key}{/if}
+    {#if team}{#key team}<span class="team pop {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/key}
+    {:else if secretFriend}<span class="team secret pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요">프렌드</span>{/if}
     {#if points > 0}
       {#key points}<span class="points bump">{points}점</span>{/key}
     {/if}
@@ -304,6 +308,15 @@
   .team.defense {
     background: var(--team-defense);
     color: var(--on-team-defense);
+  }
+  /* The 프렌드 only you know about: the team colour as an outline, not yet
+     a filled badge, until the called card is played. */
+  .team.secret {
+    color: var(--ink);
+    box-shadow:
+      inset 0 0 0 1.5px var(--team-declarer),
+      0 0 0 2px var(--table);
+    background: var(--table);
   }
   /* Points won: a small pill; the count only, never the cards. */
   .points {
