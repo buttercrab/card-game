@@ -13,3 +13,6 @@ __pycache__/
 .idea/
 .vscode
 .vs
+
+# Claude Code (worktrees, local settings)
+.claude/

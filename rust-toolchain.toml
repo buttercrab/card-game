@@ -1,0 +1,7 @@
+[toolchain]
+# The Rust CI builds and tests with (.github/workflows/ci.yaml); nightly
+# fails to compile tokio. The oldest supported is `rust-version` in
+# Cargo.toml, which CI checks too.
+channel = "stable"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

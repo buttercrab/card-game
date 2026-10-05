@@ -170,6 +170,7 @@ async fn the_stats_show_the_bot_worker_link() {
         format!("ws://{addr}/internal/bots"),
         "bots".into(),
         Duration::from_millis(10),
+        server::bots::Liveness::new(None),
     ));
     eventually("the worker connects", || async { remote.connected() }).await;
     let after = stats(addr).await;

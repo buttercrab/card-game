@@ -13,7 +13,9 @@
 //! The server pings its worker every [`HEARTBEAT`] and drops one silent for
 //! [`SILENCE`]; the worker likewise redials a server silent that long. The
 //! connection's state shows on `/stats`, and the server warns in its log
-//! when tables think for themselves although a worker is expected.
+//! when tables think for themselves although a worker is expected. A
+//! worker may also keep a file fresh while its server talks to it
+//! ([`Liveness`]), for its container's health check ([`alive_within`]).
 
 use crate::session::{BotLevel, SessionGame};
 use axum::extract::ws::{Message, WebSocket};
@@ -23,9 +25,10 @@ use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
 /// The version of the worker link's messages. A worker says it in its
@@ -431,7 +434,7 @@ fn reply_for(id: u64, result: Result<Value, String>) -> String {
 /// asks for, at most `think`. Every job gets a reply: the move, or an
 /// error (a job it cannot read, a bot that failed, every slot busy), so a
 /// room never waits on a move that is not coming.
-pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Duration) {
+pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Duration, mut alive: Liveness) {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::{Message, http::HeaderValue};
     let (slots, threads) = capacity();
@@ -475,11 +478,17 @@ pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Durat
                     }
                 });
                 // The server pings every HEARTBEAT; reading answers the pings.
+                let mut welcomed = false;
                 while let Ok(Some(Ok(message))) = tokio::time::timeout(SILENCE, stream.next()).await {
+                    if welcomed {
+                        alive.beat();
+                    }
                     let Message::Text(text) = message else { continue };
                     let value: Value = serde_json::from_str(&text).unwrap_or_default();
                     match value["type"].as_str() {
                         Some("welcome") => {
+                            welcomed = true;
+                            alive.beat();
                             let theirs = value["commit"].as_str().unwrap_or("unknown");
                             if theirs != commit() {
                                 tracing::info!(server = theirs, worker = commit(), "the server runs another build");
@@ -530,6 +539,57 @@ pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Durat
         }
         tokio::time::sleep(retry).await;
     }
+}
+
+/// How often at most the worker rewrites its liveness file.
+const ALIVE_EVERY: Duration = Duration::from_secs(5);
+
+/// A file the worker keeps fresh, with the time in Unix seconds, while the
+/// server it thinks for talks to it: from the server's welcome on, at every
+/// message (the server pings every [`HEARTBEAT`]). Gone stale, the worker
+/// is not thinking for anyone: lost, refused or stuck.
+pub struct Liveness {
+    path: Option<PathBuf>,
+    written: Option<Instant>,
+}
+
+impl Liveness {
+    pub fn new(path: Option<PathBuf>) -> Liveness {
+        Liveness { path, written: None }
+    }
+
+    fn beat(&mut self) {
+        let Some(path) = &self.path else { return };
+        if self.written.is_some_and(|t| t.elapsed() < ALIVE_EVERY) {
+            return;
+        }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        // Written whole, then moved into place, so a reader never sees half.
+        let partial = path.with_extension("partial");
+        match std::fs::write(&partial, now.to_string()).and_then(|()| std::fs::rename(&partial, path)) {
+            Ok(()) => self.written = Some(Instant::now()),
+            Err(e) => tracing::warn!(path = %path.display(), "could not write the liveness file: {e}"),
+        }
+    }
+}
+
+/// Whether a worker's liveness file ([`Liveness`]) was written within
+/// `fresh`: the worker's health check.
+pub fn alive_within(path: &Path, fresh: Duration) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(then) = text.trim().parse::<u64>() else {
+        return false;
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    now.saturating_sub(then) <= fresh.as_secs()
 }
 
 fn solve<G: SessionGame>(job: &Job, most: Duration, threads: usize) -> Result<Value, String> {

@@ -22,18 +22,25 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    command: ["--bot-worker", "wss://cards.buttercrab.io/internal/bots"]
+    command: ["--bot-worker", "wss://cards.buttercrab.io/internal/bots", "--worker-alive", "/tmp/alive"]
+    # Where it keeps its liveness file; the rest of the container is read-only.
+    tmpfs:
+      - /tmp
     # Searches use every core but little memory; cap it anyway so a leak
     # cannot take the home server down with it.
     mem_limit: 2g
     env_file: ${HOME}/.config/card-game/bots.env
     environment:
       RUST_LOG: info
-    # It serves nothing, so "healthy" only means the binary runs.
+    # Healthy while Seoul talks to it: the worker rewrites /tmp/alive at
+    # every message from the server (a ping every 15 s), and the check
+    # fails once it is a minute old (lost, refused as another build, or
+    # stuck). deploy/update.sh's `up --wait` waits for this.
     healthcheck:
-      test: ["CMD", "server", "--help"]
-      interval: 1m
-      start_period: 5s
+      test: ["CMD", "server", "--healthcheck", "--worker-alive", "/tmp/alive"]
+      interval: 30s
+      start_period: 1m
+      start_interval: 2s
     logging:
       driver: json-file
       options:

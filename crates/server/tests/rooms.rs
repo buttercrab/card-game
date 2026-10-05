@@ -386,6 +386,7 @@ async fn a_bot_worker_thinks_for_the_room() {
         format!("ws://{addr}/internal/bots"),
         "secret".into(),
         Duration::from_millis(20),
+        server::bots::Liveness::new(None),
     ));
     eventually("the worker connects", || async { remote.connected() }).await;
 

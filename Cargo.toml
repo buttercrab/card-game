@@ -29,7 +29,11 @@ tempfile = "3"
 thiserror = "2"
 toml = "1"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = "0.30"
+# The version axum's WebSockets use, so there is one tungstenite.
+tokio-tungstenite = "0.29"
+# TLS for the bot worker's link (wss://), in Rust: no OpenSSL to build or
+# ship. One crypto provider, so rustls picks it without being told.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["fs", "limit"] }
 tracing = "0.1"
@@ -51,3 +55,10 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# The Python bindings (crates/env-py, built by maturin). Release, but
+# unstripped: stable rustc's strip leaves a library recent macOS refuses to
+# load ("mis-aligned LINKEDIT string pool").
+[profile.wheel]
+inherits = "release"
+strip = false

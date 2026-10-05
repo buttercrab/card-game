@@ -196,6 +196,7 @@ async fn the_worker_says_hello_and_answers_every_job() {
         format!("ws://{addr}/internal/bots"),
         "secret".into(),
         Duration::from_millis(10),
+        server::bots::Liveness::new(None),
     ));
     let (stream, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
         .await
@@ -225,4 +226,61 @@ async fn the_worker_says_hello_and_answers_every_job() {
         assert!(reply["error"].is_string(), "{reply}");
         assert!(reply.get("action").is_none());
     }
+}
+
+/// The worker's container is healthy while its server talks to it: the
+/// liveness file appears with the server's welcome and stays fresh.
+#[tokio::test]
+async fn the_worker_keeps_its_liveness_file_while_welcomed() {
+    let dir = temp_dir();
+    let path = dir.path().join("alive");
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(server::bots::run_worker::<mighty::Mighty>(
+        format!("ws://{addr}/internal/bots"),
+        "secret".into(),
+        Duration::from_millis(10),
+        server::bots::Liveness::new(Some(path.clone())),
+    ));
+    let (stream, _) = tokio::time::timeout(DEADLINE, listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut ws = tokio_tungstenite::accept_async(MaybeTlsStream::Plain(stream))
+        .await
+        .unwrap();
+    assert_eq!(next_text(&mut ws).await.unwrap()["type"], "hello");
+    assert!(
+        !server::bots::alive_within(&path, Duration::from_secs(60)),
+        "not before the welcome"
+    );
+    send(
+        &mut ws,
+        json!({ "type": "welcome", "protocol": server::bots::PROTOCOL, "commit": "x" }),
+    )
+    .await;
+    eventually("the worker says it is alive", || async {
+        server::bots::alive_within(&path, Duration::from_secs(60))
+    })
+    .await;
+    // Long stale, it is not.
+    std::fs::write(&path, "1").unwrap();
+    assert!(!server::bots::alive_within(&path, Duration::from_secs(60)));
+}
+
+/// The worker reaches its server over wss:// with TLS built in (rustls, its
+/// crypto provider chosen at build time, so no OpenSSL and no panic for
+/// want of one): a peer that does not speak TLS is a plain error.
+#[tokio::test]
+async fn the_worker_link_speaks_tls() {
+    use tokio::io::AsyncWriteExt;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await;
+        }
+    });
+    let refused = connect_async(format!("wss://localhost:{port}/internal/bots")).await;
+    assert!(refused.is_err());
 }
