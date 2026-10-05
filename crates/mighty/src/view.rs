@@ -120,6 +120,9 @@ pub(crate) enum SeenPhase<'a> {
         plays: &'a [Played],
         called_joker: Option<Card>,
         tricks: &'a [Trick],
+        /// The declarer's own discards, to the declarer; `None` to anyone
+        /// else.
+        discards: Option<&'a [Card]>,
     },
     /// Dealing, or the hand is over: nothing to decide.
     Idle,
@@ -143,6 +146,7 @@ impl<'a> Seen<'a> {
                 plays,
                 called_joker,
                 tricks,
+                discards,
                 ..
             } => SeenPhase::Play {
                 declarer: *declarer,
@@ -154,6 +158,7 @@ impl<'a> Seen<'a> {
                 plays,
                 called_joker: *called_joker,
                 tricks,
+                discards: discards.as_deref(),
             },
             PhaseView::Dealing | PhaseView::Done { .. } => SeenPhase::Idle,
         };
@@ -187,6 +192,7 @@ impl<'a> Seen<'a> {
                 plays: &p.plays,
                 called_joker: p.called_joker,
                 tricks: &p.tricks,
+                discards: own(p.declared.declarer, &p.declared.discards),
             },
             Phase::Dealing | Phase::Done(_) => SeenPhase::Idle,
         };

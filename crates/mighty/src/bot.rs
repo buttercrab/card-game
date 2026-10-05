@@ -553,10 +553,11 @@ impl Table<'_> {
 }
 
 /// Every card these rules deal that `view`'s seat has not seen: not in
-/// its hand and not played.
-fn unseen(view: &Seen, tricks: &[trick::Trick], plays: &[Played]) -> CardSet {
+/// its hand, not played and, for the declarer, not among its own discards.
+fn unseen(view: &Seen, tricks: &[trick::Trick], plays: &[Played], discards: Option<&[Card]>) -> CardSet {
     let played = tricks.iter().flat_map(|t| &t.plays).chain(plays).map(|p| p.card);
-    let seen: CardSet = played.chain(view.hand.iter().copied()).collect();
+    let mut seen: CardSet = played.chain(view.hand.iter().copied()).collect();
+    seen.extend(discards.into_iter().flatten().copied());
     view.rules.card_set() - seen
 }
 
@@ -591,6 +592,7 @@ fn table<'a>(bot: &'a SimpleBot, view: &'a Seen<'a>) -> Option<Table<'a>> {
         trick_no,
         plays,
         tricks,
+        discards,
         ..
     } = &view.phase
     else {
@@ -612,7 +614,7 @@ fn table<'a>(bot: &'a SimpleBot, view: &'a Seen<'a>) -> Option<Table<'a>> {
             known && on_attack == attacking
         })
         .fold(0, |m, s| m | 1 << s);
-    let unseen = unseen(view, tricks, plays);
+    let unseen = unseen(view, tricks, plays, *discards);
     let out = || unseen.iter();
     let mighty = view.rules.mighty(trump);
     let mut top_out = [0; 4];
@@ -844,13 +846,16 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
-    /// Regression: at 3 and 4 players the never-dealt low cards counted as
-    /// unseen, so the bot played against phantom trumps. Through whole
-    /// games of bots, every seat's unseen cards are exactly the dealt
-    /// cards it has not seen.
+    /// Regressions: at 3 and 4 players the never-dealt low cards counted as
+    /// unseen, so the bot played against phantom trumps; and the declarer
+    /// counted its own discards as unseen, playing against cards it had
+    /// buried itself. Through whole games of bots, every seat's unseen
+    /// cards are exactly the dealt cards it has not seen, the declarer's
+    /// discards being seen by the declarer.
     #[test]
     fn unseen_cards_are_never_undealt_cards() {
-        for players in [3, 4] {
+        let mut declarer_with_discards = 0;
+        for players in [3, 4, 5] {
             let rules = Rules::web_mighty().for_players(players).unwrap();
             let dealt = rules.card_set();
             let mut rng = StdRng::seed_from_u64(players as u64);
@@ -870,13 +875,24 @@ mod tests {
                             let bot = tempered(seat);
                             if let Some(t) = table(&bot, &Seen::of_view(&view)) {
                                 plays += 1;
-                                let PhaseView::Play { tricks, plays, .. } = &view.phase else {
+                                let PhaseView::Play {
+                                    tricks,
+                                    plays,
+                                    discards,
+                                    ..
+                                } = &view.phase
+                                else {
                                     unreachable!()
                                 };
                                 let seen: CardSet = (tricks.iter().flat_map(|t| &t.plays).chain(plays))
                                     .map(|p| p.card)
                                     .chain(view.hand.iter().copied())
+                                    .chain(discards.iter().flatten().copied())
                                     .collect();
+                                if let Some(discards) = discards {
+                                    assert!(discards.iter().all(|&c| !t.unseen.contains(c)));
+                                    declarer_with_discards += 1;
+                                }
                                 assert!((t.unseen - dealt).is_empty(), "{players} players: undealt cards unseen");
                                 assert_eq!(t.unseen, dealt - seen);
                                 assert!(t.trumps_out == t.unseen().any(|c| c != t.mighty && c.suit() == t.trump));
@@ -890,5 +906,6 @@ mod tests {
                 assert!(plays > 0 || Mighty::payoffs(&state).is_some());
             }
         }
+        assert!(declarer_with_discards > 100, "{declarer_with_discards}");
     }
 }
