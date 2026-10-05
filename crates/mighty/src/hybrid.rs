@@ -111,7 +111,11 @@ impl Bot<Mighty> for HybridBot {
         let Viewer::Seat(me) = view.viewer else {
             unreachable!("matched above")
         };
-        let network = (self.prior > 0 || self.baseline == Baseline::Network).then(|| self.root_values(view, legal));
+        // A network that fails to answer leaves the search as it would be
+        // without it.
+        let network = (self.prior > 0 || self.baseline == Baseline::Network)
+            .then(|| self.root_values(view, legal))
+            .flatten();
         let mut candidates = match &network {
             Some(values) if self.prior > 0 => values.iter().take(self.prior).map(|(a, _)| a.clone()).collect(),
             _ => search::candidates(view, legal),
@@ -130,7 +134,10 @@ impl Bot<Mighty> for HybridBot {
         if worlds.is_empty() {
             return base;
         }
-        let scores = self.scores(&worlds, me, &candidates);
+        // Leaves the network fails to value leave nothing to go on.
+        let Some(scores) = self.scores(&worlds, me, &candidates) else {
+            return base;
+        };
         let weights: Vec<f64> = worlds.iter().map(|(_, w)| *w).collect();
         let at = candidates
             .iter()
@@ -141,32 +148,31 @@ impl Bot<Mighty> for HybridBot {
 }
 
 impl HybridBot {
-    /// The legal actions with the network's values for them, best first.
-    fn root_values(&self, view: &View, legal: &[Action]) -> Vec<(Action, f32)> {
+    /// The legal actions with the network's values for them, best first;
+    /// `None` when the network fails or values none of them.
+    fn root_values(&self, view: &View, legal: &[Action]) -> Option<Vec<(Action, f32)>> {
         let obs = Mighty::encode(view, legal);
-        let values = self
-            .values
-            .action_values(&[&obs])
-            .unwrap_or_else(|e| panic!("the Q network failed: {e}"));
-        let mut out: Vec<(Action, f32)> = values[0]
+        let values = self.values.action_values(&[&obs]).ok()?;
+        let mut out: Vec<(Action, f32)> = values
+            .first()?
             .iter()
             .filter_map(|&(index, v)| Some((Mighty::action_from_index(view, legal, index)?, v)))
             .collect();
-        assert!(!out.is_empty(), "the network values none of the legal actions");
         out.sort_by(|a, b| b.1.total_cmp(&a.1));
-        out
+        (!out.is_empty()).then_some(out)
     }
 
     /// Every candidate played out on every world: `[candidate][world]`,
     /// `me`'s payoff or the network's value at the leaf. Worlds are split
     /// between the search's threads, each valuing its own leaves.
-    fn scores(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Vec<Vec<f64>> {
+    /// `None` when the network fails to value leaves.
+    fn scores(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Option<Vec<Vec<f64>>> {
         let threads = self.search.threads.clamp(1, worlds.len());
         if threads == 1 {
             return self.score_part(worlds, me, candidates);
         }
         let share = worlds.len().div_ceil(threads);
-        let parts: Vec<Vec<Vec<f64>>> = std::thread::scope(|scope| {
+        let parts: Vec<Option<Vec<Vec<f64>>>> = std::thread::scope(|scope| {
             let handles: Vec<_> = worlds
                 .chunks(share)
                 .map(|part| scope.spawn(move || self.score_part(part, me, candidates)))
@@ -180,14 +186,14 @@ impl HybridBot {
         // with the worlds' weights.
         let mut scores = vec![Vec::with_capacity(worlds.len()); candidates.len()];
         for part in parts {
-            for (all, part) in scores.iter_mut().zip(part) {
+            for (all, part) in scores.iter_mut().zip(part?) {
                 all.extend(part);
             }
         }
-        scores
+        Some(scores)
     }
 
-    fn score_part(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Vec<Vec<f64>> {
+    fn score_part(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Option<Vec<Vec<f64>>> {
         let mut scores = vec![vec![0.0; worlds.len()]; candidates.len()];
         let mut pending: Vec<(usize, usize, Observation)> = Vec::new();
         for (w, (world, _)) in worlds.iter().enumerate() {
@@ -197,27 +203,27 @@ impl HybridBot {
                     Outcome::Leaf(obs) => {
                         pending.push((c, w, obs));
                         if pending.len() >= LEAF_BATCH {
-                            self.value_leaves(&mut pending, &mut scores);
+                            self.value_leaves(&mut pending, &mut scores)?;
                         }
                     }
                 }
             }
         }
-        self.value_leaves(&mut pending, &mut scores);
-        scores
+        self.value_leaves(&mut pending, &mut scores)?;
+        Some(scores)
     }
 
     /// Values the pending leaves in one network call: each the value of
-    /// its seat's best legal action.
-    fn value_leaves(&self, pending: &mut Vec<(usize, usize, Observation)>, scores: &mut [Vec<f64>]) {
+    /// its seat's best legal action. `None` when the network fails.
+    fn value_leaves(&self, pending: &mut Vec<(usize, usize, Observation)>, scores: &mut [Vec<f64>]) -> Option<()> {
         if pending.is_empty() {
-            return;
+            return Some(());
         }
         let observations: Vec<&Observation> = pending.iter().map(|(_, _, o)| o).collect();
-        let values = self
-            .values
-            .action_values(&observations)
-            .unwrap_or_else(|e| panic!("the Q network failed: {e}"));
+        let values = self.values.action_values(&observations).ok()?;
+        if values.len() != pending.len() {
+            return None;
+        }
         for ((c, w, _), values) in pending.iter().zip(values) {
             let best = values
                 .iter()
@@ -226,6 +232,7 @@ impl HybridBot {
             scores[*c][*w] = if best.is_finite() { best } else { 0.0 };
         }
         pending.clear();
+        Some(())
     }
 
     /// Plays `action` in `world`, then the simple bots until the hand ends
@@ -465,6 +472,49 @@ mod tests {
         let b = hybrid.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(9));
         assert!(legal.contains(&a));
         assert_eq!(a, b);
+    }
+
+    /// A network that always fails.
+    struct Broken(Spec);
+
+    impl ActionValues for Broken {
+        fn action_values(&self, _: &[&Observation]) -> Result<Vec<Vec<(usize, f32)>>, BeliefError> {
+            Err(BeliefError("the model is gone".into()))
+        }
+
+        fn spec(&self) -> &Spec {
+            &self.0
+        }
+    }
+
+    /// A network that fails to answer leaves the simple bot's choice (the
+    /// baseline it falls back to) instead of a panic, whatever it was
+    /// asked for.
+    #[test]
+    fn a_failing_network_falls_back_to_the_simple_bot() {
+        let options = crate::Options {
+            rules: crate::rules::Preset::Gshs.rules(),
+            first_bidder: 0,
+        };
+        let broken: &'static Broken = Box::leak(Box::new(Broken(Mighty::spec(&options).unwrap())));
+        for seed in 0..3 {
+            let (state, seat) = mid_play(seed);
+            let view = Mighty::view(&state, Viewer::Seat(seat));
+            let legal = Mighty::legal_actions(&state);
+            let simple = crate::bot::SimpleBot::default().act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(0));
+            for (prior, baseline, leaf) in [(2, Baseline::Network, None), (0, Baseline::Simple, Some(1))] {
+                let mut hybrid = HybridBot {
+                    values: broken,
+                    ..bot(fake(None), prior, baseline, leaf)
+                };
+                let choice = hybrid.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(seed));
+                if leaf.is_some() {
+                    assert_eq!(choice, simple, "leaves the network cannot value");
+                } else {
+                    assert!(legal.contains(&choice));
+                }
+            }
+        }
     }
 
     #[test]

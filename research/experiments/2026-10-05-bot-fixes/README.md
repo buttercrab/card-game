@@ -104,3 +104,17 @@ when the batch hit its time limit.
 
 Search decisions changed on purpose; `crates/mighty/tests/search.rs` is
 re-pinned.
+
+## Afterwards (2026-10-06)
+
+The switches this experiment measured were on in every bot since, so the
+code dropped them and kept only what they switched on: `plan_last_trick`,
+`aim_joker_call`, `spare_declarer_joker` and `misdeal_below_min` are no
+longer settings (the scripts here name them; run them at this
+experiment's commit). Notes that lived in the code until then:
+
+- `aim_joker_call`, measured alone: +0.01 ± 0.02 a hand (simple bots,
+  경기과고); on since these fixes, with `spare_declarer_joker`.
+- `TEMPER` was halved here: the bolder seats overbid under scoring G.
+- The table's 고수 deals until its time is up because more deals keep
+  helping a little: 2000 beat 200 by about a third of a point a hand.

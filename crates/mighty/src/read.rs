@@ -19,7 +19,8 @@ use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 
 /// How the search weighs its sampled deals by what the other players did.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Reading {
     /// Whether to weigh the deals at all; off, every deal counts the same.
     pub on: bool,

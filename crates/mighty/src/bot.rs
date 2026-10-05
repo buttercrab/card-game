@@ -17,8 +17,11 @@ use std::time::Duration;
 
 /// The weights and thresholds behind the rules. The defaults were tuned
 /// with `sim --baseline`, one weight at a time against the previous best;
-/// see `crates/sim` for how to try others.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// see `crates/sim` for how to try others (`simple@bid_base=7` sets a
+/// weight by its name here). How the tuning went is in
+/// `research/experiments/2026-10-05-bot-fixes`.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SimpleBot {
     /// Points a hand promises before counting anything: the kitty and the
     /// friend bring some.
@@ -52,21 +55,6 @@ pub struct SimpleBot {
     pub lead_joker: i32,
     pub lead_mighty: i32,
     pub defend_trump: i32,
-    /// Spend a joker on the second-to-last trick when the rules strip its
-    /// power on the last one, instead of holding it to be wasted there.
-    pub plan_last_trick: bool,
-    /// Call a joker only when the joker that card calls is still out and
-    /// not the friend, rather than when any joker is. Measured even alone
-    /// (+0.01 ± 0.02 a hand, simple bots, gshs); on since the 2026-10-05
-    /// bot fixes, with `spare_declarer_joker`.
-    pub aim_joker_call: bool,
-    /// With `aim_joker_call`, the declarer's friend calls a joker only
-    /// once the declarer has shown it lacks that joker (by calling it as
-    /// the friend), instead of killing the declarer's own joker.
-    pub spare_declarer_joker: bool,
-    /// Call a misdeal only on a hand whose best estimate is below the
-    /// minimum bid; off calls one whenever the rules allow.
-    pub misdeal_below_min: bool,
     /// Points of estimate per unit of log-odds of making a contract: how
     /// far a hand must clear a bid when the rules make failing cost more
     /// than making pays ([`SimpleBot::needed`]). 0 bids at the estimate
@@ -96,10 +84,6 @@ impl Default for SimpleBot {
             lead_joker: -40,
             lead_mighty: -100,
             defend_trump: -100,
-            plan_last_trick: true,
-            aim_joker_call: true,
-            spare_declarer_joker: true,
-            misdeal_below_min: true,
             bid_spread: 1.9,
             bid_caution: 0.0,
         }
@@ -107,8 +91,7 @@ impl Default for SimpleBot {
 }
 
 /// Bid boldness by seat, added to `bid_base`, so a table of bots does not
-/// bid as one. Halved on 2026-10-05: the bolder seats overbid under
-/// scoring G.
+/// bid as one.
 pub const TEMPER: [f32; MAX_PLAYERS] = [0.0, 0.2, -0.2, 0.1, -0.1, 0.15, -0.15, 0.05];
 
 /// The simple bot with `seat`'s temper, as the table seats it.
@@ -200,9 +183,8 @@ impl Level {
         policy.bid_base += TEMPER[seat % TEMPER.len()];
         match (self.slips(), self.search()) {
             (_, Some(search)) => Box::new(match budget {
-                // More sampled deals keep helping a little (2000 beat 200
-                // by about a third of a point per hand), so deal until the
-                // time is up.
+                // More sampled deals keep helping a little, so deal until
+                // the time is up.
                 Some(think) => SearchBot {
                     samples: 5000 * threads.max(1),
                     budget: Some(think),
@@ -291,7 +273,12 @@ impl Bot<Mighty> for SimpleBot {
 }
 
 impl SimpleBot {
-    /// What [`Bot::act`] chooses; it never needs randomness.
+    /// What [`Bot::act`] chooses; it never needs randomness. Where its
+    /// rules have nothing to say, the first legal action.
+    ///
+    /// # Panics
+    ///
+    /// When `legal` is empty: a seat to act always has a legal action.
     pub(crate) fn decide(&self, view: &Seen, legal: &[Action]) -> Action {
         let choice = match &view.phase {
             SeenPhase::Bidding => self.bid(view, legal),
@@ -299,7 +286,9 @@ impl SimpleBot {
             SeenPhase::Play { .. } => play(self, view, legal),
             SeenPhase::Idle => None,
         };
-        choice.unwrap_or_else(|| legal[0].clone())
+        choice
+            .or_else(|| legal.first().cloned())
+            .expect("a seat to act has a legal action")
     }
 
     /// Rough number of points a hand could promise with `trump`: long and
@@ -357,9 +346,8 @@ impl SimpleBot {
             .into_iter()
             .map(Some)
             .max_by(|&a, &b| estimate(a).total_cmp(&estimate(b)))?;
-        if legal.contains(&Action::Misdeal)
-            && (!self.misdeal_below_min || estimate(trump) < f32::from(view.rules.bidding.min))
-        {
+        // A misdeal only on a hand that could not bid the minimum anyway.
+        if legal.contains(&Action::Misdeal) && estimate(trump) < f32::from(view.rules.bidding.min) {
             return Some(Action::Misdeal);
         }
         let cheapest = |trump: Option<Suit>| {
@@ -435,15 +423,24 @@ pub(crate) fn discarded<'a>(view: &Seen<'a>) -> &'a [Card] {
 /// by rank, then everything else by rank.
 fn power(view: &Seen, trump: Option<Suit>, card: Card) -> u8 {
     if card == view.rules.mighty(trump) {
-        100
+        KEEP_MIGHTY
     } else if card.is_joker() {
-        90
+        KEEP_JOKER
     } else if card.suit() == trump {
-        40 + card.rank().unwrap_or(0)
+        KEEP_TRUMP + card.rank().unwrap_or(0)
     } else {
         card.rank().unwrap_or(0)
     }
 }
+
+/// [`power`]'s tiers: plain cards count their rank (2 to 14), trumps this
+/// much more, and the jokers and the mighty above every trump.
+const KEEP_TRUMP: u8 = 40;
+const KEEP_JOKER: u8 = 90;
+const KEEP_MIGHTY: u8 = 100;
+/// The [`power`] of a big card, worth winning a trick with even when a foe
+/// plays after: a trump ten or higher, a joker or the mighty.
+const BIG_CARD: u8 = KEEP_TRUMP + 10;
 
 /// Discarded point cards still count for the declarer, so side-suit tens to
 /// kings are best put back: they are points banked. After them, the
@@ -487,8 +484,8 @@ struct Table<'a> {
     attacking: bool,
     /// The card the declarer called, while its holder is unknown.
     called: Option<Card>,
-    /// Jokers the declarer may hold and its friend so must not call
-    /// ([`SimpleBot::spare_declarer_joker`]).
+    /// Jokers the declarer may hold, which its friend so must not call:
+    /// only calling one as the friend shows the declarer lacks it.
     spared: CardSet,
 }
 
@@ -539,8 +536,7 @@ impl Table<'_> {
     fn doomed(&self, card: Card) -> bool {
         let rules = &self.view.rules;
         let last = rules.hand_size - 1;
-        self.bot.plan_last_trick
-            && card.is_joker()
+        card.is_joker()
             && self.trick_no + 1 == last
             && self.powered(card, None)
             && rules.policy(card, self.trump, last) == CardPolicy::NoEffect
@@ -643,7 +639,7 @@ fn table<'a>(bot: &'a SimpleBot, view: &'a Seen<'a>) -> Option<Table<'a>> {
             _ => None,
         },
         // Calling a card shows the declarer lacks it; nothing else does.
-        spared: if bot.spare_declarer_joker && attacking && me != *declarer {
+        spared: if attacking && me != *declarer {
             let shown = match call {
                 FriendCall::Card(c) => CardSet::of(*c),
                 _ => CardSet::EMPTY,
@@ -655,9 +651,30 @@ fn table<'a>(bot: &'a SimpleBot, view: &'a Seen<'a>) -> Option<Table<'a>> {
     })
 }
 
+/// What leading each kind of card scores, against a side ace's
+/// [`LEAD_SIDE_ACE`]; the highest scoring legal lead is played. Cards with
+/// a [`power`] add it, so the stronger of a kind leads first.
+const LEAD_SIDE_ACE: i32 = 100;
+/// Calling a joker that is out against us.
+const LEAD_JOKER_CALL: i32 = 300;
+/// Calling a joker that is ours, or already gone.
+const LEAD_WASTED_CALL: i32 = -50;
+/// A joker that would have no power on the last trick, on the trick before
+/// it: ahead of even a sure lead, which still wins next trick.
+const LEAD_DOOMED_JOKER: i32 = 300;
+/// A card nothing unseen can beat.
+const LEAD_SURE: i32 = 200;
+/// The joker in the late tricks.
+const LEAD_LATE_JOKER: i32 = 150;
+/// The mighty in the late tricks.
+const LEAD_LATE_MIGHTY: i32 = 140;
+/// Trump, by the declarer's side, to draw the opponents' trumps.
+const LEAD_DRAWING_TRUMP: i32 = 120;
+/// Added to a joker the declarer's side leads naming trump.
+const LEAD_JOKER_NAMING_TRUMP: i32 = 20;
+
 /// Choosing what to lead.
 fn lead_card(t: &Table, legal: &[Action]) -> Action {
-    let joker_out = t.unseen().any(|c| c.is_joker());
     let trumps_out = t.unseen().filter(|c| *c != t.mighty && c.suit() == t.trump).count();
     let my_trumps = t
         .view
@@ -677,12 +694,9 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
         let card = *card;
         let p = i32::from(t.power(card));
         if *call_joker {
-            // Killing a joker that is probably against us is worth a lot,
-            // unless it is the friend the declarer called.
-            if !t.bot.aim_joker_call {
-                let ours = t.attacking && t.called.is_some_and(|c| c.is_joker());
-                return if joker_out && !ours { 300 } else { -50 };
-            }
+            // Killing the joker this card calls is worth a lot while it is
+            // out against us: not the friend the declarer called, nor, for
+            // the friend, a joker the declarer may hold.
             let rules = &t.view.rules;
             let target = rules
                 .deck
@@ -693,37 +707,45 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
             let out = target.is_some_and(|j| t.unseen.contains(j));
             let ours = t.attacking && t.called.is_some() && t.called == target;
             let spared = target.is_some_and(|j| t.spared.contains(j));
-            return if out && !ours && !spared { 300 } else { -50 };
+            return if out && !ours && !spared {
+                LEAD_JOKER_CALL
+            } else {
+                LEAD_WASTED_CALL
+            };
         }
         if card.is_joker() {
             // Save the joker for a trick worth taking, unless it cannot wait.
             let named_trump = matches!(joker_lead, Some(Lead::Suit(s)) if Some(*s) == t.trump);
             let base = if t.doomed(card) {
-                // Ahead of even a sure lead, which still wins next trick.
-                300
+                LEAD_DOOMED_JOKER
             } else if t.late() {
-                150
+                LEAD_LATE_JOKER
             } else {
                 t.bot.lead_joker
             };
-            return base + if t.attacking && named_trump { 20 } else { 0 };
+            return base
+                + if t.attacking && named_trump {
+                    LEAD_JOKER_NAMING_TRUMP
+                } else {
+                    0
+                };
         }
         if card == t.mighty {
-            return if t.late() { 140 } else { t.bot.lead_mighty };
+            return if t.late() { LEAD_LATE_MIGHTY } else { t.bot.lead_mighty };
         }
         let is_trump = card.suit() == t.trump;
         if t.sure_lead(card) {
-            return 200 + p;
+            return LEAD_SURE + p;
         }
         if t.attacking && is_trump && trumps_out > 0 && my_trumps >= t.bot.draw_trumps {
             // Draw the opponents' trumps, from the top.
-            return 120 + p;
+            return LEAD_DRAWING_TRUMP + p;
         }
         if !t.attacking && is_trump {
             return t.bot.defend_trump + p;
         }
         if card.rank() == Some(ACE) {
-            return 100;
+            return LEAD_SIDE_ACE;
         }
         // Otherwise give the lead away cheaply, without handing over points.
         let point_penalty = if card.is_point() { t.bot.lead_point_penalty } else { 0 };
@@ -793,7 +815,7 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
             // Big guns only for tricks worth it; cheap winners whenever they hold.
             !special || worth >= t.bot.special_worth || last && points >= 1
         })
-        .filter(|&c| last || !foes_after || safe(Some(c)) || t.power(c) >= 50 || points == 0)
+        .filter(|&c| last || !foes_after || safe(Some(c)) || t.power(c) >= BIG_CARD || points == 0)
         .min_by_key(|c| t.keep(*c));
     match take {
         Some(card) if !friend_winning => pick(card),

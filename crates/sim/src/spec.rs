@@ -11,6 +11,8 @@ use engine::{Bot, RandomBot, Seat};
 use mighty::Mighty;
 use mighty::bot::{Clumsy, Level, SimpleBot};
 use mighty::search::{Reading, Sampler, SearchBot};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -508,55 +510,34 @@ impl Spec {
     }
 }
 
+/// Sets the field `key` of `value` to `raw`, through the type's serde
+/// form, so the settings a bot takes are its own fields with no list kept
+/// here: `raw` is read as JSON (a number or `true`), else as a string.
+/// `Ok(false)` when there is no such field.
+fn set_field<T: Serialize + DeserializeOwned>(value: &mut T, key: &str, raw: &str) -> Result<bool, String> {
+    let mut json = serde_json::to_value(&*value).map_err(|e| e.to_string())?;
+    let Some(field) = json.as_object_mut().and_then(|fields| fields.get_mut(key)) else {
+        return Ok(false);
+    };
+    *field = serde_json::from_str(raw).unwrap_or_else(|_| serde_json::Value::String(raw.to_string()));
+    *value = serde_json::from_value(json).map_err(|_| format!("bad value {raw:?} for {key}"))?;
+    Ok(true)
+}
+
 /// Sets one of the simple bot's weights by name, for tuning from the
 /// command line; false if it has no such weight.
 fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<bool, String> {
-    let bad = || format!("bad value {value:?} for {key}");
-    let float = || value.parse::<f32>().map_err(|_| bad());
-    let int = || value.parse::<i32>().map_err(|_| bad());
-    let count = || value.parse::<usize>().map_err(|_| bad());
-    match key {
-        "bid_base" => bot.bid_base = float()?,
-        "bid_trump" => bot.bid_trump = float()?,
-        "bid_trump_honor" => bot.bid_trump_honor = float()?,
-        "bid_mighty" => bot.bid_mighty = float()?,
-        "bid_joker" => bot.bid_joker = float()?,
-        "bid_sub_joker" => bot.bid_sub_joker = float()?,
-        "bid_ace" => bot.bid_ace = float()?,
-        "bid_king" => bot.bid_king = float()?,
-        "change_trump" => bot.change_trump = float()?,
-        "draw_trumps" => bot.draw_trumps = count()?,
-        "late_tricks" => bot.late_tricks = count()?,
-        "special_worth" => bot.special_worth = count()?,
-        "lead_point_penalty" => bot.lead_point_penalty = int()?,
-        "lead_joker" => bot.lead_joker = int()?,
-        "lead_mighty" => bot.lead_mighty = int()?,
-        "defend_trump" => bot.defend_trump = int()?,
-        "plan_last_trick" => bot.plan_last_trick = value.parse().map_err(|_| bad())?,
-        "aim_joker_call" => bot.aim_joker_call = value.parse().map_err(|_| bad())?,
-        "spare_declarer_joker" => bot.spare_declarer_joker = value.parse().map_err(|_| bad())?,
-        "misdeal_below_min" => bot.misdeal_below_min = value.parse().map_err(|_| bad())?,
-        "bid_spread" => bot.bid_spread = float()?,
-        "bid_caution" => bot.bid_caution = float()?,
-        _ => return Ok(false),
-    }
-    Ok(true)
+    set_field(bot, key, value)
 }
 
 /// Sets how the search bot reads the other players, for tuning from the
 /// command line: `read.on`, `read.slip`, `read.bid_scale`, `read.min_share`, `read.draws`.
 fn set_reading(reading: &mut Reading, key: &str, value: &str) -> Result<(), String> {
-    let bad = || format!("bad value {value:?} for read.{key}");
-    let float = || value.parse::<f64>().map_err(|_| bad());
-    match key {
-        "on" => reading.on = value.parse().map_err(|_| bad())?,
-        "slip" => reading.slip = float()?,
-        "bid_scale" => reading.bid_scale = float()?,
-        "min_share" => reading.min_share = float()?,
-        "draws" => reading.draws = value.parse().map_err(|_| bad())?,
-        _ => return Err(format!("unknown setting read.{key}")),
+    if set_field(reading, key, value)? {
+        Ok(())
+    } else {
+        Err(format!("unknown setting read.{key}"))
     }
-    Ok(())
 }
 
 #[cfg(test)]
