@@ -59,15 +59,42 @@ pub trait EvalGame: JsonGame<Rules: Clone + Send + Sync, Options: Send + Sync> +
     /// A rule set in a few words, for reports.
     fn describe(rules: &Self::Rules) -> String;
 
-    /// A log recorded under an earlier flow of the game, as steps that
-    /// replay now: each action with the seat taking it out of turn
+    /// The version of the game's flow that action logs are recorded in
+    /// now. A puzzle file records the version of its logs
+    /// ([`puzzle::parse`]); a change to the game that makes old logs mean
+    /// something else bumps it, with an upgrade in [`EvalGame::upgrade_log`].
+    const LOG_VERSION: u32 = 1;
+
+    /// A log recorded in log version `version`, as steps that replay now:
+    /// each action with the seat taking it out of turn
     /// ([`engine::Game::apply_out_of_turn`]), or `None` for the seat to
-    /// act. Published puzzles never change, so a puzzle whose log no
-    /// longer replays as it is gets this instead. By default the log is
-    /// replayed as it is.
-    fn upgrade_log(_options: &Self::Options, log: &[Self::Action]) -> Vec<(Option<Seat>, Self::Action)> {
-        log.iter().map(|a| (None, a.clone())).collect()
+    /// act. Published puzzles never change, so an old one is upgraded by
+    /// the version it was recorded in, never by trying it as it is first.
+    /// By default only [`EvalGame::LOG_VERSION`] is known, replayed as it is.
+    fn upgrade_log(
+        _options: &Self::Options,
+        log: &[Self::Action],
+        version: u32,
+    ) -> Result<Steps<Self::Action>, String> {
+        if version != Self::LOG_VERSION {
+            return Err(unknown_log_version(version, Self::LOG_VERSION));
+        }
+        Ok(as_recorded(log))
     }
+}
+
+/// Actions to replay, each with the seat taking it out of turn, or `None`
+/// for the seat to act ([`EvalGame::upgrade_log`]).
+pub type Steps<A> = Vec<(Option<Seat>, A)>;
+
+/// A log's actions, each for the seat to act.
+pub fn as_recorded<A: Clone>(log: &[A]) -> Steps<A> {
+    log.iter().map(|a| (None, a.clone())).collect()
+}
+
+/// The error for a log version [`EvalGame::upgrade_log`] does not know.
+pub fn unknown_log_version(version: u32, current: u32) -> String {
+    format!("log version {version} is unknown: this build reads versions 1 to {current}")
 }
 
 /// The rule set `rules` names, and a label for it: the preset's id, or a

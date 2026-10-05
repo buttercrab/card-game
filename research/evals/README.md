@@ -123,6 +123,15 @@ picks an acceptable action on every try (seeds `0..tries`).
 - **Informational** puzzles record a known weakness whose right answer
   depends on what the seat cannot see. They are reported, never scored.
 
+A log means what the game's flow meant when it was recorded, so a puzzle
+file names its **log version**: `{"log_version": N, "puzzles": [...]}`.
+A bare array, as in `v1/puzzles.json`, is log version 1 (recorded before
+2026-10-05, when 기본 still asked each seat about a misdeal after the
+deal). A log is upgraded from its version to the current one
+(`EvalGame::upgrade_log`), never replayed as it is on the chance it still
+works. Mighty's log versions: 1, the misdeal round; 2 (current), a misdeal
+called out of turn from the deal. New puzzle files use the current one.
+
 New puzzles come from the miner in the same test file
 (`cargo test --release -p eval --test puzzles -- --ignored mine
 --nocapture`), which prints positions from hands of `hard` bots that fit
