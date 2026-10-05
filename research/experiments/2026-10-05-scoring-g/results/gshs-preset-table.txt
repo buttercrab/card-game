@@ -1,0 +1,1 @@
+gshs: 250 games ok, 64.2 steps per game, focus bot averages -0.85 ± 1.48 per hand, thinking median 518.6 ms, p99 1611 ms, at most 2112 ms per decision (2447 s)

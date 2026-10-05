@@ -1,0 +1,23 @@
+# Bidding under 경기과고 before and after scoring G (a failed contract pays
+# back what it would have won, plus the shortfall). One focus seat plays
+# each table level; the other four seats are the table's 고수.
+
+rules_before = "gshs-shortfall.json"   # gshs with scoring.lose = Shortfall
+rules_after = "gshs"                   # the preset: scoring.lose = PaysBack(10)
+levels = ["hard", "normal", "easy"]    # 고수, 보통, 초보 (초보 not reached: see README)
+field = "hard"
+deals = 400                            # deals 0..400, the same for every run
+# Focus seat = deal / 5 mod 5; first bidder = deal mod 5; each seat and
+# phase draws from its own stream seeded by the deal (sim::lab::stream),
+# so before and after meet the same cards.
+
+[run]
+commit = "3d6cc02"
+commands = [
+  "nice -n 10 target/release/lab --threads 6 --rules research/experiments/2026-10-05-scoring-g/gshs-shortfall.json --out results/<level>-before.jsonl declare --deals 400 --bot <level> --field hard",
+  "nice -n 10 target/release/lab --threads 6 --preset gshs --out results/<level>-after.jsonl declare --deals 400 --bot <level> --field hard",
+  "target/release/lab --out results/report.md declare-report --run 고수-before=results/hard-before.jsonl --run 고수-after=results/hard-after.jsonl --run 보통-before=<normal-before.jsonl, deals 0-340> --run 보통-after=results/normal-after.jsonl",
+  "nice -n 10 target/release/eval run --suite v1 --bot hard --quick --threads 3 --out results/eval-quick",
+  "nice -n 10 target/release/sim --preset gshs --games 250 --seed 2002500 --bots search --focus hard --field hard --view-every 0 --threads 3",
+]
+machine = "the Mac (M4 Pro, 14 threads), shared with an RL training run"
