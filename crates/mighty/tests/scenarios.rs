@@ -362,6 +362,47 @@ fn trump_may_lead_the_first_trick_when_only_specials_are_left() {
     assert_eq!(legal_cards(&state), sorted(declarer));
 }
 
+/// 경기과고, seat 0 declaring `trump` 14 with `declarer` and calling the
+/// first trick's winner, ready to lead the first trick.
+fn gshs_first_lead(declarer: &str, trump: Suit) -> State {
+    let mut state = start(Preset::Gshs.rules(), &[declarer], "C2 C3 C4 C5");
+    act(
+        &mut state,
+        Action::Bid(Contract {
+            trump: Some(trump),
+            count: 14,
+        }),
+    );
+    for _ in 1..5 {
+        act(&mut state, Action::Pass);
+    }
+    for card in cards("C2 C3 C4 C5") {
+        act(&mut state, Action::Discard(card));
+    }
+    act(&mut state, Action::CallFriend(FriendCall::FirstTrick));
+    state
+}
+
+#[test]
+fn gshs_nine_trumps_and_the_mighty_may_lead_trump_on_the_first_trick() {
+    // Owner, 2026-10-05: keep as coded.
+    let declarer = "SA H2 H3 H4 H5 H6 H7 H8 H9 H10";
+    let state = gshs_first_lead(declarer, Suit::Heart);
+    assert_eq!(legal_cards(&state), sorted(declarer));
+}
+
+#[test]
+fn gshs_a_joker_led_on_the_first_trick_may_name_trump() {
+    // Owner, 2026-10-05: keep as coded.
+    let state = gshs_first_lead("BJ S2 S3 S4 D2 D3 D4 D5 C6 C7", Suit::Spade);
+    let names_trump = Action::Play {
+        card: Card::Joker(Color::Black),
+        joker_lead: Some(Lead::Suit(Suit::Spade)),
+        call_joker: false,
+    };
+    assert!(Mighty::legal_actions(&state).contains(&names_trump));
+}
+
 #[test]
 fn trump_may_follow_the_first_trick_when_only_specials_are_left() {
     let hand = "SA BJ H2 H3 H4 H5 H6 H7 H8 H9";
@@ -688,6 +729,97 @@ fn passing_need_not_be_final() {
     }
     assert_eq!(Mighty::turn(&state), Turn::Seat(0));
     assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+}
+
+#[test]
+fn a_weak_hand_may_misdeal_out_of_turn_until_it_bids() {
+    // 경기과고 has no misdeal round: seat 1 may throw the deal in from the
+    // moment the cards land, while seat 0 is still to bid, and until it
+    // has bid itself.
+    let lone_ten = "S4 S5 S6 S7 S8 H4 H5 H6 C8 C10";
+    let state = start(Preset::Gshs.rules(), &[DECLARER, lone_ten], KITTY);
+    assert_eq!(Mighty::turn(&state), Turn::Seat(0));
+    assert_eq!(Mighty::out_of_turn_actions(&state, 1), vec![Action::Misdeal]);
+    assert!(Mighty::out_of_turn_actions(&state, 0).is_empty());
+    assert!((2..5).all(|s| Mighty::out_of_turn_actions(&state, s).is_empty()));
+    // Others bidding does not close it; seat 1's own bid does.
+    let mut open = state.clone();
+    act(&mut open, bid(Some(Suit::Spade), 14));
+    assert!(Mighty::out_of_turn_actions(&open, 1).is_empty(), "seat 1 is to act now");
+    assert!(Mighty::legal_actions(&open).contains(&Action::Misdeal));
+    act(&mut open, bid(Some(Suit::Heart), 15));
+    act(&mut open, Action::Pass);
+    assert!(Mighty::out_of_turn_actions(&open, 1).is_empty(), "seat 1 has bid");
+    // Called out of turn, it is shown and redealt as on a turn.
+    let mut thrown = state.clone();
+    Mighty::apply_out_of_turn(&mut thrown, 1, Action::Misdeal).unwrap();
+    assert_eq!(Mighty::turn(&thrown), Turn::Chance);
+    let deal = Mighty::sample_chance(&thrown, &mut rand::rng());
+    act(&mut thrown, deal);
+    let redealt = Mighty::view(&thrown, Viewer::Seat(3)).redealt.unwrap();
+    assert!(matches!(redealt.why, Redeal::Misdeal { seat: 1, .. }));
+    // Only a qualifying seat, and only a misdeal.
+    let mut refused = state.clone();
+    assert!(Mighty::apply_out_of_turn(&mut refused, 2, Action::Misdeal).is_err());
+    assert!(Mighty::apply_out_of_turn(&mut refused, 1, Action::Pass).is_err());
+    assert_eq!(refused, state);
+}
+
+#[test]
+fn after_bidding_keeps_the_window_open_all_through_the_bidding() {
+    let mut rules = Preset::Gshs.rules();
+    rules.misdeal.after_bidding = true;
+    let lone_ten = "S4 S5 S6 S7 S8 H4 H5 H6 C8 C10";
+    let mut state = start(rules, &[DECLARER, lone_ten], KITTY);
+    act(&mut state, bid(Some(Suit::Spade), 14));
+    act(&mut state, bid(Some(Suit::Heart), 15));
+    assert_eq!(Mighty::out_of_turn_actions(&state, 1), vec![Action::Misdeal]);
+    // Passing ends it: a seat that passed has had its say.
+    act(&mut state, Action::Pass);
+    act(&mut state, Action::Pass);
+    act(&mut state, Action::Pass);
+    assert_eq!(Mighty::turn(&state), Turn::Seat(0));
+    act(&mut state, bid(Some(Suit::Spade), 16));
+    assert_eq!(Mighty::turn(&state), Turn::Seat(1));
+    act(&mut state, Action::Pass);
+    assert!(matches!(
+        Mighty::view(&state, Viewer::Spectator).phase,
+        PhaseView::Exchange { declarer: 0, .. }
+    ));
+    assert!(Mighty::out_of_turn_actions(&state, 1).is_empty(), "the bidding is over");
+}
+
+#[test]
+fn random_out_of_turn_misdeals_keep_the_state_sound() {
+    use rand::{Rng, SeedableRng};
+    let mut rng = rand::rngs::StdRng::seed_from_u64(7);
+    for preset in Preset::ALL {
+        let rules = preset.rules();
+        let mut state = Mighty::new_game(&Options { rules, first_bidder: 0 }).unwrap();
+        for _ in 0..400 {
+            match Mighty::turn(&state) {
+                Turn::Over => break,
+                Turn::Chance => {
+                    let deal = Mighty::sample_chance(&state, &mut rng);
+                    act(&mut state, deal);
+                }
+                Turn::Seat(_) => {
+                    let callers: Vec<usize> = (0..5)
+                        .filter(|&s| !Mighty::out_of_turn_actions(&state, s).is_empty())
+                        .collect();
+                    if !callers.is_empty() && rng.random_bool(0.3) {
+                        let seat = callers[rng.random_range(0..callers.len())];
+                        Mighty::apply_out_of_turn(&mut state, seat, Action::Misdeal).unwrap();
+                    } else {
+                        let legal = Mighty::legal_actions(&state);
+                        let action = legal[rng.random_range(0..legal.len())].clone();
+                        act(&mut state, action);
+                    }
+                }
+            }
+            Mighty::check_invariants(&state).unwrap_or_else(|e| panic!("{}: {e}", preset.name()));
+        }
+    }
 }
 
 #[test]

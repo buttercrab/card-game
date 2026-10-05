@@ -64,6 +64,21 @@ pub trait Game {
     /// On error the state is left unchanged.
     fn apply(state: &mut Self::State, action: Self::Action) -> Result<(), Self::Error>;
 
+    /// Actions `seat` may take now although [`Game::turn`] is not theirs,
+    /// such as calling a misdeal the moment the cards land. The seat whose
+    /// turn it is finds all of its actions in [`Game::legal_actions`], so
+    /// this is empty for it. None by default.
+    fn out_of_turn_actions(_state: &Self::State, _seat: Seat) -> Vec<Self::Action> {
+        Vec::new()
+    }
+
+    /// Applies one of [`Game::out_of_turn_actions`] for `seat`. On error the
+    /// state is left unchanged. Only called with an action from that list,
+    /// so a game without out-of-turn actions never gets here.
+    fn apply_out_of_turn(_state: &mut Self::State, seat: Seat, action: Self::Action) -> Result<(), Self::Error> {
+        unreachable!("seat {seat} acted out of turn with {action:?}, but this game has no out-of-turn actions")
+    }
+
     /// What `viewer` is allowed to know. Must not depend on anything `viewer`
     /// cannot see; [`Game::reshuffle_hidden`] is how the simulator checks that.
     fn view(state: &Self::State, viewer: Viewer) -> Self::View;

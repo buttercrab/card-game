@@ -3,10 +3,10 @@ baseline that knows only how many hidden cards each class holds, overall
 and by phase of the hand.
 
 Phases are read from the global vector by feature name: the bidding
-(``phase=bidding`` or ``phase=misdeal_round``), the exchange, and the
-play, split at half the hand by ``trick`` (the share of tricks done).
-Those are ``mighty-1``'s names; an encoding without them reports the
-overall numbers only.
+(``phase=bidding``, and ``phase=misdeal_round`` in ``mighty-1`` and
+``mighty-2``, which ``mighty-3`` dropped), the exchange, and the play,
+split at half the hand by ``trick`` (the share of tricks done). An
+encoding without them reports the overall numbers only.
 """
 
 from collections.abc import Iterable, Mapping
@@ -28,14 +28,17 @@ def phases(spec: EncodingSpec, global_: NDArray[np.float32]) -> NDArray[np.int64
     """The phase of each decision ``[B]``, an index into :data:`PHASES`."""
     names = {name: i for i, name in enumerate(spec.global_features)}
     out = np.full(len(global_), -1, np.int64)
-    wanted = ("phase=bidding", "phase=misdeal_round", "phase=exchange", "phase=play", "trick")
+    wanted = ("phase=bidding", "phase=exchange", "phase=play", "trick")
     if not all(name in names for name in wanted):
         return out
 
     def column(name: str) -> NDArray[np.float32]:
         return global_[:, names[name]]
 
-    out[(column("phase=bidding") > 0) | (column("phase=misdeal_round") > 0)] = 0
+    bidding = column("phase=bidding") > 0
+    if "phase=misdeal_round" in names:
+        bidding |= column("phase=misdeal_round") > 0
+    out[bidding] = 0
     out[column("phase=exchange") > 0] = 1
     playing = column("phase=play") > 0
     late = column("trick") >= LATE

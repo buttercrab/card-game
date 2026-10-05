@@ -5,17 +5,30 @@
 
   let {
     legal,
-    asking = false,
     lastChance = null,
+    wait = 0,
     onact,
   }: {
     legal: Action[];
-    /** Answering whether to call a misdeal before any bid: 'Pass' says no. */
-    asking?: boolean;
     /** Everyone passed and this is the dealer's extra turn, from this count. */
     lastChance?: number | null;
+    /** How long, in ms, a bid must still wait after the deal, so a fast
+     * bid never beats someone's 딜미스 to the table. */
+    wait?: number;
     onact: (a: Action) => void;
   } = $props();
+
+  // The bid button holds back until the wait is over.
+  let held = $state(false);
+  $effect(() => {
+    if (wait <= 0) return;
+    held = true;
+    const timer = setTimeout(() => (held = false), wait);
+    return () => {
+      clearTimeout(timer);
+      held = false;
+    };
+  });
 
   const bids = $derived(legal.flatMap((a) => (typeof a === 'object' && 'Bid' in a ? [a.Bid] : [])));
   const trumps = $derived([...SUITS, null].filter((t) => bids.some((b) => b.trump === t)) as (Suit | null)[]);
@@ -47,8 +60,8 @@
 <!-- Phones: the suits and counts on one row, the buttons full width under
      them. Wider screens: one centred row. -->
 <div class="bid">
-  {#if asking}
-    <p class="caption">공약 전에 딜미스인지 답해요</p>
+  {#if held}
+    <p class="caption">딜미스할 사람이 있는지 잠깐 기다려요</p>
   {:else if lastChance !== null}
     <p class="caption">모두 패스했어요 · 딜러가 한 번 더 ({lastChance}부터)</p>
   {/if}
@@ -76,13 +89,13 @@
   {/if}
   <div class="actions">
     {#if canMisdeal}<button onclick={() => onact('Misdeal')} title="패가 약하면 다시 돌릴 수 있어요">딜미스</button>{/if}
-    {#if asking}
-      <button class="primary" onclick={() => onact('Pass')}>딜미스 아님</button>
-    {:else if canPass}
+    {#if canPass}
       <button onclick={() => onact('Pass')}>패스</button>
     {/if}
     {#if bids.length > 0}
-      <button class="primary" onclick={() => onact({ Bid: bid })}>공약 {trumpLabel(bid.trump)} {bid.count}</button>
+      <button class="primary" class:held disabled={held} style:--wait="{wait}ms" onclick={() => onact({ Bid: bid })}>
+        공약 {trumpLabel(bid.trump)} {bid.count}
+      </button>
     {/if}
   </div>
 </div>
@@ -158,6 +171,31 @@
   }
   .actions .primary {
     flex: 1;
+  }
+  /* Held after the deal: a bar fills the button until it may be pressed. */
+  .primary.held {
+    position: relative;
+    overflow: hidden;
+  }
+  .primary.held::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 3px;
+    background: currentColor;
+    opacity: 0.5;
+    transform-origin: left;
+    animation: hold var(--wait) linear both;
+  }
+  @keyframes hold {
+    from {
+      transform: scaleX(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .primary.held::after {
+      animation: none;
+    }
   }
   @media (min-width: 600px) {
     .bid {

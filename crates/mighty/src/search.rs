@@ -499,13 +499,11 @@ impl Dealer {
                 best,
                 passed,
                 has_bid,
-                asking_misdeal,
             } => Phase::Bidding(Bidding {
                 to_act: *to_act,
                 best: *best,
                 passed: passed.clone(),
                 has_bid: has_bid.clone(),
-                asking: *asking_misdeal,
             }),
             PhaseView::Play {
                 declarer,

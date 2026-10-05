@@ -58,6 +58,16 @@ pub trait EvalGame: JsonGame<Rules: Clone + Send + Sync, Options: Send + Sync> +
 
     /// A rule set in a few words, for reports.
     fn describe(rules: &Self::Rules) -> String;
+
+    /// A log recorded under an earlier flow of the game, as steps that
+    /// replay now: each action with the seat taking it out of turn
+    /// ([`engine::Game::apply_out_of_turn`]), or `None` for the seat to
+    /// act. Published puzzles never change, so a puzzle whose log no
+    /// longer replays as it is gets this instead. By default the log is
+    /// replayed as it is.
+    fn upgrade_log(_options: &Self::Options, log: &[Self::Action]) -> Vec<(Option<Seat>, Self::Action)> {
+        log.iter().map(|a| (None, a.clone())).collect()
+    }
 }
 
 /// The rule set `rules` names, and a label for it: the preset's id, or a

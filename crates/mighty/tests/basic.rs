@@ -79,16 +79,8 @@ fn bid(trump: Option<Suit>, count: u8) -> Action {
     Action::Bid(Contract { trump, count })
 }
 
-/// Everyone answers "no misdeal".
-fn no_misdeals(state: &mut State) {
-    for _ in 0..5 {
-        act(state, Action::Pass);
-    }
-}
-
 /// Seat 0 wins the bidding with `contract`, the others passing.
 fn win_bid(state: &mut State, trump: Option<Suit>, count: u8) {
-    no_misdeals(state);
     act(state, bid(trump, count));
     for _ in 1..5 {
         act(state, Action::Pass);
@@ -157,48 +149,52 @@ fn misdeal_counts_halves() {
 
 const WEAK: &str = "S2 S3 S4 S5 S6 S7 S8 H2 H3 C2";
 
+fn out_of_turn(state: &State, seat: usize) -> Vec<Action> {
+    Mighty::out_of_turn_actions(state, seat)
+}
+
 #[test]
-fn everyone_answers_misdeal_before_any_bid() {
+fn anyone_may_misdeal_until_the_first_bid() {
     let mut state = start(&["D2 D3 D4 D5 D6 D7 D8 D9 DA DK", WEAK], "");
-    // The dealer first; a hand that does not qualify can only say no.
-    assert!(matches!(
-        phase(&state),
-        PhaseView::Bidding {
-            asking_misdeal: true,
-            to_act: 0,
-            ..
-        }
-    ));
-    assert_eq!(legal(&state), vec![Action::Pass]);
+    // No round of answers: the dealer bids first, and a qualifying hand
+    // may throw the deal in from the moment the cards land.
+    assert!(matches!(phase(&state), PhaseView::Bidding { to_act: 0, .. }));
+    assert!(!legal(&state).contains(&Action::Misdeal));
+    assert_eq!(out_of_turn(&state, 1), vec![Action::Misdeal]);
+    assert!(out_of_turn(&state, 2).is_empty(), "seat 2's hand does not qualify");
+    assert!(
+        out_of_turn(&state, 0).is_empty(),
+        "the seat to act finds it in its legal actions"
+    );
+    // A pass does not close the window; the first bid does.
     act(&mut state, Action::Pass);
-    assert_eq!(legal(&state), vec![Action::Misdeal, Action::Pass]);
-    for _ in 1..5 {
-        act(&mut state, Action::Pass);
-    }
-    // Then the bidding, from the dealer; nobody may call a misdeal now.
-    assert!(matches!(
-        phase(&state),
-        PhaseView::Bidding {
-            asking_misdeal: false,
-            to_act: 0,
-            ..
-        }
-    ));
-    assert!(Mighty::view(&state, Viewer::Spectator).bids.is_empty());
+    assert_eq!(Mighty::turn(&state), Turn::Seat(1));
+    assert!(legal(&state).contains(&Action::Misdeal));
+    act(&mut state, Action::Pass);
+    assert!(out_of_turn(&state, 1).is_empty(), "a seat that passed has had its say");
     act(&mut state, bid(S, 14));
+    let mut late = state.clone();
+    assert!(Mighty::apply_out_of_turn(&mut late, 1, Action::Misdeal).is_err());
+    assert_eq!(late, state, "a refused action changes nothing");
+}
+
+#[test]
+fn the_window_closes_at_the_first_bid() {
+    let mut state = start(&["D2 D3 D4 D5 D6 D7 D8 D9 DA DK", WEAK], "");
+    act(&mut state, bid(S, 14));
+    assert!(out_of_turn(&state, 1).is_empty());
     assert_eq!(Mighty::turn(&state), Turn::Seat(1));
     assert!(!legal(&state).contains(&Action::Misdeal));
 }
 
 #[test]
-fn the_misdeal_nearest_the_dealer_is_shown_and_its_caller_deals() {
+fn the_misdeal_is_shown_and_its_caller_deals() {
     let mut state = start(
         &["D2 D3 D4 D5 D6 D7 D8 D9 DA DK", "C4 C5 C6 C7 C8 C9 H4 H5 H6 H7", WEAK],
         "",
     );
-    act(&mut state, Action::Pass);
-    act(&mut state, Action::Pass);
-    act(&mut state, Action::Misdeal);
+    // Seat 2 calls it out of turn, while the dealer is still thinking.
+    Mighty::apply_out_of_turn(&mut state, 2, Action::Misdeal).unwrap();
     assert_eq!(Mighty::turn(&state), Turn::Chance);
     let deal = Mighty::sample_chance(&state, &mut rand::rng());
     act(&mut state, deal);
@@ -218,7 +214,6 @@ fn the_misdeal_nearest_the_dealer_is_shown_and_its_caller_deals() {
 #[test]
 fn bids_rise_by_difficulty_from_14() {
     let mut state = start(&[], "");
-    no_misdeals(&mut state);
     let l = legal(&state);
     // 노기루다 counts one more: 노기루다 13 is worth 14, a suit must say 14.
     assert!(l.contains(&bid(None, 13)) && !l.contains(&bid(None, 12)));
@@ -236,7 +231,6 @@ fn bids_rise_by_difficulty_from_14() {
 #[test]
 fn no_trump_20_ends_the_bidding() {
     let mut state = start(&[], "");
-    no_misdeals(&mut state);
     act(&mut state, bid(None, 20));
     assert!(matches!(phase(&state), PhaseView::Exchange { declarer: 0, .. }));
 }
@@ -244,7 +238,6 @@ fn no_trump_20_ends_the_bidding() {
 #[test]
 fn a_pass_is_final_and_the_last_bidder_declares() {
     let mut state = start(&[], "");
-    no_misdeals(&mut state);
     act(&mut state, bid(S, 14)); // 0
     act(&mut state, Action::Pass); // 1
     act(&mut state, bid(H, 15)); // 2
@@ -259,7 +252,6 @@ fn a_pass_is_final_and_the_last_bidder_declares() {
 #[test]
 fn after_five_passes_the_dealer_may_bid_13_once() {
     let mut state = start(&[], "");
-    no_misdeals(&mut state);
     for _ in 0..5 {
         act(&mut state, Action::Pass);
     }

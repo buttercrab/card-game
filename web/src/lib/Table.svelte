@@ -177,26 +177,16 @@
     done ? done.team_points : declarer === null ? 0 : points(declarer) + (friend !== null ? points(friend) : 0),
   );
 
-  // ---- The misdeal round and the dealer's extra turn -------------------------
-  /** Everyone answers 딜미스 or 딜미스 아님 before any bid (misdeal.ask_first). */
-  const asking = $derived(bidding?.asking_misdeal ?? false);
+  // ---- The dealer's extra turn ----------------------------------------------
   /** The dealer's extra turn after five passes, from this count; else null. */
   const lastChance = $derived.by(() => {
     const min = view.rules.bidding.last_chance_min;
-    if (!bidding || asking || bidding.best || min == null) return null;
+    if (!bidding || bidding.best || min == null) return null;
     return (view.bids ?? []).length === n ? min : null;
   });
-  /** Answers are not recorded as bids: those from the dealer up to the seat
-   * to answer now have said 딜미스 아님. */
-  function saidNoMisdeal(seat: number): boolean {
-    if (!bidding?.asking_misdeal) return false;
-    const from = view.first_bidder;
-    return (seat - from + n) % n < (bidding.to_act - from + n) % n;
-  }
 
   function bubble(seat: number): string | null {
     if (!bidding) return null;
-    if (saidNoMisdeal(seat)) return '딜미스 아님';
     if (bidding.best && bidding.best[0] === seat) return contractLabel(bidding.best[1]);
     if (bidding.passed[seat]) return '패스';
     return null;
@@ -422,17 +412,14 @@
 
   // ---- Tips for learners (초보 도움말) ---------------------------------------
   const tip = $derived.by(() => {
+    if (settings.tips && misdealNow) return '패가 약해요. 차례가 아니어도 딜미스로 다시 나눌 수 있어요.';
     if (!settings.tips || !myTurn) return null;
     if (bidding)
       return bidding.best
         ? `${contractLabel(bidding.best[1])}보다 높게 부르거나 패스. 센 카드가 많으면 도전!`
-        : asking
-          ? legal.includes('Misdeal')
-            ? '패가 약해 딜미스할 수 있어요. 다시 나누려면 딜미스.'
-            : '딜미스할 만큼 약한 패가 아니에요. 딜미스 아님을 눌러요.'
-          : lastChance !== null
-            ? `모두 패스했어요. ${lastChance}부터 부르거나, 또 패스하면 다시 나눠요.`
-            : '많이 가진 무늬를 기루다로 골라 불러요. 자신 없으면 패스.';
+        : lastChance !== null
+          ? `모두 패스했어요. ${lastChance}부터 부르거나, 또 패스하면 다시 나눠요.`
+          : '많이 가진 무늬를 기루다로 골라 불러요. 자신 없으면 패스.';
     if (exchange)
       return toDiscard > 0
         ? `필요 없는 카드 ${toDiscard}장을 버려요. 버린 점수 카드${view.rules.scoring?.discards_to_declarer === false ? '는 야당 점수가 돼요.' : '도 여당 점수예요.'}`
@@ -454,6 +441,11 @@
   const live = $derived(client.game!);
   const liveTurn = $derived(me !== null && typeof live.turn === 'object' && live.turn.Seat === me);
   const handLegal = $derived(liveTurn ? live.legal : legal);
+  /** 딜미스 outside your turn: from the moment the cards land, while your
+   * hand qualifies and the rules still allow it. */
+  const misdealNow = $derived(!liveTurn && (live.out_of_turn ?? []).includes('Misdeal'));
+  /** How long the first bid still waits after the deal, as last sent. */
+  const bidWait = $derived(liveTurn ? (live.grace_ms ?? 0) : 0);
   const plays = $derived(handLegal.flatMap((a) => (typeof a === 'object' && 'Play' in a ? [a.Play] : [])));
   const discardable = $derived(
     handLegal.flatMap((a) => (typeof a === 'object' && 'Discard' in a ? [a.Discard] : [])),
@@ -563,6 +555,8 @@
   let winner = $state<number | null>(null);
   let revealed = $state<number | null>(null);
   let dealing = $state(false);
+  /** The deal after a redeal, dealt in half the time. */
+  let quickDeal = $state(false);
   // The table can open straight onto a fresh deal (the first hand of a
   // room); deal it in then too, not only when a hand follows another.
   $effect(() => {
@@ -687,10 +681,6 @@
     }
     if ('Bidding' in now) {
       if (!(typeof was === 'object' && 'Bidding' in was)) return null;
-      // An answer in the misdeal round moves the turn on and records nothing.
-      if (was.Bidding.asking_misdeal && was.Bidding.to_act !== now.Bidding.to_act) {
-        return `${seatName(was.Bidding.to_act)} · 딜미스 아님`;
-      }
       const passed = now.Bidding.passed.findIndex((p, i) => p && !was.Bidding.passed[i]);
       if (passed >= 0) return `${seatName(passed)} · 패스`;
       const best = now.Bidding.best;
@@ -822,10 +812,14 @@
   function showThrownIn(next: StateMsg, prev: StateMsg) {
     const redeal = next.view.redealt;
     if (!redeal || JSON.stringify(redeal) === JSON.stringify(prev.view.redealt)) return;
-    if (redeal.why === 'AllPassed') return;
-    thrownIn = redeal.why.Misdeal;
+    // Up until the next deal lands, or for at most 4 s.
     clearTimeout(thrownInTimer);
-    thrownInTimer = setTimeout(() => (thrownIn = null), 8000);
+    if (redeal.why === 'AllPassed') {
+      thrownIn = null;
+      return;
+    }
+    thrownIn = redeal.why.Misdeal;
+    thrownInTimer = setTimeout(() => (thrownIn = null), 4000);
   }
 
   /** Sounds and the event line for a change of state. */
@@ -857,8 +851,7 @@
     }
     if (typeof was === 'object' && 'Bidding' in was && typeof now === 'object' && 'Bidding' in now) {
       const moved = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best) ||
-        was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length ||
-        (was.Bidding.asking_misdeal && was.Bidding.to_act !== now.Bidding.to_act);
+        was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length;
       if (moved) {
         const raised = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best);
         const raises = (next.view.bids ?? []).filter((b) => b.contract !== null).length;
@@ -892,10 +885,13 @@
     if (!before || !after) {
       shown = next;
       if (newHand) {
-        // Like a trick's end, the deal is not hurried by your turn.
+        // Like a trick's end, the deal is not hurried by your turn. A
+        // redeal goes twice as fast: everyone has just seen a deal.
         dealing = true;
-        await pause(900 * paceUnhurried());
+        quickDeal = redealt;
+        await pause((redealt ? 450 : 900) * paceUnhurried());
         dealing = false;
+        quickDeal = false;
       }
       return;
     }
@@ -1039,7 +1035,6 @@
     if (turn === null) return null;
     const name = seatName(turn);
     if (exchange) return { pre: '주공 ', name, post: ' · 키티 정리 중' };
-    if (asking) return { pre: '', name, post: ' · 딜미스 확인 중' };
     if (lastChance !== null) return { pre: '모두 패스했어요 · 딜러 ', name, post: ` 한 번 더 (${lastChance}부터)` };
     if (bidding) return { pre: '', name, post: ' · 공약 고르는 중' };
     return { pre: '', name, post: ' 차례' };
@@ -1087,7 +1082,7 @@
   <!-- 상황판: everything about the hand on one line. -->
   {#snippet hintTools()}
     {#if client.hint && myTurn}
-      <span class="hint-text pop" role="status"><Icon name="hint" /> 봇이라면 <strong>{asking && client.hint === 'Pass' ? '딜미스 아님' : actionLabel(client.hint, seatName)}</strong></span>
+      <span class="hint-text pop" role="status"><Icon name="hint" /> 봇이라면 <strong>{actionLabel(client.hint, seatName)}</strong></span>
     {:else if settings.hints && liveTurn}
       <button class="hint-btn" aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}><Icon name="hint" /></button>
     {/if}
@@ -1111,10 +1106,7 @@
   {/snippet}
   <div class="status" aria-live="polite">
     {#if bidding}
-      {#if asking}
-        <span class="item">딜미스 확인</span>
-        <span class="item muted">공약 전</span>
-      {:else if bidding.best}
+      {#if bidding.best}
         <span class="item">최고 공약 <strong class="contract">{contractLabel(bidding.best[1])}</strong></span>
         <span class="item muted">{seatName(bidding.best[0])}</span>
       {:else}
@@ -1168,8 +1160,6 @@
             </span>
             <span class="big-num">{best.count}</span>
             <span class="big-sub">최고 공약<br /><strong>{seatName(bidding.best[0])}</strong></span>
-          {:else if asking}
-            <span class="big-sub">딜미스 확인<br /><strong>공약 전</strong></span>
           {:else}
             <span class="big-sub">공약 없음<br /><strong>최소 {lastChance ?? view.rules.bidding.min}</strong></span>
           {/if}
@@ -1437,7 +1427,7 @@
               <button class="ghost" onclick={() => (variants = null)}>취소</button>
             </div>
           {:else if bidding}
-            <BidPanel {legal} {asking} {lastChance} onact={act} />
+            <BidPanel {legal} {lastChance} wait={bidWait} onact={act} />
           {:else if exchange}
             <ExchangePanel
               {legal}
@@ -1459,6 +1449,12 @@
           <strong>내 차례</strong> ·
           {settings.singleTap ? '낼 카드를 누르세요' : raisedCard ? '한 번 더 누르면 내요' : '낼 카드를 두 번 누르세요'}
         </p>
+      {:else if misdealNow}
+        <!-- Optional, so secondary: plum stays for your turn. -->
+        <div class="aside-act">
+          {#if waiting}<p class="prompt caption">{waiting.pre}<span class="who-name">{waiting.name}</span>{waiting.post}…</p>{/if}
+          <button onclick={() => act('Misdeal')} title="패가 약하면 차례가 아니어도 다시 나눌 수 있어요">딜미스</button>
+        </div>
       {:else if waiting && !done}
         <p class="prompt caption">{waiting.pre}<span class="who-name">{waiting.name}</span>{waiting.post}…</p>
       {/if}
@@ -1506,6 +1502,7 @@
         {seal}
         {twoJokers}
         deal={dealing}
+        {quickDeal}
         onplay={playCard}
         ontoggle={toggle}
         onrefuse={refuse}
@@ -2423,6 +2420,29 @@
     font-size: 13px;
     color: var(--ink-muted);
   }
+  /* 딜미스 outside your turn: whose turn it is, and a secondary button. */
+  .aside-act {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 8px 8px;
+  }
+  .strip .aside-act .prompt {
+    position: static;
+    transform: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .aside-act button {
+    flex: none;
+    min-width: 88px;
+  }
   /* On the card-paper pill, the light-theme plum keeps its contrast. */
   .strip .pill strong {
     color: #8e2f6b;
@@ -2896,6 +2916,7 @@
       overflow-y: auto;
     }
     .controls,
+    .aside-act,
     .strip .prompt {
       position: static;
       transform: none;

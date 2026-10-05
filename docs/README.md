@@ -50,7 +50,7 @@ needs it. On the Mac training runs on MPS
 The encoding (`engine::Encode`, Mighty's in `crates/mighty/src/encode.rs`)
 defines every model's input, so it changes only on purpose:
 
-1. Change the encoder and bump its `VERSION` (`mighty-2` to `mighty-3`).
+1. Change the encoder and bump its `VERSION` (`mighty-3` to `mighty-4`).
 2. Rewrite the pinned spec:
    `cargo test -p mighty --test encode -- --ignored write_spec_snapshot`,
    re-pin `encodings_are_pinned` in the same file, and rewrite the
@@ -66,9 +66,13 @@ defines every model's input, so it changes only on purpose:
    example refuse a model whose spec is not the engine's.
 
 Versions: `mighty-1` (2026-10, P0); `mighty-2` (2026-10-05) adds how a
-failed contract is scored (`rules.scoring.lose`). Belief v1 and every
-dataset before 2026-10-05 are `mighty-1`; run them at a commit before
-the change.
+failed contract is scored (`rules.scoring.lose`); `mighty-3` (2026-10-05,
+faster 딜미스) drops the misdeal round (`phase=misdeal_round` and the
+`kind=no_misdeal` events), since a misdeal is now called from the deal,
+out of turn, and 기본 has no round of answers. Belief v1 and every
+dataset before 2026-10-05 are `mighty-1`; data and models from the
+`mighty-2` days (such as a training run started then) need a commit
+before the `mighty-3` change.
 
 `ml/` reads the same pinned spec (`crates/mighty/tests/encoding.json`), so
 the Python tests see the change too.

@@ -1,7 +1,7 @@
 //! What a room needs from a game beyond one hand: table size, how each hand
 //! is set up, and a bot to fill empty seats.
 
-use engine::{Bot, Game};
+use engine::{Bot, Game, Viewer};
 use mighty::Mighty;
 use mighty::bot::SimpleBot;
 use mighty::rules::{Preset, Rules};
@@ -58,7 +58,30 @@ pub trait SessionGame:
 
     /// How a finished hand went, in a word, for the stats.
     fn outcome(state: &Self::State) -> &'static str;
+
+    /// How long after the cards land `action` must wait, so nobody loses
+    /// an out-of-turn action ([`Game::out_of_turn_actions`]) to a fast
+    /// tap. Zero by default.
+    fn grace(_state: &Self::State, _action: &Self::Action) -> Duration {
+        Duration::ZERO
+    }
+
+    /// Whether a bot in `seat` takes one of its out-of-turn actions, and
+    /// which. The room asks once each deal, and plays the answer after a
+    /// short pause if it is still allowed then. None by default.
+    fn bot_out_of_turn(
+        _level: BotLevel,
+        _seat: usize,
+        _state: &Self::State,
+        _rng: &mut dyn RngCore,
+    ) -> Option<Self::Action> {
+        None
+    }
 }
+
+/// With `misdeal.ask_first`, the first bid waits this long after the deal,
+/// so a fast bid never beats a 딜미스 to the table.
+pub const FIRST_BID_GRACE: Duration = Duration::from_secs(2);
 
 /// How well a seated bot plays.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +206,33 @@ impl SessionGame for Mighty {
             Some(_) => "failed",
             None => "none",
         }
+    }
+
+    fn grace(state: &mighty::State, action: &mighty::Action) -> Duration {
+        let first_bid = matches!(action, mighty::Action::Bid(_)) && state.before_first_bid();
+        if first_bid && state.rules().misdeal.ask_first {
+            FIRST_BID_GRACE
+        } else {
+            Duration::ZERO
+        }
+    }
+
+    /// A misdeal, when the seat's 보통 bot would call one were it its turn
+    /// to bid. Every level decides as 보통 does: the 고수 bot's search
+    /// plays the seat whose turn it is, which this seat is not.
+    fn bot_out_of_turn(
+        _level: BotLevel,
+        seat: usize,
+        state: &mighty::State,
+        rng: &mut dyn RngCore,
+    ) -> Option<mighty::Action> {
+        let misdeal = mighty::Action::Misdeal;
+        if !Mighty::out_of_turn_actions(state, seat).contains(&misdeal) {
+            return None;
+        }
+        let view = Mighty::view(state, Viewer::Seat(seat));
+        let choice = Self::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &state.bids_as(seat), rng);
+        (choice == misdeal).then_some(misdeal)
     }
 }
 

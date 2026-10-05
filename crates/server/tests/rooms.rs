@@ -518,3 +518,117 @@ async fn a_hand_left_unfinished_when_the_table_closes_counts_as_abandoned() {
     assert_eq!(s.totals.hands_abandoned, 1);
     assert_eq!(s.totals.hands_finished, 0);
 }
+
+/// Five people at a `preset` table where every hand may be thrown in, the
+/// first hand dealt; returns their sockets, by seat, and each one's state.
+async fn misdeal_table(addr: SocketAddr, preset: &str) -> (Vec<Socket>, Vec<Value>) {
+    let room = create_room(addr, preset).await;
+    let (_, rules) = http(addr, "GET", &format!("/api/presets/{preset}"), "").await;
+    let mut rules: Value = serde_json::from_str(&rules).unwrap();
+    rules["misdeal"]["threshold"] = json!(100);
+    let mut players = Vec::new();
+    for name in ["A", "B", "C", "D", "E"] {
+        let mut ws = connect(addr, &room).await;
+        let (seat, _) = join(&mut ws, name, None).await;
+        assert_eq!(seat as usize, players.len());
+        players.push(ws);
+    }
+    let settings = json!({ "preset": preset, "rules": rules });
+    send(&mut players[0], json!({ "type": "set_settings", "settings": settings })).await;
+    next_where(&mut players[0], "room", |r| r["settings"]["rules"].is_object()).await;
+    send(&mut players[0], json!({ "type": "start" })).await;
+    let states = next_states(&mut players).await;
+    (players, states)
+}
+
+/// The next state each seat is sent.
+async fn next_states(players: &mut [Socket]) -> Vec<Value> {
+    let mut out = Vec::new();
+    for ws in players.iter_mut() {
+        out.push(next(ws, "state").await);
+    }
+    out
+}
+
+fn to_act(state: &Value) -> usize {
+    state["turn"]["Seat"].as_u64().expect("a seat is to act") as usize
+}
+
+#[tokio::test]
+async fn anyone_may_call_a_misdeal_out_of_turn_while_their_window_is_open() {
+    let addr = spawn_server().await;
+    let (mut players, states) = misdeal_table(addr, "gshs").await;
+    let turn = to_act(&states[0]);
+    let other = (turn + 1) % 5;
+    assert_eq!(states[other]["out_of_turn"], json!(["Misdeal"]));
+    assert_eq!(states[turn]["out_of_turn"], json!([]));
+    assert!(states[turn]["legal"].as_array().unwrap().contains(&json!("Misdeal")));
+    assert_eq!(states[turn]["grace_ms"], 0, "경기과고 bids at once");
+
+    // A seat that is not to act throws the deal in.
+    send(&mut players[other], json!({ "type": "act", "action": "Misdeal" })).await;
+    let states = next_states(&mut players).await;
+    for state in &states {
+        assert_eq!(state["view"]["redealt"]["why"]["Misdeal"]["seat"], other);
+    }
+
+    // Once a seat has bid, its window is closed.
+    let turn = to_act(&states[0]);
+    let bid = states[turn]["legal"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a.get("Bid").is_some())
+        .unwrap()
+        .clone();
+    send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
+    let states = next_states(&mut players).await;
+    assert_eq!(states[turn]["out_of_turn"], json!([]));
+    send(&mut players[turn], json!({ "type": "act", "action": "Misdeal" })).await;
+    assert_eq!(
+        next(&mut players[turn], "error").await["message"],
+        "it is not your turn"
+    );
+    // Nor may a seat take a turn action out of turn.
+    let other = (to_act(&states[0]) + 1) % 5;
+    send(&mut players[other], json!({ "type": "act", "action": "Pass" })).await;
+    assert_eq!(
+        next(&mut players[other], "error").await["message"],
+        "it is not your turn"
+    );
+}
+
+#[tokio::test]
+async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
+    let addr = spawn_server().await;
+    let (mut players, states) = misdeal_table(addr, "default").await;
+    let turn = to_act(&states[0]);
+    let grace = states[turn]["grace_ms"].as_u64().unwrap();
+    assert!(grace > 1000 && grace <= 2000, "{grace}");
+    let bid = states[turn]["legal"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a.get("Bid").is_some())
+        .unwrap()
+        .clone();
+    send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
+    assert_eq!(
+        next(&mut players[turn], "error").await["message"],
+        "wait a moment after the deal"
+    );
+    let other = (turn + 2) % 5;
+    assert_eq!(states[other]["out_of_turn"], json!(["Misdeal"]));
+
+    tokio::time::sleep(Duration::from_millis(grace + 50)).await;
+    send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
+    let states = next_states(&mut players).await;
+    assert_eq!(states[0]["view"]["bids"].as_array().unwrap().len(), 1);
+    // The first bid closed every window.
+    assert!(states.iter().all(|s| s["out_of_turn"] == json!([])));
+    send(&mut players[other], json!({ "type": "act", "action": "Misdeal" })).await;
+    assert_eq!(
+        next(&mut players[other], "error").await["message"],
+        "it is not your turn"
+    );
+}

@@ -18,6 +18,7 @@
     seal,
     twoJokers,
     deal = false,
+    quickDeal = false,
     onplay,
     ontoggle,
     onrefuse,
@@ -35,6 +36,8 @@
     twoJokers: boolean;
     /** Play the dealing-in animation. */
     deal?: boolean;
+    /** Deal in half the time (a redeal). */
+    quickDeal?: boolean;
     onplay?: (card: CardT) => void;
     ontoggle?: (card: CardT) => void;
     /** A card that cannot be played was tapped; say why. */
@@ -142,6 +145,7 @@
 <div
   class="hand"
   class:deal
+  class:quick={quickDeal}
   class:choose={mode === 'choose'}
   class:two={rows.length > 1}
   style:--row-h="{Math.round(cardWidth * 1.4)}px"
@@ -217,6 +221,10 @@
   .deal .spot {
     animation: deal-in var(--dur-travel) var(--ease-settle) both;
     animation-delay: calc(var(--i) * 45ms);
+  }
+  .deal.quick .spot {
+    animation-duration: calc(var(--dur-travel) / 2);
+    animation-delay: calc(var(--i) * 22ms);
   }
   /* Dealt cards land a little crooked and straighten, as on a real table. */
   /* Cards from the kitty drop into the hand once. */

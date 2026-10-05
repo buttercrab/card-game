@@ -7,7 +7,7 @@
 //! [`JsonGame`]; the JSON plumbing is shared, so every game behaves the
 //! same at this boundary.
 
-use crate::{Game, Turn, Viewer};
+use crate::{Game, Seat, Turn, Viewer};
 use rand::RngCore;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -92,6 +92,14 @@ pub trait DynState: Send + Sync + Debug {
 
     /// See [`Game::apply`]; on error the state is unchanged.
     fn apply(&mut self, action: &Value) -> Result<(), DynError>;
+
+    /// See [`Game::out_of_turn_actions`].
+    fn out_of_turn_actions(&self, seat: Seat) -> Vec<Value>;
+
+    /// See [`Game::apply_out_of_turn`]; an action not in
+    /// [`DynState::out_of_turn_actions`] is refused, and on error the state
+    /// is unchanged.
+    fn apply_out_of_turn(&mut self, seat: Seat, action: &Value) -> Result<(), DynError>;
 
     /// See [`Game::view`].
     fn view(&self, viewer: Viewer) -> Value;
@@ -205,6 +213,18 @@ impl<G: JsonGame> DynState for Hand<G> {
         G::apply(&mut self.state, action).map_err(|e| DynError::Game(e.to_string()))
     }
 
+    fn out_of_turn_actions(&self, seat: Seat) -> Vec<Value> {
+        G::out_of_turn_actions(&self.state, seat).iter().map(to_json).collect()
+    }
+
+    fn apply_out_of_turn(&mut self, seat: Seat, action: &Value) -> Result<(), DynError> {
+        let action: G::Action = parse("action", action)?;
+        if !G::out_of_turn_actions(&self.state, seat).contains(&action) {
+            return Err(DynError::Game(format!("seat {seat} may not take {action:?} now")));
+        }
+        G::apply_out_of_turn(&mut self.state, seat, action).map_err(|e| DynError::Game(e.to_string()))
+    }
+
     fn view(&self, viewer: Viewer) -> Value {
         to_json(&G::view(&self.state, viewer))
     }
@@ -262,7 +282,6 @@ impl Debug for Registry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Seat;
     use serde::Deserialize;
     use serde_json::json;
 
@@ -404,6 +423,9 @@ mod tests {
         assert!(matches!(hand.apply(&json!("two")), Err(DynError::Json { .. })));
         assert_eq!(hand.apply(&json!(3)), Err(DynError::Game("illegal".into())));
         assert_eq!(hand.view(Viewer::Seat(0)), json!(0), "a refused action changes nothing");
+        assert!(hand.out_of_turn_actions(1).is_empty(), "none by default");
+        assert!(matches!(hand.apply_out_of_turn(1, &json!(1)), Err(DynError::Game(_))));
+        assert_eq!(hand.view(Viewer::Seat(0)), json!(0));
     }
 
     #[test]

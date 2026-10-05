@@ -21,7 +21,7 @@ filled in from other rulesets. Each rule and how it is expressed
 | Mighty ♠A (♦A when ♠ is trump), joker call ♣3 (♠3 when ♣ is trump); 노기루다: ♠A and ♣3 | As everywhere |
 | Counterclockwise play | Seat numbers rise in playing order; the table draws them counterclockwise |
 | Deal 1-2-3-4 from the dealer's right, 3 face down | One shuffled deal; the order of handing out does not change what anyone gets |
-| Misdeal: everyone answers at once, nearest the dealer (dealer first) wins | `misdeal.ask_first`: from the dealer round, answers in turn and hidden; the first "misdeal" ends the round. The same caller wins as if all answered at once, and a later answer only ever matters when everyone before said no |
+| Misdeal: everyone answers at once, nearest the dealer (dealer first) wins | `misdeal.ask_first`: anyone whose hand qualifies may call it from the moment the cards land until the first bid, on their turn or not; the first call to reach the table wins. The server holds the first bid back 2 s after the deal so nobody loses the chance to a fast bid (owner, 2026-10-05: this replaced a seat-by-seat round of 딜미스 / 딜미스 아님 from the dealer) |
 | Misdeal value ≤ ½: J, Q, K, A 1, 10 ½, ♠A 0, joker −1 | Doubled: `point_value` 2, tens 1, ♠A 0, `joker_value` −2, `threshold` 1 |
 | Misdeal caller shows the hand and deals next | `Redeal::Misdeal` shows it; `misdeal.caller_deals` |
 | Dealer bids first; difficulty = count, +1 for 노기루다; count ≤ 20 | `first_bidder` is the dealer; `no_trump_bonus` 1, `no_trump_wins_ties` off, `max` 20 |
@@ -52,8 +52,8 @@ Not expressible or left to others:
   seat 0 (it already shuffles nobody's seat, so this only names who
   deals first).
 - The face-down point piles are for the table UI.
-- The web table shows the misdeal round as 딜미스 / 딜미스 아님, the
-  dealer's extra turn, `Raise` beside the trump change, and says when the
+- The web table shows a 딜미스 button from the deal to whoever may call
+  one, the dealer's extra turn, `Raise` beside the trump change, and says when the
   discards stay hidden; the rule editor has every option above except the
   player-count ones (`lowest_rank`, `extra_cards`), since the table seats
   five and a five-player deck needs all 53 cards.
@@ -76,9 +76,20 @@ Not expressible or left to others:
      `no_trump_wins_ties`, no-trump wins a tie; otherwise a bid must rank
      strictly higher. Which applies is a local rule.
    - A player whose hand qualifies under `misdeal` may ask for a redeal
-     before they have bid, or on any turn of theirs with
-     `misdeal.after_bidding`. `misdeal.all_points` also lets a hand of
-     nothing but point cards qualify.
+     (딜미스) from the moment the cards land, on their turn or not
+     (`Game::out_of_turn_actions`), until they bid or pass; with
+     `misdeal.after_bidding`, all through the bidding until they pass.
+     With `misdeal.ask_first` anyone may until the first bid, and nobody
+     after it; the server then holds the first bid back 2 s after the
+     deal, bots' too. A seat that has passed has had its say.
+     `misdeal.all_points` also lets a hand of nothing but point cards
+     qualify. The learning environment, the simulator and the evals play
+     turn by turn: there a misdeal is offered on the seat's own turn only.
+   - Whoever calls it shows the hand to everyone; the deal is thrown in
+     and dealt again (`Redeal::Misdeal`), by the caller with
+     `misdeal.caller_deals`. Bots decide once, right after the deal, as
+     their 보통 policy would on its turn, and call it after a short
+     pause.
    - When one bidder is left, they become the declarer. A bid nobody can
      top (풀노, or the top bid wherever no-trump cannot beat it) makes its
      bidder declarer at once, so nobody can throw the deal in after it.
@@ -231,6 +242,17 @@ the friend's share with a friend, four times alone):
 - A failed contract pays back what it would have won made exactly, plus
   the shortfall ([실패 배상](#실패-배상-the-schools-loss); owner,
   2026-10-05).
+- A joker led on the first trick may name trump (owner, 2026-10-05:
+  keep as coded). It is powerless there, but whoever holds trump must
+  follow with it.
+- A leader holding 9 trumps and the mighty may lead trump on the first
+  trick (owner, 2026-10-05: keep as coded): with nothing but trump,
+  jokers and the mighty, trump is released.
+
+## Decided (owner, 2026-10-05)
+
+- A leader may call for a joker they hold themselves (조커콜 as a bluff).
+  It stays legal; it calls nothing out, since the holder is the leader.
 
 ## Still open
 
@@ -263,7 +285,7 @@ presets build on; 기본 is described in its own section above.
 | 4마 | 5 to A + joker + ♣3, ♠3 (43); local min 14–15 | `for_players(4)`; minimum unchanged | Added (engine and sim only) |
 | 6마, 7마 | Main: 5마 with the dealer sitting out; 대전/동대전: 8 each + 5 down, 7 each + 4 down, 7마 calls two friend cards | `for_players(6/7)` deals 8/7 each with one friend | Added in part; sitting out is a server seating rule, two friends missing |
 | Misdeal hand | No point cards; local: only a 10, only one point card, joker + one point card, all ten point cards | Weighted count and threshold; `misdeal.all_points` new | Matches; all-points added (off everywhere; 나무위키 has it for 서울과고 and 신촌) |
-| When to call misdeal | On your turn to bid, even after bidding (4.3 and its footnote) | Before you have bid; `misdeal.after_bidding` | Differs by default; option added |
+| When to call misdeal | On your turn to bid, even after bidding (4.3 and its footnote) | Any time from the deal until you bid or pass, turn or not; `misdeal.after_bidding`; `ask_first`: until the first bid | Differs by default (owner, 2026-10-05); option added |
 | Declarer's misdeal | Declarer holding 13 cards with no point card may call it | `misdeal.declarer` | Added, off everywhere |
 | Misdeal penalty | Caller −5 into a pot the next winning 여당 shares 3:2; all-pass −1 or 0 | Nothing: payoffs are per hand | Missing (needs session scoring) |
 | First bid | Dealer must open (local: may pass) | `first_bidder_may_pass` on by default; off for dshs, yonsei | Differs by default (judgement call) |

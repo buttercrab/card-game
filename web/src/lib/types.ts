@@ -103,8 +103,8 @@ export interface Rules {
     after_bidding?: boolean;
     /** The declarer may ask after taking the kitty, before discarding. */
     declarer?: boolean;
-    /** Everyone answers before any bid, from the first bidder on; no
-     * misdeal later. */
+    /** Anyone may call it until the first bid, and the first bid waits a
+     * moment after the deal; no misdeal later. */
     ask_first?: boolean;
     /** Whoever calls the misdeal opens the new deal's bidding. */
     caller_deals?: boolean;
@@ -161,9 +161,6 @@ export type PhaseView =
         best: [number, Contract] | null;
         passed: boolean[];
         has_bid: boolean[];
-        /** Everyone is answering whether they call a misdeal before any
-         * bid; 'Pass' now means "no misdeal". Older servers leave this out. */
-        asking_misdeal?: boolean;
       };
     }
   | {
@@ -273,6 +270,12 @@ export interface StateMsg {
   view: View;
   legal: Action[];
   turn: Turn;
+  /** What this seat may do although it is not its turn: 'Misdeal' from
+   * the moment the cards land, for a hand that qualifies. */
+  out_of_turn?: Action[];
+  /** How long, in ms, the slowest legal action must still wait after the
+   * deal (the first bid where 딜미스 comes first). */
+  grace_ms?: number;
 }
 
 export type ServerMsg =

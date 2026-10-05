@@ -21,9 +21,7 @@ Everything a group of friends notices in one evening. Play-test items first.
 
 ### 1.2 Faster 딜미스 (딜미스 빠르게)
 - **Owner, 2026-10-05:** a 딜미스 button from the moment the cards land, for anyone whose hand qualifies, instead of waiting for your turn to bid. It replaces the seat-by-seat asking round. In presets where 딜미스 must come before any bid, the window closes at the first bid, and the first bid waits a short moment after the deal so nobody loses the chance to a fast tap.
-- **Asking round** (presets with `misdeal.ask_first`):
-  - A seat whose hand can't be thrown in answers 딜미스 아님 by itself after a short fixed pause. The pause is the same for every seat, so it gives nothing away.
-  - Bots answer on that same pause, not at their thinking pace.
+- **Asking round:** removed; anyone may call 딜미스 out of turn while their window is open (done, encoding `mighty-3`).
 - **The thrown-in hand** stays up until the next deal lands, or for at most 4 s, instead of 8 s.
 - **The redeal animation** is shortened to about half.
 - **Bots** call 딜미스 only on hands they wouldn't bid on. This was the biggest cause of repeated redeals: 보통 redealt about once per hand on 경기과고 (review: bots).

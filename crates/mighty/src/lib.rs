@@ -56,6 +56,14 @@ impl Game for Mighty {
         state.apply(action)
     }
 
+    fn out_of_turn_actions(state: &State, seat: engine::Seat) -> Vec<Action> {
+        state.out_of_turn_actions(seat)
+    }
+
+    fn apply_out_of_turn(state: &mut State, seat: engine::Seat, action: Action) -> Result<(), Error> {
+        state.apply_out_of_turn(seat, action)
+    }
+
     fn view(state: &State, viewer: Viewer) -> View {
         View::new(state, viewer)
     }

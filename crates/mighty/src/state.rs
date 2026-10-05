@@ -122,9 +122,6 @@ pub(crate) struct Bidding {
     pub best: Option<(Seat, Contract)>,
     pub passed: Vec<bool>,
     pub has_bid: Vec<bool>,
-    /// Everyone is still answering whether they call a misdeal, before
-    /// any bid (`misdeal.ask_first`).
-    pub asking: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,7 +284,6 @@ impl State {
             best: None,
             passed: vec![false; n],
             has_bid: vec![false; n],
-            asking: self.rules.misdeal.ask_first,
         });
         Ok(())
     }
@@ -320,22 +316,71 @@ impl State {
         }
     }
 
+    /// Whether `seat` may throw the deal in now, on their turn or not:
+    /// their hand qualifies, they are still in the bidding (a pass has had
+    /// its say), and the window is open. With `misdeal.ask_first` it stays
+    /// open for everyone until the first bid; otherwise until the seat
+    /// itself bids, or all through the bidding with
+    /// `misdeal.after_bidding`.
+    fn may_misdeal(&self, b: &Bidding, seat: Seat) -> bool {
+        let misdeal = &self.rules.misdeal;
+        let open = if misdeal.ask_first {
+            b.best.is_none()
+        } else {
+            !b.has_bid[seat] || misdeal.after_bidding
+        };
+        open && !b.passed[seat] && self.rules.is_misdeal(&self.hands[seat])
+    }
+
+    /// See [`engine::Game::out_of_turn_actions`]: a misdeal, from the
+    /// moment the cards land, for a seat that may call one.
+    pub(crate) fn out_of_turn_actions(&self, seat: Seat) -> Vec<Action> {
+        match &self.phase {
+            Phase::Bidding(b) if seat < self.seats() && seat != b.to_act && self.may_misdeal(b, seat) => {
+                vec![Action::Misdeal]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn apply_out_of_turn(&mut self, seat: Seat, action: Action) -> Result<(), Error> {
+        if !self.out_of_turn_actions(seat).contains(&action) {
+            return Err(Error::Illegal(action));
+        }
+        self.step(seat, action);
+        Ok(())
+    }
+
+    /// The rules this hand is played by.
+    pub fn rules(&self) -> &Rules {
+        &self.rules
+    }
+
+    /// Whether the bidding is on and nobody has bid yet (passes aside).
+    pub fn before_first_bid(&self) -> bool {
+        matches!(&self.phase, Phase::Bidding(b) if b.best.is_none())
+    }
+
+    /// What `seat` could do were it their turn to bid now. Bots use it to
+    /// decide on a misdeal out of turn as they would on their turn.
+    pub fn bids_as(&self, seat: Seat) -> Vec<Action> {
+        match &self.phase {
+            Phase::Bidding(b) if seat < self.seats() && !b.passed[seat] => {
+                let b = Bidding {
+                    to_act: seat,
+                    ..b.clone()
+                };
+                self.legal_bids(&b)
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn legal_bids(&self, b: &Bidding) -> Vec<Action> {
         let bidding = &self.rules.bidding;
-        let misdeal = &self.rules.misdeal;
         let mut actions = Vec::new();
-        let may_misdeal = if misdeal.ask_first {
-            b.asking
-        } else {
-            !b.has_bid[b.to_act] || misdeal.after_bidding
-        };
-        if may_misdeal && self.rules.is_misdeal(&self.hands[b.to_act]) {
+        if self.may_misdeal(b, b.to_act) {
             actions.push(Action::Misdeal);
-        }
-        if b.asking {
-            // Passing here answers "no misdeal".
-            actions.push(Action::Pass);
-            return actions;
         }
         let min = if self.last_chance(b) {
             bidding.last_chance_min.unwrap_or(bidding.min)
@@ -478,13 +523,6 @@ impl State {
 
     fn step_bidding(&mut self, mut b: Bidding, seat: Seat, action: Action) -> Phase {
         let n = self.seats();
-        if b.asking {
-            // Nobody called a misdeal so far; once everyone has answered,
-            // the bidding starts with the first bidder.
-            b.to_act = (seat + 1) % n;
-            b.asking = b.to_act != self.first_bidder;
-            return Phase::Bidding(b);
-        }
         let contract = match action {
             Action::Pass => {
                 b.passed[seat] = true;
@@ -802,9 +840,6 @@ impl State {
                 let passes = counted.iter().filter(|bid| bid.contract.is_none()).count();
                 // On the first bidder's extra turn, their pass no longer counts.
                 let passes = passes - usize::from(self.last_chance(b));
-                if b.asking && (!self.bids.is_empty() || !self.rules.misdeal.ask_first) {
-                    return Err("still asking about misdeals after a bid".into());
-                }
                 if last != b.best || passes != b.passed.iter().filter(|p| **p).count() {
                     return Err("the bidding record disagrees with the bidding".into());
                 }

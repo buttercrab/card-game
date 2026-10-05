@@ -40,6 +40,7 @@ const ERRORS: [RegExp, string][] = [
   [/every seat needs/, '빈 자리를 먼저 채워 주세요'],
   [/pick a name/, '이름을 적어 주세요'],
   [/illegal action/, '지금은 그렇게 할 수 없어요'],
+  [/wait a moment after the deal/, '딜미스할 사람이 있는지 잠깐 기다려요'],
   [/only between hands/, '규칙은 판과 판 사이에만 바꿀 수 있어요'],
   [/bidding range is empty/, '공약 최소가 최대보다 클 수 없어요'],
   [/no-trump bonus/, '노기루다 보너스는 최소 공약보다 작아야 해요'],

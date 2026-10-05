@@ -82,6 +82,13 @@ pub enum Command {
     Shutdown {
         done: tokio::sync::oneshot::Sender<()>,
     },
+    /// A bot's out-of-turn action (a boxed `G::Action`), decided when deal
+    /// number `deal` landed.
+    BotOutOfTurn {
+        deal: u64,
+        seat: usize,
+        action: Box<dyn Any + Send>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -179,6 +186,7 @@ pub struct Room<G: SessionGame> {
     /// The current hand, or the last one once it is over.
     game: Option<G::State>,
     /// Every action of `game` so far, deals included, so it can be replayed.
+    /// An out-of-turn action is logged as `{"out_of_turn": {seat, action}}`.
     log: Vec<Value>,
     /// The session hand number `game` was dealt as.
     hand_no: u32,
@@ -204,6 +212,12 @@ pub struct Room<G: SessionGame> {
     stats: Option<Arc<Stats>>,
     /// When the current hand was dealt, in Unix seconds, if known.
     hand_started: Option<u64>,
+    /// When the cards last landed, for [`SessionGame::grace`]; unknown
+    /// after a restart, when any grace is long over.
+    dealt_at: Option<Instant>,
+    /// Deals so far, so a bot's out-of-turn action for an earlier deal is
+    /// dropped.
+    deals: u64,
 }
 
 impl<G: SessionGame> Room<G> {
@@ -236,6 +250,8 @@ impl<G: SessionGame> Room<G> {
             me: None,
             stats: None,
             hand_started: None,
+            dealt_at: None,
+            deals: 0,
         }
     }
 
@@ -428,9 +444,16 @@ impl<G: SessionGame> Room<G> {
             let options = G::hand_options(&room.settings, hand.number, room.last_hand(hand.number));
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
             for (i, entry) in hand.actions.iter().enumerate() {
-                let action: G::Action =
-                    serde_json::from_value(entry.clone()).map_err(|e| format!("action {i}: {e}"))?;
-                G::apply(&mut game, action).map_err(|e| format!("action {i}: {e}"))?;
+                let parse =
+                    |v: &Value| serde_json::from_value::<G::Action>(v.clone()).map_err(|e| format!("action {i}: {e}"));
+                let applied = match entry.get("out_of_turn") {
+                    Some(o) => {
+                        let seat = o["seat"].as_u64().ok_or(format!("action {i}: no seat"))? as usize;
+                        G::apply_out_of_turn(&mut game, seat, parse(&o["action"])?)
+                    }
+                    None => G::apply(&mut game, parse(entry)?),
+                };
+                applied.map_err(|e| format!("action {i}: {e}"))?;
             }
             room.game = Some(game);
             room.log = hand.actions;
@@ -488,6 +511,11 @@ impl<G: SessionGame> Room<G> {
             }
             // Handled by `run`, which ends the room.
             Command::Shutdown { .. } => return,
+            Command::BotOutOfTurn { deal, seat, action } => {
+                if !self.bot_out_of_turn(deal, seat, action) {
+                    return;
+                }
+            }
         }
         self.broadcast();
     }
@@ -640,10 +668,16 @@ impl<G: SessionGame> Room<G> {
             ClientMsg::Act { action } => {
                 let seat = my_seat.ok_or("you are not seated")?;
                 let game = self.game.as_mut().ok_or("no hand in progress")?;
-                if G::turn(game) != Turn::Seat(seat) {
-                    return Err("it is not your turn".into());
-                }
                 let action: G::Action = serde_json::from_value(action).map_err(|e| format!("bad action: {e}"))?;
+                if G::turn(game) != Turn::Seat(seat) {
+                    if !G::out_of_turn_actions(game, seat).contains(&action) {
+                        return Err("it is not your turn".into());
+                    }
+                    return self.out_of_turn(seat, action);
+                }
+                if self.dealt_at.is_some_and(|t| t.elapsed() < G::grace(game, &action)) {
+                    return Err("wait a moment after the deal".into());
+                }
                 let logged = log_action(&action);
                 let entry = serde_json::to_value(&action).map_err(|e| e.to_string())?;
                 G::apply(game, action).map_err(|e| e.to_string())?;
@@ -653,6 +687,18 @@ impl<G: SessionGame> Room<G> {
                 Ok(())
             }
         }
+    }
+
+    /// Applies `seat`'s out-of-turn action, already known to be allowed.
+    fn out_of_turn(&mut self, seat: usize, action: G::Action) -> Result<(), String> {
+        let game = self.game.as_mut().ok_or("no hand in progress")?;
+        let logged = log_action(&action);
+        let entry = json!({ "out_of_turn": { "seat": seat, "action": action } });
+        G::apply_out_of_turn(game, seat, action).map_err(|e| e.to_string())?;
+        self.log.push(entry);
+        tracing::info!(room = %self.id, seat, action = %logged, "out-of-turn move");
+        self.advance();
+        Ok(())
     }
 
     fn join(
@@ -758,6 +804,13 @@ impl<G: SessionGame> Room<G> {
         let forced = if legal.len() == 1 { 0.5 } else { 1.0 };
         let jitter = self.rng.random_range(0.8..1.2);
         let delay = self.bot_delay.mul_f32(pace(level) * forced * jitter);
+        // A move that must wait after the deal waits a little past it.
+        let grace = legal.iter().map(|a| G::grace(game, a)).max().unwrap_or_default();
+        let waited = self.dealt_at.map_or(grace, |t| t.elapsed());
+        let delay = match grace.checked_sub(waited) {
+            Some(left) if !left.is_zero() => delay.max(left + Duration::from_millis(300)),
+            _ => delay,
+        };
         // Bots wait out the delay anyway so people can follow along; spend
         // most of it thinking, leaving a little for the move to travel.
         let think = delay.mul_f32(0.8);
@@ -827,16 +880,64 @@ impl<G: SessionGame> Room<G> {
         true
     }
 
+    /// Applies a bot's out-of-turn action if it is still allowed. Returns
+    /// whether it did.
+    fn bot_out_of_turn(&mut self, deal: u64, seat: usize, action: Box<dyn Any + Send>) -> bool {
+        let Ok(action) = action.downcast::<G::Action>() else {
+            return false;
+        };
+        let allowed = self
+            .game
+            .as_ref()
+            .is_some_and(|g| G::out_of_turn_actions(g, seat).contains(&*action));
+        if deal != self.deals || !matches!(self.seats[seat], Occupant::Bot { .. }) || !allowed {
+            return false;
+        }
+        self.out_of_turn(seat, *action).is_ok()
+    }
+
+    /// Right after a deal, each bot decides once whether to act out of
+    /// turn (a 딜미스), and does so after a short pause, as a person would.
+    fn plan_out_of_turn(&mut self) {
+        let Some(tx) = self.me.as_ref().and_then(WeakUnboundedSender::upgrade) else {
+            return;
+        };
+        let Some(game) = self.game.as_ref() else { return };
+        for seat in 0..self.seats.len() {
+            let Occupant::Bot { level } = self.seats[seat] else {
+                continue;
+            };
+            let Some(action) = G::bot_out_of_turn(level, seat, game, &mut self.rng) else {
+                continue;
+            };
+            let pause = self.bot_delay.mul_f32(self.rng.random_range(1.0..1.5));
+            let (tx, deal) = (tx.clone(), self.deals);
+            tokio::spawn(async move {
+                tokio::time::sleep(pause).await;
+                let action: Box<dyn Any + Send> = Box::new(action);
+                let _ = tx.send(Command::BotOutOfTurn { deal, seat, action });
+            });
+        }
+    }
+
     /// Plays chance actions and books the score when the hand ends.
     fn advance(&mut self) {
         self.version += 1;
         let Some(game) = self.game.as_mut() else { return };
+        let mut dealt = false;
         while G::turn(game) == Turn::Chance {
             let deal = G::sample_chance(game, &mut self.rng);
             tracing::info!(room = %self.id, action = %log_action(&deal), "deal");
             self.log.push(serde_json::to_value(&deal).expect("actions serialize"));
             G::apply(game, deal).expect("a sampled chance action is legal");
+            dealt = true;
         }
+        if dealt {
+            self.deals += 1;
+            self.dealt_at = Some(Instant::now());
+            self.plan_out_of_turn();
+        }
+        let Some(game) = self.game.as_mut() else { return };
         if G::turn(game) == Turn::Over
             && let Some(payoffs) = G::payoffs(game)
         {
@@ -892,16 +993,25 @@ impl<G: SessionGame> Room<G> {
         }
     }
 
-    /// The hand as `seat` may see it, with its legal actions on its turn.
+    /// The hand as `seat` may see it, with its legal actions on its turn
+    /// and what it may do out of turn otherwise. `grace_ms` is how long
+    /// the slowest of its legal actions must still wait after the deal.
     fn state_message(&self, seat: Option<usize>) -> Option<Value> {
         let game = self.game.as_ref()?;
         let viewer = seat.map_or(Viewer::Spectator, Viewer::Seat);
         let turn = G::turn(game);
-        let legal = match seat {
-            Some(s) if turn == Turn::Seat(s) => G::legal_actions(game),
-            _ => Vec::new(),
+        let (legal, out_of_turn) = match seat {
+            Some(s) if turn == Turn::Seat(s) => (G::legal_actions(game), Vec::new()),
+            Some(s) => (Vec::new(), G::out_of_turn_actions(game, s)),
+            None => (Vec::new(), Vec::new()),
         };
-        Some(json!({ "type": "state", "view": G::view(game, viewer), "legal": legal, "turn": turn }))
+        let grace = legal.iter().map(|a| G::grace(game, a)).max().unwrap_or_default();
+        let waited = self.dealt_at.map_or(grace, |t| t.elapsed());
+        let grace_ms = grace.saturating_sub(waited).as_millis() as u64;
+        Some(json!({
+            "type": "state", "view": G::view(game, viewer), "legal": legal, "turn": turn,
+            "out_of_turn": out_of_turn, "grace_ms": grace_ms,
+        }))
     }
 
     fn send(&self, conn: ConnId, message: &Value) {
