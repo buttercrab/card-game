@@ -1,0 +1,15 @@
+{
+  "suite": "think-gshs",
+  "game": "mighty",
+  "about": "Head-to-head on 경기과고 (gshs): the bot and its baseline each in the measured seat on the same 2250 deals (seats rotated over players² deals) against four of the table's 고수. For think-time studies with clock-bound bots; not a scoreboard.",
+  "matches": [
+    {
+      "name": "경기과고",
+      "rules": "gshs",
+      "field": "hard",
+      "seed": 60000000,
+      "deals": 2250,
+      "quick_deals": 5
+    }
+  ]
+}
