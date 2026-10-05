@@ -5,6 +5,7 @@ runs nothing, and a clock the test moves."""
 import copy
 import json
 import shutil
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -175,3 +176,38 @@ class FakeHost:
     def end(self, record: StepRecord, code: Poll) -> None:
         assert record.pid is not None
         self.polls[record.pid] = code
+
+
+CHECKED_BOTS: dict[str, tuple[str, bool]] = {
+    # The specs the tests use.
+    "search:400:1:0": ("search", True),
+    "search:200:1:150": ("search", False),
+    "search:60000:1:2400@threads=12": ("search", False),
+    "search": ("search", False),
+    "search:400": ("search", False),
+    "normal": ("simple", True),
+    "hybrid:{artifacts}/models/m:40": ("hybrid", True),
+    "dmc:{artifacts}/models/m:2": ("dmc", True),
+    # The committed queue's.
+    "hard@endgame=3": ("search", True),
+    "hard@read.on=false": ("search", True),
+    "dmc:{artifacts}/models/dmc-v1": ("dmc", True),
+    "dmc:{artifacts}/models/dmc-v1:5": ("dmc", True),
+}
+"""What ``eval check-bot`` says of each spec the tests check, so that they
+need no build of ``eval``; one test runs the real one."""
+
+
+def fake_check_bot(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    """``eval check-bot --json -- BOT`` from ``CHECKED_BOTS``; a spec not
+    listed is an error, so a test cannot pass on a guess."""
+    assert argv[-4:-1] == ["check-bot", "--json", "--"], argv
+    bot = argv[-1]
+    if bot in CHECKED_BOTS:
+        kind, reproducible = CHECKED_BOTS[bot]
+        out = {"spec": bot, "kind": kind, "reproducible": reproducible, "reason": "stub"}
+        code = 0
+    else:
+        out = {"spec": bot, "error": f"{bot!r} is not in the tests' CHECKED_BOTS"}
+        code = 1
+    return subprocess.CompletedProcess(argv, code, json.dumps(out) + "\n", "")

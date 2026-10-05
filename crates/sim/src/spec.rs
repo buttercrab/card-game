@@ -51,10 +51,8 @@ impl FromStr for Spec {
             return belief(rest, settings);
         }
         if let Some(rest) = name.strip_prefix("dmc:") {
-            if !settings.is_empty() {
-                return Err(format!("{s}: a dmc bot takes no settings"));
-            }
-            return dmc(rest);
+            let (dir, temperature) = dmc(rest, settings)?;
+            return load_dmc(dir, temperature);
         }
         if let Some(rest) = name.strip_prefix("hybrid:") {
             return hybrid(rest, settings);
@@ -174,17 +172,24 @@ impl Which {
 /// played, and weighing its deals by them again counts that evidence
 /// twice (the `beliefs` example of `crates/infer` measures it).
 fn belief(rest: &str, settings: &str) -> Result<Spec, String> {
+    let (dir, mut spec) = belief_search(rest, settings)?;
+    let Kind::Search(bot) = &mut spec.kind else {
+        unreachable!("parsed as a search")
+    };
+    bot.sampler = load_belief(dir)?;
+    Ok(spec)
+}
+
+/// A `belief:` spec's model directory, and the search it is but for the
+/// model.
+fn belief_search<'a>(rest: &'a str, settings: &str) -> Result<(&'a str, Spec), String> {
     let (dir, samples) = rest
         .rsplit_once(':')
         .ok_or(format!("belief:{rest}: expected belief:MODEL_DIR:SAMPLES"))?;
     let samples: usize = samples.parse().map_err(|_| format!("bad sample count {samples:?}"))?;
     let mut spec: Spec = format!("search:{samples}:1:0@read.on=false,{settings}").parse()?;
-    let Kind::Search(bot) = &mut spec.kind else {
-        unreachable!("parsed as a search")
-    };
-    bot.sampler = load_belief(dir)?;
     spec.temper = true;
-    Ok(spec)
+    Ok((dir, spec))
 }
 
 /// The belief model in directory `dir`, checked to read Mighty's encoding.
@@ -216,7 +221,10 @@ fn load_belief(dir: &str) -> Result<Sampler, String> {
 /// (an exported `cardgame_ml.train.dmc` run), the legal action of highest
 /// value, or with a temperature in points drawn with probability
 /// proportional to `exp(value / temperature)`. No search, no seat temper.
-fn dmc(rest: &str) -> Result<Spec, String> {
+fn dmc<'a>(rest: &'a str, settings: &str) -> Result<(&'a str, f32), String> {
+    if !settings.is_empty() {
+        return Err(format!("dmc:{rest}@{settings}: a dmc bot takes no settings"));
+    }
     let (dir, temperature) = match rest.rsplit_once(':') {
         // A directory may hold a colon; a temperature is a number.
         Some((dir, t)) if t.parse::<f32>().is_ok() => (dir, t.parse::<f32>().unwrap_or_default()),
@@ -227,7 +235,7 @@ fn dmc(rest: &str) -> Result<Spec, String> {
             "dmc:{rest}: the temperature must be a number of points, at least 0"
         ));
     }
-    load_dmc(dir, temperature)
+    Ok((dir, temperature))
 }
 
 /// The Q network in directory `dir`, checked to read Mighty's encoding.
@@ -276,6 +284,20 @@ fn load_dmc(dir: &str, _temperature: f32) -> Result<Spec, String> {
 /// instead of playing them out (`leaf=end`, the default). Any search
 /// setting goes too (`read.*`, `threads`, `endgame`, weights).
 fn hybrid(rest: &str, settings: &str) -> Result<Spec, String> {
+    let h = hybrid_parts(rest, settings)?;
+    load_hybrid(h.dir, h.search, h.prior, h.baseline, h.leaf)
+}
+
+/// A `hybrid:` spec but for its network.
+struct Hybrid<'a> {
+    dir: &'a str,
+    search: SearchBot,
+    prior: usize,
+    baseline: mighty::hybrid::Baseline,
+    leaf: Option<usize>,
+}
+
+fn hybrid_parts<'a>(rest: &'a str, settings: &str) -> Result<Hybrid<'a>, String> {
     use mighty::hybrid::Baseline;
     let (dir, samples) = rest
         .rsplit_once(':')
@@ -304,7 +326,13 @@ fn hybrid(rest: &str, settings: &str) -> Result<Spec, String> {
     let Kind::Search(search) = spec.kind else {
         unreachable!("parsed as a search")
     };
-    load_hybrid(dir, search, prior, baseline, leaf)
+    Ok(Hybrid {
+        dir,
+        search,
+        prior,
+        baseline,
+        leaf,
+    })
 }
 
 #[cfg(feature = "dmc")]
@@ -352,6 +380,75 @@ fn check_encoding(dir: &str, spec: &engine::Spec) -> Result<(), String> {
         return Err(format!("{dir}: the model reads {}, not {}", spec.version, ours.version));
     }
     Ok(())
+}
+
+/// What a bot spec is, read without loading any model: for tools that
+/// must decide before a run (`eval check-bot`), on machines that may not
+/// hold the model yet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Check {
+    /// `random`, `simple`, `search`, `belief`, `dmc` or `hybrid`.
+    pub kind: &'static str,
+    /// Decides the same way in every run ([`Spec::reproducible`]).
+    pub reproducible: bool,
+    /// Why, in a few words.
+    pub reason: String,
+}
+
+/// Checks the spec `s` as [`Spec::from_str`] reads it, but for loading the
+/// model a `belief:`, `dmc:` or `hybrid:` bot names.
+pub fn check(s: &str) -> Result<Check, String> {
+    let (name, settings) = s.split_once('@').unwrap_or((s, ""));
+    let fixed = |samples: usize| format!("a fixed {samples} samples a decision, on no clock");
+    if let Some(rest) = name.strip_prefix("belief:") {
+        let (_, spec) = belief_search(rest, settings)?;
+        let Kind::Search(bot) = spec.kind else {
+            unreachable!("parsed as a search")
+        };
+        return Ok(Check {
+            kind: "belief",
+            reproducible: true,
+            reason: fixed(bot.samples),
+        });
+    }
+    if let Some(rest) = name.strip_prefix("dmc:") {
+        dmc(rest, settings)?;
+        return Ok(Check {
+            kind: "dmc",
+            reproducible: true,
+            reason: "plays by its network on no clock; a temperature draws from the seeded generator".into(),
+        });
+    }
+    if let Some(rest) = name.strip_prefix("hybrid:") {
+        let h = hybrid_parts(rest, settings)?;
+        return Ok(Check {
+            kind: "hybrid",
+            reproducible: true,
+            reason: fixed(h.search.samples),
+        });
+    }
+    let spec: Spec = s.parse()?;
+    let (kind, reason) = match spec.kind {
+        Kind::Random => ("random", "no search, no clock".to_string()),
+        Kind::Simple(_) | Kind::Clumsy(..) => ("simple", "rules, no search, no clock".to_string()),
+        Kind::Search(bot) => (
+            "search",
+            match bot.budget {
+                Some(budget) => format!(
+                    "thinks on a clock: stops after {} ms a decision (a budget of 0 searches a fixed number of samples)",
+                    budget.as_millis()
+                ),
+                None => fixed(bot.samples),
+            },
+        ),
+        #[cfg(feature = "dmc")]
+        Kind::Dmc(_) | Kind::Hybrid(_) => unreachable!("read above"),
+    };
+    Ok(Check {
+        kind,
+        reproducible: spec.reproducible(),
+        reason,
+    })
 }
 
 impl Spec {
@@ -539,6 +636,66 @@ mod tests {
         assert_eq!((bot.samples, bot.budget), (20, None));
         for bad in ["searchlight", "random:2", "simple:3", "hard:5"] {
             assert!(error(bad).contains("unknown bot"), "{bad}");
+        }
+    }
+
+    /// `check` reads a spec as `parse` does: the same kind and the same
+    /// verdict on the clock. Regression: the research loop's regex took
+    /// `search` and `search:400`, which keep the default 1 s budget, as
+    /// reproducible, and did not know `hybrid:`.
+    #[test]
+    fn checks_decide_reproducibility_from_the_parsed_spec() {
+        for (s, kind, reproducible) in [
+            ("random", "random", true),
+            ("simple@bid_base=7", "simple", true),
+            ("easy", "simple", true),
+            ("normal", "simple", true),
+            ("hard", "search", true),
+            ("hard@threads=4", "search", true),
+            ("search", "search", false),
+            ("search:400", "search", false),
+            ("search:400:1", "search", false),
+            ("search:400:1:0", "search", true),
+            ("search:400:0.9:0@threads=4,read.on=false", "search", true),
+            ("search:200:1:150", "search", false),
+            ("search:60000:1:2400@threads=12", "search", false),
+        ] {
+            let c = check(s).unwrap_or_else(|e| panic!("{s}: {e}"));
+            assert_eq!((c.kind, c.reproducible), (kind, reproducible), "{s}: {}", c.reason);
+            assert_eq!(c.reproducible, spec(s).reproducible(), "{s}");
+        }
+        assert!(check("search:400").unwrap().reason.contains("1000 ms"));
+        // Errors are the parser's.
+        assert!(check("random@bid_base=7").unwrap_err().contains("takes no settings"));
+        assert!(check("search:20:1:0:junk").unwrap_err().contains("extra"));
+    }
+
+    /// Model bots are checked without their model, which may not be on
+    /// this machine yet: the spec's own parts still are.
+    #[test]
+    fn model_bots_are_checked_without_loading_them() {
+        for (s, kind) in [
+            ("belief:/no/such/model:50", "belief"),
+            ("belief:/no/such/model:50@read.on=true,threads=2", "belief"),
+            ("dmc:{artifacts}/models/dmc-v1", "dmc"),
+            ("dmc:/no/such/model:2.5", "dmc"),
+            ("hybrid:/no/such/model:40", "hybrid"),
+            ("hybrid:/no/such/model:40@prior=4,base=q,leaf=2,threads=2", "hybrid"),
+        ] {
+            let c = check(s).unwrap_or_else(|e| panic!("{s}: {e}"));
+            assert_eq!((c.kind, c.reproducible), (kind, true), "{s}");
+        }
+        for bad in [
+            "belief:/m",
+            "belief:/m:many",
+            "belief:/m:50@slips=1",
+            "dmc:/m:-1",
+            "dmc:/m@threads=2",
+            "hybrid:/m",
+            "hybrid:/m:40@base=best",
+            "hybrid:/m:40@nonsense=1",
+        ] {
+            assert!(check(bad).is_err(), "{bad}");
         }
     }
 
