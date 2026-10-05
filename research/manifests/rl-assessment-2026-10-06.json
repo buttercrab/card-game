@@ -151,6 +151,14 @@
       "sha256": "6257f1402d9579eb5fc7fb4edb7de68fffefe92b609d35f2eec0d8e5c403567e"
     }
   ],
-  "experiment": "research/experiments/2026-10-06-rl-assessment",
-  "commit": "ffdcaac"
+  "commit": "ffdcaac268a05f5f6b25083a51606d64fa31f804",
+  "config": "research/experiments/2026-10-06-rl-assessment/config.toml",
+  "created": "2026-10-06",
+  "encoding": "mighty-3",
+  "kind": "eval",
+  "name": "rl-assessment-2026-10-06",
+  "seeds": [
+    777,
+    5
+  ]
 }
