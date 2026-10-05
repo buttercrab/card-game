@@ -49,11 +49,25 @@ needs it. On the Mac training runs on MPS
 The encoding (`engine::Encode`, Mighty's in `crates/mighty/src/encode.rs`)
 defines every model's input, so it changes only on purpose:
 
-1. Change the encoder and bump its `VERSION` (`mighty-1` to `mighty-2`).
+1. Change the encoder and bump its `VERSION` (`mighty-2` to `mighty-3`).
 2. Rewrite the pinned spec:
-   `cargo test -p mighty --test encode -- --ignored write_spec_snapshot`.
-3. Commit both. Data and models record the version they were made with;
-   ones made with another version do not mix.
+   `cargo test -p mighty --test encode -- --ignored write_spec_snapshot`,
+   re-pin `encodings_are_pinned` in the same file, and rewrite the
+   fixtures built on it: `crates/env/tests/parity.json`
+   (`cargo test -p env --test parity -- --ignored write_parity_fixture`)
+   and `crates/infer/tests/tiny` (`uv run python -m
+   cardgame_ml.export.fixture` in `ml/`).
+3. Commit them together. Data and models record the version they were
+   made with: a dataset in its `meta.json` and manifest (`encoding`), a
+   model in its `config.json` (`encoding`, and the whole spec under
+   `spec`). Ones made with another version do not mix, and are not
+   retrained or converted: `sim`'s `belief:` bots and the `beliefs`
+   example refuse a model whose spec is not the engine's.
+
+Versions: `mighty-1` (2026-10, P0); `mighty-2` (2026-10-05) adds how a
+failed contract is scored (`rules.scoring.lose`). Belief v1 and every
+dataset before 2026-10-05 are `mighty-1`; run them at a commit before
+the change.
 
 `ml/` reads the same pinned spec (`crates/mighty/tests/encoding.json`), so
 the Python tests see the change too.

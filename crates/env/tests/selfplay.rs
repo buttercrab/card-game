@@ -101,7 +101,7 @@ fn datasets_are_reproducible_and_avoid_excluded_rules() {
         let file = root.join("a").join(path.strip_prefix("selfplay/test/").unwrap());
         assert_eq!(artifact["bytes"], std::fs::metadata(file).unwrap().len());
     }
-    assert_eq!(manifest["encoding"], "mighty-1");
+    assert_eq!(manifest["encoding"], mighty::encode::VERSION);
     std::fs::remove_dir_all(&root).unwrap();
 }
 

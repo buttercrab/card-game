@@ -214,6 +214,8 @@ pub struct JokerLead {
 pub struct Scoring {
     /// What a made contract is worth before doubling.
     pub win: WinScore,
+    /// What a failed contract costs before doubling.
+    pub lose: LoseScore,
     /// When a no-trump contract doubles the score.
     pub no_trump: Doubling,
     /// When playing openly alone (노프렌드) doubles the score. Without
@@ -245,6 +247,19 @@ pub enum WinScore {
     BidBonus,
     /// (Points taken − n) + (contract − n), at least 1.
     BothOver(u8),
+}
+
+/// What a failed contract costs before doubling; the shortfall is the
+/// contract − points taken.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LoseScore {
+    /// The shortfall.
+    #[default]
+    Shortfall,
+    /// (Contract − n) + the shortfall: a failed contract pays back what it
+    /// would have won made exactly, scored points − n, and the shortfall on
+    /// top. At most the lowest contract ([`Rules::validate`]).
+    PaysBack(u8),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -282,6 +297,7 @@ impl Default for Scoring {
     fn default() -> Scoring {
         Scoring {
             win: WinScore::OverTen,
+            lose: LoseScore::Shortfall,
             no_trump: Doubling::Win,
             alone: Doubling::Win,
             run: true,
@@ -478,6 +494,11 @@ impl Rules {
             },
             full_contract: doubling(rng),
             discards_to_declarer: rng.random(),
+            // Drawn last, so the draws above stay as they were before it.
+            lose: match rng.random_range(0..2) {
+                0 => LoseScore::Shortfall,
+                _ => LoseScore::PaysBack(rng.random_range(8..=10)),
+            },
         };
         r.validate().expect("varied rules are valid");
         r
@@ -518,11 +539,28 @@ impl Rules {
         if self.joker_call.calls.len() != self.deck.jokers().len() {
             return Err(InvalidRules("need one joker-call pair per joker"));
         }
+        if let LoseScore::PaysBack(n) = self.scoring.lose
+            && n > self.lowest_contract()
+        {
+            return Err(InvalidRules(
+                "a failed contract cannot pay back more than the lowest contract",
+            ));
+        }
         let f = &self.friend;
         if !(f.by_card || f.by_seat || f.first_trick || f.last_trick || f.alone) {
             return Err(InvalidRules("no way to choose a friend"));
         }
         Ok(())
+    }
+
+    /// The lowest number a contract can have: the minimum bid, or the
+    /// dealer's last chance below it, less the no-trump bonus where
+    /// no-trump may be bid. Changing trump never goes lower.
+    pub fn lowest_contract(&self) -> u8 {
+        let b = &self.bidding;
+        let min = b.last_chance_min.map_or(b.min, |m| m.min(b.min));
+        let bonus = if b.allow_no_trump { b.no_trump_bonus } else { 0 };
+        min.saturating_sub(bonus)
     }
 
     pub fn mighty(&self, trump: Option<Suit>) -> Card {
@@ -642,7 +680,8 @@ impl Rules {
 /// 기본, the owner's written base rules, and the school rules collected in
 /// web-mighty, named after the groups that play them. The school presets
 /// are written as changes to [`Rules::default`] (web-mighty's base), which
-/// therefore stays as it was; `tests/presets.json` pins every preset.
+/// therefore stays as it was, and all score a failed contract by
+/// [`LoseScore::PaysBack`]; `tests/presets.json` pins every preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Preset {
@@ -711,6 +750,10 @@ impl Preset {
     pub fn rules(self) -> Rules {
         use CardPolicy::*;
         let mut r = Rules::default();
+        // Every school: a failed contract pays back what it would have won
+        // made exactly, and the shortfall on top, so a bid is not a free
+        // shot (owner, 2026-10-05). 기본 sets its own scoring below.
+        r.scoring.lose = LoseScore::PaysBack(10);
         match self {
             Preset::Ddshs => {
                 r.bidding.allow_no_trump = false;
@@ -838,6 +881,7 @@ impl Preset {
                 r.joker_lead.not_first_trick = true;
                 r.scoring = Scoring {
                     win: WinScore::BothOver(13),
+                    lose: LoseScore::Shortfall,
                     no_trump: Doubling::Always,
                     alone: Doubling::Always,
                     run: true,
@@ -892,8 +936,8 @@ mod tests {
     }
 
     /// Every preset plays exactly as pinned: the school presets as they
-    /// were before 기본 became the owner's written rules, and 기본 as that
-    /// text says.
+    /// were before 기본 became the owner's written rules, but for paying
+    /// back failed contracts (2026-10-05), and 기본 as that text says.
     #[test]
     fn presets_match_the_snapshot() {
         let pinned: Vec<(String, Rules)> =
@@ -1017,6 +1061,38 @@ mod tests {
     }
 
     #[test]
+    fn paying_back_stays_within_the_lowest_contract() {
+        let gshs = Preset::Gshs.rules();
+        // 노기루다 counts one more, so 13 is the lowest no-trump contract.
+        assert_eq!(gshs.lowest_contract(), 13);
+        assert_eq!(Preset::Yonsei.rules().lowest_contract(), 14);
+        assert_eq!(Preset::Default.rules().lowest_contract(), 12);
+        for (n, ok) in [(10, true), (13, true), (14, false)] {
+            let mut r = gshs.clone();
+            r.scoring.lose = LoseScore::PaysBack(n);
+            assert_eq!(r.validate().is_ok(), ok, "PaysBack({n})");
+        }
+        let mut r = gshs;
+        r.bidding.last_chance_min = Some(9);
+        assert!(r.validate().is_err(), "a last-chance 8 노기루다 would pay for failing");
+        r.scoring.lose = LoseScore::Shortfall;
+        assert_eq!(r.validate(), Ok(()));
+    }
+
+    #[test]
+    fn varied_rules_score_failures_both_ways() {
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        let loses: Vec<LoseScore> = (0..200)
+            .map(|_| Preset::Gshs.rules().varied(&mut rng).scoring.lose)
+            .collect();
+        assert!(loses.contains(&LoseScore::Shortfall));
+        for n in 8..=10 {
+            assert!(loses.contains(&LoseScore::PaysBack(n)), "PaysBack({n})");
+        }
+    }
+
+    #[test]
     fn rules_saved_before_the_new_options_still_load() {
         let mut json = serde_json::to_value(Preset::Gshs.rules()).unwrap();
         let object = json.as_object_mut().unwrap();
@@ -1030,7 +1106,17 @@ mod tests {
             object["bidding"].as_object_mut().unwrap().remove(key);
         }
         let loaded: Rules = serde_json::from_value(json).unwrap();
-        assert_eq!(loaded, Preset::Gshs.rules());
+        // Saved without a scoring, the rules score as they did then.
+        let then = Rules {
+            scoring: Scoring::default(),
+            ..Preset::Gshs.rules()
+        };
+        assert_eq!(loaded, then);
+        // Saved before failed contracts could pay back: the shortfall.
+        let mut json = serde_json::to_value(Preset::Gshs.rules()).unwrap();
+        json["scoring"].as_object_mut().unwrap().remove("lose");
+        let loaded: Rules = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded.scoring.lose, LoseScore::Shortfall);
     }
 
     #[test]

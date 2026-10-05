@@ -24,6 +24,12 @@ C)?
 - Gate C: the cost part's median and p99 per decision against `hard`, on
   the Mac (the home server could not be reached).
 
+**Encoding.** Belief v1 (and v1-large, and the self-play data both
+trained on) reads `mighty-1`. The engine moved to `mighty-2` the same
+day (the schools' failed-contract scoring): the model was not retrained,
+and today's `sim` and `beliefs` refuse it, the specs differing. To run it,
+check out a commit before that change.
+
 **Stopped by the owner** (2026-10-05) to move to self-play RL: the
 planned follow-ups (belief v2 on more data, larger head-to-heads on
 경기과고 and 기본) were not run. Everything below did run.

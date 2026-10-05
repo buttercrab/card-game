@@ -3,7 +3,9 @@
 House rules are fields of `Rules` (`src/rules.rs`). 기본 (`default`) is the
 owner's written ruleset, below. The eight school presets were ported from
 web-mighty's `mighty/src/rule/mod.rs` as changes to `Rules::default()`,
-which therefore keeps web-mighty's base values; `tests/presets.json` pins
+which therefore keeps web-mighty's base values, and all score a failed
+contract as below ([실패 배상](#실패-배상-the-schools-loss));
+`tests/presets.json` pins
 every preset, so a change to one is always deliberate. The game logic was
 rewritten.
 
@@ -38,7 +40,7 @@ filled in from other rulesets. Each rule and how it is expressed
 | Trick 10: joker call no effect; joker lead names a suit; joker weak | `policy.joker_call` and `policy.joker` `NoEffect` on the last trick |
 | Order: mighty, strong joker, trump, led suit, weak joker, the rest | As everywhere; a weak joker wins only when it led and nothing followed, as `trick::winner` falls back to the leader |
 | P ≥ C wins; run P = 20; back-run P ≤ 10 | `run`, `back_run: TeamAtMost(10)` |
-| B = max(1, (P − 13) + (C − 13)) on a win, P − C on a loss | `scoring.win: BothOver(13)` |
+| B = max(1, (P − 13) + (C − 13)) on a win, P − C on a loss | `scoring.win: BothOver(13)`, `scoring.lose: Shortfall` |
 | M doubles for 노기루다, no friend (not false), run, back-run, C = 20 | `no_trump` and `alone` `Always`, `run`, `back_run`, `full_contract: Always`. "Whichever side wins" is read as applying to all five, since M is one number for the hand |
 | Defenders −BM, friend +BM, declarer the rest | As everywhere: 2BM with a friend, 4BM without |
 | Next dealer: the friend, else the declarer; after a misdeal its caller; after five passes twice the same | `next_dealer: FriendOrDeclarer` (the server passes the last hand's summary), `caller_deals`, `first_bidder` kept |
@@ -132,7 +134,8 @@ Not expressible or left to others:
      This is doubled for no-trump, doubled again for playing alone, and
      doubled again for taking all 20 points.
    - If it falls short, it loses the shortfall, doubled when the side took
-     10 or fewer points.
+     10 or fewer points. The school presets lose more: see
+     [실패 배상](#실패-배상-the-schools-loss).
    - The declarer receives the score once per opponent, minus the friend's
      share. The friend receives it once. Each opponent pays it once.
      Payoffs always sum to zero.
@@ -141,11 +144,45 @@ Not expressible or left to others:
    `OverMin` (points − minimum bid; a made contract can score 0 or less),
    `OverBid` (points − contract) or `BidBonus` (points − contract + 2 ×
    how far the bid ranks above the minimum, which 나무위키 calls the usual
-   one). `no_trump` and `alone` double `Never`, on a `Win`, or `Always`;
+   one). `scoring.lose` picks the failed-contract cost before doubling:
+   `Shortfall` (contract − points) or `PaysBack(n)` ((contract − n) +
+   the shortfall; `n` may not exceed the lowest contract, so a failure
+   never pays). `no_trump` and `alone` double `Never`, on a `Win`, or `Always`;
    `run` doubles a 20-point win; `back_run` doubles a loss `Never`, when
    the side took at most `n` (`TeamAtMost`), missed by at least `n`
    (`ShortBy`) or the defence took the contract's worth
    (`DefenceReachesBid`).
+
+## 실패 배상, the schools' loss
+
+Owner, 2026-10-05: every school preset (all but 기본) scores a failed
+contract as **what it would have won made exactly, plus the shortfall**
+(`scoring.lose: PaysBack(10)`); a made contract still scores `points −
+10`, at least 1. The doublings then apply as before: 백런 doubles the
+whole loss.
+
+| Preset | Made | Failed | Doubled |
+| --- | --- | --- | --- |
+| 기본 | max(1, (P − 13) + (C − 13)) | C − P | 노기루다, 노프렌드, 런, 백런 (P ≤ 10), C = 20; win or lose |
+| 대전동신과고, 대구과고, 민사고, 광주과고, 경기과고, 성균관대, 서울과고, 연세대 | max(1, P − 10) | (C − 10) + (C − P) | 노기루다, 노프렌드, 런 on a win; 백런 (P ≤ 10) on a loss |
+
+Why: under the shortfall alone a failed contract barely costs, so a bid
+is nearly a free shot and the bots overbid. At 16, a made contract pays
+about 6 and a failure by 2 cost 2, so bidding paid from a make rate of
+about 25%. Paying back puts the break-even make rate near 60%, 57% and
+56% at bids of 14, 16 and 18: a bid has to be more likely made than not.
+
+경기과고, one opponent's payment (the declarer gets it three times less
+the friend's share with a friend, four times alone):
+
+| Contract, points taken | Before | Now |
+| --- | --- | --- |
+| 14, 14 | 4 | 4 |
+| 14, 16 | 6 | 6 |
+| 14, 13 | −1 | −5 |
+| 16, 13 | −3 | −9 |
+| 14, 10 (백런) | −8 | −16 |
+| 노기루다 15, 13 | −2 | −7 |
 
 ## Not ported from web-mighty
 
@@ -191,12 +228,16 @@ Not expressible or left to others:
 - Trump may not lead the first trick unless the leader holds nothing else
   (only trump and a joker counts as nothing else); everyone after the
   leader may play trump on it.
+- A failed contract pays back what it would have won made exactly, plus
+  the shortfall ([실패 배상](#실패-배상-the-schools-loss); owner,
+  2026-10-05).
 
 ## Still open
 
-- **Scoring:** 기본 scores as its text says; every school preset still
-  uses web-mighty's formula above. 나무위키's usual one (`BidBonus`) is an
-  option; which school preset should use what is the owner's call.
+- **Scoring:** 기본 scores as its text says; every school preset scores
+  a made contract by web-mighty's formula above and a failed one by
+  [실패 배상](#실패-배상-the-schools-loss). 나무위키's usual one
+  (`BidBonus`) is an option.
 - **Bids above 20:** 대구과고 and 연세대 allow bids up to 23, which can never
   be made. 나무위키's 신촌 5마 says that is the point: a bid to sink
   whoever is leading.
@@ -248,7 +289,7 @@ presets build on; 기본 is described in its own section above.
 | Win score | points − 10, − 13, − bid, or (usual) − bid + (bid − 13) × 2 | `points − 10` by default; `scoring.win` | Default is one listed; the usual one added |
 | Win doubling | No-trump ×2, run ×2 | Same | Matches |
 | Playing alone | Declarer collects from all four (×4); 신촌, 수원, 부산대 also double | Also doubles by default; `scoring.alone` | House variant as default (judgement call) |
-| Loss | bid − points; ×2 when 야당 took 11+ (백런); local: no-trump ×2 | ×2 when the side took 10 or fewer (민사's 야당 10+); `scoring.back_run`, `no_trump: Always` | Differs by one point by default; options added |
+| Loss | bid − points; ×2 when 야당 took 11+ (백런); local: no-trump ×2 | ×2 when the side took 10 or fewer (민사's 야당 10+); `scoring.back_run`, `no_trump: Always`; the school presets also pay back bid − 10 (`scoring.lose`) | Differs by one point by default; options added; schools differ by the owner's choice |
 | Shares | Declarer 2, friend 1, each opponent −1 | Same | Matches |
 
 Regional rules (지역별 규칙) against the presets, for the owner:

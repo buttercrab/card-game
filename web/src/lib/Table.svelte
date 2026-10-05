@@ -37,6 +37,7 @@
     back_run: { TeamAtMost: 10 },
     full_contract: 'Never',
     discards_to_declarer: true,
+    lose: 'Shortfall',
   };
 
   // What is drawn lags the server by the animations still playing: each new
@@ -239,6 +240,11 @@
       const short = c - p;
       lines.push(short === 1 ? `아깝게 1점 모자람` : `공약 ${c}에서 ${short}점 모자람`);
       value = short;
+      const lose = s.lose ?? 'Shortfall';
+      if (lose !== 'Shortfall') {
+        value = c - lose.PaysBack + short;
+        lines.push(`공약 ${c} − ${lose.PaysBack} 갚고 + ${short} = ${value}`);
+      }
       const back = s.back_run;
       const why =
         back === 'Never'

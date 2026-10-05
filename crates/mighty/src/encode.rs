@@ -27,7 +27,7 @@
 //! play rule combinations it never trained on.
 
 use crate::card::{ACE, Card, Color, Suit};
-use crate::rules::{BackRun, CardPolicy, Contract, Doubling, NextDealer, Rules, TrickPolicy, WinScore};
+use crate::rules::{BackRun, CardPolicy, Contract, Doubling, LoseScore, NextDealer, Rules, TrickPolicy, WinScore};
 use crate::state::{Action, Bid, FriendCall, Phase, TrickState, powered};
 use crate::trick::{self, Lead, PlainSuit, Played, Trick, TrickContext, plain_suit, power};
 use crate::view::{PhaseView, View};
@@ -36,8 +36,10 @@ use engine::{Encode, Features, Game, Observation, Seat, Spec, Unsupported, Viewe
 
 /// Names this encoding in data and models. Change it with any change to
 /// the layout or to what a feature means; `tests/encoding.json` pins the
-/// spec so that cannot happen unnoticed.
-pub const VERSION: &str = "mighty-1";
+/// spec so that cannot happen unnoticed. `mighty-2` (2026-10-05) added
+/// how a failed contract is scored (`rules.scoring.lose`); models trained
+/// on `mighty-1` cannot read it.
+pub const VERSION: &str = "mighty-2";
 
 /// The most players any rule set may seat ([`Rules::validate`]).
 pub const MAX_SEATS: usize = 8;
@@ -730,6 +732,12 @@ fn rules_features(f: &mut Features, r: &Rules) {
         Some(win),
     );
     f.num("rules.scoring.win.both_over", f32::from(both_over) / POINTS);
+    let (lose, pays_back) = match s.lose {
+        LoseScore::Shortfall => (0, 0),
+        LoseScore::PaysBack(n) => (1, n),
+    };
+    f.one_hot("rules.scoring.lose", &["shortfall", "pays_back"], Some(lose));
+    f.num("rules.scoring.lose.pays_back", f32::from(pays_back) / POINTS);
     f.one_hot(
         "rules.scoring.no_trump",
         &DOUBLING_LABELS,

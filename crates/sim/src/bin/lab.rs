@@ -5,13 +5,15 @@
 //! lab play --records hands.jsonl --variant x10=search:2000:1:0 --variant cheat=cheat
 //! lab bid --records hands.jsonl
 //! lab exchange --records hands.jsonl --variant simple=bot:simple --variant joint=joint:400
+//! lab declare --deals 400 --bot normal --field hard --out normal.jsonl
+//! lab declare-report --run 보통=normal.jsonl --out report.md
 //! ```
 //!
 //! Every subcommand writes one JSON line per result, as results come in.
 
 use clap::{Parser, Subcommand};
-use mighty::rules::Preset;
-use sim::lab::{self, Actor, Exchanger, Record};
+use mighty::rules::{Preset, Rules};
+use sim::lab::{self, Actor, DeclareResult, Exchanger, Record};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -23,6 +25,9 @@ use std::time::Instant;
 struct Args {
     #[arg(long, default_value = "gshs")]
     preset: Preset,
+    /// A JSON file of rules to play instead of the preset.
+    #[arg(long)]
+    rules: Option<PathBuf>,
     /// Worker threads; all cores when omitted.
     #[arg(long)]
     threads: Option<usize>,
@@ -97,6 +102,24 @@ enum Command {
         #[arg(long, default_value_t = 4)]
         endgame: usize,
     },
+    /// One seat's bidding and contracts: `bot` in one seat, `field` in
+    /// the others, from the deal on.
+    Declare {
+        #[arg(long, default_value_t = 1000)]
+        deals: u64,
+        #[arg(long, default_value_t = 0)]
+        start: u64,
+        #[arg(long)]
+        bot: String,
+        #[arg(long, default_value = HARD)]
+        field: String,
+    },
+    /// `declare` results side by side, as Markdown.
+    DeclareReport {
+        /// `name=results.jsonl`, one per run, in order.
+        #[arg(long, required = true)]
+        run: Vec<String>,
+    },
     /// Replay the declarer's exchange another way, then the card play
     /// with the recorded bot.
     Exchange {
@@ -169,7 +192,11 @@ fn actor(s: &str) -> Actor {
 
 fn main() {
     let args = Args::parse();
-    let rules = args.preset.rules();
+    let rules: Rules = match &args.rules {
+        Some(path) => serde_json::from_str(&std::fs::read_to_string(path).expect("rules file")).expect("rules JSON"),
+        None => args.preset.rules(),
+    };
+    rules.validate().expect("valid rules");
     let threads = args
         .threads
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
@@ -180,6 +207,33 @@ fn main() {
             run(&deals, threads, &args.out, |&deal| {
                 vec![lab::generate(&rules, deal, bot)]
             });
+        }
+        Command::Declare {
+            deals,
+            start,
+            bot,
+            field,
+        } => {
+            let (bot, field) = (actor(bot), actor(field));
+            let deals: Vec<u64> = (*start..start + deals).collect();
+            run(&deals, threads, &args.out, |&deal| {
+                vec![lab::declare(&rules, deal, bot, field)]
+            });
+        }
+        Command::DeclareReport { run } => {
+            let runs: Vec<(String, Vec<DeclareResult>)> = named(run)
+                .into_iter()
+                .map(|(name, path)| {
+                    let text = std::fs::read_to_string(&path).expect("results file");
+                    let mut results: Vec<DeclareResult> = text
+                        .lines()
+                        .map(|l| serde_json::from_str(l).expect("a result"))
+                        .collect();
+                    results.sort_by_key(|r| r.deal);
+                    (name, results)
+                })
+                .collect();
+            std::fs::write(&args.out, lab::declare_report(&runs)).expect("report file");
         }
         Command::Play {
             records,

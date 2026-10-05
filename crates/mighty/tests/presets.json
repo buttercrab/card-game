@@ -134,6 +134,7 @@
         "win": {
           "BothOver": 13
         },
+        "lose": "Shortfall",
         "no_trump": "Always",
         "alone": "Always",
         "run": true,
@@ -234,6 +235,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,
@@ -334,6 +338,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,
@@ -434,6 +441,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,
@@ -534,6 +544,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,
@@ -658,6 +671,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,
@@ -758,6 +774,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,
@@ -904,6 +923,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,
@@ -1032,6 +1054,9 @@
       },
       "scoring": {
         "win": "OverTen",
+        "lose": {
+          "PaysBack": 10
+        },
         "no_trump": "Win",
         "alone": "Win",
         "run": true,

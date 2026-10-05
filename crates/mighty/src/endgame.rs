@@ -570,11 +570,11 @@ mod tests {
     /// The solver agrees with plain minimax under the optional rules too:
     /// other table sizes and decks, discards counting for the defence,
     /// trump released only beside jokers, no joker lead on the first trick,
-    /// and every way of scoring; where more points can pay less, it
-    /// declines.
+    /// and every way of scoring a win or a loss; where more points can pay
+    /// less, it declines.
     #[test]
     fn matches_minimax_under_the_optional_rules() {
-        use crate::rules::{BackRun, Doubling, Scoring, WinScore};
+        use crate::rules::{BackRun, Doubling, LoseScore, Scoring, WinScore};
         let mut variants = Vec::new();
         for preset in [Preset::Default, Preset::Gshs, Preset::Yonsei] {
             for players in [3, 4, 6, 7] {
@@ -585,15 +585,20 @@ mod tests {
             r.policy.release_with_mighty = !r.policy.release_with_mighty;
             r.joker_lead.not_first_trick = !r.joker_lead.not_first_trick;
             variants.push(r);
-            for win in [
+            let wins = [
                 WinScore::OverMin,
                 WinScore::OverBid,
                 WinScore::BidBonus,
                 WinScore::BothOver(13),
-            ] {
+            ];
+            for (win, lose) in wins
+                .into_iter()
+                .flat_map(|win| [LoseScore::Shortfall, LoseScore::PaysBack(10)].map(|lose| (win, lose)))
+            {
                 let mut r = preset.rules();
                 r.scoring = Scoring {
                     win,
+                    lose,
                     no_trump: Doubling::Always,
                     alone: Doubling::Always,
                     run: true,

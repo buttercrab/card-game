@@ -14,7 +14,7 @@
 // Values are compared as JSON, so a field can be a number, a flag, a card
 // pair or a whole sub-object.
 import { cardLabel, deckSize, jokers } from './cards';
-import type { BackRun, Card, CardPolicy, Doubling, Rules, TrickPolicy, WinScore } from './types';
+import type { BackRun, Card, CardPolicy, Doubling, LoseScore, Rules, TrickPolicy, WinScore } from './types';
 
 export type GroupId = 'deal' | 'bidding' | 'friend' | 'power' | 'score';
 
@@ -146,6 +146,22 @@ function winTrait(v: WinScore): string {
     BidBonus: '높은 공약에 보너스',
   };
   return words[v];
+}
+
+const LOSE: Option<LoseScore>[] = [
+  { value: 'Shortfall', label: '모자란 만큼' },
+  { value: { PaysBack: 10 }, label: '부른 만큼 갚고 모자란 만큼 더' },
+];
+
+function loseSay(v: LoseScore): string {
+  return v === 'Shortfall' ? '모자란 만큼' : `(공약 − ${v.PaysBack}) + 모자란 만큼`;
+}
+
+/** The lowest number a contract can have; mirrors Rules::lowest_contract. */
+export function lowestContract(r: Rules): number {
+  const b = r.bidding;
+  const min = Math.min(b.min, b.last_chance_min ?? b.min);
+  return Math.max(min - (b.allow_no_trump ? b.no_trump_bonus : 0), 0);
 }
 
 const BACK_RUN: Option<BackRun>[] = [
@@ -548,6 +564,16 @@ export const RULE_FIELDS: Field[] = [
     weight: 3,
   },
   {
+    path: 'scoring.lose',
+    group: 'score',
+    label: '실패하면',
+    help: '공약을 못 이루면 야당 한 사람에게 주는 점수예요. 갚으면 이겼을 때 받았을 점수를 내고 모자란 만큼 더 내요',
+    control: { kind: 'segment', options: LOSE, stack: true },
+    say: (v: LoseScore) => LOSE.find((o) => same(o.value, v))?.label ?? loseSay(v),
+    trait: (v: LoseScore) => (v === 'Shortfall' ? '지면 모자란 만큼' : '지면 부른 만큼 갚고 모자란 만큼 더'),
+    weight: 2.5,
+  },
+  {
     path: 'scoring.no_trump',
     group: 'score',
     label: '노기루다 두 배',
@@ -734,6 +760,9 @@ export function problems(r: Rules): { paths: string[]; message: string }[] {
     out.push({ paths: ['bidding.min', 'bidding.max'], message: '최소 공약이 최대 공약보다 클 수 없어요' });
   if (r.bidding.no_trump_bonus >= r.bidding.min)
     out.push({ paths: ['bidding.no_trump_bonus'], message: '노기루다 보너스는 최소 공약보다 작아야 해요' });
+  const lose = r.scoring?.lose;
+  if (lose && lose !== 'Shortfall' && lose.PaysBack > lowestContract(r))
+    out.push({ paths: ['scoring.lose'], message: '갚는 기준이 가장 낮은 공약보다 크면 지고도 점수를 받게 돼요' });
   if (r.joker_call.calls.length !== jokers(r).length)
     out.push({ paths: ['deck'], message: '조커마다 조커콜 카드가 하나씩 있어야 해요' });
   const f = r.friend;
