@@ -18,7 +18,7 @@ import torch
 from cardgame_env import Env
 
 from cardgame_ml.models.q import QModel
-from cardgame_ml.train.dmc.policy import choose, legal_values
+from cardgame_ml.train.dmc.policy import GREEDY, choose, legal_values
 
 
 @dataclass(frozen=True)
@@ -54,7 +54,7 @@ def play(  # noqa: PLR0913
     model.eval()
     while not finished.all():
         actions, values = legal_values(model, step, device, groups=8)
-        step = env.step(choose(actions, values, 0.0, rng))
+        step = env.step(choose(actions, values, GREEDY, rng))
         ended = step["done"] & ~finished
         payoff[ended] = step["reward"][ended, 0]
         finished |= step["done"]

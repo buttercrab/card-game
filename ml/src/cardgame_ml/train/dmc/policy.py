@@ -2,6 +2,7 @@
 decisions, pick the best (or, with probability ε, a random legal one)."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -69,17 +70,36 @@ def legal_values(
     return actions, np.where(valid, values, -np.inf).astype(np.float32)
 
 
+@dataclass(frozen=True)
+class Exploration:
+    """How far from greedy play goes: the best action by value or, with a
+    ``temperature``, one drawn with probability proportional to
+    ``exp(value / temperature)``; with probability ``runner_up`` instead
+    the second best (where there are two); and with probability
+    ``epsilon`` instead one of the legal actions uniformly."""
+
+    epsilon: float = 0.0
+    temperature: float = 0.0
+    runner_up: float = 0.0
+
+
+GREEDY = Exploration()
+"""The best action, always."""
+
+
 def choose(
     actions: NDArray[np.int64],
     values: NDArray[np.float32],
-    epsilon: float,
+    exploration: Exploration,
     rng: np.random.Generator,
-    temperature: float = 0.0,
 ) -> NDArray[np.int64]:
-    """One action index per decision: the best by ``values`` or, with a
-    ``temperature``, one drawn with probability proportional to
-    ``exp(value / temperature)``; and with probability ``epsilon``
-    instead one of the legal actions uniformly."""
+    """One action index per decision, by ``values`` (as
+    :func:`legal_values` gives them) and ``exploration``."""
+    epsilon, temperature, runner_up = (
+        exploration.epsilon,
+        exploration.temperature,
+        exploration.runner_up,
+    )
     rows = np.arange(len(actions))
     if temperature > 0:
         # Gumbel-max: the argmax of values / T plus Gumbel noise is a
@@ -88,6 +108,12 @@ def choose(
         best = actions[rows, (values / np.float32(temperature) + noise).argmax(axis=1)]
     else:
         best = actions[rows, values.argmax(axis=1)]
+    if runner_up > 0 and values.shape[1] > 1:
+        ranked = np.argsort(-values, axis=1, kind="stable")
+        second = actions[rows, ranked[:, 1]]
+        has_second = np.isfinite(values[rows, ranked[:, 1]])
+        take = has_second & (rng.random(len(actions)) < runner_up)
+        best = np.where(take, second, best)
     if epsilon <= 0:
         return best
     legal = np.isfinite(values)

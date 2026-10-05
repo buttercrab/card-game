@@ -22,6 +22,8 @@ from cardgame_ml.train.dmc.actor import Hands  # noqa: E402
 from cardgame_ml.train.dmc.config import DmcConfig  # noqa: E402
 from cardgame_ml.train.dmc.learner import load, train  # noqa: E402
 from cardgame_ml.train.dmc.policy import (  # noqa: E402
+    GREEDY,
+    Exploration,
     choose,
     legal_actions,
     legal_values,
@@ -86,16 +88,24 @@ def test_choosing_is_greedy_or_uniform_among_the_legal() -> None:
     actions = np.array([[4, 9, 2], [7, 7, 7]])
     values = np.array([[0.1, 0.5, -1.0], [3.0, -np.inf, -np.inf]], np.float32)
     rng = np.random.default_rng(0)
-    assert choose(actions, values, 0.0, rng).tolist() == [9, 7]
-    picks = np.stack([choose(actions, values, 1.0, rng) for _ in range(300)])
+    assert choose(actions, values, GREEDY, rng).tolist() == [9, 7]
+    picks = np.stack([choose(actions, values, Exploration(epsilon=1), rng) for _ in range(300)])
     assert set(picks[:, 0].tolist()) == {4, 9, 2}
     assert set(picks[:, 1].tolist()) == {7}
     # A softmax at a temperature: mostly the best, sometimes the next.
-    warm = np.stack([choose(actions, values, 0.0, rng, 0.3) for _ in range(400)])
+    warm = np.stack(
+        [choose(actions, values, Exploration(temperature=0.3), rng) for _ in range(400)]
+    )
     share = Counter(int(x) for x in warm[:, 0])
     assert share[9] > share[4] > share[2]
     assert set(warm[:, 1].tolist()) == {7}
-    assert (choose(actions, values, 0.0, rng, 1e-6) == [9, 7]).all()
+    assert (choose(actions, values, Exploration(temperature=1e-6), rng) == [9, 7]).all()
+    # The runner-up: the second best, where there is one.
+    second = np.stack(
+        [choose(actions, values, Exploration(runner_up=0.5), rng) for _ in range(200)]
+    )
+    assert set(second[:, 0].tolist()) == {9, 4}
+    assert set(second[:, 1].tolist()) == {7}
 
 
 def test_hands_label_every_decision_with_its_seats_payoff(spec: EncodingSpec) -> None:

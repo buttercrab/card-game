@@ -3,8 +3,8 @@ network and send every finished decision to the learner, labelled with
 the Monte Carlo return (the acting seat's payoff for the hand, scaled).
 
 Every seat of every hand is the current network, exploring: a draw
-by the softmax of its values at a small temperature, and with a small
-probability a uniformly random legal action. An actor
+by the softmax of its values at a small temperature, sometimes its
+second-best action, and rarely a uniformly random legal one. An actor
 reloads the weights whenever the learner has published newer ones, and
 each draws its hands from its own seed, so actors never play the same
 hands.
@@ -29,7 +29,7 @@ from cardgame_ml.data.spec import EncodingSpec
 from cardgame_ml.models.q import QModel
 from cardgame_ml.train.dmc.buffer import Decisions
 from cardgame_ml.train.dmc.config import DmcConfig
-from cardgame_ml.train.dmc.policy import choose, legal_values
+from cardgame_ml.train.dmc.policy import Exploration, choose, legal_values
 
 
 @dataclass
@@ -132,6 +132,7 @@ def run(  # noqa: PLR0913, PLR0917
         threads=a.env_threads,
     )
     rng = np.random.default_rng(seed)
+    exploration = Exploration(a.epsilon, a.temperature, a.runner_up)
     hands = Hands(a.envs)
     device = torch.device("cpu")
     step = env.reset()
@@ -146,7 +147,7 @@ def run(  # noqa: PLR0913, PLR0917
                 seen = version.value
         started = time.monotonic()
         actions, values = legal_values(model, step, device, a.groups)
-        chosen = choose(actions, values, a.epsilon, rng, a.temperature)
+        chosen = choose(actions, values, exploration, rng)
         hands.record(step, chosen)
         stepped = time.monotonic()
         step = env.step(chosen)

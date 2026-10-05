@@ -36,6 +36,12 @@ class ActorConfig:
     usually far too high), so the network learns that bidding loses and
     passes for ever; the softmax keeps trying the actions it values
     nearly as much as its best."""
+    runner_up: float
+    """Share of decisions taken by the second-best action instead. When
+    the best is far ahead (passing, after every bid tried lost), the
+    softmax never tries anything else; this tries the network's own best
+    alternative (its best bid for the hand, say), so that its value is
+    learnt from hands where it was played."""
     refresh_every: int
     """Learner steps between publishing weights to the actors."""
     chunk: int
@@ -125,6 +131,8 @@ class DmcConfig:
             raise ValueError("buffer: min_fill exceeds capacity")
         if not 0 <= self.actors.epsilon <= 1:
             raise ValueError("actors: epsilon is a probability")
+        if not 0 <= self.actors.runner_up <= 1:
+            raise ValueError("actors: runner_up is a probability")
         if self.actors.temperature < 0:
             raise ValueError("actors: the temperature is not negative")
 
