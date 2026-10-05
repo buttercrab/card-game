@@ -1429,14 +1429,27 @@ mod tests {
             .map(|(name, rules)| {
                 let min = rules.bidding.min;
                 let contracts = [
-                    Contract { trump: Some(Suit::Spade), count: min - 1 },
-                    Contract { trump: None, count: min },
-                    Contract { trump: Some(Suit::Heart), count: 20 },
+                    Contract {
+                        trump: Some(Suit::Spade),
+                        count: min - 1,
+                    },
+                    Contract {
+                        trump: None,
+                        count: min,
+                    },
+                    Contract {
+                        trump: Some(Suit::Heart),
+                        count: 20,
+                    },
                 ];
                 let mut hands = Vec::new();
                 for contract in contracts {
                     for alone in [false, true] {
-                        let (call, friend) = if alone { (FriendCall::Alone, None) } else { (FriendCall::Seat(1), Some(1)) };
+                        let (call, friend) = if alone {
+                            (FriendCall::Alone, None)
+                        } else {
+                            (FriendCall::Seat(1), Some(1))
+                        };
                         for team_points in [0, contract.count - 1, contract.count, 20] {
                             hands.push(serde_json::json!({
                                 "contract": contract,
