@@ -1,0 +1,49 @@
+{
+  "artifacts": [
+    {
+      "bytes": 23717,
+      "path": "models/dmc-v2-smoke/config.json",
+      "sha256": "ed651dd85778702fe4542ab455c15eff916509566b9fb8ab62c101afd27c6f72"
+    },
+    {
+      "bytes": 14078,
+      "path": "models/dmc-v2-smoke/log.jsonl",
+      "sha256": "7b6fe599dabc828f5009c2a5024e1358f1f9fe23fd40d8e32f2c549791da8aeb"
+    },
+    {
+      "bytes": 17513289,
+      "path": "models/dmc-v2-smoke/model.onnx",
+      "sha256": "40dac91e2d788ded6ff299761d5618f243b8b0f1ddcfd6e9c3bce209533b8ede"
+    },
+    {
+      "bytes": 17276379,
+      "path": "models/dmc-v2-smoke/model.pt",
+      "sha256": "4d9c37bfb5679e835c4db9b8f5aa431d9a8c78e91660bee2d3342f13c572e5a2"
+    },
+    {
+      "bytes": 858403,
+      "path": "models/dmc-v2-smoke/parity.json",
+      "sha256": "d99ee3ccc1a7382a141ae1288f8ee87a63c3394ed94b5b310098db4f734f3603"
+    },
+    {
+      "bytes": 17282081,
+      "path": "models/dmc-v2-smoke/snapshots/hands-0000000000.pt",
+      "sha256": "1f25001877d06175a9404639a70d965da3d1ca3e435bd07fc950f811b21d49c7"
+    },
+    {
+      "bytes": 17282081,
+      "path": "models/dmc-v2-smoke/snapshots/hands-0000003257.pt",
+      "sha256": "9b509fdb609cf09389cc2f283a4a997f37aaadd46afc68b077f3bf9d49a03c46"
+    }
+  ],
+  "commit": "3162198207232d4c7f30353c917f2fd3cb05cee9",
+  "config": "research/experiments/2026-10-05-dmc-v2/smoke.toml",
+  "created": "2026-10-05",
+  "encoding": "mighty-3",
+  "kind": "weights",
+  "name": "dmc-v2-smoke",
+  "seeds": [
+    2,
+    7
+  ]
+}

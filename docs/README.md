@@ -202,6 +202,14 @@ temperature)`, the temperature in points (weaker levels). For example:
 nice -n 10 target/release/eval run --suite v1 --bot dmc:$HOME/card-game-artifacts/models/<name> --out <dir>
 ```
 
+`hybrid:<model dir>:<samples>` is 고수 at that many deals leaning on the
+network (`crates/mighty/src/hybrid.rs`): `@prior=K` weighs the K moves
+it values most instead of the search's candidates, `base=q` makes its
+choice the one a candidate must beat instead of the simple bot's, and
+`leaf=K` stops each playout K tricks on and takes the network's value
+there instead of playing to the end; search settings (`threads`,
+`read.*`, …) go alongside. With none, it is `hard` at that sample count.
+
 A network reads one encoding (`config.json`'s `spec`): `dmc:`, `export`,
 `load` and resuming a run all refuse one whose encoding is not this
 build's (dmc-v1 reads `mighty-1`), rather than load weights that would
