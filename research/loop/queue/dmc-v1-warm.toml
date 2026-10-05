@@ -1,0 +1,28 @@
+# DMC v1 at temperature 5 points: a search-free level?
+id = "dmc-v1-warm"
+hypothesis = """Played by exp(value / 5 points) instead of greedily, DMC v1 should lose strength smoothly; if it lands near 보통 on the ladder it is a search-free level for the table (PLAN: levels by temperature)."""
+method = "eval-only"
+tags = ["eval"]
+parent = "dmc-v1-score"
+priority = 15
+seeds = [1]
+
+[budget]
+wall_hours = 10.0
+gpu = false
+
+[resources]
+host = "home"
+threads = 4
+eval_host = "home"
+eval_threads = 4
+
+[evals]
+curve = false
+suite = "v1"
+parts = ["ladder"]
+baselines = ["normal"]
+cost = false
+
+[options]
+bot = "dmc:{artifacts}/models/dmc-v1:5"

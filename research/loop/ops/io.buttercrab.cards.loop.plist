@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The experiment loop's runner as a launchd user agent: `install.sh` fills
+  in the @…@ fields and loads it. It runs from the loop's own checkout (a
+  worktree on the `loop` branch), keeps the Mac awake while it runs
+  (caffeinate), and launchd starts it again if it stops (KeepAlive). Steps
+  run in their own process groups, so a restart of the runner leaves them
+  running and the new runner adopts them.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.buttercrab.cards.loop</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-is</string>
+    <string>@UV@</string>
+    <string>run</string>
+    <string>--locked</string>
+    <string>--extra</string>
+    <string>torch</string>
+    <string>python</string>
+    <string>-m</string>
+    <string>cardgame_ml.loop</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>@CHECKOUT@/ml</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@PATH@</string>
+    <key>CARDGAME_ARTIFACTS</key>
+    <string>@ARTIFACTS@</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>ProcessType</key>
+  <string>Standard</string>
+  <key>StandardOutPath</key>
+  <string>@ARTIFACTS@/loop/logs/runner.log</string>
+  <key>StandardErrorPath</key>
+  <string>@ARTIFACTS@/loop/logs/runner.log</string>
+</dict>
+</plist>

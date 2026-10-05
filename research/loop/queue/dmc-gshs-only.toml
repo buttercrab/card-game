@@ -1,0 +1,35 @@
+# Rules ablation: one preset (경기과고) instead of varied rules.
+id = "dmc-gshs-only"
+hypothesis = """Training on 경기과고 alone (DMC v1: varied rule sets) should rate higher on the ladder, which is 경기과고, and lower on presets and held-out rules: the size of each says what one model for all rules costs."""
+method = "dmc"
+tags = ["ablation"]
+parent = "dmc-v1-score"
+priority = 30
+seeds = [20261005]
+
+[budget]
+wall_hours = 20.0
+train_hours = 5.25
+hands = 20000000
+gpu = true
+
+# Training holds 12 of the Mac's threads; the suite runs on the home
+# server, so the GPU can take the next run meanwhile.
+[resources]
+host = "mac"
+threads = 12
+eval_host = "home"
+eval_threads = 6
+
+[evals]
+curve = true
+suite = "v1"
+parts = ["ladder", "presets", "heldout", "puzzles"]
+baselines = ["hard"]
+cost = true
+
+[config]
+base = "research/loop/configs/dmc-v1.toml"
+
+[config.set]
+rules = "gshs"

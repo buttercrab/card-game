@@ -1,0 +1,32 @@
+# The owner's think-time question on 기본 (the base rules): the twin of
+# think-time-gshs, which explains the bots, the clock (not reproducible)
+# and the size; pooled with it, about ±0.3 points a seat-hand.
+id = "think-time-default"
+hypothesis = """A longer think budget makes 고수 measurably stronger: searching about 2.4 s a decision instead of about 1.3 s (samples capped at 5000 a thread, all 12 threads) gains points per seat-hand on 기본, deal by deal against the 1.3 s bot on the same deals with seats rotated. It decides whether the table's pace for 고수 should go up."""
+method = "search-tuning"
+tags = ["search", "hparam"]
+parent = "bot:search:60000:1:1300@threads=12"
+priority = 89
+seeds = [1]
+
+[budget]
+wall_hours = 40.0
+gpu = false
+
+[resources]
+host = "home"
+threads = 12
+eval_host = "home"
+eval_threads = 12
+
+[evals]
+curve = false
+suite = "think-default"
+parts = ["matches"]
+baselines = ["parent"]
+cost = false
+
+[options]
+bot = "search:60000:1:2400@threads=12"
+clock = true
+deal_threads = 1

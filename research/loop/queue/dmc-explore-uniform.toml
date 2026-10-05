@@ -1,0 +1,36 @@
+# Exploration ablation: uniform epsilon only (DouZero's), no softmax or runner-up.
+id = "dmc-explore-uniform"
+hypothesis = """DMC v1 explores by a softmax of its values and by its runner-up action besides uniform epsilon; P3b added both because uniform exploration alone taught the network to pass every bid. Without them the agent should bid less and rate lower against the ladder; if it rates the same, the extra exploration is not needed."""
+method = "dmc"
+tags = ["ablation"]
+parent = "dmc-v1-score"
+priority = 60
+seeds = [20261005]
+
+[budget]
+wall_hours = 20.0
+train_hours = 5.25
+hands = 20000000
+gpu = true
+
+# Training holds 12 of the Mac's threads; the suite runs on the home
+# server, so the GPU can take the next run meanwhile.
+[resources]
+host = "mac"
+threads = 12
+eval_host = "home"
+eval_threads = 6
+
+[evals]
+curve = true
+suite = "v1"
+parts = ["ladder", "presets", "heldout", "puzzles"]
+baselines = ["hard"]
+cost = true
+
+[config]
+base = "research/loop/configs/dmc-v1.toml"
+
+[config.set]
+"actors.temperature" = 0.0
+"actors.runner_up" = 0.0

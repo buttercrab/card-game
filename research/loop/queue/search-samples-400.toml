@@ -1,0 +1,28 @@
+# Search tuning: 400 deals against 200 (no seat temper on either).
+id = "search-samples-400"
+hypothesis = """The P3 benchmark found more samples did not add strength; 400 deals against 200, deal by deal on presets and held-out rules, checks that with suite v1's tighter paired intervals before the search budget is spent elsewhere."""
+method = "search-tuning"
+tags = ["search", "hparam"]
+parent = "bot:search:200:1:0"
+priority = 45
+seeds = [1]
+
+[budget]
+wall_hours = 16.0
+gpu = false
+
+[resources]
+host = "home"
+threads = 6
+eval_host = "home"
+eval_threads = 6
+
+[evals]
+curve = false
+suite = "v1"
+parts = ["presets", "heldout"]
+baselines = ["parent"]
+cost = false
+
+[options]
+bot = "search:400:1:0"

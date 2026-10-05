@@ -1,0 +1,28 @@
+# Search ablation: 고수 without reading the table.
+id = "search-no-reading"
+hypothesis = """고수 weighs its sampled deals by how well they explain the bids and plays (reading); turned off it should lose clearly on presets and held-out rules, which sizes what a better belief (P3's model, or RL) can still add."""
+method = "search-tuning"
+tags = ["search", "ablation"]
+parent = "bot:hard"
+priority = 38
+seeds = [1]
+
+[budget]
+wall_hours = 16.0
+gpu = false
+
+[resources]
+host = "home"
+threads = 6
+eval_host = "home"
+eval_threads = 6
+
+[evals]
+curve = false
+suite = "v1"
+parts = ["presets", "heldout"]
+baselines = ["parent"]
+cost = false
+
+[options]
+bot = "hard@read.on=false"

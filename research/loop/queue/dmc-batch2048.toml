@@ -1,0 +1,35 @@
+# Batch 2048 (DMC v1: 1024).
+id = "dmc-batch2048"
+hypothesis = """Batches of 2048 decisions (DMC v1: 1024) halve the gradient noise of Monte Carlo targets per step; with the replay ratio fixed the learner takes half as many steps, so the rating shows which matters more."""
+method = "dmc"
+tags = ["hparam"]
+parent = "dmc-v1-score"
+priority = 40
+seeds = [20261005]
+
+[budget]
+wall_hours = 20.0
+train_hours = 5.25
+hands = 20000000
+gpu = true
+
+# Training holds 12 of the Mac's threads; the suite runs on the home
+# server, so the GPU can take the next run meanwhile.
+[resources]
+host = "mac"
+threads = 12
+eval_host = "home"
+eval_threads = 6
+
+[evals]
+curve = true
+suite = "v1"
+parts = ["ladder", "presets", "heldout", "puzzles"]
+baselines = ["hard"]
+cost = true
+
+[config]
+base = "research/loop/configs/dmc-v1.toml"
+
+[config.set]
+"optim.batch_size" = 2048
