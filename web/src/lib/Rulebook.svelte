@@ -4,7 +4,8 @@
   import Card from './Card.svelte';
   import { cardLabel, jokers, kittyCount, rankLabel } from './cards';
   import { PRESET_NAME } from './presets';
-  import type { Card as CardT, CardPolicy, Contract, Rules, Scoring, TrickPolicy } from './types';
+  import { bidValue, handValue, scoring } from './scoring';
+  import type { Card as CardT, CardPolicy, Contract, Rules, TrickPolicy } from './types';
 
   /** `rules` overrides the preset's, for a table whose players changed them. */
   let { preset, rules: given = null }: { preset: string; rules?: Rules | null } = $props();
@@ -39,70 +40,12 @@
 
   const signed = (v: number) => (v > 0 ? `+${v}` : String(v));
 
-  /** What the server scores with when the rules predate the options. */
-  const DEFAULT_SCORING: Scoring = {
-    win: 'OverTen',
-    no_trump: 'Win',
-    alone: 'Win',
-    run: true,
-    back_run: { TeamAtMost: 10 },
-    discards_to_declarer: true,
-    lose: 'Shortfall',
-  };
-  const scoring = (r: Rules): Scoring => r.scoring ?? DEFAULT_SCORING;
-
   /** The deck in words: 52장, or 7부터 A까지 28장과 ♣3, ♠3. */
   function deckText(r: Rules): string {
     const lowest = r.lowest_rank ?? 2;
     const extras = (r.extra_cards ?? []).map(cardLabel);
     const base = lowest === 2 ? '52장' : `네 무늬의 ${rankLabel(lowest)}부터 A까지 ${4 * (15 - lowest)}장`;
     return extras.length ? `${base}과 ${extras.join(', ')}` : base;
-  }
-
-  /** A bid's rank against the minimum: 노기루다 may count more than it says. */
-  const bidValue = (r: Rules, c: Contract) => c.count + (c.trump === null ? r.bidding.no_trump_bonus : 0);
-
-  /** What one opponent pays the declarer's side; mirrors `hand_value` in
-   * crates/mighty/src/state.rs. */
-  function handValue(r: Rules, c: Contract, alone: boolean, points: number): number {
-    const s = scoring(r);
-    const min = r.bidding.min;
-    const made = points >= c.count;
-    let base: number;
-    if (made) {
-      const w = s.win;
-      base =
-        typeof w === 'object'
-          ? Math.max(points - w.BothOver + c.count - w.BothOver, 1)
-          : {
-              OverTen: Math.max(points - 10, 1),
-              OverMin: points - min,
-              OverBid: points - c.count,
-              BidBonus: points - c.count + 2 * (bidValue(r, c) - min),
-            }[w];
-    } else {
-      const short = c.count - points;
-      const b = s.back_run;
-      const backRun =
-        b === 'Never'
-          ? false
-          : b === 'DefenceReachesBid'
-            ? 20 - points >= c.count
-            : 'TeamAtMost' in b
-              ? points <= b.TeamAtMost
-              : short >= b.ShortBy;
-      const lose = s.lose ?? 'Shortfall';
-      const owed = lose === 'Shortfall' ? short : c.count - lose.PaysBack + short;
-      base = -owed * (backRun ? 2 : 1);
-    }
-    const applies = (d: Scoring['alone']) => d === 'Always' || (d === 'Win' && made);
-    const doubles = [
-      applies(s.no_trump) && c.trump === null,
-      applies(s.alone) && alone,
-      s.run && made && points === 20,
-      applies(s.full_contract ?? 'Never') && c.count === 20,
-    ];
-    return base * 2 ** doubles.filter(Boolean).length;
   }
 
   /** A made contract's worth: the formula, and a note after it. */

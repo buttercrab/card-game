@@ -25,7 +25,8 @@
   import { BACK_NAMES, TABLE_NAMES, checkHand, type Achievement } from './achievements';
   import { loadStats, recordHand } from './stats';
   import { sound } from './sound';
-  import type { Action, Card as CardT, Doubling, FriendCall, Lead, PhaseView, Played, PlayAction, Rules, Scoring, StateMsg, Suit, Trick } from './types';
+  import { ledger } from './scoring';
+  import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, Rules, StateMsg, Suit, Trick } from './types';
 
   let {
     client,
@@ -42,18 +43,6 @@
     onrules?: () => void;
     oninvite?: () => void;
   } = $props();
-
-  /** What servers that send no scoring score by (Scoring::default). */
-  const DEFAULT_SCORING: Scoring = {
-    win: 'OverTen',
-    no_trump: 'Win',
-    alone: 'Win',
-    run: true,
-    back_run: { TeamAtMost: 10 },
-    full_contract: 'Never',
-    discards_to_declarer: true,
-    lose: 'Shortfall',
-  };
 
   // What is drawn lags the server by the animations still playing: each new
   // state waits in a queue, and the difference to the one on screen is
@@ -250,75 +239,9 @@
   // ---- Result ledger -----------------------------------------------------------
   // The result is counted out step by step, as 맞고 and mahjong results are:
   // the points, over or short, each ×2, then everyone's payoff.
-  type Done = Extract<PhaseView, { Done: unknown }>['Done'];
-  /** The count as the rules score it (state.rs, hand_value): what one
-   * opponent pays, then each doubling on its own line. */
-  function ledger(d: Done) {
-    const s = view.rules.scoring ?? DEFAULT_SCORING;
-    const min = view.rules.bidding.min;
-    const p = d.team_points;
-    const c = d.contract.count;
-    const made = p >= c;
-    const lines: string[] = [];
-    let value: number;
-    if (made) {
-      const win = s.win;
-      if (typeof win === 'object') {
-        const k = win.BothOver;
-        value = Math.max(p - k + c - k, 1);
-        lines.push(`(여당 ${p} − ${k}) + (공약 ${c} − ${k}) = ${value}`);
-      } else if (win === 'OverMin') {
-        value = p - min;
-        lines.push(`여당 ${p}점 − 최소 ${min} = ${value}`);
-      } else if (win === 'OverBid') {
-        value = p - c;
-        lines.push(`여당 ${p}점 − 공약 ${c} = ${value}`);
-      } else if (win === 'BidBonus') {
-        const bonus = 2 * (c + (d.contract.trump === null ? view.rules.bidding.no_trump_bonus : 0) - min);
-        value = p - c + bonus;
-        lines.push(`여당 ${p} − 공약 ${c} + 보너스 ${bonus} = ${value}`);
-      } else {
-        value = Math.max(p - 10, 1);
-        lines.push(`여당 ${p}점 − 10 = ${value}`);
-      }
-    } else {
-      const short = c - p;
-      lines.push(short === 1 ? `아깝게 1점 모자람` : `공약 ${c}에서 ${short}점 모자람`);
-      value = short;
-      const lose = s.lose ?? 'Shortfall';
-      if (lose !== 'Shortfall') {
-        value = c - lose.PaysBack + short;
-        lines.push(`공약 ${c} − ${lose.PaysBack} 갚고 + ${short} = ${value}`);
-      }
-      const back = s.back_run;
-      const why =
-        back === 'Never'
-          ? null
-          : back === 'DefenceReachesBid'
-            ? 20 - p >= c && '야당이 공약만큼'
-            : 'TeamAtMost' in back
-              ? p <= back.TeamAtMost && `${back.TeamAtMost}점 이하`
-              : short >= back.ShortBy && `${back.ShortBy}점 이상 모자람`;
-      if (why) {
-        value *= 2;
-        lines.push(`${why} ×2 = ${value}`);
-      }
-    }
-    const applies = (x: Doubling | undefined) => x === 'Always' || (x === 'Win' && made);
-    const doubles = [
-      applies(s.no_trump) && d.contract.trump === null && '노기루다',
-      applies(s.alone) && d.call === 'Alone' && '노프렌드',
-      s.run && made && p === 20 && '런',
-      applies(s.full_contract) && c === 20 && '공약 20',
-    ].filter((x): x is string => !!x);
-    for (const why of doubles) {
-      value *= 2;
-      lines.push(`${why} ×2 = ${value}`);
-    }
-    const margin = p - c;
-    return { made, lines, value, run: p === 20, margin };
-  }
-  const result = $derived(done ? ledger(done) : null);
+  // The count as the rules score it (scoring.ts): what one opponent pays,
+  // then each doubling on its own line.
+  const result = $derived(done ? ledger(view.rules, done) : null);
 
   /** Results already counted out, so a reopened one shows at once. */
   const counted = new Set<string>();

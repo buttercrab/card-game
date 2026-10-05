@@ -1407,4 +1407,69 @@ mod tests {
         let Phase::Done(d) = &s.phase else { unreachable!() };
         assert_eq!(d.tricks[0].winner, 0);
     }
+
+    /// Hands scored by [`settle`], for the web client's copies of the
+    /// scoring (`web/src/lib/scoring.ts`) to check themselves against:
+    /// every preset and a few drawn rule sets, each over contracts above and
+    /// below the minimum, with and without a friend, failed, made and run.
+    fn payoff_fixture() -> serde_json::Value {
+        use crate::rules::Preset;
+        use rand::SeedableRng;
+        let mut sets: Vec<(String, Rules)> = Preset::ALL.iter().map(|p| (p.name().to_string(), p.rules())).collect();
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        for i in 0..10 {
+            sets.push((format!("varied-{i}"), Rules::default().varied(&mut rng)));
+        }
+        // A bid under the minimum scored with the bid bonus: never a penalty.
+        let mut bonus = Rules::default();
+        bonus.scoring.win = WinScore::BidBonus;
+        sets.push(("bid-bonus".into(), bonus));
+        let sets: Vec<serde_json::Value> = sets
+            .into_iter()
+            .map(|(name, rules)| {
+                let min = rules.bidding.min;
+                let contracts = [
+                    Contract { trump: Some(Suit::Spade), count: min - 1 },
+                    Contract { trump: None, count: min },
+                    Contract { trump: Some(Suit::Heart), count: 20 },
+                ];
+                let mut hands = Vec::new();
+                for contract in contracts {
+                    for alone in [false, true] {
+                        let (call, friend) = if alone { (FriendCall::Alone, None) } else { (FriendCall::Seat(1), Some(1)) };
+                        for team_points in [0, contract.count - 1, contract.count, 20] {
+                            hands.push(serde_json::json!({
+                                "contract": contract,
+                                "call": call,
+                                "team_points": team_points,
+                                "value": hand_value(&rules, contract, alone, team_points),
+                                "payoffs": settle(&rules, 0, friend, contract, call, team_points),
+                            }));
+                        }
+                    }
+                }
+                serde_json::json!({ "name": name, "rules": rules, "hands": hands })
+            })
+            .collect();
+        serde_json::Value::Array(sets)
+    }
+
+    /// Writes `tests/payoffs.json`; run by hand (`--ignored`) when the
+    /// scoring is meant to change, then check the web client still agrees
+    /// (`npm test` in web/).
+    #[test]
+    #[ignore]
+    fn write_payoff_fixture() {
+        let json = serde_json::to_string(&payoff_fixture()).unwrap();
+        std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/payoffs.json"), json + "\n").unwrap();
+    }
+
+    /// The fixture the web client is tested against is what the engine
+    /// pays today.
+    #[test]
+    fn payoffs_match_the_fixture() {
+        let pinned: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/payoffs.json")).expect("the fixture parses");
+        assert_eq!(pinned, payoff_fixture(), "scoring changed; rewrite tests/payoffs.json");
+    }
 }
