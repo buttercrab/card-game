@@ -47,6 +47,7 @@ const ERRORS: [RegExp, string][] = [
   [/no player in that seat/, '그 자리에는 사람이 없어요'],
   [/leave your own seat/, '내 자리는 직접 일어나 주세요'],
   [/table is full/, '자리가 다 찼어요'],
+  [/nobody to move/, '바꿀 사람이 없어요'],
   [/bidding range is empty/, '공약 최소가 최대보다 클 수 없어요'],
   [/no-trump bonus/, '노기루다 보너스는 최소 공약보다 작아야 해요'],
   [/no way to choose a friend/, '프렌드를 정하는 방법을 하나는 골라 주세요'],
@@ -95,6 +96,13 @@ export class RoomClient {
   #retry = 500;
   #errorTimer: ReturnType<typeof setTimeout> | undefined;
   #reactionId = 0;
+  /** Seats are moving: the server said where they went, and this tab's new
+   * seat waits for the room that seats everyone there, so the table never
+   * draws the new seat over the old seating for a moment. */
+  #moving = false;
+  #movedSeat: number | null = null;
+  /** 시작 was pressed and the room has not answered yet. */
+  #starting = false;
 
   constructor(id: string) {
     this.#id = id;
@@ -115,6 +123,9 @@ export class RoomClient {
     ws.onopen = () => {
       opened = true;
       this.status = 'open';
+      this.#moving = false;
+      this.#movedSeat = null;
+      this.#starting = false;
       this.#retry = 500;
       const saved = load<Saved>(this.#key);
       // Only to take back our own seat: if it was given away meanwhile, we watch.
@@ -149,6 +160,12 @@ export class RoomClient {
     switch (msg.type) {
       case 'room': {
         this.room = msg;
+        this.#starting = false;
+        if (this.#moving) {
+          this.#moving = false;
+          if (this.#movedSeat !== null) this.seat = this.#movedSeat;
+          this.#movedSeat = null;
+        }
         const c = msg.clock;
         // Kept while it is the same turn, so the ring does not jump with
         // each message's few milliseconds of travel.
@@ -169,13 +186,15 @@ export class RoomClient {
         this.hint = msg.action;
         break;
       case 'welcome': {
-        this.seat = msg.seat;
+        if (this.#moving) this.#movedSeat = msg.seat;
+        else this.seat = msg.seat;
         const name = load<Saved>(this.#key)?.name ?? savedName();
         store(this.#key, { token: msg.token, name } satisfies Saved);
         break;
       }
       case 'unseated':
         this.seat = null;
+        this.#movedSeat = null;
         this.#forget();
         break;
       case 'seats_moved': {
@@ -186,9 +205,15 @@ export class RoomClient {
           msg.order ??
           (msg.seats ? Array.from({ length: n }, (_, s) => (s === msg.seats![0] ? msg.seats![1] : s === msg.seats![1] ? msg.seats![0] : s)) : null);
         this.onmove?.(order);
+        this.#moving = true;
+        // A reaction still showing moves with its seat.
+        const moved: typeof this.reactions = {};
+        if (order) for (const [seat, r] of Object.entries(this.reactions)) moved[order[Number(seat)] ?? Number(seat)] = r;
+        this.reactions = moved;
         // The table on screen was drawn for the old seats; the next hand
         // (or the room) draws afresh.
         this.game = null;
+        this.hint = null;
         this.notice(msg.how === 'shuffle' ? '자리를 섞었어요' : '자리를 바꿨어요');
         break;
       }
@@ -196,12 +221,14 @@ export class RoomClient {
         const id = ++this.#reactionId;
         this.reactions[msg.seat] = { text: msg.text, id };
         sound.react();
+        // By its id, wherever its seat has moved since.
         setTimeout(() => {
-          if (this.reactions[msg.seat]?.id === id) delete this.reactions[msg.seat];
+          for (const [seat, r] of Object.entries(this.reactions)) if (r.id === id) delete this.reactions[Number(seat)];
         }, 2800);
         break;
       }
       case 'error':
+        this.#starting = false;
         this.error = translate(msg.message);
         clearTimeout(this.#errorTimer);
         this.#errorTimer = setTimeout(() => (this.error = null), 4000);
@@ -237,12 +264,13 @@ export class RoomClient {
     if (name) store(NAME_KEY, name);
   }
 
-  setTable(table: { turn_secs?: number; shuffle?: boolean }) {
+  setTable(table: { turn_secs?: number; shuffle?: boolean; shuffle_next?: boolean }) {
     this.#send({ type: 'set_table', ...table });
   }
 
-  shuffleSeats() {
-    this.#send({ type: 'shuffle_seats' });
+  /** 섞기: shuffle the seats when the next hand starts, or not after all. */
+  shuffleNext(on: boolean) {
+    this.setTable({ shuffle_next: on });
   }
 
   swapSeats(a: number, b: number) {
@@ -283,6 +311,9 @@ export class RoomClient {
   }
 
   start() {
+    // A second tap before the room answers would only earn an error.
+    if (this.#starting) return;
+    this.#starting = true;
     this.#send({ type: 'start' });
   }
 

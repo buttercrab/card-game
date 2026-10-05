@@ -74,7 +74,17 @@ pub struct TableSettings {
     /// Deal the players into new seats before every hand.
     #[serde(default)]
     pub shuffle: bool,
+    /// Deal the players into new seats when the next hand starts, once
+    /// (섞기 between hands); cleared when it has.
+    #[serde(default)]
+    pub shuffle_next: bool,
 }
+
+/// Bots go by small, warm names. Each bot gets one when it sits down and
+/// keeps it when it moves, so a shuffle never looks like bots trading
+/// identities; it also keeps its temperament (see [`SessionGame::bot`]),
+/// which is the name's place in this list.
+pub const BOT_NAMES: [&str; 7] = ["두부", "모과", "호두", "보리", "단추", "콩떡", "소금"];
 
 /// The running turn timer: when `seat` must have acted on hand `version`.
 struct Clock {
@@ -85,6 +95,12 @@ struct Clock {
     away: bool,
     deadline: tokio::time::Instant,
     total: Duration,
+}
+
+/// A seated bot's temperament: its name's place in [`BOT_NAMES`], so it
+/// keeps it when it moves; the seat's for a name not on the list.
+fn bot_temper(name: &str, seat: usize) -> usize {
+    BOT_NAMES.iter().position(|n| *n == name).unwrap_or(seat)
 }
 
 /// Writes through a temporary file so a crash never leaves half a snapshot.
@@ -168,8 +184,12 @@ pub enum ClientMsg {
         turn_secs: Option<u32>,
         #[serde(default)]
         shuffle: Option<bool>,
+        /// Between hands: shuffle the seats when the next hand starts.
+        #[serde(default)]
+        shuffle_next: Option<bool>,
     },
-    /// Between hands: deal everyone at the table into random seats.
+    /// Between hands: shuffle the seats when the next hand starts (as
+    /// `SetTable { shuffle_next: true }`; kept for pages loaded before).
     ShuffleSeats,
     /// Between hands: whoever sits at `a` and at `b` (maybe nobody) trade seats.
     SwapSeats {
@@ -222,6 +242,10 @@ enum Occupant {
     Bot {
         #[serde(default)]
         level: BotLevel,
+        /// Given when the bot sits down; see [`BOT_NAMES`]. Rooms saved
+        /// before bots had names get the seat's name when restored.
+        #[serde(default)]
+        name: String,
     },
 }
 
@@ -297,6 +321,9 @@ pub struct Room<G: SessionGame> {
     clock: Option<Clock>,
     /// How long a second of the turn limit lasts; shorter in tests.
     second: Duration,
+    /// How many seats on the opening seat is from where the hand number
+    /// alone puts it: moving seats moves the rotation with the players.
+    rotation: usize,
 }
 
 /// What the room's loop woke up for.
@@ -342,6 +369,7 @@ impl<G: SessionGame> Room<G> {
             away: vec![false; n],
             clock: None,
             second: Duration::from_secs(1),
+            rotation: 0,
         }
     }
 
@@ -481,6 +509,7 @@ impl<G: SessionGame> Room<G> {
             "history": self.history,
             "hands": self.hands,
             "table": self.table,
+            "rotation": self.rotation,
             "hand": self.game.as_ref().map(|_| json!({
                 "number": self.hand_no, "actions": self.log, "started": self.hand_started,
             })),
@@ -497,7 +526,7 @@ impl<G: SessionGame> Room<G> {
             .map(|s| match s {
                 Occupant::Empty => json!("empty"),
                 Occupant::Human { name, .. } => json!({ "human": name }),
-                Occupant::Bot { level } => json!({ "bot": level }),
+                Occupant::Bot { level, name } => json!({ "bot": level, "name": name }),
             })
             .collect();
         report
@@ -528,6 +557,9 @@ impl<G: SessionGame> Room<G> {
             /// Rooms saved before tables had their own settings have none.
             #[serde(default)]
             table: TableSettings,
+            /// Rooms saved before seats could move have none.
+            #[serde(default)]
+            rotation: usize,
             hand: Option<SavedHand>,
         }
         let s: Snapshot<G::Settings, G::Summary> = serde_json::from_value(snapshot).map_err(|e| e.to_string())?;
@@ -539,13 +571,23 @@ impl<G: SessionGame> Room<G> {
             return Err("seat count does not match the settings".into());
         }
         room.seats = s.seats;
+        // Bots saved before they had names get one, by seat as they were shown.
+        for seat in 0..room.seats.len() {
+            if matches!(&room.seats[seat], Occupant::Bot { name, .. } if name.is_empty()) {
+                let fresh = room.new_bot_name(seat);
+                if let Occupant::Bot { name, .. } = &mut room.seats[seat] {
+                    *name = fresh;
+                }
+            }
+        }
         room.scores = s.scores;
         room.hands_played = s.hands_played;
         room.history = s.history;
         room.hands = s.hands;
         room.table = s.table;
+        room.rotation = s.rotation;
         if let Some(hand) = s.hand {
-            let options = G::hand_options(&room.settings, hand.number, room.last_hand(hand.number));
+            let options = G::hand_options(&room.settings, hand.number, room.last_hand(hand.number), room.rotation);
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
             for (i, entry) in hand.actions.iter().enumerate() {
                 let parse =
@@ -727,6 +769,9 @@ impl<G: SessionGame> Room<G> {
                 .collect()
         }
         let n = self.seats.len();
+        // Whoever would have opened the next hand still does, in their new seat.
+        let opener = (self.hands_played as usize % n + self.rotation) % n;
+        self.rotation = (new_seat[opener] + n - self.hands_played as usize % n) % n;
         self.seats = moved(std::mem::take(&mut self.seats), new_seat);
         self.scores = moved(std::mem::take(&mut self.scores), new_seat);
         self.away = moved(std::mem::take(&mut self.away), new_seat);
@@ -753,16 +798,24 @@ impl<G: SessionGame> Room<G> {
         }
     }
 
-    /// Deals everyone into random seats, never quite as they were.
+    /// Deals everyone into random seats, and everyone at the table into a
+    /// seat other than their own: a shuffle that leaves someone where they
+    /// were (or only trades empty seats) looks like it did not happen.
     fn shuffle_seats(&mut self) {
         use rand::seq::SliceRandom;
         let n = self.seats.len();
         let mut order: Vec<usize> = (0..n).collect();
-        for _ in 0..8 {
+        let occupied: Vec<bool> = self.seats.iter().map(|s| !matches!(s, Occupant::Empty)).collect();
+        let everyone_moves = |order: &[usize]| (0..n).all(|s| !occupied[s] || order[s] != s);
+        // About a third of shuffles move everyone, so this rarely runs out;
+        // if it does, everyone moves the same random number of seats round.
+        let found = (0..64).any(|_| {
             order.shuffle(&mut self.rng);
-            if order.iter().enumerate().any(|(s, &to)| s != to) {
-                break;
-            }
+            everyone_moves(&order)
+        });
+        if !found && n > 1 {
+            let k = self.rng.random_range(1..n);
+            order = (0..n).map(|s| (s + k) % n).collect();
         }
         // `order[s]`: where the seat `s` went, so tables can slide each one there.
         let news = json!({ "type": "seats_moved", "how": "shuffle", "order": order });
@@ -800,6 +853,7 @@ impl<G: SessionGame> Room<G> {
                 self.seats[seat] = if self.in_hand() {
                     Occupant::Bot {
                         level: BotLevel::default(),
+                        name: self.new_bot_name(seat),
                     }
                 } else {
                     Occupant::Empty
@@ -808,8 +862,15 @@ impl<G: SessionGame> Room<G> {
                 self.detach(seat);
                 Ok(())
             }
-            ClientMsg::SetTable { turn_secs, shuffle } => {
+            ClientMsg::SetTable {
+                turn_secs,
+                shuffle,
+                shuffle_next,
+            } => {
                 my_seat.ok_or("only seated players can change the table")?;
+                if shuffle_next.is_some() {
+                    self.may_move_seats(my_seat)?;
+                }
                 if let Some(secs) = turn_secs {
                     if !TURN_LIMITS.contains(&secs) {
                         return Err("no such turn limit".into());
@@ -819,11 +880,14 @@ impl<G: SessionGame> Room<G> {
                 if let Some(shuffle) = shuffle {
                     self.table.shuffle = shuffle;
                 }
+                if let Some(next) = shuffle_next {
+                    self.table.shuffle_next = next;
+                }
                 Ok(())
             }
             ClientMsg::ShuffleSeats => {
                 self.may_move_seats(my_seat)?;
-                self.shuffle_seats();
+                self.table.shuffle_next = true;
                 Ok(())
             }
             ClientMsg::SwapSeats { a, b } => {
@@ -831,6 +895,9 @@ impl<G: SessionGame> Room<G> {
                 let n = self.seats.len();
                 if a >= n || b >= n || a == b {
                     return Err("no such seat".into());
+                }
+                if matches!(self.seats[a], Occupant::Empty) && matches!(self.seats[b], Occupant::Empty) {
+                    return Err("nobody to move".into());
                 }
                 let new_seat: Vec<usize> = (0..n)
                     .map(|s| match s {
@@ -870,15 +937,27 @@ impl<G: SessionGame> Room<G> {
                 if !free {
                     return Err("that seat is taken".into());
                 }
-                if !matches!(self.seats[seat], Occupant::Bot { .. }) {
-                    self.record(Event::SeatFilled {
-                        table: self.id.clone(),
-                        seat,
-                        bot: Some(level),
-                        player: None,
-                    });
-                }
-                self.seats[seat] = Occupant::Bot { level };
+                // A bot already there only changes how well it plays; a new
+                // one gets a name of its own.
+                let name = match &self.seats[seat] {
+                    Occupant::Bot { name, .. } => name.clone(),
+                    occupant => {
+                        // A bot in an empty seat starts from nothing; one
+                        // standing in for a player who dropped plays on
+                        // from their score.
+                        if matches!(occupant, Occupant::Empty) {
+                            self.scores[seat] = 0;
+                        }
+                        self.record(Event::SeatFilled {
+                            table: self.id.clone(),
+                            seat,
+                            bot: Some(level),
+                            player: None,
+                        });
+                        self.new_bot_name(seat)
+                    }
+                };
+                self.seats[seat] = Occupant::Bot { level, name };
                 self.away[seat] = false;
                 Ok(())
             }
@@ -966,10 +1045,16 @@ impl<G: SessionGame> Room<G> {
                 if self.seats.iter().any(|s| matches!(s, Occupant::Empty)) {
                     return Err("every seat needs a player or a bot".into());
                 }
-                if self.table.shuffle {
+                // 매 판 자리 섞기, or 섞기 pressed since the last hand.
+                if std::mem::take(&mut self.table.shuffle_next) | self.table.shuffle {
                     self.shuffle_seats();
                 }
-                let options = G::hand_options(&self.settings, self.hands_played, self.last_hand(self.hands_played));
+                let options = G::hand_options(
+                    &self.settings,
+                    self.hands_played,
+                    self.last_hand(self.hands_played),
+                    self.rotation,
+                );
                 let state = G::new_game(&options).map_err(|e| e.to_string())?;
                 self.game = Some(state);
                 self.log.clear();
@@ -1067,6 +1152,9 @@ impl<G: SessionGame> Room<G> {
         };
         if reclaimed.is_none() {
             self.away[seat] = false;
+            // Scores belong to players: whoever sat here before (a player
+            // who left, a bot) took theirs with them.
+            self.scores[seat] = 0;
         }
         // A newer connection for the same seat wins; the old tab becomes a spectator.
         self.detach(seat);
@@ -1102,6 +1190,23 @@ impl<G: SessionGame> Room<G> {
         Ok(())
     }
 
+    /// A name for a bot sitting down at `seat`: the seat's own name from
+    /// [`BOT_NAMES`] when nobody at the table goes by it, else the first
+    /// one free.
+    fn new_bot_name(&self, seat: usize) -> String {
+        let taken = |candidate: &str| {
+            self.seats.iter().any(|s| match s {
+                Occupant::Bot { name, .. } | Occupant::Human { name, .. } => name == candidate,
+                Occupant::Empty => false,
+            })
+        };
+        let k = BOT_NAMES.len();
+        (0..k)
+            .map(|i| BOT_NAMES[(seat + i) % k])
+            .find(|n| !taken(n))
+            .map_or_else(|| format!("봇 {}", seat + 1), str::to_string)
+    }
+
     fn detach(&mut self, seat: usize) {
         for c in self.conns.values_mut().filter(|c| c.seat == Some(seat)) {
             c.seat = None;
@@ -1133,9 +1238,10 @@ impl<G: SessionGame> Room<G> {
         let (Some(seat), Some(game), Some(tx)) = (self.bot_to_act(), self.game.as_ref(), me) else {
             return;
         };
-        let Occupant::Bot { level } = self.seats[seat] else {
+        let Occupant::Bot { level, ref name } = self.seats[seat] else {
             return;
         };
+        let temper = bot_temper(name, seat);
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game);
         let (seed, version) = (self.rng.random::<u64>(), self.version);
@@ -1157,7 +1263,8 @@ impl<G: SessionGame> Room<G> {
         let remote = self.remote.clone().filter(|r| r.available());
         let job = remote.as_ref().map(|_| {
             json!({
-                "level": level, "seat": seat, "seed": seed, "think_ms": think.as_millis() as u64,
+                "level": level, "seat": seat, "temper": temper, "seed": seed,
+                "think_ms": think.as_millis() as u64,
                 "view": view, "legal": legal,
             })
         });
@@ -1178,7 +1285,7 @@ impl<G: SessionGame> Room<G> {
                 Some(action) => Ok(action),
                 None => {
                     tokio::task::spawn_blocking(move || {
-                        G::bot(level, seat, local_think, 1).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
+                        G::bot(level, temper, local_think, 1).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
                     })
                     .await
                 }
@@ -1243,7 +1350,7 @@ impl<G: SessionGame> Room<G> {
         };
         let Some(game) = self.game.as_ref() else { return };
         for seat in 0..self.seats.len() {
-            let Occupant::Bot { level } = self.seats[seat] else {
+            let Occupant::Bot { level, .. } = self.seats[seat] else {
                 continue;
             };
             let Some(action) = G::bot_out_of_turn(level, seat, game, &mut self.rng) else {
@@ -1305,7 +1412,7 @@ impl<G: SessionGame> Room<G> {
                 Occupant::Human { name, .. } => {
                     json!({ "kind": "human", "name": name, "connected": self.connected(i), "away": self.is_away(i) })
                 }
-                Occupant::Bot { level } => json!({ "kind": "bot", "name": format!("Bot {}", i + 1), "level": level }),
+                Occupant::Bot { level, name } => json!({ "kind": "bot", "name": name, "level": level }),
             })
             .collect();
         json!({
@@ -1368,5 +1475,151 @@ impl<G: SessionGame> Room<G> {
         if let Some(c) = self.conns.get(&conn) {
             let _ = c.tx.send(message.to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::MightySettings;
+    use mighty::Mighty;
+    use mighty::rules::Preset;
+
+    fn room() -> Room<Mighty> {
+        Room::new("t".into(), MightySettings::new(Preset::Gshs), Duration::ZERO)
+    }
+
+    /// Empty seats trading places is no shuffle, nor is one that leaves
+    /// someone where they sat: everyone at the table moves, alone at it too.
+    #[test]
+    fn a_shuffle_moves_everyone_at_the_table() {
+        let bot = |name: &str| Occupant::Bot {
+            level: BotLevel::Easy,
+            name: name.into(),
+        };
+        let names = |r: &Room<Mighty>| {
+            r.seats
+                .iter()
+                .map(|s| match s {
+                    Occupant::Bot { name, .. } => name.clone(),
+                    _ => String::new(),
+                })
+                .collect::<Vec<_>>()
+        };
+        // One at the table (at seat 2), three, and a full table.
+        for seated in [&[2][..], &[0, 1, 2], &[0, 1, 2, 3, 4]] {
+            let mut room = room();
+            for &seat in seated {
+                room.seats[seat] = bot(BOT_NAMES[seat]);
+            }
+            for _ in 0..200 {
+                let before = names(&room);
+                room.shuffle_seats();
+                let after = names(&room);
+                for (seat, name) in before.iter().enumerate().filter(|(_, n)| !n.is_empty()) {
+                    assert_ne!(&after[seat], name, "{name} stayed at seat {seat}");
+                }
+                let (mut b, mut a) = (before, after);
+                b.sort();
+                a.sort();
+                assert_eq!(a, b, "nobody comes or goes");
+            }
+        }
+    }
+
+    /// Seats moving between hands keep the opening seat with its player.
+    #[test]
+    fn the_rotation_follows_the_player_who_opens_next() {
+        let mut room = room();
+        room.hands_played = 3;
+        let opener =
+            |r: &Room<Mighty>| Mighty::hand_options(&r.settings, r.hands_played, None, r.rotation).first_bidder;
+        assert_eq!(opener(&room), 3);
+        // Seat 3 goes to seat 0, the rest one further round.
+        room.reseat(&[1, 2, 4, 0, 3], &Value::Null);
+        assert_eq!(opener(&room), 0);
+        room.reseat(&[4, 3, 2, 1, 0], &Value::Null);
+        assert_eq!(opener(&room), 4);
+        // Saved and restored, it stays.
+        let restored = Room::<Mighty>::restore(room.snapshot(), Duration::ZERO).unwrap();
+        assert_eq!(opener(&restored), 4);
+    }
+
+    /// Whoever sits in a seat someone left starts at 0: the score went
+    /// with the one who earned it. A bot standing in for a player who
+    /// dropped keeps the player's.
+    #[test]
+    fn a_newcomer_does_not_inherit_the_last_occupants_score() {
+        let mut room = room();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let conn = |tx: &UnboundedSender<String>| Conn {
+            tx: tx.clone(),
+            seat: None,
+            reacted: None,
+            hinted: None,
+        };
+        room.conns.insert(1, conn(&tx));
+        room.on_message(
+            1,
+            ClientMsg::Join {
+                name: "A".into(),
+                token: None,
+                seat: Some(0),
+                device: None,
+                reclaim: false,
+            },
+        )
+        .unwrap();
+        room.scores = vec![5, 7, -4, -3, -5];
+        // Seat 1 was left empty (its bot removed): a new bot starts at 0.
+        let add = |seat| ClientMsg::AddBot {
+            seat,
+            level: BotLevel::Easy,
+        };
+        room.on_message(1, add(1)).unwrap();
+        assert_eq!(room.scores[1], 0);
+        // Seat 2 holds a player who dropped: the bot plays on from -4.
+        room.seats[2] = Occupant::Human {
+            name: "B".into(),
+            token: "b".into(),
+            player: None,
+        };
+        room.on_message(1, add(2)).unwrap();
+        assert_eq!(room.scores[2], -4);
+        // A watcher takes seat 3 (empty) or a bot's seat between hands: 0.
+        room.conns.insert(2, conn(&tx));
+        room.on_message(
+            2,
+            ClientMsg::Join {
+                name: "C".into(),
+                token: None,
+                seat: Some(3),
+                device: None,
+                reclaim: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(room.scores[3], 0);
+        room.conns.insert(3, conn(&tx));
+        room.on_message(
+            3,
+            ClientMsg::Join {
+                name: "D".into(),
+                token: None,
+                seat: Some(2),
+                device: None,
+                reclaim: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(room.scores[2], 0);
+        assert_eq!(room.scores[0], 5, "a seated player keeps theirs");
+    }
+
+    /// A bot keeps its temperament wherever it sits.
+    #[test]
+    fn a_bots_temperament_goes_by_its_name() {
+        assert_eq!(bot_temper("호두", 4), 2);
+        assert_eq!(bot_temper("봇 5", 4), 4);
     }
 }

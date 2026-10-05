@@ -3,7 +3,7 @@
   // one row per hand, one square per trick, coloured by the side that took
   // its point cards, then the standings. Drawn on a canvas, shared through
   // the phone's share sheet or saved, or copied as text for KakaoTalk.
-  import { botName } from './names';
+  import { occupantName } from './names';
   import { PRESET_NAME } from './presets';
   import { PATHS } from './SuitIcon.svelte';
   import type { HandSummary, RoomMsg, Suit } from './types';
@@ -18,7 +18,7 @@
   let file: File | null = null;
   let status = $state<string | null>(null);
 
-  const names = $derived(room.seats.map((s, i) => (s.kind === 'human' ? s.name : s.kind === 'bot' ? botName(i) : `자리 ${i + 1}`)));
+  const names = $derived(room.seats.map((s, i) => occupantName(s, i) ?? `자리 ${i + 1}`));
   const hands = $derived(room.hands ?? []);
   const shown = $derived(hands.slice(-MAX_ROWS));
   const hidden = $derived(hands.length - shown.length);

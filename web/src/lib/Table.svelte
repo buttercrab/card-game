@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { botName } from './names';
+  import { occupantName } from './names';
   import { tick, untrack } from 'svelte';
   import { prefersReducedMotion } from 'svelte/motion';
   import BidPanel from './BidPanel.svelte';
@@ -152,10 +152,20 @@
 
   function seatName(seat: number): string {
     if (seat === me) return '나';
-    const info = room?.seats[seat];
-    if (!info || info.kind === 'empty') return `${seat + 1}번 자리`;
-    return info.kind === 'bot' ? botName(seat) : info.name;
+    // A seat left empty since the hand on the table keeps its player's name there.
+    return occupantName(room?.seats[seat], seat) ?? (!idle ? known[seat] : null) ?? `${seat + 1}번 자리`;
   }
+
+  /** Who last sat at each seat, so a hand still on the table (its result,
+   * its replay) names a player who has since left. Seats that move take
+   * their names along. */
+  let known = $state<(string | null)[]>([]);
+  $effect(() => {
+    const seats = room?.seats ?? [];
+    const was = untrack(() => known);
+    const now = seats.map((s, i) => occupantName(s, i) ?? was[i] ?? null);
+    if (now.some((name, i) => name !== was[i]) || now.length !== was.length) known = now;
+  });
 
   /** Your own name as the room knows it, for your seat on the tray. */
   const myName = $derived.by(() => {
@@ -684,6 +694,10 @@
     if (running) return;
     running = true;
     try {
+      // Seats moved for this hand (a shuffle at 다음 판): they slide to
+      // their places first, then the cards are dealt.
+      const slide = slidingUntil - performance.now();
+      if (slide > 0) await new Promise((done) => setTimeout(done, slide));
       while (queue.length > 0) {
         const next = queue.shift()!;
         const k = pace();
@@ -1178,9 +1192,15 @@
   });
   const between = $derived(!(room?.in_hand ?? false) && (idle || (done !== null && folded)));
   const emptySeats = $derived(room?.seats.filter((s) => s.kind === 'empty').length ?? 0);
+  /** 섞기 pressed: the seats are shuffled when the next hand starts. */
+  const shuffleNext = $derived(room?.table?.shuffle_next ?? false);
+  /** What everyone at the table (watchers too) is told about the next shuffle. */
+  const shuffleNote = $derived(
+    room?.table?.shuffle ? '매 판 시작할 때 자리를 섞어요' : shuffleNext ? '다음 판 시작할 때 자리를 섞어요' : null,
+  );
   /** The seat whose choices are open, and where it is on screen. */
   let menuSeat = $state<number | null>(null);
-  let menuAnchor = $state<DOMRect | null>(null);
+  let menuAnchor = $state<HTMLElement | null>(null);
   /** Swapping: the seat chosen first; the next seat tapped trades with it. */
   let swapFrom = $state<number | null>(null);
   /** The name a watcher sits down with. */
@@ -1202,8 +1222,14 @@
     // A watcher has nothing to choose at someone else's seat.
     if (!info || (me === null && info.kind === 'human')) return;
     const box = (event.currentTarget as HTMLElement).closest('[data-seat]')?.querySelector('.seat');
-    menuAnchor = (box ?? (event.currentTarget as HTMLElement)).getBoundingClientRect();
+    menuAnchor = (box as HTMLElement | null) ?? (event.currentTarget as HTMLElement);
     menuSeat = seat;
+  }
+  /** Where `seat`'s choices hang from now: the seat tapped, or, if it was
+   * drawn afresh since, the seat as it is drawn now. */
+  function seatRect(seat: number): DOMRect {
+    const el = menuAnchor?.isConnected ? menuAnchor : section?.querySelector(`[data-seat="${seat}"] .seat`);
+    return (el ?? section ?? document.body).getBoundingClientRect();
   }
   /** One tap to sit for someone whose name is known; else the name first. */
   function sitAt(seat: number, event: MouseEvent) {
@@ -1212,9 +1238,9 @@
     else openSeat(seat, event);
   }
   function seatLabel(seat: number): string {
-    const info = room?.seats[seat];
-    if (!info || info.kind === 'empty') return `${seat + 1}번 자리`;
-    return seat === me ? '내 자리' : info.kind === 'bot' ? botName(seat) : info.name;
+    const name = occupantName(room?.seats[seat], seat);
+    if (name === null) return `${seat + 1}번 자리`;
+    return seat === me ? '내 자리' : name;
   }
 
   // Seats slide to their new places when they move (a swap or a shuffle):
@@ -1229,11 +1255,26 @@
     }
     return boxes;
   }
+  /** How long seats take to slide to their new places. */
+  const slideMs = () => (settings.speed === 'fast' ? 260 : 460);
+  /** Until when the seats are sliding (performance.now()); a deal that
+   * comes with a shuffle waits for them to arrive. */
+  let slidingUntil = 0;
   $effect(() => {
     client.onmove = (order) => {
+      const still = prefersReducedMotion.current || settings.speed === 'off';
+      // A move arriving while the last one still slides starts from where
+      // the seats are drawn now: finish that one first.
+      for (const a of section?.getAnimations({ subtree: true }) ?? []) if (a.id === 'seat-slide') a.finish();
       flip = { rects: seatBoxes(), order };
+      if (!still) slidingUntil = performance.now() + slideMs() + 80;
       menuSeat = null;
       swapFrom = null;
+      if (order) {
+        const moved: (string | null)[] = [];
+        known.forEach((name, s) => (moved[order[s] ?? s] = name));
+        known = moved;
+      }
     };
     return () => {
       client.onmove = null;
@@ -1253,18 +1294,22 @@
       void tick().then(() => {
         for (const el of section?.querySelectorAll<HTMLElement>('[data-seat]') ?? []) {
           const seat = Number(el.dataset.seat);
+          // Who sits here now came from `from`: slide from there.
           const from = f.order ? f.order.indexOf(seat) : seat;
           const old = f.rects.get(from);
-          const target = el.querySelector<HTMLElement>('.seat') ?? el;
-          const box = target.getBoundingClientRect();
+          const box = (el.querySelector<HTMLElement>('.seat') ?? el).getBoundingClientRect();
           if (!old || box.width === 0) continue;
           const dx = old.left + old.width / 2 - (box.left + box.width / 2);
           const dy = old.top + old.height / 2 - (box.top + box.height / 2);
           if (Math.hypot(dx, dy) < 2) continue;
-          target.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
-            duration: settings.speed === 'fast' ? 260 : 460,
-            easing: EASE_STANDARD,
-          });
+          // The seat and what hangs under it (an empty seat's buttons) go together.
+          for (const part of el.children) {
+            part.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
+              id: 'seat-slide',
+              duration: slideMs(),
+              easing: EASE_STANDARD,
+            });
+          }
         }
       });
       return;
@@ -1422,6 +1467,7 @@
         {/if}
       {:else if idle && room}
         <p class="pane-empty">{room.hands_played === 0 ? '첫 판을 기다려요' : `${room.hands_played}판 끝 · 다음 판을 기다려요`}</p>
+        {#if shuffleNote}<p class="pane-empty"><strong>{shuffleNote}</strong></p>{/if}
         <button class="rules-chip side-rules" onclick={onrules}>{rulesName}</button>
       {:else}
         <p class="pane-empty">패를 나누는 중</p>
@@ -1434,16 +1480,22 @@
         {#each Array.from({ length: n }, (_, k) => seatAt(k)) as s (s)}
           {@const info = room?.seats[s]}
           {@const t = team(s)}
-          <li class:me={s === me} class:turn={turn === s}>
+          {@const vacant = info?.kind === 'empty' && s !== me}
+          <li class:me={s === me} class:turn={turn === s} class:vacant>
             <span class="head" class:on={turn === s}>
-              <PlayerFigure still team={t} trumpSuit={contract?.trump ?? null} isBot={info?.kind === 'bot'} offline={info?.kind === 'human' && !info.connected} />
+              {#if vacant}
+                <!-- An empty seat: the dashed outline the seat itself shows. -->
+                <svg class="vacant-figure" viewBox="0 0 120 110" aria-hidden="true"><path d="M20 108 Q22 76 60 72 Q98 76 100 108" /><circle cx="60" cy="48" r="20" /></svg>
+              {:else}
+                <PlayerFigure still team={t} trumpSuit={contract?.trump ?? null} isBot={info?.kind === 'bot'} offline={info?.kind === 'human' && !info.connected} />
+              {/if}
             </span>
             <span class="who-cell">
-              <span class="row-name">{s === me ? myName : seatName(s)}</span>
+              <span class="row-name">{s === me ? myName : vacant && idle ? '빈 자리' : seatName(s)}</span>
               {#if t}<span class="team mini-team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}
             </span>
             <span class="num hand-pts">{play || done ? points(s) : '–'}</span>
-            <span class="num total" class:neg={(room?.scores[s] ?? 0) < 0}>{room?.scores[s] ?? 0}</span>
+            <span class="num total" class:neg={(room?.scores[s] ?? 0) < 0}>{vacant && idle ? '–' : (room?.scores[s] ?? 0)}</span>
           </li>
         {/each}
       </ol>
@@ -1575,8 +1627,25 @@
             {:else}
               <p class="centre-note">빈 자리 <strong>{emptySeats}</strong>개 · 봇이나 친구로 채우면 시작해요</p>
             {/if}
+            {#if shuffleNote}<p class="centre-sub shuffle-note" role="status">{shuffleNote}</p>{/if}
             <div class="tools">
-              <button class="tool" onclick={() => client.shuffleSeats()}><Icon name="shuffle" size="22px" /><span>섞기</span></button>
+              {#if room.table?.shuffle}
+                <!-- 매 판 자리 섞기 is on: 섞기 is already as on as it gets; the
+                     setting itself is under 설정. -->
+                <button class="tool on" aria-pressed="true" aria-label="섞기: 매 판 자리 섞기 켜짐 (설정에서 바꿔요)" onclick={onmenu}>
+                  <Icon name="shuffle" size="22px" /><span>섞기</span>
+                </button>
+              {:else}
+                <button
+                  class="tool"
+                  class:on={shuffleNext}
+                  aria-pressed={shuffleNext}
+                  aria-label={shuffleNext ? '섞기 취소: 자리 그대로 시작해요' : '섞기: 다음 판 시작할 때 자리를 섞어요'}
+                  onclick={() => client.shuffleNext(!shuffleNext)}
+                >
+                  <Icon name="shuffle" size="22px" /><span>섞기</span>
+                </button>
+              {/if}
               <button class="tool" onclick={onmenu}><Icon name="sliders" size="22px" /><span>설정</span></button>
             </div>
           {:else}
@@ -1588,6 +1657,7 @@
             {#if sitName.trim() && (emptySeats > 0 || room.seats.some((x) => x.kind === 'bot'))}
               <p class="centre-sub"><strong class="who-name">{sitName.trim()}</strong> 이름으로 앉아요</p>
             {/if}
+            {#if shuffleNote}<p class="centre-sub shuffle-note" role="status">{shuffleNote}</p>{/if}
           {/if}
         </div>
       {/if}
@@ -1683,7 +1753,8 @@
           {/if}
         </div>
         <div class="result-foot">
-          {#if seated && !full}<p class="muted wait-seats">빈 자리를 채우면 다음 판을 시작할 수 있어요</p>{/if}
+          {#if seated && !full}<p class="muted wait-seats">빈 자리를 채우면 다음 판을 시작할 수 있어요</p>
+          {:else if shuffleNote}<p class="muted wait-seats" role="status">{shuffleNote}</p>{/if}
           <div class="next">
             {#if me !== null}
               <span class="foot-react">
@@ -1823,7 +1894,7 @@
       {seat}
       info={room.seats[seat]}
       {me}
-      anchor={menuAnchor}
+      anchor={() => seatRect(seat)}
       bind:name={sitName}
       onclose={close}
       onlevel={(level) => {
@@ -3218,6 +3289,17 @@
     position: relative;
     width: 26px;
   }
+  .vacant-figure {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    fill: none;
+    stroke: var(--ink-muted);
+    stroke-width: 6;
+    stroke-dasharray: 10 9;
+    stroke-linecap: round;
+  }
   /* The turn: the same plum ring the seat wears, in small. */
   .head::after {
     content: '';
@@ -3477,6 +3559,26 @@
     min-height: 56px;
     padding: 6px 8px 5px;
     font-size: 12px;
+    font-weight: 600;
+  }
+  /* 섞기 is on: the tool is pressed into the table, in ink, until the
+     next hand uses it (or it is pressed again). */
+  .tool.on {
+    background: var(--ink);
+    color: var(--table);
+    box-shadow: 0 1px 0 var(--btn-lip);
+    translate: 0 2px;
+  }
+  /* Hung under the middle's buttons, so it takes no height from them: the
+     middle stays clear of the top seats on a short phone. */
+  .shuffle-note {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    width: max-content;
+    max-width: min(220px, calc(100cqw - 2 * var(--seat-w) - 8px));
+    transform: translateX(-50%);
+    color: var(--ink);
     font-weight: 600;
   }
   .rules-chip {

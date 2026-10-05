@@ -5,7 +5,7 @@
   import { onMount, tick } from 'svelte';
   import Icon from './Icon.svelte';
   import { layer } from './layers';
-  import { botName } from './names';
+  import { occupantName } from './names';
   import type { BotLevel, SeatInfo } from './types';
 
   let {
@@ -29,8 +29,8 @@
     info: SeatInfo;
     /** Your seat, or null when watching. */
     me: number | null;
-    /** The seat's box on screen, to hang the card from. */
-    anchor: DOMRect;
+    /** Where the seat is on screen now, to hang the card from. */
+    anchor: () => DOMRect;
     /** The name a watcher sits down with. */
     name?: string;
     onclose: () => void;
@@ -53,9 +53,11 @@
   const LEVELS: BotLevel[] = ['easy', 'normal', 'hard'];
   const seated = $derived(me !== null);
   const mine = $derived(me === seat);
-  const title = $derived(
-    info.kind === 'empty' ? `${seat + 1}번 자리` : info.kind === 'bot' ? botName(seat) : mine ? `${info.name} (나)` : info.name,
-  );
+  const title = $derived.by(() => {
+    const name = occupantName(info, seat);
+    if (name === null) return `${seat + 1}번 자리`;
+    return mine ? `${name} (나)` : name;
+  });
   const sub = $derived(
     info.kind === 'empty'
       ? '빈 자리'
@@ -70,32 +72,61 @@
   /** Sending a player to watch waits for a yes. */
   let kicking = $state(false);
 
-  // Hung under the seat when it fits, else over it; never off the screen.
+  // Hung under the seat when it fits, else over it, and always wholly on
+  // screen: inside the visual viewport, which a phone's keyboard shrinks
+  // (and may scroll) while the name is typed, so 앉기 stays in reach. Too
+  // tall for what is left, the card scrolls inside itself.
   let card = $state<HTMLElement>();
   let pos = $state<{ left: number; top: number } | null>(null);
+  const MARGIN = 8;
+  const GAP = 6;
   function place() {
     if (!card) return;
+    const vv = window.visualViewport;
+    const vx = vv?.offsetLeft ?? 0;
+    const vy = vv?.offsetTop ?? 0;
+    const vw = vv?.width ?? innerWidth;
+    const vh = vv?.height ?? innerHeight;
+    card.style.maxHeight = `${Math.max(0, vh - 2 * MARGIN)}px`;
+    card.style.maxWidth = `${Math.max(0, vw - 2 * MARGIN)}px`;
     const w = card.offsetWidth;
     const h = card.offsetHeight;
-    const gap = 6;
-    const below = anchor.bottom + gap;
-    const top = below + h <= innerHeight - 8 ? below : Math.max(8, anchor.top - gap - h);
-    const left = Math.min(Math.max(8, anchor.left + anchor.width / 2 - w / 2), innerWidth - w - 8);
-    pos = { left, top };
+    const box = anchor();
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(v, hi));
+    const below = box.bottom + GAP;
+    const above = box.top - GAP - h;
+    const bottomEdge = vy + vh - MARGIN;
+    const top = below + h <= bottomEdge ? below : above >= vy + MARGIN ? above : below;
+    pos = {
+      left: clamp(box.left + box.width / 2 - w / 2, vx + MARGIN, vx + vw - MARGIN - w),
+      top: clamp(top, vy + MARGIN, bottomEdge - h),
+    };
   }
   $effect(() => {
     void kicking;
-    void anchor;
     void tick().then(place);
   });
 
   let field = $state<HTMLInputElement>();
   onMount(() => {
     const unlayer = layer(onclose);
-    // A newcomer's first seat: straight to the name.
-    if (field && !name.trim()) field.focus();
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', place);
+    vv?.addEventListener('scroll', place);
+    // What the card holds can change its size (내보내기 asks first).
+    const sized = new ResizeObserver(() => place());
+    if (card) sized.observe(card);
+    place();
+    // A newcomer's first seat: straight to the name, once the card is where
+    // it belongs, so focusing it scrolls nothing.
+    if (field && !name.trim()) field.focus({ preventScroll: true });
     else card?.focus({ preventScroll: true });
-    return unlayer;
+    return () => {
+      unlayer();
+      vv?.removeEventListener('resize', place);
+      vv?.removeEventListener('scroll', place);
+      sized.disconnect();
+    };
   });
 
   function sit(event: SubmitEvent) {
@@ -104,7 +135,7 @@
   }
 </script>
 
-<svelte:window onresize={place} onkeydown={(e) => e.key === 'Escape' && onclose()} />
+<svelte:window onresize={place} onscrollcapture={place} onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
 <!-- Anywhere else closes it, as a tap beside a real popover would. -->
 <button class="scrim" aria-label="닫기" tabindex="-1" onclick={onclose}></button>
@@ -114,8 +145,9 @@
   aria-label="{title} 자리"
   tabindex="-1"
   bind:this={card}
-  style:left="{pos?.left ?? -9999}px"
+  style:left="{pos?.left ?? 0}px"
   style:top="{pos?.top ?? 0}px"
+  style:visibility={pos ? null : 'hidden'}
 >
   <p class="head"><strong>{title}</strong>{#if sub}<span class="muted"> · {sub}</span>{/if}</p>
 
@@ -182,8 +214,14 @@
     position: fixed;
     z-index: 41;
     display: grid;
+    /* One column no wider than the card: a name field or a row of chips
+       never pushes 앉기 out past the card's edge. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     width: min(240px, calc(100vw - 16px));
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 10px;
     border-radius: 16px;
     background: var(--raised);
@@ -278,7 +316,8 @@
     gap: 6px;
   }
   .sit input {
-    flex: 1;
+    flex: 1 1 0;
+    width: 0;
     min-width: 0;
   }
   .sit button {

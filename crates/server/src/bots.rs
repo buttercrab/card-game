@@ -77,6 +77,9 @@ struct Job {
     id: u64,
     level: BotLevel,
     seat: usize,
+    /// The bot's temperament; servers that send none mean the seat's.
+    #[serde(default)]
+    temper: Option<usize>,
     seed: u64,
     /// How long the room would like it to think.
     #[serde(default)]
@@ -286,6 +289,10 @@ fn solve<G: SessionGame>(job: &Job, most: Duration) -> Option<Value> {
         return None;
     }
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let action = G::bot(job.level, job.seat, think, threads).act(&view, &legal, &mut StdRng::seed_from_u64(job.seed));
+    let action = G::bot(job.level, job.temper.unwrap_or(job.seat), think, threads).act(
+        &view,
+        &legal,
+        &mut StdRng::seed_from_u64(job.seed),
+    );
     serde_json::to_value(action).ok()
 }

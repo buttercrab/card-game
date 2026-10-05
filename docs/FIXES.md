@@ -35,6 +35,7 @@ Everything a group of friends notices in one evening. Play-test items first.
 - **What it does:** it shuffles everyone at the table, people and bots, into new seats. Each player keeps their reconnect token, so a reload still finds their seat.
 - **Announced** in the event line ("자리를 섞었어요").
 - **Option:** 매 판 섞기, to reshuffle before every hand.
+- **Owner, 2026-10-05:** 섞기 should not shuffle at once. Now it marks the next hand (the button stays pressed, everyone at the table, watchers too, reads "다음 판 시작할 때 자리를 섞어요"; pressed again it is off). 다음 판 (or 시작) shuffles, the seats slide, then the cards are dealt. The server keeps the mark (`shuffle_next`, saved with the table) and clears it once used. Everyone at the table always lands in a seat other than their own. Bots keep a name of their own (두부, 모과, …) and their level and temperament wherever they move; whoever would have opened the next hand still does from their new seat; someone sitting where another left starts at 0.
 
 ### 1.5 Back to the room (방으로 가기)
 - **Where:** from the result sheet, a button returns to the room, without leaving the table.

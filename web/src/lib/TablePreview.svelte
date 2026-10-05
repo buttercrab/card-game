@@ -9,8 +9,11 @@
   // with the room's own bar and menu: lobby (the first hand, seats to fill) |
   // lobbywatch (the same, watching) | room (the table after the seats moved)
   // | folded (the last hand's result folded away) | seatbot | seatperson |
-  // seatme | seatempty (a seat's choices) | swap (picking a seat to swap
-  // with) | menu (the table's menu) | leave (나가기 mid-hand, asking first).
+  // seatkick (sending a player to watch, asking first) | seatme | seatempty
+  // (a seat's choices) | seatsit | seatsitbot (a watcher's name entry at an
+  // empty seat, at a bot's) | swap (picking a seat to swap with) | pending
+  // (섞기 pressed for the next hand) | menu (the table's menu) | leave
+  // (나가기 mid-hand, asking first).
   import Room from './Room.svelte';
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
@@ -194,10 +197,10 @@
     settings: { preset: 'gshs' },
     seats: [
       { kind: 'human', name: '재용', connected: true },
-      { kind: 'bot', name: 'Bot 2' },
+      { kind: 'bot', name: '콩떡' },
       { kind: 'human', name: '아주긴이름의친구입니다', connected: true },
       { kind: 'human', name: '민수', connected: false },
-      { kind: 'bot', name: 'Bot 5' },
+      { kind: 'bot', name: '호두' },
     ],
     scores: [12, -3, 5, -8, -6],
     hands_played: 3,
@@ -224,8 +227,26 @@
     key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' || which === 'misdealnow' ? { Seat: 4 } : key === 'watch' ? { Seat: 3 } : { Seat: 0 };
 
   /** States drawn by the whole room page (Room.svelte), bar and menu too. */
-  const ROOM_STATES = ['lobby', 'lobbywatch', 'room', 'folded', 'seatbot', 'seatperson', 'seatme', 'seatempty', 'swap', 'menu', 'leave'];
+  const ROOM_STATES = [
+    'lobby',
+    'lobbywatch',
+    'room',
+    'pending',
+    'folded',
+    'seatbot',
+    'seatperson',
+    'seatkick',
+    'seatme',
+    'seatempty',
+    'seatsit',
+    'seatsitbot',
+    'swap',
+    'menu',
+    'leave',
+  ];
   const inRoom = ROOM_STATES.includes(which);
+  /** Watching between hands: the lobby with an empty seat, a watcher's name entry. */
+  const watching = ['lobbywatch', 'seatsit', 'seatsitbot'].includes(which);
   /** Between hands with nothing on the table: the lobby, or once the seats moved. */
   const idle = inRoom && !['folded', 'leave'].includes(which);
   if (which === 'timer' || which === 'mytimer' || which === 'spectate' || inRoom) {
@@ -239,10 +260,12 @@
     room.in_hand = which === 'leave';
     room.showing = !idle;
   }
-  if (which === 'lobby' || which === 'lobbywatch' || which === 'seatempty') {
+  // 섞기 pressed: the next hand starts with a shuffle.
+  if (which === 'pending' && room.table) room.table = { ...room.table, shuffle: false, shuffle_next: true };
+  if (which === 'lobby' || watching || which === 'seatempty') {
     room.seats = [
       { kind: 'human', name: '재용', connected: true },
-      { kind: 'bot', name: 'Bot 2', level: 'normal' },
+      { kind: 'bot', name: '콩떡', level: 'normal' },
       { kind: 'empty' },
       { kind: 'empty' },
       { kind: 'human', name: '아주긴이름의친구입니다', connected: true },
@@ -250,9 +273,9 @@
     room.scores = [0, 0, 0, 0, 0];
     room.hands_played = 0;
     room.history = [];
-    room.watching = which === 'lobbywatch' ? 1 : 0;
+    room.watching = watching ? 1 : 0;
   }
-  if (which === 'lobbywatch') room.seats[0] = { kind: 'empty' };
+  if (watching) room.seats[0] = { kind: 'empty' };
   if (which === 'contract') {
     // 공약 올리기 on: a trump chip picks the trump, the row under it the contract.
     rules.bidding.raise_on_exchange = true;
@@ -275,7 +298,7 @@
     room,
     // The exchange opens on the bidding, so the table sees which cards came from the kitty.
     game: idle ? null : game,
-    seat: which === 'spectate' || which === 'lobbywatch' ? null : 0,
+    seat: which === 'spectate' || watching ? null : 0,
     onmove: null,
     error: null,
     status: 'open',
@@ -296,7 +319,7 @@
     removeBot: noop,
     setRules: noop,
     setTable: noop,
-    shuffleSeats: noop,
+    shuffleNext: noop,
     swapSeats: noop,
     clearSeat: noop,
     askHint: noop,
@@ -322,14 +345,16 @@
   }
 
   // The states that need a tap: done here, as a player would, once drawn.
-  const tapSeat = { seatbot: 1, seatperson: 2, seatme: 0, seatempty: 2, swap: 1 }[which];
+  const tapSeat = { seatbot: 1, seatperson: 2, seatkick: 2, seatme: 0, seatempty: 2, seatsit: 0, seatsitbot: 1, swap: 1 }[which];
   if (tapSeat !== undefined || which === 'folded' || which === 'leave') {
     const click = (selector: string) => document.querySelector<HTMLElement>(selector)?.click();
     setTimeout(() => {
       if (which === 'folded') click('.result .fold');
       if (which === 'leave') click('dialog .leave');
       if (tapSeat !== undefined) click(`[data-seat="${tapSeat}"] .seat-tap`);
-      if (which === 'swap') setTimeout(() => [...document.querySelectorAll<HTMLElement>('.pop-card button')].find((b) => b.textContent?.includes('자리 바꾸기'))?.click(), 50);
+      const pick = (text: string) => [...document.querySelectorAll<HTMLElement>('.pop-card button')].find((b) => b.textContent?.includes(text))?.click();
+      if (which === 'swap') setTimeout(() => pick('자리 바꾸기'), 50);
+      if (which === 'seatkick') setTimeout(() => pick('내보내기'), 50);
     }, 200);
   }
 
