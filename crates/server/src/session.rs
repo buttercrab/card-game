@@ -3,11 +3,9 @@
 
 use engine::{Bot, Game};
 use mighty::Mighty;
-use mighty::bot::SimpleBot;
+use mighty::bot::{Clumsy, tempered};
 use mighty::rules::{Preset, Rules};
 use mighty::search::SearchBot;
-use rand::seq::IndexedRandom;
-use rand::{Rng, RngCore};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -52,6 +50,33 @@ pub trait SessionGame:
 
     /// How a finished hand went, in a word, for the stats.
     fn outcome(state: &Self::State) -> &'static str;
+
+    /// What kind of decision `view`'s seat faces among `legal`, which
+    /// sets how long a bot seems to take over it. By default only a lone
+    /// legal move counts as obvious.
+    fn decision(_view: &Self::View, legal: &[Self::Action]) -> Decision {
+        if legal.len() <= 1 {
+            Decision::Obvious
+        } else {
+            Decision::Follow
+        }
+    }
+}
+
+/// What a seat is deciding, for the pace of a bot's moves: people bid and
+/// plan with care, lead with a moment's thought, and follow quickly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    /// No real choice: one legal move, or moves that all come to the same.
+    Obvious,
+    /// Following someone else's lead, with a choice to make.
+    Follow,
+    /// Leading.
+    Lead,
+    /// Bidding, or answering whether to throw the hand in.
+    Bid,
+    /// Setting the hand up: what to put back, whom to call.
+    Plan,
 }
 
 /// How well a seated bot plays.
@@ -114,14 +139,9 @@ impl SessionGame for Mighty {
 
     fn bot(level: BotLevel, seat: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
         // Bolder or more careful bidders, by seat.
-        const TEMPER: [f32; 8] = [0.0, 0.4, -0.4, 0.2, -0.2, 0.3, -0.3, 0.1];
-        let mut policy = SimpleBot::default();
-        policy.bid_base += TEMPER[seat % TEMPER.len()];
+        let policy = tempered(seat);
         match level {
-            BotLevel::Easy => Box::new(Clumsy {
-                inner: policy,
-                slips: 0.35,
-            }),
+            BotLevel::Easy => Box::new(Clumsy::easy(policy)),
             BotLevel::Normal => Box::new(policy),
             // More sampled deals keep helping a little (2000 beat 200 by about
             // a third of a point per hand), so deal until the time is up.
@@ -151,6 +171,20 @@ impl SessionGame for Mighty {
         settings.rules.as_ref().is_some_and(|r| *r != settings.preset.rules())
     }
 
+    fn decision(view: &mighty::View, legal: &[mighty::Action]) -> Decision {
+        use mighty::PhaseView;
+        if view.obvious(legal) {
+            return Decision::Obvious;
+        }
+        match &view.phase {
+            PhaseView::Bidding { .. } => Decision::Bid,
+            PhaseView::Exchange { .. } => Decision::Plan,
+            PhaseView::Play { lead: None, .. } => Decision::Lead,
+            PhaseView::Play { .. } => Decision::Follow,
+            PhaseView::Dealing | PhaseView::Done { .. } => Decision::Obvious,
+        }
+    }
+
     fn outcome(state: &mighty::State) -> &'static str {
         match state.summary() {
             Some(s) if s.made => "made",
@@ -160,19 +194,47 @@ impl SessionGame for Mighty {
     }
 }
 
-/// A simple bot that, when playing a card, picks one at random this often.
-struct Clumsy {
-    inner: SimpleBot,
-    slips: f64,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use engine::{Turn, Viewer};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
-impl Bot<Mighty> for Clumsy {
-    fn act(&mut self, view: &mighty::View, legal: &[mighty::Action], rng: &mut dyn RngCore) -> mighty::Action {
-        let playing = legal.iter().all(|a| matches!(a, mighty::Action::Play { .. }));
-        if playing && rng.random_bool(self.slips) {
-            legal.choose(rng).expect("a bot acts only with legal actions").clone()
-        } else {
-            self.inner.act(view, legal, rng)
+    /// Over hands of 보통 bots, every decision gets the pace its phase
+    /// calls for, and a lone legal move is always obvious.
+    #[test]
+    fn decisions_follow_the_phase() {
+        let mut seen = Vec::new();
+        for seed in 0..20 {
+            let settings = MightySettings::default();
+            let mut state = Mighty::new_game(&Mighty::hand_options(&settings, 0, None)).unwrap();
+            let mut rng = StdRng::seed_from_u64(seed);
+            loop {
+                let action = match Mighty::turn(&state) {
+                    Turn::Over => break,
+                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                    Turn::Seat(seat) => {
+                        let view = Mighty::view(&state, Viewer::Seat(seat));
+                        let legal = Mighty::legal_actions(&state);
+                        let decision = Mighty::decision(&view, &legal);
+                        let expected = match &view.phase {
+                            _ if legal.len() == 1 => vec![Decision::Obvious],
+                            mighty::PhaseView::Bidding { .. } => vec![Decision::Bid],
+                            mighty::PhaseView::Exchange { .. } => vec![Decision::Plan],
+                            mighty::PhaseView::Play { lead: None, .. } => vec![Decision::Lead],
+                            _ => vec![Decision::Follow, Decision::Obvious],
+                        };
+                        assert!(expected.contains(&decision), "{decision:?} for {:?}", view.phase);
+                        seen.push(decision);
+                        Mighty::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
+                    }
+                };
+                Mighty::apply(&mut state, action).unwrap();
+            }
         }
+        // Both real and obvious choices come up in twenty hands.
+        let follows = seen.iter().filter(|d| **d == Decision::Follow).count();
+        assert!(follows > 0 && seen.contains(&Decision::Obvious));
     }
 }
