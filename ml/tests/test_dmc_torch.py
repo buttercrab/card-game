@@ -40,6 +40,9 @@ from cardgame_ml.train.dmc.policy import (  # noqa: E402
     legal_values,
     observation_tensors,
 )
+from cardgame_ml.train.sessions import ConfigChangedError  # noqa: E402
+
+SESSION_KEYS = {"session", "commit", "dirty", "config_sha256", "seed", "started"}
 
 TINY = QConfig(TrunkConfig(width=16, heads=2, layers=1, feedforward=32), 32, 1)
 CPU = torch.device("cpu")
@@ -208,7 +211,7 @@ def test_a_tiny_run_plays_learns_and_resumes(repo: Path, tmp_path: Path) -> None
     config = tiny_config(repo)
     lines: list[dict[str, Any]] = []
     exclude = repo / config.exclude
-    progress = train(config, tmp_path, exclude, lines.append)
+    progress = train(config, tmp_path, exclude, lines.append, commit="a" * 40)
     assert progress.hands >= config.budget.hands
     assert progress.step > 0
     files = {p.name for p in tmp_path.iterdir()}
@@ -223,12 +226,31 @@ def test_a_tiny_run_plays_learns_and_resumes(repo: Path, tmp_path: Path) -> None
     assert described["reward_scale"] == config.reward_scale
     trained = load(tmp_path)
     assert trained.parameter_count() == described["parameters"]
-    # Done: started again, it resumes, finds the budget spent and stops.
+    start = next(line for line in lines if line["event"] == "start")
+    assert (start["session"], start["commit"], start["seed"]) == (1, "a" * 40, config.seed)
+    assert described["sessions"] == [{k: v for k, v in start.items() if k in SESSION_KEYS}]
+    # Done: started again (on another commit, with more time: a budget
+    # change is fine), it resumes, finds the hands spent and stops.
+    longer = dataclasses.replace(config, budget=dataclasses.replace(config.budget, hours=0.06))
     again: list[dict[str, Any]] = []
-    resumed = train(config, tmp_path, exclude, again.append)
+    resumed = train(longer, tmp_path, exclude, again.append, commit="b" * 40)
     assert again[0]["event"] == "resume"
     assert resumed.sessions == 2
     assert resumed.hands == progress.hands
+    described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    sessions = described["sessions"]
+    assert [(s["session"], s["commit"]) for s in sessions] == [(1, "a" * 40), (2, "b" * 40)]
+    assert sessions[0]["config_sha256"] != sessions[1]["config_sha256"]
+    # Anything else changed is refused, and the record left alone...
+    other = dataclasses.replace(config, optim=dataclasses.replace(config.optim, lr=1.0))
+    with pytest.raises(ConfigChangedError, match=r"optim\.lr"):
+        train(other, tmp_path, exclude, print, commit="c" * 40)
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == described
+    # ...unless accepted, and then the session says what changed.
+    train(other, tmp_path, exclude, print, commit="c" * 40, allow_config_change=True)
+    described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert described["config"]["optim"]["lr"] == 1.0
+    assert described["sessions"][-1]["config_changed"] == [f"optim.lr ({config.optim.lr} → 1.0)"]
 
 
 def actor_without_weights(

@@ -1,12 +1,16 @@
-"""Artifact manifests: the schema, verification, and the committed ones."""
+"""Artifact manifests: the schema, verification, the committed ones, and
+how training and export record a model's."""
 
 import hashlib
+import json
 from datetime import date
 from pathlib import Path
 
 import pytest
 
+from cardgame_ml import runs
 from cardgame_ml.manifest import Artifact, Manifest, ManifestError, load_all
+from cardgame_ml.provenance import Checkout
 
 
 def manifest_json(**changes: object) -> dict[str, object]:
@@ -71,3 +75,84 @@ def test_committed_manifests_are_valid(repo: Path) -> None:
     assert directory.is_dir()
     names = [m.name for m in load_all(directory)]
     assert len(set(names)) == len(names), "manifest names are unique"
+
+
+SESSION = {
+    "session": 1,
+    "commit": "a" * 40,
+    "dirty": False,
+    "config_sha256": "c" * 64,
+    "seed": 7,
+    "started": "2026-10-05T01:00:00Z",
+}
+
+
+def test_sessions_and_export_round_trip() -> None:
+    manifest = Manifest.from_json(manifest_json(sessions=[SESSION], exported_at="e" * 40))
+    assert manifest.sessions[0].commit == "a" * 40
+    assert manifest.exported_at == "e" * 40
+    assert Manifest.from_json(manifest.to_json()) == manifest
+    # Older manifests have neither.
+    old = Manifest.from_json(manifest_json())
+    assert old.sessions == ()
+    assert old.exported_at is None
+    with pytest.raises(ManifestError, match="session 1: commit"):
+        Manifest.from_json(manifest_json(sessions=[{**SESSION, "commit": "abc"}]))
+    with pytest.raises(ManifestError, match="exported_at"):
+        Manifest.from_json(manifest_json(exported_at="HEAD"))
+
+
+def test_an_export_keeps_the_training_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, repo = tmp_path / "store", tmp_path / "repo"
+    monkeypatch.setenv("CARDGAME_ARTIFACTS", str(store))
+    (repo / "research" / "manifests").mkdir(parents=True)
+    run = runs.run_dir("m")
+    run.mkdir(parents=True)
+    second = {**SESSION, "session": 2, "commit": "b" * 40}
+    described = {"encoding": "mighty-1", "sessions": [SESSION, second]}
+    (run / "config.json").write_text(json.dumps(described), encoding="utf-8")
+    (run / "model.pt").write_bytes(b"weights")
+    (run / "checkpoint.pt").write_bytes(b"resume state")
+    (run / "metrics.json.tmp").write_bytes(b"a write under way")
+
+    trained = Checkout(repo, "b" * 40, dirty=False)
+    path = runs.record(run, trained, "research/x/config.toml", (7, 1), "mighty-1")
+    manifest = Manifest.load(path)
+    assert manifest.commit == "b" * 40
+    assert [s.commit for s in manifest.sessions] == ["a" * 40, "b" * 40]
+    assert manifest.exported_at is None
+    assert {a.path for a in manifest.artifacts} == {"models/m/config.json", "models/m/model.pt"}
+
+    (run / "model.onnx").write_bytes(b"onnx")
+    exported = Checkout(repo, "f" * 40, dirty=False)
+    again = Manifest.load(runs.rerecord(run, exported))
+    assert again.commit == "b" * 40  # still the training commit
+    assert again.sessions == manifest.sessions
+    assert again.exported_at == "f" * 40
+    assert (again.config, again.seeds, again.encoding, again.created) == (
+        manifest.config,
+        manifest.seeds,
+        manifest.encoding,
+        manifest.created,
+    )
+    assert "models/m/model.onnx" in {a.path for a in again.artifacts}
+
+
+def test_an_old_manifest_is_rerecorded_without_losing_its_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A manifest from before sessions were recorded (a run trained by an
+    older build) keeps its training commit through an export."""
+    store, repo = tmp_path / "store", tmp_path / "repo"
+    monkeypatch.setenv("CARDGAME_ARTIFACTS", str(store))
+    (repo / "research" / "manifests").mkdir(parents=True)
+    run = runs.run_dir("old")
+    run.mkdir(parents=True)
+    (run / "config.json").write_text(json.dumps({"encoding": "mighty-1"}), encoding="utf-8")
+    (run / "model.pt").write_bytes(b"weights")
+    old = manifest_json(name="old", kind="weights", commit="b" * 40)
+    (repo / "research" / "manifests" / "old.json").write_text(json.dumps(old), encoding="utf-8")
+    again = Manifest.load(runs.rerecord(run, Checkout(repo, "f" * 40, dirty=False)))
+    assert (again.commit, again.exported_at, again.sessions) == ("b" * 40, "f" * 40, ())

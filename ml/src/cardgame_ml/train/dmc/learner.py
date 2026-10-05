@@ -10,13 +10,16 @@ from which the actors reload. No search, no bootstrapping: the target is
 the hand's real outcome.
 
 A run writes into its directory: ``config.json`` (the config, the spec,
-the parameter count), ``log.jsonl`` (throughput, losses by phase of the
+the parameter count, and its ``sessions``: each one's commit, config
+hash and seed, see ``train.sessions``), ``log.jsonl`` (throughput, losses by phase of the
 hand, the learning curve), ``checkpoint.pt`` (to resume from, every
 ``checkpoint_minutes``), ``snapshots/hands-<n>.pt`` (the weights at each
 point of the learning curve) and at the end ``model.pt`` and
 ``metrics.json``. Stopped and started again, it resumes from the
 checkpoint (weights, optimiser, counts; the buffer refills) with fresh
-actor seeds.
+actor seeds, provided its config is the one the run started with
+(``budget`` aside); a changed config is refused unless the caller
+accepts it (``allow_config_change``), and the session records the change.
 
 Every iteration the learner checks that each actor is alive: an actor
 that died (its ``Failure`` report, with the traceback, goes to the log
@@ -52,6 +55,7 @@ from cardgame_ml.train.dmc.buffer import Batch, ReplayBuffer
 from cardgame_ml.train.dmc.config import DmcConfig, curve_deals
 from cardgame_ml.train.dmc.system import gpu_utilisation, load_average
 from cardgame_ml.train.metrics import PHASES, phases
+from cardgame_ml.train.sessions import check_resume, recorded_sessions, session, write_json
 
 type Log = Callable[[dict[str, Any]], None]
 
@@ -203,15 +207,21 @@ class Learner:
     """One session of a run: start the actors, learn until the budget is
     spent or the process is stopped, checkpoint on the way out."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         config: DmcConfig,
         out: Path,
         exclude: Path,
         log: Log,
         *,
+        commit: str | None = None,
+        dirty: bool = False,
+        allow_config_change: bool = False,
         actor_main: ActorMain = actor.run,
     ) -> None:
+        """``commit`` and ``dirty``: the checkout this session runs, for the
+        record. Raises ``ConfigChangedError`` when resuming with another
+        config outside ``budget`` (unless ``allow_config_change``)."""
         self.config, self.out, self.exclude, self.log = config, out, exclude, log
         self.actor_main = actor_main
         self.device = device_for(config.device)
@@ -229,16 +239,32 @@ class Learner:
         out.mkdir(parents=True, exist_ok=True)
         (out / "snapshots").mkdir(exist_ok=True)
         checkpoint = out / "checkpoint.pt"
+        sessions: list[dict[str, Any]] = []
+        changed: list[str] = []
         if checkpoint.exists():
             described = json.loads((out / "config.json").read_text(encoding="utf-8"))
             check_encoding(out, described, self.spec)
+            changed = check_resume(
+                out,
+                described["config"],
+                asdict(config),
+                ignore=("budget",),
+                allow_change=allow_config_change,
+            )
+            sessions = recorded_sessions(described)
             state = torch.load(checkpoint, map_location=self.device, weights_only=False)
             self.model.load_state_dict(state["model"])
             self.optimizer.load_state_dict(state["optimizer"])
             self.progress = Progress(**state["progress"])
             log({"event": "resume", **asdict(self.progress)})
         self.progress.sessions += 1
-        _write_json(out / "config.json", describe(config, self.spec, self.model))
+        self.session = session(
+            self.progress.sessions, commit, dirty, asdict(config), config.seed, changed
+        )
+        write_json(
+            out / "config.json",
+            describe(config, self.spec, self.model) | {"sessions": [*sessions, self.session]},
+        )
         self.buffer = ReplayBuffer(self.spec, config.buffer.capacity)
         self.rng = np.random.default_rng([config.seed, self.progress.sessions])
         self.losses = PhaseLoss(self.device)
@@ -282,7 +308,7 @@ class Learner:
                 "device": str(self.device),
                 "actors": a.processes,
                 "parameters": self.model.parameter_count(),
-                "session": progress.sessions,
+                **self.session,
             }
         )
         try:
@@ -536,20 +562,28 @@ def _drain(reports: Any) -> None:
             return
 
 
-def _write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def train(
+def train(  # noqa: PLR0913
     config: DmcConfig,
     out: Path,
     exclude: Path,
     log: Log,
     *,
+    commit: str | None = None,
+    dirty: bool = False,
+    allow_config_change: bool = False,
     actor_main: ActorMain = actor.run,
 ) -> Progress:
     """Runs (or resumes) the run ``config`` into ``out``; see the module docs."""
-    return Learner(config, out, exclude, log, actor_main=actor_main).run()
+    return Learner(
+        config,
+        out,
+        exclude,
+        log,
+        commit=commit,
+        dirty=dirty,
+        allow_config_change=allow_config_change,
+        actor_main=actor_main,
+    ).run()
 
 
 __all__ = ["ActorError", "Learner", "PhaseLoss", "Progress", "describe", "load", "train"]
