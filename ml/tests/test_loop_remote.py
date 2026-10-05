@@ -74,7 +74,7 @@ def test_remote_steps_through_ssh(tmp_path: Path) -> None:
     assert record.pid == 4321
     assert record.workdir == "/home/me/research/card-game/runs/f/eval-hard"
     script = ssh.scripts[-1]
-    assert "cd /home/me/research/card-game/code/abcdef012345" in script
+    assert "cd -- /home/me/research/card-game/code/abcdef012345" in script
     assert "nohup setsid nice -n 15" in script
     assert "'x y'" in script
     assert "--commit abcdef0123456789" in script

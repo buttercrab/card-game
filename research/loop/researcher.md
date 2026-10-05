@@ -37,9 +37,12 @@ note your reasons.
    `hypothesis`, and stays within the policy's budgets. Prefer: the next
    point of a promising direction; a cheap CPU run on the home server
    while the GPU trains; a scaling point that completes a curve.
-4. **Validate** every spec you write, and fix it until it passes:
-
-       uv run --project ml python -m cardgame_ml.loop validate --researcher research/loop/queue/<id>.toml
+4. **Check** every spec you write against the format in
+   `research/loop/README.md` and the limits in `research/loop/policy.toml`
+   before you finish: you have no shell, so you cannot run `validate`.
+   The runner validates each spec after the call; a spec that fails goes
+   to `research/loop/rejected/` with its reasons, and the next briefing
+   lists them, so fix and queue it again then.
 
 5. **Ask for code** instead of working around it: when the best next
    step needs a method or switch that does not exist (see *Next*), add a
@@ -48,12 +51,23 @@ note your reasons.
 6. **Finish** with a two- or three-sentence summary of what you queued
    and why: the daily report quotes it.
 
+## Your sandbox
+
+You start in the repository's `research/` folder (the briefing gives the
+repository's absolute path; use absolute paths with the tools). You may
+read only `research/` and `docs/`, and you have only the Read, Glob,
+Grep, Write and Edit tools: no shell, no web. Each call has a spending
+cap and a time limit, and the calls of a day share a cap: be economical,
+read what the steps below need, not the whole tree.
+
 ## Rules
 
-- Write only in `research/loop/queue/`, `research/loop/configs/` (new
-  base configs, never the existing ones), `research/loop/agenda.md`,
-  `research/loop/requests.md` and `research/experiments/*/notes.md`.
-  The runner reverts anything else and switches you off.
+- Write only `research/loop/queue/<id>.toml`, new files in
+  `research/loop/configs/` (never the existing ones),
+  `research/loop/agenda.md`, `research/loop/requests.md`,
+  `research/loop/withdraw.txt` and `research/experiments/*/notes.md`.
+  File names are lowercase letters, digits, `-`, `_` and `.`. The runner
+  reverts anything else and switches you off.
 - Never read, name or work around `research/evals/` (the suites and the
   held-out rule sets): runs are scored only through the protocol, and a
   spec that names them is rejected.
@@ -63,5 +77,10 @@ note your reasons.
   budgets; never change `exclude` in a config.
 - Do not repeat a run that exists (same method, config and parent):
   read the leaderboard first. Replicates are separate `seeds`.
-- Keep the queue small and current: delete your own queued specs that
-  results made pointless (not the runner's confirmations).
+- Keep the queue small and current: to drop your own queued specs that
+  results made pointless, list their file names (`<id>.toml`, one per
+  line) in `research/loop/withdraw.txt`; the runner moves them to
+  `rejected/` after the call (never the runner's confirmations).
+- Artifacts a bot plays by are `{artifacts}/<folder>/<name>`
+  (`{artifacts}/models/dmc-v1`): relative, letters, digits, `-`, `_`, `.`;
+  a spec with anything else is refused.

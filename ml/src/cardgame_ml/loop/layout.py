@@ -10,6 +10,7 @@ runs' records, step logs and the researcher's transcripts.
 from dataclasses import dataclass
 from pathlib import Path
 
+from cardgame_ml.loop.safety import inside, name
 from cardgame_ml.store import artifact_store
 
 
@@ -93,4 +94,4 @@ class Layout:
         return self.state / "cancel"
 
     def run_logs(self, folder: str) -> Path:
-        return self.logs / folder
+        return inside(self.logs, name(folder, "run folder"))

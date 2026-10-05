@@ -55,6 +55,7 @@ from cardgame_ml.loop.records import (
     parse_stamp,
     stamp,
 )
+from cardgame_ml.loop.safety import UnsafePathError, inside, name
 from cardgame_ml.loop.spec import Spec, load_spec
 from cardgame_ml.loop.steps import Step
 from cardgame_ml.loop.summary import write_summary
@@ -413,7 +414,7 @@ class Runner:
         spec = want.queued.spec
         assert spec is not None
         plan = METHODS[spec.method].plan(self._context(spec, want.folder, self.records.by_id()))
-        folder = self.layout.experiments / want.folder
+        folder = inside(self.layout.experiments, name(want.folder, "run folder"))
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "spec.toml").write_text(tomlw.dumps(spec.to_toml()), encoding="utf-8")
         if plan.config is not None:
@@ -454,6 +455,11 @@ class Runner:
         record.stopping = record.exit_code = record.ended = None
         try:
             executor.start(run, record, self._log(run, record))
+        except UnsafePathError as e:
+            self.say(f"{run.id}: refused to start {record.step.name}: {e}")
+            record.status = "failed"
+            self._finish(run, "failed", now, f"{record.step.name}: {e}")
+            return False
         except (ConnectionError, OSError, subprocess.SubprocessError) as e:
             self.say(f"{run.id}: could not start {record.step.name}: {e}")
             record.attempts -= 1

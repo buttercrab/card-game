@@ -14,6 +14,7 @@ agent (Claude Code, headless) proposes the next batch within the
 | [`agenda.md`](agenda.md) | What is learnt, what to try (runnable, needs code), what is pruned | researcher, people |
 | [`researcher.md`](researcher.md) | The researcher's instructions | people |
 | [`requests.md`](requests.md) | Methods the researcher wants that need code | researcher |
+| `withdraw.txt` | Queued spec files the researcher wants dropped (the runner moves them, then deletes this) | researcher |
 | `queue/` | Specs waiting to run | researcher, people, the runner (confirmations) |
 | `configs/` | Base training configs specs start from | people (researcher: new files only) |
 | `suites/` | The loop's own suites: fresh-deal twins of the scoreboard, head-to-heads | people (`fresh-suite`) |
@@ -140,8 +141,8 @@ Only `eval` steps go there (nothing but cargo is needed). For a run's
 exact commit, `git archive` is unpacked into `~/research/card-game/code/
 <commit>` and built there (`cargo build --release --locked`, at the
 step's threads); models a step plays by are copied to
-`~/research/card-game/artifacts/`; each step runs under `nohup setsid
-nice -n 15` in `~/research/card-game/runs/<run>/<step>/`, and its
+`~/research/card-game/artifacts/`; each step runs under `env -i …
+nohup setsid nice -n 15` in `~/research/card-game/runs/<run>/<step>/`, and its
 output and log are fetched back when it ends. Every remote command is
 `ssh home bash -s` (the login shell is fish). The loop touches nothing
 outside `~/research/card-game` (never Docker, systemd or the bot worker),
@@ -175,31 +176,101 @@ The protocol is the policy's, not the spec's:
 ## The researcher
 
 Called when fewer than `low_water` runnable specs wait, at most every
-`min_interval_hours` and `max_calls_per_day` times a day, never while
-`<store>/loop/researcher-off` exists. It runs in the background:
+`min_interval_hours` and `max_calls_per_day` times a day, only while the
+day's spend cap has room for a whole call, never while
+`<store>/loop/researcher-off` exists. It runs in the background, in a
+sandbox (`researcher.py`, `Sandbox`; `<repo>` is the loop's checkout,
+every path rule absolute):
 
 ```
+cd <repo>/research && env -i HOME PATH USER LANG… (+ its own login) \
 claude -p <researcher.md + briefing> --model claude-opus-5-5 --output-format json
-  --permission-mode dontAsk --no-session-persistence --strict-mcp-config
-  --tools Read,Glob,Grep,Write,Edit,Bash
-  --allowedTools Read Glob Grep 'Write(research/loop/**)' 'Edit(research/loop/**)'
-      'Write(research/experiments/*/notes.md)' 'Edit(research/experiments/*/notes.md)'
-      'Bash(uv run --project ml python -m cardgame_ml.loop validate:*)'
-  --disallowedTools 'Read(research/evals/**)' 'Edit(research/evals/**)' 'Write(research/evals/**)'
+  --no-session-persistence --permission-mode dontAsk --setting-sources project
+  --strict-mcp-config --mcp-config '{"mcpServers": {}}' --disable-slash-commands
+  --tools Read,Glob,Grep,Write,Edit                  # no Bash, no web, no agents
+  --max-budget-usd 5.00 --add-dir <repo>/docs
+  --allowedTools 'Read(/<repo>/research/**)' 'Read(/<repo>/docs/**)'
+      'Write|Edit(/<repo>/research/loop/queue/*.toml)'
+      'Write(/<repo>/research/loop/configs/*.toml)'
+      'Write|Edit(/<repo>/research/loop/{agenda.md,requests.md,withdraw.txt})'
+      'Write|Edit(/<repo>/research/experiments/*/notes.md)'
+  --disallowedTools 'Read|Write|Edit(/<repo>/research/evals/**)'
+      'Read(~/.ssh/**)' 'Read(~/.config/**)' 'Read(~/.claude/**)' …
+      'Read(//**/.env)' 'Read(//**/*.env)' 'Read(//**/site.env)' 'Read(//**/*.pem)' …
+      Bash WebFetch WebSearch Task Agent NotebookEdit
 ```
 
-The briefing names the time, the queue, the recent runs and the limits.
-Afterwards the runner checks the work whatever the tool rules allowed:
-any change outside the queue, `configs/`, the agenda, the requests and
-runs' `notes.md` is reverted and switches the researcher off (with the
-reason in `researcher-off`); every new or changed spec is validated with
-the researcher's limits (at most `max_specs_per_call`, the queue under
-`max_gpu_hours_queued`), and failures go to `rejected/`; confirmations
-it touched are put back. Calls past `timeout_minutes` are killed. Each
-call is a line in `researcher-log.jsonl` (outcome, specs taken and
-refused, paths changed, cost and turns, its closing summary); the
-transcript stays in `<store>/loop/researcher/`. `research --dry-run`
-prints the briefing and command without calling.
+(`Write|Edit(…)` stands for one rule per tool.) So the sandbox is:
+
+- **Reads**: only `research/` and `docs/` (the working folder and the one
+  added); nothing else is allowed, and in `dontAsk` mode what is not
+  allowed is refused. Never `research/evals/` (the suites and held-out
+  rule sets), and never anything that looks like a secret wherever it is
+  (`~/.ssh`, `~/.aws`, `~/.config`, `~/.claude`, `.env` files,
+  `site.env`, keys).
+- **Writes**: only its own files — specs in `queue/`, new base configs in
+  `configs/`, `agenda.md`, `requests.md`, `withdraw.txt` and runs'
+  `notes.md`. It never writes code.
+- **No shell**: no Bash at all (a prefix allow-list such as
+  `Bash(cmd:*)` would also pass `cmd; rm -rf ~` or `cmd && curl …`). It
+  cannot run `validate`: the runner validates its specs after the call,
+  and the next briefing lists what was refused and why. It cannot delete
+  either: it lists queued spec files it wants dropped in `withdraw.txt`
+  and the runner moves them to `rejected/` (plain spec file names only;
+  never a confirmation).
+- **Environment**: home, path, locale and its own login (`ANTHROPIC_API_KEY`
+  or `CLAUDE_CODE_OAUTH_TOKEN` if set) only: no bot or stats tokens. Only
+  the project's settings are read, so the user's own permission rules,
+  hooks and MCP servers do not widen this.
+- **Spend**: each call is capped by `--max-budget-usd` (`max_budget_usd`)
+  and killed past `timeout_minutes`; the calls of the last 24 hours may
+  cost `max_usd_per_day` in all, counted from `claude`'s own JSON output
+  (`total_cost_usd`; a call that reported none, killed say, counts as a
+  whole call), and a call starts only if a whole one still fits. `research`
+  by hand refuses too.
+
+The briefing names the time, the repository, the queue, the recent runs,
+the last call's refused specs and the limits. Afterwards the runner
+checks the work whatever the tool rules allowed: any change outside the
+places above (or to an existing base config) is reverted and switches
+the researcher off (with the reason in `researcher-off`); every new or
+changed spec is validated with the researcher's limits (at most
+`max_specs_per_call`, the queue under `max_gpu_hours_queued`, safe names
+and paths), and failures go to `rejected/`; confirmations it touched are
+put back. Each call is a line in `researcher-log.jsonl` (outcome, specs
+taken, refused and withdrawn, paths changed, cost, tokens and turns, its
+closing summary); the transcript stays in `<store>/loop/researcher/`.
+`research --dry-run` prints the briefing, the command and the day's
+spend without calling.
+
+## Names, paths and secrets
+
+Queue files and run records are text, and parts of them become folders,
+`rsync`/`ssh` arguments and `rm -rf` targets, so `cardgame_ml.loop.safety`
+checks them first:
+
+- run folders, step names and queue file names are one segment of
+  `a-z 0-9 - _ .`, starting with a letter or digit, no `..`, at most 128
+  long; spec ids, `parent`, `after` and `confirms` are loop run ids;
+- an artifact a step plays by (`{artifacts}/models/x`) is a relative
+  path of two segments or more (`A-Z a-z 0-9 - _ .`, none starting with
+  `.` or `-`); `requires` likewise; no bot or baseline starts with `-`;
+- every path is resolved and must stay inside its root (the run's folder,
+  the logs, the artifact store; `~/research/card-game` on the home
+  server), and records that fail are never loaded;
+- `rsync` and `ssh` get `--` before their operands; `rsync --delete`
+  mirrors only one checked artifact folder, never a parent; `rm -rf` on
+  the home server only a checked `runs/<run>/<step>` folder; the policy's
+  `ssh` destination and `root` are checked when it loads;
+- a step on the Mac gets the runner's environment without anything that
+  looks like a secret (`*TOKEN*`, `*SECRET*`, `*PASSWORD*`, `*API_KEY*`,
+  `AWS_*`, `ANTHROPIC_*`, `SSH_*`…); on the home server it starts from
+  `env -i` (home, path, locale). No command is ever a shell string built
+  from a queue entry: local steps are argument lists, remote ones are
+  quoted (`shlex`).
+
+A spec or record that fails these is refused (a running one fails), and
+nothing is touched.
 
 ## Reports
 

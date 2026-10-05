@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cardgame_ml.loop.fields import FieldError, Table
+from cardgame_ml.loop.safety import UnsafePathError, relative, ssh_destination
 
 SCHEMA = "loop-policy/1"
 
@@ -59,7 +60,11 @@ class ResearcherPolicy:
     """Called when fewer runnable specs than this wait in the queue."""
     timeout_minutes: float
     max_budget_usd: float
-    """Passed to ``claude --max-budget-usd``; 0 leaves it out."""
+    """One call's cap, passed to ``claude --max-budget-usd`` (above 0)."""
+    max_usd_per_day: float
+    """What the calls of the last 24 hours may cost in all (by ``claude``'s
+    own ``total_cost_usd``; a call that reported none counts as
+    ``max_budget_usd``). A call starts only if it fits whole."""
 
 
 @dataclass(frozen=True)
@@ -166,6 +171,13 @@ def parse_policy(data: dict[str, object], where: str) -> Policy:
             max_load=h.number("max_load", 1e9),
         )
         h.done()
+        host = hosts[name]
+        try:
+            if host.ssh is not None:
+                ssh_destination(host.ssh)
+                relative(host.root, f"hosts.{name}.root")
+        except UnsafePathError as e:
+            raise FieldError(f"{where}: hosts.{name}: {e}") from None
     hosts_table.done()
     if "mac" not in hosts:
         raise FieldError(f"{where}: hosts: the Mac (mac) is required")
@@ -187,8 +199,13 @@ def parse_policy(data: dict[str, object], where: str) -> Policy:
         low_water=r.integer("low_water"),
         timeout_minutes=r.number("timeout_minutes"),
         max_budget_usd=r.number("max_budget_usd"),
+        max_usd_per_day=r.number("max_usd_per_day"),
     )
     r.done()
+    if not 0 < researcher.max_budget_usd <= researcher.max_usd_per_day:
+        raise FieldError(f"{where}: researcher: 0 < max_budget_usd <= max_usd_per_day")
+    if not researcher.timeout_minutes > 0:
+        raise FieldError(f"{where}: researcher: timeout_minutes above 0")
     p = t.table("protocol")
     c = p.table("curve")
     curve = Curve(

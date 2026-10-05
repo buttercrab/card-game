@@ -5,6 +5,10 @@ researcher reads this before every batch, queues from **Now**, moves items
 as results come in and says why; people edit it too. Items marked
 **needs code** cannot be queued: the researcher files them in
 [`requests.md`](requests.md) and a person implements the method runner.
+The researcher works in a sandbox (README, *The researcher*): it reads
+only `research/` and `docs/` (never `research/evals/`), writes only its
+specs, new configs, this agenda, the requests and runs' notes, has no
+shell, and stops for the day at the policy's spend cap.
 
 The goal (PLAN, P3b–P5): a self-play agent that beats 보통 on suite v1,
 then 고수, alone or inside the search; and the scaling picture that says
