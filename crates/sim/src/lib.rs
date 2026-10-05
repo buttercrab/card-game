@@ -12,6 +12,8 @@
 //! ([`Timed`]) and the statistics reported on them ([`stats`]).
 
 pub mod lab;
+pub mod phased;
+pub mod signal;
 pub mod spec;
 pub mod stats;
 

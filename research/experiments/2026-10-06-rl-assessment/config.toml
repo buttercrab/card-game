@@ -1,0 +1,40 @@
+# dmc-v2 assessment (2026-10-06). Everything the runs depended on; the
+# commands are in scripts/. Code: commit ffdcaac on phase-1-scaffold's
+# 88f3423 (the binary was built from that tree before rustfmt; identical
+# behaviour). Bots: the table's levels as of 36bfc1b (bot fixes merged).
+
+rules = "gshs"            # 경기과고, 5 players, mighty-3, scoring G
+artifacts = "~/card-game-artifacts/assess-2026-10-06"
+
+[models]
+# Exported from ~/card-game-artifacts/models/dmc-v2 (unchanged) with
+# `cardgame_ml.export --run dmc-v2 --weights W --out DIR --allow-dirty`.
+final = "dmc-v2-final"    # checkpoint.pt's model, 118 958 hands, step 31 042
+h40k = "dmc-v2-h40k"      # snapshots/hands-0000040001.pt
+h80k = "dmc-v2-h80k"      # snapshots/hands-0000080021.pt
+
+[declare]
+# lab declare: deals 0..N (start 0), focus seat deal/5 mod 5, first
+# bidder deal mod 5; every seat's randomness from lab::stream(deal,
+# phase tag, seat), so variants are paired deal by deal.
+normal_field_deals = 10000
+hard_field_deals = 1000
+hard = "search:200:1:0 with seat temper (the table's 고수, no clock)"
+threads = [5, 8]
+
+[exchange]
+# lab gen --bot normal, deals 0..3000; lab exchange --play normal.
+deals = 3000
+
+[signal]
+# lab bid-signal: 고수-style search value = 100 sampled deals
+# (SearchBot::default().worlds), simple-bot playouts, per action.
+normal_table = { bot = "normal", deals = 4000, worlds = 100, search_every = 1 }
+dmc_table = { bot = "dmc:dmc-v2-final:2", deals = 300, worlds = 100, search_every = 3 }
+
+[replica]
+# scripts/replicate.py: dmc-v2's actor loop (config.json's [actors]) with
+# the final weights, one process, 64 envs, 3 torch threads.
+hands = 1500
+env_seed = 777
+rng_seed = 5

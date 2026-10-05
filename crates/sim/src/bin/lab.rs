@@ -14,6 +14,7 @@
 use clap::{Parser, Subcommand};
 use mighty::rules::{Preset, Rules};
 use sim::lab::{self, Actor, DeclareResult, Exchanger, Record};
+use sim::signal::{self, SignalSetup};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -114,6 +115,26 @@ enum Command {
         #[arg(long, default_value = HARD)]
         field: String,
     },
+    /// Every bidding decision of hands played by `bot` in every seat, with
+    /// the seat's payoff and what the simple bot's reading, a Q network
+    /// (`--net dmc:DIR`) and the search made of it (`sim::signal`).
+    BidSignal {
+        #[arg(long, default_value_t = 1000)]
+        deals: u64,
+        #[arg(long, default_value_t = 0)]
+        start: u64,
+        #[arg(long)]
+        bot: String,
+        /// A `dmc:MODEL_DIR` spec whose network values every decision.
+        #[arg(long)]
+        net: Option<String>,
+        /// Deals per search value; 0 searches nothing.
+        #[arg(long, default_value_t = 0)]
+        worlds: usize,
+        /// Search one decision in this many.
+        #[arg(long, default_value_t = 1)]
+        search_every: usize,
+    },
     /// `declare` results side by side, as Markdown.
     DeclareReport {
         /// `name=results.jsonl`, one per run, in order.
@@ -186,6 +207,16 @@ fn named(variants: &[String]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The Q network of a `dmc:MODEL_DIR` spec.
+fn network(s: &str) -> &'static dyn engine::ActionValues {
+    let spec: sim::spec::Spec = s.parse().unwrap_or_else(|e| panic!("{e}"));
+    match spec.kind {
+        #[cfg(feature = "dmc")]
+        sim::spec::Kind::Dmc(bot) => bot.net,
+        _ => panic!("--net takes a dmc:MODEL_DIR spec"),
+    }
+}
+
 fn actor(s: &str) -> Actor {
     Actor::parse(s).unwrap_or_else(|e| panic!("{e}"))
 }
@@ -218,6 +249,25 @@ fn main() {
             let deals: Vec<u64> = (*start..start + deals).collect();
             run(&deals, threads, &args.out, |&deal| {
                 vec![lab::declare(&rules, deal, bot, field)]
+            });
+        }
+        Command::BidSignal {
+            deals,
+            start,
+            bot,
+            net,
+            worlds,
+            search_every,
+        } => {
+            let setup = SignalSetup {
+                bot: actor(bot),
+                net: net.as_deref().map(network),
+                worlds: *worlds,
+                search_every: *search_every,
+            };
+            let deals: Vec<u64> = (*start..start + deals).collect();
+            run(&deals, threads, &args.out, |&deal| {
+                signal::bid_signal(&rules, deal, setup)
             });
         }
         Command::DeclareReport { run } => {
