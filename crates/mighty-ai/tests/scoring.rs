@@ -1,8 +1,8 @@
 //! Whole hands played by the simple bot, scored as the rules say.
 
-use engine::{Bot, Game, Turn, Viewer};
+use engine::{Game, Viewer};
 use mighty::rules::Preset;
-use mighty::{FriendCall, Mighty, Options, PhaseView};
+use mighty::{FriendCall, Mighty, PhaseView, testing};
 use mighty_ai::SimpleBot;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -17,22 +17,8 @@ fn gshs_hands_pay_back_failed_contracts() {
     let (mut made, mut failed) = (0, 0);
     for seed in 0..60 {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let mut state = Mighty::new_game(&Options {
-            rules: rules.clone(),
-            first_bidder: seed as usize % 5,
-        })
-        .unwrap();
-        loop {
-            let action = match Mighty::turn(&state) {
-                Turn::Over => break,
-                Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                Turn::Seat(seat) => {
-                    let legal = Mighty::legal_actions(&state);
-                    SimpleBot::default().act(&Mighty::view(&state, Viewer::Seat(seat)), &legal, &mut rng)
-                }
-            };
-            Mighty::apply(&mut state, action).unwrap();
-        }
+        let mut simple = testing::by(SimpleBot::default());
+        let state = testing::play_hand(&testing::options(&rules, seed), &mut rng, &mut simple, &mut |_, _| true);
         let PhaseView::Done {
             declarer,
             contract,

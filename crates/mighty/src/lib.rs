@@ -8,6 +8,8 @@ pub mod explain;
 pub mod rules;
 pub mod score;
 mod state;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 pub mod trick;
 mod view;
 

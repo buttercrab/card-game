@@ -657,32 +657,24 @@ mod tests {
     /// A level by name plays as the level builds itself, seat by seat.
     #[test]
     fn levels_build_as_mighty_defines_them() {
-        use engine::{Game, Turn, Viewer};
+        use engine::{Game, Viewer};
+        use mighty::testing;
         use rand::SeedableRng;
-        use rand::seq::IndexedRandom;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(5);
-        let rules = mighty::rules::Preset::Gshs.rules();
-        let mut state = Mighty::new_game(&mighty::Options { rules, first_bidder: 0 }).unwrap();
+        let options = testing::options(&mighty::rules::Preset::Gshs.rules(), 0);
         let mut asked = 0;
-        loop {
-            let action = match Mighty::turn(&state) {
-                Turn::Over => break,
-                Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                Turn::Seat(seat) => {
-                    let view = Mighty::view(&state, Viewer::Seat(seat));
-                    let legal = Mighty::legal_actions(&state);
-                    for level in [Level::Easy, Level::Normal] {
-                        let ask = |mut bot: Box<dyn Bot<Mighty> + Send>| {
-                            bot.act(&view, &legal, &mut rand_chacha::ChaCha8Rng::seed_from_u64(asked))
-                        };
-                        assert_eq!(ask(spec(level.name()).build(seat)), ask(level.build(seat, None)));
-                    }
-                    asked += 1;
-                    legal.choose(&mut rng).unwrap().clone()
-                }
-            };
-            Mighty::apply(&mut state, action).unwrap();
-        }
+        testing::play_hand(&options, &mut rng, &mut testing::random, &mut |state, seat| {
+            let view = Mighty::view(state, Viewer::Seat(seat));
+            let legal = Mighty::legal_actions(state);
+            for level in [Level::Easy, Level::Normal] {
+                let ask = |mut bot: Box<dyn Bot<Mighty> + Send>| {
+                    bot.act(&view, &legal, &mut rand_chacha::ChaCha8Rng::seed_from_u64(asked))
+                };
+                assert_eq!(ask(spec(level.name()).build(seat)), ask(level.build(seat, None)));
+            }
+            asked += 1;
+            true
+        });
         assert!(asked > 20);
     }
 
@@ -952,34 +944,16 @@ mod tests {
     /// A hybrid plays whole hands, every setting on, with the tiny network.
     #[test]
     fn hybrid_bots_play_hands() {
-        use engine::{Game, Turn, Viewer};
         use mighty::{Mighty, Options, rules::Preset};
-        use rand::SeedableRng;
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
         let hybrid = spec(&format!("hybrid:{dir}:6@prior=3,base=q,leaf=1"));
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(3);
         let options = Options {
             rules: Preset::Gshs.rules(),
             first_bidder: 0,
         };
-        let mut bots: Vec<_> = (0..5).map(|seat| hybrid.build(seat)).collect();
-        let mut state = Mighty::new_game(&options).unwrap();
-        loop {
-            match Mighty::turn(&state) {
-                Turn::Over => break,
-                Turn::Chance => {
-                    let deal = Mighty::sample_chance(&state, &mut rng);
-                    Mighty::apply(&mut state, deal).unwrap();
-                }
-                Turn::Seat(seat) => {
-                    let view = Mighty::view(&state, Viewer::Seat(seat));
-                    let legal = Mighty::legal_actions(&state);
-                    let action = bots[seat].act(&view, &legal, &mut rng);
-                    assert!(legal.contains(&action));
-                    Mighty::apply(&mut state, action).unwrap();
-                }
-            }
-        }
-        assert!(Mighty::payoffs(&state).is_some());
+        let mut bots: Vec<Box<dyn Bot<Mighty>>> =
+            (0..5).map(|seat| hybrid.build(seat) as Box<dyn Bot<Mighty>>).collect();
+        let report = harness::play::<Mighty>(&options, &mut bots, 3, harness::Checks::default()).unwrap();
+        assert_eq!(report.payoffs.iter().sum::<i64>(), 0);
     }
 }

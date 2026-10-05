@@ -7,10 +7,8 @@
 //! search -- --ignored write`). Comparing two builds' eval digests checks
 //! many more hands; this one runs in CI.
 
-mod common;
-
-use common::{PinnedGame, check_golden, pinned_games, write_golden};
 use engine::{Bot, Game, Turn, Viewer};
+use mighty::testing::{Pinned, PinnedGame};
 use mighty::{Action, Mighty};
 use mighty_ai::SearchBot;
 use rand::SeedableRng;
@@ -47,6 +45,10 @@ fn play(hand: usize, game: &PinnedGame, bot: SearchBot, log: &mut Vec<String>) {
     }
 }
 
+fn pinned() -> Pinned {
+    Pinned::of("mighty-ai", env!("CARGO_MANIFEST_DIR"))
+}
+
 fn decisions() -> Vec<String> {
     let bot = SearchBot {
         samples: 4,
@@ -54,7 +56,7 @@ fn decisions() -> Vec<String> {
         ..SearchBot::default()
     };
     let mut log = Vec::new();
-    for (hand, game) in pinned_games("search-games.json").iter().enumerate() {
+    for (hand, game) in pinned().games("search-games.json").iter().enumerate() {
         play(hand, game, bot.clone(), &mut log);
     }
     log
@@ -62,11 +64,11 @@ fn decisions() -> Vec<String> {
 
 #[test]
 fn search_decisions_are_pinned() {
-    check_golden("search.jsonl", &decisions(), "search");
+    pinned().check("search.jsonl", &decisions(), "search");
 }
 
 #[test]
 #[ignore]
 fn write_search_decisions() {
-    write_golden("search.jsonl", &decisions());
+    pinned().write("search.jsonl", &decisions());
 }

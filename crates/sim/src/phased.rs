@@ -60,9 +60,7 @@ impl Bot<Mighty> for PhasedBot {
 mod tests {
     use super::*;
     use crate::spec::Kind;
-    use engine::{Game, Turn, Viewer};
     use mighty::{Options, rules::Preset};
-    use rand::SeedableRng;
 
     #[test]
     fn parses_three_specs() {
@@ -94,27 +92,11 @@ mod tests {
         };
         let play = |spec: &str, seed: u64| {
             let spec: Spec = spec.parse().unwrap();
-            let mut bots: Vec<_> = (0..5).map(|seat| spec.build(seat)).collect();
-            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-            let mut state = Mighty::new_game(&options).unwrap();
-            let mut log = Vec::new();
-            loop {
-                match Mighty::turn(&state) {
-                    Turn::Over => break,
-                    Turn::Chance => {
-                        let deal = Mighty::sample_chance(&state, &mut rng);
-                        Mighty::apply(&mut state, deal).unwrap();
-                    }
-                    Turn::Seat(seat) => {
-                        let view = Mighty::view(&state, Viewer::Seat(seat));
-                        let legal = Mighty::legal_actions(&state);
-                        let action = bots[seat].act(&view, &legal, &mut rng);
-                        log.push(action.clone());
-                        Mighty::apply(&mut state, action).unwrap();
-                    }
-                }
-            }
-            log
+            let mut bots: Vec<Box<dyn Bot<Mighty>>> =
+                (0..5).map(|seat| spec.build(seat) as Box<dyn Bot<Mighty>>).collect();
+            harness::play::<Mighty>(&options, &mut bots, seed, harness::Checks::default())
+                .unwrap()
+                .log
         };
         for seed in 0..4 {
             assert_eq!(play("phased:normal+normal+normal", seed), play("normal", seed));

@@ -187,13 +187,13 @@ impl ByBelief {
 mod tests {
     use super::*;
     use crate::SearchBot;
-    use engine::{BeliefError, Bot, Game, Observation, Turn, Viewer};
+    use engine::{BeliefError, Bot, Game, Observation, Viewer};
+    use mighty::State;
     use mighty::card::Suit;
     use mighty::rules::{Preset, Rules};
+    use mighty::testing;
     use mighty::world::Phase;
-    use mighty::{Options, State};
     use rand::SeedableRng;
-    use rand::seq::IndexedRandom;
     use rand_chacha::ChaCha8Rng;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -224,24 +224,17 @@ mod tests {
     fn positions(rules: &Rules, hands: u64, mut visit: impl FnMut(&State, usize)) {
         for seed in 0..hands {
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            let options = Options {
-                rules: rules.clone(),
-                first_bidder: seed as usize % rules.players,
-            };
-            let mut state = Mighty::new_game(&options).unwrap();
-            loop {
-                let action = match Mighty::turn(&state) {
-                    Turn::Over => break,
-                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                    Turn::Seat(seat) => {
-                        if matches!(state.phase(), Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_)) {
-                            visit(&state, seat);
-                        }
-                        Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone()
+            testing::play_hand(
+                &testing::options(rules, seed),
+                &mut rng,
+                &mut testing::random,
+                &mut |state, seat| {
+                    if matches!(state.phase(), Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_)) {
+                        visit(state, seat);
                     }
-                };
-                Mighty::apply(&mut state, action).unwrap();
-            }
+                    true
+                },
+            );
         }
     }
 

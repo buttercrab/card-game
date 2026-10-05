@@ -409,9 +409,10 @@ pub fn candidates(view: &View, legal: &[Action]) -> Vec<Action> {
 mod tests {
     use super::*;
     use crate::pimc::determinize;
-    use engine::{Game, Turn};
+    use engine::Game;
     use mighty::card::{Color, Suit};
     use mighty::rules::Preset;
+    use mighty::testing;
     use mighty::world::Phase;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -434,33 +435,20 @@ mod tests {
     /// keep every card, and respect the voids it has seen.
     #[test]
     fn sampled_worlds_match_the_view() {
-        let mut rng = ChaCha8Rng::seed_from_u64(7);
+        let (mut rng, mut deals) = (ChaCha8Rng::seed_from_u64(7), ChaCha8Rng::seed_from_u64(8));
         for preset in Preset::ALL {
             for game in 0..20 {
-                let options = mighty::Options {
-                    rules: preset.rules(),
-                    first_bidder: game % 5,
-                };
-                let mut state = Mighty::new_game(&options).unwrap();
-                while let Turn::Chance | Turn::Seat(_) = Mighty::turn(&state) {
-                    if let Turn::Seat(seat) = Mighty::turn(&state)
-                        && matches!(state.phase(), Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_))
-                    {
-                        let view = Mighty::view(&state, Viewer::Seat(seat));
-                        let world = determinize(&view, &mut rng).expect("a deal exists");
+                let options = testing::options(&preset.rules(), game);
+                testing::play_hand(&options, &mut rng, &mut testing::random, &mut |state, seat| {
+                    if matches!(state.phase(), Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_)) {
+                        let view = Mighty::view(state, Viewer::Seat(seat));
+                        let world = determinize(&view, &mut deals).expect("a deal exists");
                         Mighty::check_invariants(&world).unwrap();
                         assert_eq!(Mighty::view(&world, Viewer::Seat(seat)), view);
-                        assert_eq!(Mighty::legal_actions(&world), Mighty::legal_actions(&state));
+                        assert_eq!(Mighty::legal_actions(&world), Mighty::legal_actions(state));
                     }
-                    let action = match Mighty::turn(&state) {
-                        Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                        _ => {
-                            let legal = Mighty::legal_actions(&state);
-                            legal[rng.random_range(0..legal.len())].clone()
-                        }
-                    };
-                    Mighty::apply(&mut state, action).unwrap();
-                }
+                    true
+                });
             }
         }
     }

@@ -2,13 +2,11 @@
 //! view, that every legal action has its own index, and that belief
 //! targets say where hidden cards really are.
 
-mod common;
-
-use common::{check_golden, pinned_games, write_golden};
 use engine::{Encode, Game, Observation, Spec, Turn, Viewer};
 use mighty::card::{ACE, Card, Color, Suit};
 use mighty::encode::{ACTIONS, BURIED, MAX_EVENTS, MAX_SEATS, SLOTS};
 use mighty::rules::{Preset, Rules};
+use mighty::testing::Pinned;
 use mighty::{Action, Mighty, Options, State};
 use rand::seq::IndexedRandom;
 use rand::{Rng, SeedableRng};
@@ -200,8 +198,13 @@ impl Fingerprint {
 /// games' rules are frozen (`tests/pinned/encode-games.json`), so only a
 /// change to the encoding moves this, and then `VERSION` changes too.
 /// Faster encoders must reproduce it exactly.
+fn pinned() -> Pinned {
+    Pinned::of("mighty", env!("CARGO_MANIFEST_DIR"))
+}
+
 fn pinned_encodings() -> Vec<String> {
-    pinned_games("encode-games.json")
+    pinned()
+        .games("encode-games.json")
         .iter()
         .enumerate()
         .map(|(game, pinned)| {
@@ -224,13 +227,13 @@ fn pinned_encodings() -> Vec<String> {
 
 #[test]
 fn encodings_are_pinned() {
-    check_golden("encodings.jsonl", &pinned_encodings(), "encode");
+    pinned().check("encodings.jsonl", &pinned_encodings(), "encode");
 }
 
 #[test]
 #[ignore]
 fn write_pinned_encodings() {
-    write_golden("encodings.jsonl", &pinned_encodings());
+    pinned().write("encodings.jsonl", &pinned_encodings());
 }
 
 /// Each legal action of every position of many random games has its own

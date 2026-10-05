@@ -1126,8 +1126,6 @@ impl Encode for Mighty {
 mod tests {
     use super::*;
     use crate::rules::Preset;
-    use engine::Turn;
-    use rand::seq::IndexedRandom;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -1166,22 +1164,20 @@ mod tests {
                 rules,
                 first_bidder: rng.random_range(0..players),
             };
-            let mut state = Mighty::new_game(&options).unwrap();
-            loop {
+            let mut check = |state: &State| {
                 for seat in 0..players {
-                    let view = Mighty::view(&state, Viewer::Seat(seat));
+                    let view = Mighty::view(state, Viewer::Seat(seat));
                     let t = Table::new(&view);
                     let (fast, slow) = (t.strengths(), strengths_by_tricks(&t));
                     assert_eq!(fast.map(f32::to_bits), slow.map(f32::to_bits), "{view:?}");
                     positions += 1;
                 }
-                let action = match Mighty::turn(&state) {
-                    Turn::Over => break,
-                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                    Turn::Seat(_) => Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone(),
-                };
-                Mighty::apply(&mut state, action).unwrap();
-            }
+            };
+            let done = crate::testing::play_hand(&options, &mut rng, &mut crate::testing::random, &mut |state, _| {
+                check(state);
+                true
+            });
+            check(&done);
         }
         assert!(positions > 5_000, "only {positions} positions");
     }

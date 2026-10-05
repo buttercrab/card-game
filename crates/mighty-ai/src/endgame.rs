@@ -421,9 +421,10 @@ impl<'a> Solver<'a> {
 mod tests {
     use super::*;
     use crate::SimpleBot;
-    use engine::{Bot, Game, Turn, Viewer};
+    use engine::{Game, Turn};
     use mighty::Mighty;
     use mighty::rules::Preset;
+    use mighty::testing;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -460,30 +461,17 @@ mod tests {
         let mut game = 0;
         while out.len() < n as usize {
             game += 1;
-            let options = mighty::Options {
-                rules: rules.clone(),
-                first_bidder: game % rules.players,
-            };
-            let mut state = Mighty::new_game(&options).unwrap();
             let cut = rng.random_range(0..rules.players);
-            loop {
-                if let Phase::Play(p) = state.phase()
-                    && rules.hand_size - p.trick_no == tricks
-                    && p.plays.len() == cut
-                {
-                    out.push(state.clone());
-                    break;
-                }
-                let action = match Mighty::turn(&state) {
-                    Turn::Over => break,
-                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                    Turn::Seat(seat) => {
-                        let view = Mighty::view(&state, Viewer::Seat(seat));
-                        let legal = Mighty::legal_actions(&state);
-                        SimpleBot::default().act(&view, &legal, &mut rng)
-                    }
-                };
-                Mighty::apply(&mut state, action).unwrap();
+            let reached = |state: &State| matches!(state.phase(), Phase::Play(p) if rules.hand_size - p.trick_no == tricks && p.plays.len() == cut);
+            let options = testing::options(rules, game);
+            let state = testing::play_hand(
+                &options,
+                &mut rng,
+                &mut testing::by(SimpleBot::default()),
+                &mut |s, _| !reached(s),
+            );
+            if reached(&state) {
+                out.push(state);
             }
         }
         out

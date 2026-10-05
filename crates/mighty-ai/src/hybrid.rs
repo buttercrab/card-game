@@ -151,9 +151,10 @@ mod tests {
     use super::*;
     use crate::search::LEAF_BATCH;
     use crate::simple::SimpleBot;
-    use engine::{BeliefError, Game, Observation, Seat, Spec, Turn, Viewer};
+    use engine::{BeliefError, Game, Observation, Seat, Spec, Viewer};
     use mighty::State;
     use mighty::rules::Preset;
+    use mighty::testing;
     use mighty::world::Phase;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -227,28 +228,21 @@ mod tests {
             first_bidder: 0,
         };
         loop {
-            let mut state = Mighty::new_game(&options).unwrap();
-            let mut simple = SimpleBot::default();
-            loop {
-                match Mighty::turn(&state) {
-                    Turn::Chance => {
-                        let deal = Mighty::sample_chance(&state, &mut rng);
-                        Mighty::apply(&mut state, deal).unwrap();
+            let mut found = None;
+            testing::play_hand(
+                &options,
+                &mut rng,
+                &mut testing::by(SimpleBot::default()),
+                &mut |state, seat| {
+                    let reached = matches!(state.phase(), Phase::Play(p) if p.tricks.len() == 3 && p.plays.is_empty());
+                    if reached {
+                        found = Some((state.clone(), seat));
                     }
-                    Turn::Seat(seat) => {
-                        if let Phase::Play(p) = state.phase()
-                            && p.tricks.len() == 3
-                            && p.plays.is_empty()
-                        {
-                            return (state, seat);
-                        }
-                        let view = Mighty::view(&state, Viewer::Seat(seat));
-                        let legal = Mighty::legal_actions(&state);
-                        let action = simple.act(&view, &legal, &mut rng);
-                        Mighty::apply(&mut state, action).unwrap();
-                    }
-                    Turn::Over => break,
-                }
+                    !reached
+                },
+            );
+            if let Some(found) = found {
+                return found;
             }
         }
     }

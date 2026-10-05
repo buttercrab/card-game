@@ -1,10 +1,11 @@
 //! How the rule-based bot spends its jokers, checked on hand-built views.
 
-use engine::{Bot, Viewer};
+use engine::{Bot, Game, Viewer};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, Preset, Rules};
-use mighty::trick::{Played, Trick};
-use mighty::{Action, FriendCall, Lead, PhaseView, View};
+use mighty::testing::{PlayPosition, dealt_cards};
+use mighty::trick::Played;
+use mighty::{Action, FriendCall, Lead, Mighty, PhaseView, View};
 use mighty_ai::{Clumsy, SimpleBot};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -25,71 +26,33 @@ fn play(card: Card) -> Action {
 /// or the discards. `plays` are already on this trick.
 fn view(hand: &[Card], others: &[Card], plays: &[Played]) -> View {
     let rules = Preset::Gshs.rules();
-    let held: Vec<Card> = hand
-        .iter()
-        .chain(others)
-        .chain(plays.iter().map(|p| &p.card))
-        .copied()
-        .collect();
-    let gone: Vec<Card> = rules.cards().into_iter().filter(|c| !held.contains(c)).collect();
-    let (discards, played) = gone.split_at(4);
-    let tricks: Vec<Trick> = played
-        .chunks(5)
-        .map(|cards| Trick {
-            plays: cards
-                .iter()
-                .enumerate()
-                .map(|(seat, &card)| Played {
-                    seat,
-                    card,
-                    powered: true,
-                })
-                .collect(),
-            lead: Lead::Suit(Suit::Spade),
-            winner: 0,
-        })
-        .collect();
-    assert_eq!(tricks.len(), 8, "the second-to-last trick");
-    let leader = plays.first().map_or(0, |p| p.seat);
-    View {
-        viewer: Viewer::Seat(0),
-        first_bidder: 0,
-        hand: hand.to_vec(),
-        hand_sizes: (0..5)
-            .map(|s| {
-                if s == 0 {
-                    hand.len()
-                } else {
-                    2 - usize::from(plays.iter().any(|p| p.seat == s))
-                }
-            })
-            .collect(),
-        points_taken: vec![Vec::new(); 5],
-        phase: PhaseView::Play {
-            declarer: 0,
-            contract: Contract {
-                trump: Some(Suit::Diamond),
-                count: 17,
-            },
-            call: FriendCall::Card(Card::new(Suit::Spade, 14)),
-            friend: Some(1),
-            no_friend: false,
-            trick_no: 8,
-            leader,
-            lead: plays.first().map(|p| match p.card.suit() {
-                Some(suit) => Lead::Suit(suit),
-                None => Lead::Suit(Suit::Spade),
-            }),
-            plays: plays.to_vec(),
-            leading: None,
-            called_joker: None,
-            tricks,
-            discards: Some(discards.to_vec()),
-        },
-        rules: rules.into(),
-        bids: Vec::new(),
-        redealt: None,
+    let diamonds = Contract {
+        trump: Some(Suit::Diamond),
+        count: 17,
+    };
+    let mut position = PlayPosition::new(rules.clone(), 0, diamonds)
+        .call(FriendCall::Card(Card::new(Suit::Spade, 14)), Some(1))
+        .hand(0, hand)
+        .trick(&plays.iter().map(|p| (p.seat, p.card)).collect::<Vec<_>>());
+    // Two cards a seat, less the one it has played to this trick.
+    let mut placed: Vec<Card> = hand.iter().copied().chain(plays.iter().map(|p| p.card)).collect();
+    let mut others = others.iter().copied();
+    for seat in 1..5 {
+        let held = 2 - usize::from(plays.iter().any(|p| p.seat == seat));
+        let cards: Vec<Card> = others.by_ref().take(held).collect();
+        placed.extend(&cards);
+        position = position.hand(seat, &cards);
     }
+    let gone: Vec<Card> = rules.cards().into_iter().filter(|c| !placed.contains(c)).collect();
+    let view = position
+        .discards(&gone[..4])
+        .rest_in_tricks(Lead::Suit(Suit::Spade), 0)
+        .view(0);
+    assert!(
+        matches!(view.phase, PhaseView::Play { trick_no: 8, .. }),
+        "the second-to-last trick"
+    );
+    view
 }
 
 fn choose(view: &View, legal: &[Action]) -> Card {
@@ -144,31 +107,10 @@ fn a_doomed_joker_is_the_cheapest_card_to_lose() {
     assert_eq!(choose(&v, &[play(BJ), play(sk)]), BJ);
 }
 
-/// A seat bidding first under `preset` with `hand`, the misdeal allowed.
+/// A seat bidding first under `preset` with `hand`, and what it may do.
 fn bidding(preset: Preset, hand: Vec<Card>) -> (View, Vec<Action>) {
-    let rules = preset.rules();
-    let mut legal = vec![Action::Misdeal, Action::Pass];
-    legal.extend(
-        (rules.bidding.min..=rules.bidding.max)
-            .flat_map(|count| Suit::ALL.map(|s| Action::Bid(Contract { trump: Some(s), count }))),
-    );
-    let view = View {
-        viewer: Viewer::Seat(0),
-        first_bidder: 0,
-        hand,
-        hand_sizes: vec![10; 5],
-        points_taken: vec![Vec::new(); 5],
-        phase: PhaseView::Bidding {
-            to_act: 0,
-            best: None,
-            passed: vec![false; 5],
-            has_bid: vec![false; 5],
-        },
-        rules: rules.into(),
-        bids: Vec::new(),
-        redealt: None,
-    };
-    (view, legal)
+    let state = dealt_cards(preset.rules(), 0, &[hand], &[]);
+    (Mighty::view(&state, Viewer::Seat(0)), Mighty::legal_actions(&state))
 }
 
 fn decide(view: &View, legal: &[Action]) -> Action {
@@ -292,52 +234,23 @@ fn short_deck_lead(players: usize) -> (View, Vec<Action>) {
     let harmless = |c: &Card| matches!(c.suit(), Some(Suit::Spade | Suit::Diamond)) && *c != mighty;
     let held = (players - 1) * 3 + rules.kitty_size();
     let quiet: Vec<Card> = rest.iter().copied().filter(harmless).take(held).collect();
-    let played: Vec<Card> = rest.iter().copied().filter(|c| !quiet.contains(c)).collect();
-    let discards = &quiet[..rules.kitty_size()];
-    let tricks: Vec<Trick> = played
-        .chunks(players)
-        .map(|cards| Trick {
-            plays: (cards.iter().enumerate())
-                .map(|(seat, &card)| Played {
-                    seat,
-                    card,
-                    powered: true,
-                })
-                .collect(),
-            lead: Lead::Suit(Suit::Spade),
-            winner: 0,
-        })
-        .collect();
-    assert_eq!(tricks.len(), 7, "the eighth trick");
-    let legal = hand.iter().map(|&c| play(c)).collect();
-    let view = View {
-        viewer: Viewer::Seat(0),
-        first_bidder: 0,
-        hand,
-        hand_sizes: vec![3; players],
-        points_taken: vec![Vec::new(); players],
-        phase: PhaseView::Play {
-            declarer: 0,
-            contract: Contract {
-                trump: Some(Suit::Heart),
-                count: 14,
-            },
-            call: FriendCall::Alone,
-            friend: None,
-            no_friend: true,
-            trick_no: 7,
-            leader: 0,
-            lead: None,
-            plays: Vec::new(),
-            leading: None,
-            called_joker: None,
-            tricks,
-            discards: Some(discards.to_vec()),
-        },
-        rules: rules.into(),
-        bids: Vec::new(),
-        redealt: None,
+    let (discards, others) = quiet.split_at(rules.kitty_size());
+    let hearts = Contract {
+        trump: Some(Suit::Heart),
+        count: 14,
     };
+    let mut position = PlayPosition::new(rules.clone(), 0, hearts)
+        .hand(0, &hand)
+        .discards(discards);
+    for (seat, cards) in others.chunks(3).enumerate() {
+        position = position.hand(seat + 1, cards);
+    }
+    let view = position.rest_in_tricks(Lead::Suit(Suit::Spade), 0).view(0);
+    assert!(
+        matches!(view.phase, PhaseView::Play { trick_no: 7, .. }),
+        "the eighth trick"
+    );
+    let legal = hand.iter().map(|&c| play(c)).collect();
     (view, legal)
 }
 

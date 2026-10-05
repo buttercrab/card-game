@@ -383,35 +383,13 @@ mod tests {
     use super::*;
     use crate::pimc::determinize;
     use engine::Viewer;
-    use mighty::Options;
+    use mighty::{Options, cards, testing};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
-    /// Parses cards such as `"SA D10 HK"`.
-    fn cards(s: &str) -> Vec<Card> {
-        s.split_whitespace()
-            .map(|t| {
-                let suit = match &t[..1] {
-                    "S" => Suit::Spade,
-                    "D" => Suit::Diamond,
-                    "H" => Suit::Heart,
-                    _ => Suit::Club,
-                };
-                let rank = match &t[1..] {
-                    "J" => 11,
-                    "Q" => 12,
-                    "K" => 13,
-                    "A" => 14,
-                    n => n.parse().expect("a rank"),
-                };
-                Card::new(suit, rank)
-            })
-            .collect()
-    }
-
     fn play(state: &mut State, card: &str) {
         let action = Action::Play {
-            card: cards(card)[0],
+            card: testing::card(card),
             joker_lead: None,
             call_joker: false,
         };
@@ -423,25 +401,15 @@ mod tests {
     /// ♠10 onto the declarer's sure trick, as only the friend would.
     #[test]
     fn whoever_feeds_the_declarer_looks_like_the_friend() {
-        let rules = Rules::web_mighty();
-        let options = Options { rules, first_bidder: 0 };
-        let mut state = Mighty::new_game(&options).expect("valid rules");
-        let mut hands: Vec<Vec<Card>> = [
+        let hands = [
             "SA HK HQ HJ H10 H9 DA CA DK D2",
             "S2 S5 D3 D4 D5 D6 C2 C4 C5 C6",
             "S3 S6 D7 D8 D9 C7 C8 C9 H2 H3",
             "HA S10 S4 S7 D10 C10 H4 H5 CJ DJ",
-            "SQ SK DQ H6 H7 H8 C3 CQ CK",
-        ]
-        .map(cards)
-        .to_vec();
-        hands[4].push(Card::Joker(mighty::card::Color::Black));
-        let kitty = cards("S8 S9 SJ");
-        let deal = Action::Deal {
-            hands,
-            kitty: kitty.clone(),
-        };
-        Mighty::apply(&mut state, deal).expect("a deal");
+            "SQ SK DQ H6 H7 H8 C3 CQ CK BJ",
+        ];
+        let kitty = cards![S8 S9 SJ];
+        let mut state = testing::dealt(Rules::web_mighty(), 0, &hands, "S8 S9 SJ");
         let hearts = Contract {
             trump: Some(Suit::Heart),
             count: 13,
@@ -453,7 +421,7 @@ mod tests {
         for card in kitty {
             Mighty::apply(&mut state, Action::Discard(card)).expect("legal");
         }
-        let ace = Card::new(Suit::Heart, 14);
+        let ace = testing::card("HA");
         Mighty::apply(&mut state, Action::CallFriend(FriendCall::Card(ace))).expect("legal");
         for card in ["SA", "S2", "S3", "S10"] {
             play(&mut state, card);
@@ -493,7 +461,6 @@ mod tests {
     /// leaves out (joker leads and calls) correctly.
     #[test]
     fn replays_reproduce_the_hand() {
-        use engine::{Bot, Turn};
         use mighty::rules::Preset;
         let mut rng = ChaCha8Rng::seed_from_u64(4);
         let mut rule_sets: Vec<Rules> = Preset::ALL.iter().map(|p| p.rules()).collect();
@@ -505,10 +472,10 @@ mod tests {
                     first_bidder: first_bidder % rules.players,
                     rules: rules.clone(),
                 };
-                let mut state = Mighty::new_game(&options).unwrap();
-                loop {
+                let mut simple = testing::by(SimpleBot::default());
+                testing::play_hand(&options, &mut rng, &mut simple, &mut |state, _| {
                     if let Phase::Play(p) = state.phase() {
-                        let mut replay = state.before_call(hands_before_play(&state)).unwrap();
+                        let mut replay = state.before_call(hands_before_play(state)).unwrap();
                         replay.step(p.declared.declarer, Action::CallFriend(p.call));
                         let trump = p.declared.contract.trump;
                         let finished = p.tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead), None));
@@ -519,18 +486,10 @@ mod tests {
                                 replayed_cards += 1;
                             }
                         }
-                        assert_eq!(replay, state);
+                        assert_eq!(&replay, state);
                     }
-                    let action = match Mighty::turn(&state) {
-                        Turn::Over => break,
-                        Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                        Turn::Seat(seat) => {
-                            let view = Mighty::view(&state, Viewer::Seat(seat));
-                            SimpleBot::default().act(&view, &Mighty::legal_actions(&state), &mut rng)
-                        }
-                    };
-                    Mighty::apply(&mut state, action).unwrap();
-                }
+                    true
+                });
             }
         }
         assert!(replayed_cards > 10_000, "{replayed_cards}");

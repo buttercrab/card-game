@@ -3,6 +3,7 @@
 use engine::{Game, Turn, Viewer};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, MisdealWindow, Preset, Rules};
+use mighty::testing::{cards, dealt};
 use mighty::{Action, Bid, FriendCall, Lead, Mighty, Options, PhaseView, Redeal, State};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -15,51 +16,10 @@ fn rng() -> ChaCha8Rng {
     ChaCha8Rng::seed_from_u64(SEED)
 }
 
-/// Parses cards such as `"SA D10 HK C3 BJ"`.
-fn cards(s: &str) -> Vec<Card> {
-    s.split_whitespace()
-        .map(|t| match t {
-            "BJ" => Card::Joker(Color::Black),
-            "RJ" => Card::Joker(Color::Red),
-            _ => {
-                let suit = match &t[..1] {
-                    "S" => Suit::Spade,
-                    "D" => Suit::Diamond,
-                    "H" => Suit::Heart,
-                    "C" => Suit::Club,
-                    _ => panic!("bad suit in {t}"),
-                };
-                let rank = match &t[1..] {
-                    "J" => 11,
-                    "Q" => 12,
-                    "K" => 13,
-                    "A" => 14,
-                    n => n.parse().expect("bad rank"),
-                };
-                Card::new(suit, rank)
-            }
-        })
-        .collect()
-}
-
 /// Deals the given hands to the first seats and the given kitty; the rest
 /// of the deck fills the remaining seats, then the kitty, in order.
 fn start(rules: Rules, fixed: &[&str], kitty: &str) -> State {
-    let mut state = Mighty::new_game(&Options {
-        rules: rules.clone(),
-        first_bidder: 0,
-    })
-    .unwrap();
-    let mut hands: Vec<Vec<Card>> = fixed.iter().map(|h| cards(h)).collect();
-    let mut kitty = cards(kitty);
-    let used: Vec<Card> = hands.iter().flatten().chain(&kitty).copied().collect();
-    let mut rest = rules.cards().into_iter().filter(|c| !used.contains(c));
-    while hands.len() < rules.players {
-        hands.push(rest.by_ref().take(rules.hand_size).collect());
-    }
-    kitty.extend(rest);
-    Mighty::apply(&mut state, Action::Deal { hands, kitty }).unwrap();
-    state
+    dealt(rules, 0, fixed, kitty)
 }
 
 fn act(state: &mut State, action: Action) {

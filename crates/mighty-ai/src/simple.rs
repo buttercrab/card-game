@@ -724,7 +724,8 @@ fn cheapest_dump(t: &Table, cards: &[Card]) -> Card {
 mod tests {
     use super::*;
 
-    use engine::{Game, Turn, Viewer};
+    use engine::{Game, Viewer};
+    use mighty::{State, testing};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -742,49 +743,45 @@ mod tests {
             let dealt = rules.card_set();
             let mut rng = StdRng::seed_from_u64(players as u64);
             for game in 0..20 {
-                let options = mighty::Options {
-                    rules: rules.clone(),
-                    first_bidder: game % players,
-                };
-                let mut state = Mighty::new_game(&options).unwrap();
                 let mut plays = 0;
-                loop {
-                    let action = match Mighty::turn(&state) {
-                        Turn::Over => break,
-                        Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                        Turn::Seat(seat) => {
-                            let view = Mighty::view(&state, Viewer::Seat(seat));
-                            let bot = tempered(seat);
-                            if let Some(t) = table(&bot, &Seen::of_view(&view)) {
-                                plays += 1;
-                                let PhaseView::Play {
-                                    tricks,
-                                    plays,
-                                    discards,
-                                    ..
-                                } = &view.phase
-                                else {
-                                    unreachable!()
-                                };
-                                let seen: CardSet = (tricks.iter().flat_map(|t| &t.plays).chain(plays))
-                                    .map(|p| p.card)
-                                    .chain(view.hand.iter().copied())
-                                    .chain(discards.iter().flatten().copied())
-                                    .collect();
-                                if let Some(discards) = discards {
-                                    assert!(discards.iter().all(|&c| !t.unseen.contains(c)));
-                                    declarer_with_discards += 1;
-                                }
-                                assert!((t.unseen - dealt).is_empty(), "{players} players: undealt cards unseen");
-                                assert_eq!(t.unseen, dealt - seen);
-                                assert!(t.trumps_out == t.unseen().any(|c| c != t.mighty && c.suit() == t.trump));
-                            }
-                            let legal = Mighty::legal_actions(&state);
-                            Bot::<Mighty>::act(&mut tempered(seat), &view, &legal, &mut rng)
+                let mut tempered_bots = |state: &State, seat: Seat, legal: &[Action], rng: &mut dyn RngCore| {
+                    Bot::<Mighty>::act(
+                        &mut tempered(seat),
+                        &Mighty::view(state, Viewer::Seat(seat)),
+                        legal,
+                        rng,
+                    )
+                };
+                let options = testing::options(&rules, game);
+                let state = testing::play_hand(&options, &mut rng, &mut tempered_bots, &mut |state, seat| {
+                    let view = Mighty::view(state, Viewer::Seat(seat));
+                    let bot = tempered(seat);
+                    if let Some(t) = table(&bot, &Seen::of_view(&view)) {
+                        plays += 1;
+                        let PhaseView::Play {
+                            tricks,
+                            plays,
+                            discards,
+                            ..
+                        } = &view.phase
+                        else {
+                            unreachable!()
+                        };
+                        let seen: CardSet = (tricks.iter().flat_map(|t| &t.plays).chain(plays))
+                            .map(|p| p.card)
+                            .chain(view.hand.iter().copied())
+                            .chain(discards.iter().flatten().copied())
+                            .collect();
+                        if let Some(discards) = discards {
+                            assert!(discards.iter().all(|&c| !t.unseen.contains(c)));
+                            declarer_with_discards += 1;
                         }
-                    };
-                    Mighty::apply(&mut state, action).unwrap();
-                }
+                        assert!((t.unseen - dealt).is_empty(), "{players} players: undealt cards unseen");
+                        assert_eq!(t.unseen, dealt - seen);
+                        assert!(t.trumps_out == t.unseen().any(|c| c != t.mighty && c.suit() == t.trump));
+                    }
+                    true
+                });
                 assert!(plays > 0 || Mighty::payoffs(&state).is_some());
             }
         }

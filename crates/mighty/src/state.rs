@@ -436,6 +436,28 @@ impl State {
         self.rules.players
     }
 
+    /// A state of these parts, nothing else checked: for
+    /// [`crate::testing::PlayPosition`].
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn from_parts(
+        rules: Arc<Rules>,
+        first_bidder: Seat,
+        phase: Phase,
+        hands: Vec<Vec<Card>>,
+        taken: Vec<Vec<Card>>,
+    ) -> State {
+        State {
+            rules,
+            first_bidder,
+            phase,
+            hands,
+            kitty: Vec::new(),
+            taken,
+            bids: Vec::new(),
+            redealt: None,
+        }
+    }
+
     pub fn phase(&self) -> &Phase {
         &self.phase
     }
