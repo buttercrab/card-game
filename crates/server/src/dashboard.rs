@@ -280,6 +280,7 @@ pub fn page_with(s: &Summary, reports: &[ReportRow]) -> String {
         ("테이블", t.tables.to_string()),
         ("끝난 판", t.hands_finished.to_string()),
         ("중단된 판", t.hands_abandoned.to_string()),
+        ("시간 초과", t.turns_timed_out.to_string()),
         ("문제 신고", t.reports.to_string()),
         ("클라이언트 오류", t.client_errors.to_string()),
     ] {

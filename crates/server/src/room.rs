@@ -39,6 +39,36 @@ const HINT_THINK: Duration = Duration::from_millis(800);
 /// Bumped when [`Room::snapshot`] changes incompatibly; older files are skipped.
 const SNAPSHOT_FORMAT: u32 = 1;
 
+/// The turn times a table may choose, in seconds; 0 is no limit.
+pub const TURN_LIMITS: [u32; 4] = [0, 20, 40, 60];
+
+/// A turn's time for a seat marked away (자리 비움), in seconds.
+const AWAY_SECS: u32 = 5;
+
+/// The table's own settings, apart from the game's rules: they change how
+/// the room runs, never how a hand is played or encoded.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableSettings {
+    /// Seconds per decision, or 0 for no limit. The weightier decisions
+    /// (see [`SessionGame::long_decision`]) get twice as long.
+    #[serde(default)]
+    pub turn_secs: u32,
+    /// Deal the players into new seats before every hand.
+    #[serde(default)]
+    pub shuffle: bool,
+}
+
+/// The running turn timer: when `seat` must have acted on hand `version`.
+struct Clock {
+    version: u64,
+    seat: usize,
+    /// The limit and away mark it was set under; either changing resets it.
+    limit: u32,
+    away: bool,
+    deadline: tokio::time::Instant,
+    total: Duration,
+}
+
 /// Writes through a temporary file so a crash never leaves half a snapshot.
 fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
@@ -93,9 +123,33 @@ pub enum ClientMsg {
         /// salted hash is kept, to count returning players.
         #[serde(default)]
         device: Option<String>,
+        /// Only reclaim the token's seat: a reconnecting tab whose seat is
+        /// gone (its player was moved out) watches instead of sitting
+        /// somewhere new.
+        #[serde(default)]
+        reclaim: bool,
     },
     /// Give up your seat; a bot takes over if a hand is in progress.
     Leave,
+    /// Change the table's own settings (see [`TableSettings`]); fields left
+    /// out stay as they are.
+    SetTable {
+        #[serde(default)]
+        turn_secs: Option<u32>,
+        #[serde(default)]
+        shuffle: Option<bool>,
+    },
+    /// Between hands: deal everyone at the table into random seats.
+    ShuffleSeats,
+    /// Between hands: whoever sits at `a` and at `b` (maybe nobody) trade seats.
+    SwapSeats {
+        a: usize,
+        b: usize,
+    },
+    /// Between hands: send the player at `seat` back to watching.
+    ClearSeat {
+        seat: usize,
+    },
     /// Seat a bot in an empty seat, or in place of a disconnected player.
     /// On a bot's seat, changes how well it plays.
     AddBot {
@@ -199,6 +253,20 @@ pub struct Room<G: SessionGame> {
     stats: Option<Arc<Stats>>,
     /// When the current hand was dealt, in Unix seconds, if known.
     hand_started: Option<u64>,
+    table: TableSettings,
+    /// Seats whose turn ran out and was played for them (자리 비움), until
+    /// their player does something.
+    away: Vec<bool>,
+    clock: Option<Clock>,
+    /// How long a second of the turn limit lasts; shorter in tests.
+    second: Duration,
+}
+
+/// What the room's loop woke up for.
+enum Wake {
+    Command(Command),
+    Clock,
+    Closed,
 }
 
 impl<G: SessionGame> Room<G> {
@@ -231,6 +299,10 @@ impl<G: SessionGame> Room<G> {
             me: None,
             stats: None,
             hand_started: None,
+            table: TableSettings::default(),
+            away: vec![false; n],
+            clock: None,
+            second: Duration::from_secs(1),
         }
     }
 
@@ -270,6 +342,11 @@ impl<G: SessionGame> Room<G> {
         self.think_cap = Some(think);
     }
 
+    /// Makes the turn limit's seconds last `second` instead, for tests.
+    pub fn use_turn_second(&mut self, second: Duration) {
+        self.second = second;
+    }
+
     /// Lets bots think on a connected worker; see [`crate::bots`].
     pub fn use_remote(&mut self, remote: Arc<RemoteBots>) {
         self.remote = Some(remote);
@@ -294,18 +371,22 @@ impl<G: SessionGame> Room<G> {
         self.me = Some(me);
         // A restored room may have a bot to act.
         self.think();
+        self.arm_clock();
         let mut saved = String::new();
         let mut empty_since = Some(tokio::time::Instant::now());
         loop {
-            let next = match empty_since {
-                Some(since) => tokio::select! {
-                    cmd = rx.recv() => cmd,
-                    () = tokio::time::sleep_until(since + idle) => None,
-                },
-                None => rx.recv().await,
+            let now = tokio::time::Instant::now();
+            let deadline = self.clock.as_ref().map(|c| c.deadline);
+            let next = tokio::select! {
+                cmd = rx.recv() => cmd.map_or(Wake::Closed, Wake::Command),
+                () = tokio::time::sleep_until(empty_since.map_or(now, |since| since + idle)), if empty_since.is_some() => Wake::Closed,
+                () = tokio::time::sleep_until(deadline.unwrap_or(now)), if deadline.is_some() => Wake::Clock,
             };
-            let Some(cmd) = next else { break };
-            self.handle(cmd);
+            match next {
+                Wake::Command(cmd) => self.handle(cmd),
+                Wake::Clock => self.on_clock(),
+                Wake::Closed => break,
+            }
             self.think();
             if let Some(path) = &save {
                 let snapshot = serde_json::to_string(&self.snapshot()).expect("snapshots serialize");
@@ -346,6 +427,7 @@ impl<G: SessionGame> Room<G> {
             "hands_played": self.hands_played,
             "history": self.history,
             "hands": self.hands,
+            "table": self.table,
             "hand": self.game.as_ref().map(|_| json!({
                 "number": self.hand_no, "actions": self.log, "started": self.hand_started,
             })),
@@ -390,6 +472,9 @@ impl<G: SessionGame> Room<G> {
             history: Vec<Vec<i64>>,
             #[serde(default = "Vec::new")]
             hands: Vec<T>,
+            /// Rooms saved before tables had their own settings have none.
+            #[serde(default)]
+            table: TableSettings,
             hand: Option<SavedHand>,
         }
         let s: Snapshot<G::Settings, G::Summary> = serde_json::from_value(snapshot).map_err(|e| e.to_string())?;
@@ -405,6 +490,7 @@ impl<G: SessionGame> Room<G> {
         room.hands_played = s.hands_played;
         room.history = s.history;
         room.hands = s.hands;
+        room.table = s.table;
         if let Some(hand) = s.hand {
             let options = G::hand_options(&room.settings, hand.number, room.last_hand(hand.number));
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
@@ -440,11 +526,14 @@ impl<G: SessionGame> Room<G> {
             Command::Message { conn, msg } => {
                 // A reaction changes nothing the room or the hand shows.
                 let quiet = matches!(msg, ClientMsg::React { .. } | ClientMsg::Hint);
+                // Anything a player does says they are back at the table.
+                let back = self.back(conn);
                 if let Err(message) = self.on_message(conn, msg) {
                     self.send(conn, &json!({ "type": "error", "message": message }));
-                    return;
-                }
-                if quiet {
+                    if !back {
+                        return;
+                    }
+                } else if quiet && !back {
                     return;
                 }
             }
@@ -468,7 +557,162 @@ impl<G: SessionGame> Room<G> {
                 }
             }
         }
+        self.arm_clock();
         self.broadcast();
+    }
+
+    /// Clears the away mark of `conn`'s seat; returns whether it had one.
+    fn back(&mut self, conn: ConnId) -> bool {
+        let seat = self.conns.get(&conn).and_then(|c| c.seat);
+        seat.is_some_and(|s| std::mem::take(&mut self.away[s]))
+    }
+
+    /// Whether `seat` is away (자리 비움): its last turn ran out, or, under a
+    /// turn limit, its player's connection is gone.
+    fn is_away(&self, seat: usize) -> bool {
+        matches!(self.seats[seat], Occupant::Human { .. })
+            && (self.away[seat] || (self.table.turn_secs > 0 && !self.connected(seat)))
+    }
+
+    /// Starts, keeps or stops the turn timer for whoever is to act now.
+    fn arm_clock(&mut self) {
+        let limit = self.table.turn_secs;
+        // Nobody to keep waiting: the table pauses until someone is back.
+        let seat = match self.game.as_ref().map(G::turn) {
+            Some(Turn::Seat(s))
+                if limit > 0 && !self.conns.is_empty() && matches!(self.seats[s], Occupant::Human { .. }) =>
+            {
+                s
+            }
+            _ => {
+                self.clock = None;
+                return;
+            }
+        };
+        let away = self.is_away(seat);
+        let same = |c: &Clock| c.version == self.version && c.seat == seat && c.limit == limit && c.away == away;
+        if self.clock.as_ref().is_some_and(same) {
+            return;
+        }
+        let Some(game) = self.game.as_ref() else { return };
+        let mut full = self.second * limit;
+        if G::long_decision(&G::legal_actions(game)) {
+            full *= 2;
+        }
+        let total = if away {
+            (self.second * AWAY_SECS).min(full)
+        } else {
+            full
+        };
+        self.clock = Some(Clock {
+            version: self.version,
+            seat,
+            limit,
+            away,
+            deadline: tokio::time::Instant::now() + total,
+            total,
+        });
+    }
+
+    /// The turn ran out: a 보통 bot plays it, and the seat is marked away.
+    fn on_clock(&mut self) {
+        let Some(clock) = self.clock.take() else { return };
+        let seat = clock.seat;
+        let Some(game) = self.game.as_mut() else { return };
+        if clock.version != self.version || G::turn(game) != Turn::Seat(seat) {
+            return;
+        }
+        let view = G::view(game, Viewer::Seat(seat));
+        let legal = G::legal_actions(game);
+        let action = G::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut self.rng);
+        let logged = log_action(&action);
+        let Ok(entry) = serde_json::to_value(&action) else {
+            return;
+        };
+        if let Err(e) = G::apply(game, action) {
+            tracing::error!(room = %self.id, seat, action = %logged, "the stand-in chose an illegal action: {e}");
+            return;
+        }
+        self.log.push(entry);
+        tracing::info!(room = %self.id, seat, action = %logged, "turn ran out");
+        self.away[seat] = true;
+        self.record(Event::TurnTimedOut { table: self.id.clone() });
+        self.advance();
+        self.arm_clock();
+        self.broadcast();
+    }
+
+    /// Moves whoever sits at each seat `s` to `new_seat[s]`, with their
+    /// score, their past hands and their connections, so the scores follow
+    /// the players. The last hand's table is put away: it no longer
+    /// matches who sits where.
+    fn reseat(&mut self, new_seat: &[usize]) {
+        fn moved<T>(items: Vec<T>, new_seat: &[usize]) -> Vec<T> {
+            let mut slots: Vec<Option<T>> = items.iter().map(|_| None).collect();
+            for (s, item) in items.into_iter().enumerate() {
+                slots[new_seat[s]] = Some(item);
+            }
+            slots
+                .into_iter()
+                .map(|s| s.expect("seats move by a permutation"))
+                .collect()
+        }
+        let n = self.seats.len();
+        self.seats = moved(std::mem::take(&mut self.seats), new_seat);
+        self.scores = moved(std::mem::take(&mut self.scores), new_seat);
+        self.away = moved(std::mem::take(&mut self.away), new_seat);
+        for payoffs in self.history.iter_mut().filter(|p| p.len() == n) {
+            *payoffs = moved(std::mem::take(payoffs), new_seat);
+        }
+        for summary in &mut self.hands {
+            G::reseat(summary, new_seat);
+        }
+        self.game = None;
+        self.log.clear();
+        let mut welcomes = Vec::new();
+        for (&id, c) in &mut self.conns {
+            if let Some(s) = c.seat {
+                c.seat = Some(new_seat[s]);
+                welcomes.push((id, new_seat[s]));
+            }
+        }
+        // Each player's tab learns its new seat; the token stays the same.
+        for (id, seat) in welcomes {
+            if let Occupant::Human { token, .. } = &self.seats[seat] {
+                self.send(id, &json!({ "type": "welcome", "seat": seat, "token": token }));
+            }
+        }
+    }
+
+    /// Deals everyone into random seats, never quite as they were.
+    fn shuffle_seats(&mut self) {
+        use rand::seq::SliceRandom;
+        let n = self.seats.len();
+        let mut order: Vec<usize> = (0..n).collect();
+        for _ in 0..8 {
+            order.shuffle(&mut self.rng);
+            if order.iter().enumerate().any(|(s, &to)| s != to) {
+                break;
+            }
+        }
+        self.reseat(&order);
+        self.tell_all(&json!({ "type": "seats_moved", "how": "shuffle" }));
+    }
+
+    fn tell_all(&self, message: &Value) {
+        let text = message.to_string();
+        for c in self.conns.values() {
+            let _ = c.tx.send(text.clone());
+        }
+    }
+
+    /// Seat changes wait for the hand to end, and only players make them.
+    fn may_move_seats(&self, my_seat: Option<usize>) -> Result<(), String> {
+        my_seat.ok_or("only seated players can move seats")?;
+        if self.in_hand() {
+            return Err("seats move only between hands".into());
+        }
+        Ok(())
     }
 
     fn on_message(&mut self, conn: ConnId, msg: ClientMsg) -> Result<(), String> {
@@ -479,7 +723,8 @@ impl<G: SessionGame> Room<G> {
                 token,
                 seat,
                 device,
-            } => self.join(conn, name, token, seat, device),
+                reclaim,
+            } => self.join(conn, name, token, seat, device, reclaim),
             ClientMsg::Leave => {
                 let seat = my_seat.ok_or("you are not seated")?;
                 self.seats[seat] = if self.in_hand() {
@@ -489,6 +734,60 @@ impl<G: SessionGame> Room<G> {
                 } else {
                     Occupant::Empty
                 };
+                self.away[seat] = false;
+                self.detach(seat);
+                Ok(())
+            }
+            ClientMsg::SetTable { turn_secs, shuffle } => {
+                my_seat.ok_or("only seated players can change the table")?;
+                if let Some(secs) = turn_secs {
+                    if !TURN_LIMITS.contains(&secs) {
+                        return Err("no such turn limit".into());
+                    }
+                    self.table.turn_secs = secs;
+                }
+                if let Some(shuffle) = shuffle {
+                    self.table.shuffle = shuffle;
+                }
+                Ok(())
+            }
+            ClientMsg::ShuffleSeats => {
+                self.may_move_seats(my_seat)?;
+                self.shuffle_seats();
+                Ok(())
+            }
+            ClientMsg::SwapSeats { a, b } => {
+                self.may_move_seats(my_seat)?;
+                let n = self.seats.len();
+                if a >= n || b >= n || a == b {
+                    return Err("no such seat".into());
+                }
+                let new_seat: Vec<usize> = (0..n)
+                    .map(|s| match s {
+                        s if s == a => b,
+                        s if s == b => a,
+                        s => s,
+                    })
+                    .collect();
+                self.reseat(&new_seat);
+                self.tell_all(&json!({ "type": "seats_moved", "how": "swap", "seats": [a, b] }));
+                Ok(())
+            }
+            ClientMsg::ClearSeat { seat } => {
+                self.may_move_seats(my_seat)?;
+                if my_seat == Some(seat) {
+                    return Err("leave your own seat instead".into());
+                }
+                if !matches!(self.seats.get(seat), Some(Occupant::Human { .. })) {
+                    return Err("no player in that seat".into());
+                }
+                self.seats[seat] = Occupant::Empty;
+                self.away[seat] = false;
+                for (&id, c) in &self.conns {
+                    if c.seat == Some(seat) {
+                        self.send(id, &json!({ "type": "unseated" }));
+                    }
+                }
                 self.detach(seat);
                 Ok(())
             }
@@ -510,6 +809,7 @@ impl<G: SessionGame> Room<G> {
                     });
                 }
                 self.seats[seat] = Occupant::Bot { level };
+                self.away[seat] = false;
                 Ok(())
             }
             ClientMsg::RemoveBot { seat } => {
@@ -520,6 +820,7 @@ impl<G: SessionGame> Room<G> {
                 match self.seats.get(seat) {
                     Some(Occupant::Bot { .. }) => {
                         self.seats[seat] = Occupant::Empty;
+                        self.away[seat] = false;
                         Ok(())
                     }
                     _ => Err("no bot in that seat".into()),
@@ -591,6 +892,9 @@ impl<G: SessionGame> Room<G> {
                 if self.seats.iter().any(|s| matches!(s, Occupant::Empty)) {
                     return Err("every seat needs a player or a bot".into());
                 }
+                if self.table.shuffle {
+                    self.shuffle_seats();
+                }
                 let options = G::hand_options(&self.settings, self.hands_played, self.last_hand(self.hands_played));
                 let state = G::new_game(&options).map_err(|e| e.to_string())?;
                 self.game = Some(state);
@@ -637,6 +941,7 @@ impl<G: SessionGame> Room<G> {
         token: Option<String>,
         seat: Option<usize>,
         device: Option<String>,
+        reclaim: bool,
     ) -> Result<(), String> {
         let name = name.trim().chars().take(24).collect::<String>();
         if name.is_empty() {
@@ -650,13 +955,27 @@ impl<G: SessionGame> Room<G> {
                 .iter()
                 .position(|s| matches!(s, Occupant::Human { token, .. } if token == t))
         });
+        if reclaim && reclaimed.is_none() {
+            // The seat was given away while this tab was gone: it watches.
+            self.send(conn, &json!({ "type": "unseated" }));
+            return Ok(());
+        }
+        // Between hands a newcomer may also take a bot's seat.
+        let open = |s: &Occupant| match s {
+            Occupant::Empty => true,
+            Occupant::Bot { .. } => !self.in_hand(),
+            Occupant::Human { .. } => false,
+        };
         let seat = match reclaimed {
             Some(seat) => seat,
             None => seat
-                .filter(|&s| matches!(self.seats.get(s), Some(Occupant::Empty)))
+                .filter(|&s| self.seats.get(s).is_some_and(open))
                 .or_else(|| self.seats.iter().position(|s| matches!(s, Occupant::Empty)))
                 .ok_or("the table is full")?,
         };
+        if reclaimed.is_none() {
+            self.away[seat] = false;
+        }
         // A newer connection for the same seat wins; the old tab becomes a spectator.
         self.detach(seat);
         let (token, player) = match (&self.seats[seat], reclaimed) {
@@ -838,7 +1157,7 @@ impl<G: SessionGame> Room<G> {
             .map(|(i, s)| match s {
                 Occupant::Empty => json!({ "kind": "empty" }),
                 Occupant::Human { name, .. } => {
-                    json!({ "kind": "human", "name": name, "connected": self.connected(i) })
+                    json!({ "kind": "human", "name": name, "connected": self.connected(i), "away": self.is_away(i) })
                 }
                 Occupant::Bot { level } => json!({ "kind": "bot", "name": format!("Bot {}", i + 1), "level": level }),
             })
@@ -854,6 +1173,17 @@ impl<G: SessionGame> Room<G> {
             "in_hand": self.in_hand(),
             "history": self.history,
             "hands": self.hands,
+            "table": self.table,
+            // The time left on the turn now, as of this message.
+            "clock": self.clock.as_ref().map(|c| json!({
+                "seat": c.seat,
+                "ms": c.deadline.saturating_duration_since(tokio::time::Instant::now()).as_millis() as u64,
+                "total_ms": c.total.as_millis() as u64,
+            })),
+            // Connections without a seat: people watching.
+            "watching": self.conns.values().filter(|c| c.seat.is_none()).count(),
+            // Whether a hand, running or just finished, is on the table.
+            "showing": self.game.is_some(),
         })
     }
 

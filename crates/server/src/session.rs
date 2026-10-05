@@ -52,6 +52,16 @@ pub trait SessionGame:
 
     /// How a finished hand went, in a word, for the stats.
     fn outcome(state: &Self::State) -> &'static str;
+
+    /// Whether the decision these actions offer deserves twice the table's
+    /// turn time (a weightier choice than playing a card).
+    fn long_decision(_legal: &[Self::Action]) -> bool {
+        false
+    }
+
+    /// Renumbers the seats in a finished hand's summary after the players
+    /// moved: whoever sat at seat `s` now sits at `new_seat[s]`.
+    fn reseat(summary: &mut Self::Summary, new_seat: &[usize]);
 }
 
 /// How well a seated bot plays.
@@ -157,6 +167,18 @@ impl SessionGame for Mighty {
             Some(_) => "failed",
             None => "none",
         }
+    }
+
+    /// The exchange (discards, a trump change) and the friend call.
+    fn long_decision(legal: &[mighty::Action]) -> bool {
+        legal
+            .iter()
+            .any(|a| matches!(a, mighty::Action::Discard(_) | mighty::Action::CallFriend(_)))
+    }
+
+    fn reseat(summary: &mut mighty::HandSummary, new_seat: &[usize]) {
+        summary.declarer = new_seat.get(summary.declarer).copied().unwrap_or(summary.declarer);
+        summary.friend = summary.friend.map(|s| new_seat.get(s).copied().unwrap_or(s));
     }
 }
 

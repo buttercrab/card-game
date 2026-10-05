@@ -66,6 +66,8 @@ pub struct AppState {
     site_url: String,
     /// Cloudflare Web Analytics token, if pages should load its beacon.
     beacon: Option<String>,
+    /// How long a second of a table's turn limit lasts (shorter in tests).
+    turn_second: Duration,
 }
 
 impl AppState {
@@ -88,6 +90,7 @@ impl AppState {
             web: None,
             site_url: site::SITE_URL.to_string(),
             beacon: None,
+            turn_second: Duration::from_secs(1),
         }
     }
 
@@ -111,6 +114,15 @@ impl AppState {
     pub fn with_site_url(self, url: String) -> AppState {
         AppState {
             site_url: url.trim_end_matches('/').to_string(),
+            ..self
+        }
+    }
+
+    /// Makes a turn limit's seconds last `second` instead, so a test need
+    /// not wait out real turns.
+    pub fn with_turn_second(self, second: Duration) -> AppState {
+        AppState {
+            turn_second: second,
             ..self
         }
     }
@@ -184,6 +196,7 @@ impl AppState {
                 .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.bot_delay));
             match loaded {
                 Ok(mut room) => {
+                    room.use_turn_second(self.turn_second);
                     if let Some(think) = self.bot_think {
                         room.limit_think(think);
                     }
@@ -230,6 +243,7 @@ impl AppState {
             }
         };
         let mut room = Room::<G>::new(id.clone(), settings.clone(), self.bot_delay);
+        room.use_turn_second(self.turn_second);
         if let Some(think) = self.bot_think {
             room.limit_think(think);
         }
