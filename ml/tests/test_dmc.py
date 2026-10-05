@@ -14,7 +14,7 @@ from cardgame_ml.models.config import QConfig, TrunkConfig
 from cardgame_ml.train.config import ConfigError
 from cardgame_ml.train.dmc import report
 from cardgame_ml.train.dmc.buffer import Decisions, ReplayBuffer
-from cardgame_ml.train.dmc.config import DmcConfig
+from cardgame_ml.train.dmc.config import DmcConfig, curve_deals
 
 
 @pytest.fixture
@@ -83,6 +83,22 @@ def test_the_committed_configs_read(repo: Path) -> None:
         assert isinstance(config.curve.opponents, tuple)
     assert main.name == "dmc-v1"
     assert main.curve.opponents == ("easy", "normal")
+    assert main.actors.declare == 0
+    v2 = repo / "research" / "experiments" / "2026-10-05-dmc-v2"
+    for path in (v2 / "config.toml", v2 / "smoke.toml"):
+        config = DmcConfig.load(path)
+        assert config.rules == "gshs/5"
+        assert config.exclude == "research/evals/v1/heldout-rules.json"
+        assert config.actors.declare > 0
+        assert "hard" in [curve_deals(o, config.curve.deals)[0] for o in config.curve.opponents]
+
+
+def test_curve_opponents_may_play_fewer_deals() -> None:
+    assert curve_deals("normal", 2000) == ("normal", 2000)
+    assert curve_deals("hard*300", 2000) == ("hard", 300)
+    for bad in ("hard*0", "hard*3000", "hard*x"):
+        with pytest.raises(ValueError, match="spec\\*N"):
+            curve_deals(bad, 2000)
 
 
 def test_configs_must_exclude_the_held_out_rules(repo: Path, tmp_path: Path) -> None:

@@ -59,6 +59,9 @@ epsilon = 0.02
 # Two points (targets are points / 40).
 temperature = 0.05
 runner_up = 0.05
+# Exploring starts for the bidding came after v1 (v2); off is how it ran.
+declare = 0.0
+declare_temperature = 0.0
 refresh_every = 10
 chunk = 2048
 

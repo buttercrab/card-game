@@ -1,0 +1,66 @@
+# DMC v2 smoke run: the main run's network, rules and exploration for a
+# few minutes, to check the loop on mighty-3 and measure its throughput.
+# Not a result.
+#
+#   cd ml && nice -n 10 uv run python -m cardgame_ml.train.dmc \
+#       --config ../research/experiments/2026-10-05-dmc-v2/smoke.toml
+
+name = "dmc-v2-smoke"
+seed = 2
+device = "auto"
+rules = "gshs/5"
+exclude = "research/evals/v1/heldout-rules.json"
+reward_scale = 0.025
+checkpoint_minutes = 2.0
+log_seconds = 30.0
+
+[budget]
+hands = 1000000
+hours = 0.12
+
+[model]
+head_width = 512
+head_layers = 2
+
+[model.trunk]
+width = 256
+heads = 4
+layers = 4
+feedforward = 1024
+dropout = 0.0
+
+[actors]
+processes = 2
+envs = 128
+threads = 2
+env_threads = 1
+groups = 4
+epsilon = 0.01
+temperature = 0.05
+runner_up = 0.03
+declare = 0.0625
+declare_temperature = 0.1
+refresh_every = 10
+chunk = 2048
+
+[buffer]
+capacity = 100000
+min_fill = 10000
+window = 8
+replay_ratio = 2.0
+
+[optim]
+batch_size = 512
+lr = 0.0002
+weight_decay = 0.0
+warmup_steps = 100
+grad_clip = 1.0
+
+# Two points: at the start and the end. 고수 on a few deals, to time it.
+[curve]
+every_hands = 1000000
+deals = 200
+rules = "gshs/5"
+opponents = ["easy", "normal", "hard*20"]
+seed = 7
+threads = 6

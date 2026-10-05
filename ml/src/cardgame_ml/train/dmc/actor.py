@@ -4,7 +4,9 @@ the Monte Carlo return (the acting seat's payoff for the hand, scaled).
 
 Every seat of every hand is the current network, exploring: a draw
 by the softmax of its values at a small temperature, sometimes its
-second-best action, and rarely a uniformly random legal one. An actor
+second-best action, and rarely a uniformly random legal one; and with
+exploring starts for the bidding (``ActorConfig.declare``), some seats'
+first chance to bid is taken as a bid. An actor
 reloads the weights whenever the learner has published newer ones, and
 each draws its hands from its own seed, so actors never play the same
 hands.
@@ -29,7 +31,13 @@ from cardgame_ml.data.spec import EncodingSpec
 from cardgame_ml.models.q import QModel
 from cardgame_ml.train.dmc.buffer import Decisions
 from cardgame_ml.train.dmc.config import DmcConfig
-from cardgame_ml.train.dmc.policy import Exploration, choose, legal_values
+from cardgame_ml.train.dmc.policy import (
+    Exploration,
+    ExploringStarts,
+    bid_mask,
+    choose,
+    legal_values,
+)
 
 
 @dataclass
@@ -101,10 +109,12 @@ class Report:
     wall_seconds: float
     version: int
     """The weights it played with last."""
+    starts: int = 0
+    """Bids forced by exploring starts."""
 
 
 # A process entry point: everything it needs, passed once at spawn.
-def run(  # noqa: PLR0913, PLR0917
+def run(  # noqa: PLR0913, PLR0915, PLR0917
     index: int,
     config: DmcConfig,
     spec_json: dict[str, object],
@@ -134,10 +144,11 @@ def run(  # noqa: PLR0913, PLR0917
     rng = np.random.default_rng(seed)
     exploration = Exploration(a.epsilon, a.temperature, a.runner_up)
     hands = Hands(a.envs)
+    starts = ExploringStarts(a.envs, bid_mask(spec.actions), a.declare, a.declare_temperature)
     device = torch.device("cpu")
     step = env.reset()
     pending: list[Decisions] = []
-    count = finished = steps = 0
+    count = finished = steps = forced = 0
     model_s = env_s = 0.0
     wall, cpu = time.monotonic(), time.process_time()
     while not stop.is_set():
@@ -148,6 +159,7 @@ def run(  # noqa: PLR0913, PLR0917
         started = time.monotonic()
         actions, values = legal_values(model, step, device, a.groups)
         chosen = choose(actions, values, exploration, rng)
+        forced += starts.apply(step, actions, values, chosen, rng)
         hands.record(step, chosen)
         stepped = time.monotonic()
         step = env.step(chosen)
@@ -155,6 +167,7 @@ def run(  # noqa: PLR0913, PLR0917
         env_s += time.monotonic() - stepped
         steps += 1
         decisions, ended = hands.finish(step)
+        starts.finish(step["done"])
         finished += ended
         if decisions is not None:
             pending.append(decisions)
@@ -172,6 +185,7 @@ def run(  # noqa: PLR0913, PLR0917
             cpu_seconds=now_cpu - cpu,
             wall_seconds=now - wall,
             version=seen,
+            starts=forced,
         )
         while not stop.is_set():
             try:
@@ -179,6 +193,6 @@ def run(  # noqa: PLR0913, PLR0917
                 break
             except queue.Full:
                 continue
-        pending, count, finished, steps = [], 0, 0, 0
+        pending, count, finished, steps, forced = [], 0, 0, 0, 0
         model_s = env_s = 0.0
         wall, cpu = now, now_cpu

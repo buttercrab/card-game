@@ -42,6 +42,19 @@ class ActorConfig:
     softmax never tries anything else; this tries the network's own best
     alternative (its best bid for the hand, say), so that its value is
     learnt from hands where it was played."""
+    declare: float
+    """Exploring starts for the bidding: each seat's first chance to bid in
+    a hand is, with this probability, a bid (never a pass), drawn among
+    the legal bids by the softmax of their values at
+    ``declare_temperature``; the rest of the hand is played as usual.
+    The softmax, ε and the runner-up explore one decision at a time, and
+    a lone exploratory bid is mostly a bad contract badly played: the
+    network learns that bidding loses and passes for ever (v1). Starting
+    some hands from the network's own best bid learns what its contracts
+    are worth when it then plays on as it would: Monte Carlo with
+    exploring starts. The rewards are untouched."""
+    declare_temperature: float
+    """In the network's units; 0 bids the best-valued bid."""
     refresh_every: int
     """Learner steps between publishing weights to the actors."""
     chunk: int
@@ -83,9 +96,21 @@ class CurveConfig:
     deals: int
     rules: str
     opponents: tuple[str, ...]
+    """Bot specs; ``spec*N`` plays it on ``N`` deals instead of ``deals``
+    (the same ``N`` every time), for a slow opponent such as ``hard``."""
     seed: int
     threads: int
     """Rust threads for the opponents' play."""
+
+
+def curve_deals(opponent: str, deals: int) -> tuple[str, int]:
+    """An entry of ``CurveConfig.opponents``: the bot spec and its deals."""
+    spec, star, count = opponent.partition("*")
+    if not star:
+        return spec, deals
+    if not count.isdigit() or not 0 < int(count) <= deals:
+        raise ValueError(f"curve: {opponent!r}: expected spec*N, N from 1 to deals")
+    return spec, int(count)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -133,8 +158,12 @@ class DmcConfig:
             raise ValueError("actors: epsilon is a probability")
         if not 0 <= self.actors.runner_up <= 1:
             raise ValueError("actors: runner_up is a probability")
-        if self.actors.temperature < 0:
-            raise ValueError("actors: the temperature is not negative")
+        if self.actors.temperature < 0 or self.actors.declare_temperature < 0:
+            raise ValueError("actors: a temperature is not negative")
+        if not 0 <= self.actors.declare <= 1:
+            raise ValueError("actors: declare is a probability")
+        for opponent in self.curve.opponents:
+            curve_deals(opponent, self.curve.deals)
 
     @classmethod
     def load(cls, path: Path) -> "DmcConfig":
@@ -151,4 +180,5 @@ __all__ = [
     "CurveConfig",
     "DmcConfig",
     "DmcOptimConfig",
+    "curve_deals",
 ]

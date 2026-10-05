@@ -43,7 +43,7 @@ from cardgame_ml.train.belief import device_for
 from cardgame_ml.train.config import from_mapping
 from cardgame_ml.train.dmc import actor, curve
 from cardgame_ml.train.dmc.buffer import Batch, ReplayBuffer
-from cardgame_ml.train.dmc.config import DmcConfig
+from cardgame_ml.train.dmc.config import DmcConfig, curve_deals
 from cardgame_ml.train.dmc.system import gpu_utilisation, load_average
 from cardgame_ml.train.metrics import PHASES, phases
 
@@ -352,11 +352,11 @@ class Learner:
                 self.device,
                 rules=c.rules,
                 opponent=opponent,
-                deals=c.deals,
+                deals=deals,
                 seed=c.seed,
                 threads=c.threads,
             ).to_json()
-            for opponent in c.opponents
+            for opponent, deals in (curve_deals(o, c.deals) for o in c.opponents)
         }
         self.model.train()
         snapshot = self.out / "snapshots" / f"hands-{progress.hands:010d}.pt"
@@ -404,6 +404,10 @@ class Learner:
                     "learner_steps_per_s": window.steps / seconds,
                     "samples_per_s": window.steps * self.config.optim.batch_size / seconds,
                     "replay_ratio": progress.trained / max(progress.decisions, 1),
+                    "window_replay_ratio": window.steps
+                    * self.config.optim.batch_size
+                    / max(window.decisions, 1),
+                    "exploring_starts_per_hand": window.starts / max(window.hands, 1),
                     "learner_busy": window.learner_seconds / seconds,
                     "actor_cpu_cores": window.cpu_seconds / seconds,
                     "actor_model_share": window.model_seconds
@@ -432,6 +436,7 @@ class _Window:
     env_seconds: float = 0.0
     lag: int = 0
     reports: int = 0
+    starts: int = 0
 
     def add(self, report: actor.Report, version: int) -> None:
         self.hands += report.hands
@@ -440,6 +445,7 @@ class _Window:
         self.model_seconds += report.model_seconds
         self.env_seconds += report.env_seconds
         self.lag += version - report.version
+        self.starts += report.starts
         self.reports += 1
 
 

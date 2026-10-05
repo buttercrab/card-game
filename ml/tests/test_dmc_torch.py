@@ -24,6 +24,8 @@ from cardgame_ml.train.dmc.learner import EncodingMismatchError, load, train  # 
 from cardgame_ml.train.dmc.policy import (  # noqa: E402
     GREEDY,
     Exploration,
+    ExploringStarts,
+    bid_mask,
     choose,
     legal_actions,
     legal_values,
@@ -178,10 +180,18 @@ def tiny_config(repo: Path) -> DmcConfig:
         "head_layers": 1,
         "trunk": {"width": 16, "heads": 2, "layers": 1, "feedforward": 32, "dropout": 0.0},
     }
-    data["actors"].update(processes=1, envs=8, threads=1, chunk=64, refresh_every=2)
+    data["actors"].update(
+        processes=1,
+        envs=8,
+        threads=1,
+        chunk=64,
+        refresh_every=2,
+        declare=0.3,
+        declare_temperature=0.05,
+    )
     data["buffer"].update(capacity=4000, min_fill=200, window=2)
     data["optim"].update(batch_size=32, warmup_steps=2)
-    data["curve"].update(every_hands=64, deals=6, opponents=["normal"], threads=1)
+    data["curve"].update(every_hands=64, deals=6, opponents=["normal*3"], threads=1)
     return from_mapping(DmcConfig, data, "tiny")
 
 
@@ -198,6 +208,7 @@ def test_a_tiny_run_plays_learns_and_resumes(repo: Path, tmp_path: Path) -> None
     assert curve[0]["hands"] == 0
     assert len(curve) >= 2
     assert set(curve[-1]["scores"]) == {"normal"}
+    assert curve[-1]["scores"]["normal"]["n"] == 3
     assert any(line["event"] == "train" and "throughput" in line for line in lines)
     described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     assert described["reward_scale"] == config.reward_scale
@@ -226,3 +237,36 @@ def test_a_model_of_another_encoding_is_refused(repo: Path, tmp_path: Path) -> N
     config = tiny_config(repo)
     with pytest.raises(EncodingMismatchError, match="mighty-0"):
         train(config, tmp_path, repo / config.exclude, print)
+
+
+def test_exploring_starts_bid_once_per_seat_and_hand() -> None:
+    names = ["pass", "misdeal", "bid ♠13", "bid ♠14", "play ♠A"]
+    bids = bid_mask(names)
+    assert bids.tolist() == [False, False, True, True, False]
+    rng = np.random.default_rng(0)
+    # Two slots: slot 0 may bid, slot 1 only plays.
+    legal = np.array([[True, False, True, True, False], [False, False, False, False, True]])
+    actions, valid = legal_actions(legal)
+    values = np.where(valid, np.array([[5.0, -1.0, -2.0], [0.0, 0.0, 0.0]]), -np.inf)
+    values = values.astype(np.float32)
+    starts = ExploringStarts(2, bids, share=1.0, temperature=0.0)
+    step = {"legal": legal, "seat": np.array([3, 3])}
+    chosen = np.array([0, 4])
+    assert starts.apply(step, actions, values, chosen, rng) == 1
+    assert chosen.tolist() == [2, 4], "the best-valued bid, never the pass"
+    # The same seat again in the same hand: as chosen.
+    chosen = np.array([0, 4])
+    assert starts.apply(step, actions, values, chosen, rng) == 0
+    assert chosen.tolist() == [0, 4]
+    # New hands: it starts again; a temperature spreads over the bids.
+    starts.temperature = 100.0
+    picks: set[int] = set()
+    for _ in range(40):
+        starts.finish(np.array([True, False]))
+        chosen = np.array([0, 4])
+        starts.apply(step, actions, values, chosen, rng)
+        picks.add(int(chosen[0]))
+    assert picks == {2, 3}
+    off = ExploringStarts(2, bids, share=0.0, temperature=0.0)
+    chosen = np.array([0, 4])
+    assert off.apply(step, actions, values, chosen, rng) == 0

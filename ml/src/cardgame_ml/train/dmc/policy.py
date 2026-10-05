@@ -1,7 +1,7 @@
 """Playing with a Q network: score the legal actions of a batch of
 decisions, pick the best (or, with probability ε, a random legal one)."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -121,3 +121,71 @@ def choose(
     keys = np.where(legal, rng.random(values.shape), -1.0)
     random = actions[rows, keys.argmax(axis=1)]
     return np.where(rng.random(len(actions)) < epsilon, random, best)
+
+
+BID_PREFIX = "bid "
+"""How a spec names a bid: an action that takes on a contract (Mighty's
+"bid ♠13"); passing and the misdeal are not bids."""
+
+
+def bid_mask(actions: Sequence[str]) -> NDArray[np.bool_]:
+    """Which of a spec's actions (by name) are bids."""
+    return np.array([name.startswith(BID_PREFIX) for name in actions], np.bool_)
+
+
+def choose_bid(
+    actions: NDArray[np.int64],
+    values: NDArray[np.float32],
+    bids: NDArray[np.bool_],
+    temperature: float,
+    rng: np.random.Generator,
+) -> NDArray[np.int64]:
+    """One bid per decision (each must have a legal bid): drawn by the
+    softmax of the legal bids' values at ``temperature``, the best at 0."""
+    allowed = np.isfinite(values) & bids[actions]
+    scores = np.where(allowed, values, -np.inf).astype(np.float32)
+    if temperature > 0:
+        noise = rng.gumbel(size=scores.shape).astype(np.float32)
+        scores = scores / np.float32(temperature) + noise
+    return actions[np.arange(len(actions)), scores.argmax(axis=1)]
+
+
+class ExploringStarts:
+    """Exploring starts for the bidding (``ActorConfig.declare``): each
+    seat's first decision of a hand at which it may bid is, with
+    probability ``share``, a bid by :func:`choose_bid`."""
+
+    def __init__(
+        self, num_envs: int, bids: NDArray[np.bool_], share: float, temperature: float
+    ) -> None:
+        self.bids, self.share, self.temperature = bids, share, temperature
+        self.seen: list[set[int]] = [set() for _ in range(num_envs)]
+
+    def apply(
+        self,
+        step: Observations,
+        actions: NDArray[np.int64],
+        values: NDArray[np.float32],
+        chosen: NDArray[np.int64],
+        rng: np.random.Generator,
+    ) -> int:
+        """Overrides ``chosen`` in place where a start falls; how many did."""
+        if self.share <= 0:
+            return 0
+        may_bid = (np.asarray(step["legal"], np.bool_) & self.bids).any(axis=1)
+        rows: list[int] = []
+        for i in np.flatnonzero(may_bid).tolist():
+            seat = int(step["seat"][i])
+            if seat in self.seen[i]:
+                continue
+            self.seen[i].add(seat)
+            if rng.random() < self.share:
+                rows.append(i)
+        if rows:
+            chosen[rows] = choose_bid(actions[rows], values[rows], self.bids, self.temperature, rng)
+        return len(rows)
+
+    def finish(self, done: NDArray[np.bool_]) -> None:
+        """Forgets the seats of the hands that just ended."""
+        for i in np.flatnonzero(done).tolist():
+            self.seen[i].clear()
