@@ -4,6 +4,16 @@ use engine::{Game, Turn, Viewer};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, Preset, Rules};
 use mighty::{Action, Bid, FriendCall, Lead, Mighty, Options, PhaseView, Redeal, State};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+
+/// Redeals here come from a fixed seed, so a failure replays exactly; the
+/// assertions that follow one name it.
+const SEED: u64 = 0x5eed;
+
+fn rng() -> ChaCha8Rng {
+    ChaCha8Rng::seed_from_u64(SEED)
+}
 
 /// Parses cards such as `"SA D10 HK C3 BJ"`.
 fn cards(s: &str) -> Vec<Card> {
@@ -160,7 +170,7 @@ fn everyone_sees_why_the_cards_were_dealt_again() {
     let mut state = start(Rules::default(), &[weak], "");
     act(&mut state, Action::Misdeal);
     // The server deals again; the new deal's view says who threw in which hand.
-    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    let deal = Mighty::sample_chance(&state, &mut rng());
     act(&mut state, deal);
     let seen = Mighty::view(&state, Viewer::Seat(3))
         .redealt
@@ -170,17 +180,18 @@ fn everyone_sees_why_the_cards_were_dealt_again() {
         Redeal::Misdeal {
             seat: 0,
             hand: cards(weak)
-        }
+        },
+        "seed {SEED}"
     );
-    assert_eq!(seen.count, 1);
+    assert_eq!(seen.count, 1, "seed {SEED}");
 
     for _ in 0..5 {
         act(&mut state, Action::Pass);
     }
-    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    let deal = Mighty::sample_chance(&state, &mut rng());
     act(&mut state, deal);
     let seen = Mighty::view(&state, Viewer::Spectator).redealt.unwrap();
-    assert_eq!((seen.why, seen.count), (Redeal::AllPassed, 2));
+    assert_eq!((seen.why, seen.count), (Redeal::AllPassed, 2), "seed {SEED}");
 }
 
 #[test]
@@ -560,10 +571,9 @@ fn others_never_see_the_discards() {
 
 #[test]
 fn a_finished_hand_sums_up_every_trick() {
-    use rand::SeedableRng;
     use rand::seq::IndexedRandom;
     for seed in 0..40 {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut state = Mighty::new_game(&Options {
             rules: Rules::default(),
             first_bidder: 0,
@@ -572,7 +582,7 @@ fn a_finished_hand_sums_up_every_trick() {
         loop {
             match Mighty::turn(&state) {
                 Turn::Over => break,
-                _ if state.summary().is_some() => panic!("summed up before the end"),
+                _ if state.summary().is_some() => panic!("seed {seed}: summed up before the end"),
                 Turn::Chance => {
                     let deal = Mighty::sample_chance(&state, &mut rng);
                     act(&mut state, deal);
@@ -584,16 +594,16 @@ fn a_finished_hand_sums_up_every_trick() {
             }
         }
         let s = state.summary().expect("the hand is over");
-        assert_eq!(s.rounds.len(), 10);
+        assert_eq!(s.rounds.len(), 10, "seed {seed}");
         let won: i32 = s.rounds.iter().filter(|&&r| r > 0).map(|&r| i32::from(r)).sum();
         let in_tricks: i32 = s.rounds.iter().map(|&r| i32::from(r.abs())).sum();
         // Whatever the tricks did not take was discarded, and counts for the declarer.
         let discarded = i32::from(s.team_points) - won;
         assert!((0..=3).contains(&discarded), "seed {seed}: {s:?}");
         assert_eq!(in_tricks + discarded, 20, "seed {seed}: {s:?}");
-        assert_eq!(s.made, s.team_points >= s.contract.count);
+        assert_eq!(s.made, s.team_points >= s.contract.count, "seed {seed}");
         assert_eq!(s.friend.is_some(), s.friend_revealed.is_some(), "seed {seed}: {s:?}");
-        assert!(s.friend_revealed.is_none_or(|r| r < 10));
+        assert!(s.friend_revealed.is_none_or(|r| r < 10), "seed {seed}");
     }
 }
 
@@ -754,10 +764,10 @@ fn a_weak_hand_may_misdeal_out_of_turn_until_it_bids() {
     let mut thrown = state.clone();
     Mighty::apply_out_of_turn(&mut thrown, 1, Action::Misdeal).unwrap();
     assert_eq!(Mighty::turn(&thrown), Turn::Chance);
-    let deal = Mighty::sample_chance(&thrown, &mut rand::rng());
+    let deal = Mighty::sample_chance(&thrown, &mut rng());
     act(&mut thrown, deal);
     let redealt = Mighty::view(&thrown, Viewer::Seat(3)).redealt.unwrap();
-    assert!(matches!(redealt.why, Redeal::Misdeal { seat: 1, .. }));
+    assert!(matches!(redealt.why, Redeal::Misdeal { seat: 1, .. }), "seed {SEED}");
     // Only a qualifying seat, and only a misdeal.
     let mut refused = state.clone();
     assert!(Mighty::apply_out_of_turn(&mut refused, 2, Action::Misdeal).is_err());
@@ -791,7 +801,7 @@ fn after_bidding_keeps_the_window_open_all_through_the_bidding() {
 
 #[test]
 fn random_out_of_turn_misdeals_keep_the_state_sound() {
-    use rand::{Rng, SeedableRng};
+    use rand::Rng;
     let mut rng = rand::rngs::StdRng::seed_from_u64(7);
     for preset in Preset::ALL {
         let rules = preset.rules();
@@ -834,10 +844,13 @@ fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
     assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
     act(&mut state, Action::Misdeal);
     assert_eq!(Mighty::turn(&state), Turn::Chance);
-    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    let deal = Mighty::sample_chance(&state, &mut rng());
     act(&mut state, deal);
     let why = Mighty::view(&state, Viewer::Seat(1)).redealt.unwrap().why;
-    assert!(matches!(why, Redeal::Misdeal { seat: 0, ref hand } if hand.len() == 13));
+    assert!(
+        matches!(why, Redeal::Misdeal { seat: 0, ref hand } if hand.len() == 13),
+        "seed {SEED}"
+    );
 
     // Not once a card is discarded, and never without the rule.
     let mut rules = Rules::default();
@@ -883,12 +896,11 @@ fn changing_to_no_trump_may_cost_less() {
 
 #[test]
 fn other_player_counts_deal_the_whole_deck() {
-    use rand::SeedableRng;
     use rand::seq::IndexedRandom;
     for players in [3, 4, 6, 7] {
         let rules = Rules::default().for_players(players).unwrap();
         for seed in 0..30 {
-            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
             let mut state = Mighty::new_game(&Options {
                 rules: rules.clone(),
                 first_bidder: 0,
@@ -900,10 +912,10 @@ fn other_player_counts_deal_the_whole_deck() {
                     _ => Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone(),
                 };
                 act(&mut state, action);
-                Mighty::check_invariants(&state).unwrap();
+                Mighty::check_invariants(&state).unwrap_or_else(|e| panic!("{players} players, seed {seed}: {e}"));
             }
             let s = state.summary().unwrap();
-            assert_eq!(s.rounds.len(), rules.hand_size, "{players} players");
+            assert_eq!(s.rounds.len(), rules.hand_size, "{players} players, seed {seed}");
             assert_eq!(Mighty::payoffs(&state).unwrap().len(), players);
         }
     }
@@ -911,10 +923,9 @@ fn other_player_counts_deal_the_whole_deck() {
 
 #[test]
 fn every_preset_lets_the_declarer_name_a_card_it_holds_or_discarded() {
-    use rand::SeedableRng;
     for preset in Preset::ALL {
         assert!(preset.rules().friend.fake, "{preset}");
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(1);
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
         let mut state = Mighty::new_game(&Options {
             rules: preset.rules(),
             first_bidder: 0,
@@ -1013,11 +1024,10 @@ fn a_friend_by_seat_or_by_the_last_trick_is_never_no_friend_in_play() {
 fn gshs_hands_pay_back_failed_contracts() {
     use engine::Bot;
     use mighty::bot::SimpleBot;
-    use rand::SeedableRng;
     let rules = Preset::Gshs.rules();
     let (mut made, mut failed) = (0, 0);
     for seed in 0..60 {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut state = Mighty::new_game(&Options {
             rules: rules.clone(),
             first_bidder: seed as usize % 5,

@@ -10,7 +10,6 @@ pub mod session;
 pub mod site;
 pub mod stats;
 
-use axum::extract::DefaultBodyLimit;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -335,6 +334,13 @@ fn freeze_saved<G: SessionGame>(mut snapshot: Value) -> Value {
     snapshot
 }
 
+/// Refuses a body over `max` bytes. One whose declared length is over is
+/// refused before any of it is read, so a client that waits for `100
+/// Continue` never sends it.
+fn body_limit(max: usize) -> tower_http::limit::RequestBodyLimitLayer {
+    tower_http::limit::RequestBodyLimitLayer::new(max)
+}
+
 /// The API under `/api`, plus the built web client from `web_dir` if given.
 pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
     let state = AppState { web: web_dir, ..state };
@@ -343,14 +349,11 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .route("/version", get(version))
         .route("/api/presets", get(presets))
         .route("/api/presets/{id}", get(preset_rules))
-        .route("/api/rooms", post(create_room).layer(DefaultBodyLimit::max(4 * 1024)))
+        .route("/api/rooms", post(create_room).layer(body_limit(4 * 1024)))
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
-        .route("/api/reports", post(report).layer(DefaultBodyLimit::max(REPORT_BODY)))
-        .route(
-            "/api/errors",
-            post(errors::client_error).layer(DefaultBodyLimit::max(32 * 1024)),
-        )
+        .route("/api/reports", post(report).layer(body_limit(REPORT_BODY)))
+        .route("/api/errors", post(errors::client_error).layer(body_limit(32 * 1024)))
         .route("/api/stats", get(dashboard::stats_json))
         .route("/stats", get(dashboard::stats_page))
         .route("/stats/reports/{file}", get(dashboard::report_file))

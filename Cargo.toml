@@ -25,12 +25,13 @@ rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+tempfile = "3"
 thiserror = "2"
 toml = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.30"
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.7", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs", "limit"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
