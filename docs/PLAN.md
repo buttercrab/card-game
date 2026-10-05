@@ -299,6 +299,32 @@ think-time budget and the cheaper next step (games, size or compute).
 
 Exit: an unattended overnight run of ≥10 experiments with readable results.
 
+Built (2026-10-05), not yet installed
+([research/loop](../research/loop/README.md)):
+- `cardgame_ml.loop`: typed TOML specs validated against
+  `research/loop/policy.toml` (hosts, budgets, the scoring protocol, what
+  the researcher may queue); method runners `dmc`, `belief`,
+  `eval-only`, `search-tuning`; a runner with one GPU job at a time,
+  thread caps per host, wall budgets, restart-safe steps and a lock;
+  CPU evals dispatched to the home server from `git archive` of the run's
+  commit at `nice` 15; records in `research/experiments/`, a leaderboard
+  with plots, daily reports in `research/reports/`.
+- Scoring is fixed: DMC v1's learning curve, suite v1 through `eval`
+  against 고수 deal by deal, think time on the home server; a win over
+  the parent is confirmed automatically on a fresh-deal twin of suite v1
+  (`research/loop/suites/v1-fresh-1`) before it counts.
+- The researcher is Claude Code headless, called when the queue runs
+  low (rate-limited), restricted to `research/loop/` and runs' notes;
+  the runner validates everything it writes and switches it off on a
+  violation. New methods are requests for people
+  (`research/loop/requests.md`).
+- Seeded queue: DMC v1 scored on the protocol, nine DMC variants
+  (exploration, learning rate, size, batch, replay, rules, reward
+  scale), three search settings and 고수's think time (1.3 s against
+  2.4 s, the owner's) on the home server; they wait for P3b's export.
+  Installing (`research/loop/ops/install.sh`) waits for review and for
+  P3b's branch to be merged.
+
 ### P6 — Game-agnostic service
 
 - Server rooms, sessions, bots, stats over `DynGame`; Mighty registered as a

@@ -127,6 +127,26 @@ check (`crates/infer/tests/tiny`); rewrite it with
 `uv run python -m cardgame_ml.export.fixture` when the architecture
 changes.
 
+### Queue an experiment in the loop
+
+The experiment loop ([research/loop](../research/loop/README.md)) runs
+specs from `research/loop/queue/` unattended and scores them the same
+way. Write a spec (the README has an annotated example; the seeded queue
+has more), then check it as the runner will:
+
+```sh
+cd ml
+uv run python -m cardgame_ml.loop validate ../research/loop/queue/<id>.toml
+uv run python -m cardgame_ml.loop status          # what runs, what waits and why
+uv run python -m cardgame_ml.loop report          # leaderboard and plots
+```
+
+The runner itself runs from its own worktree on branch `loop`, as a
+launchd agent: `research/loop/ops/install.sh` sets it up. Results land
+in `research/experiments/<date>-<id>/`, the leaderboard in
+`research/loop/leaderboard.md`, daily reports in `research/reports/`.
+`pause`, `resume` and `cancel <id>` steer it.
+
 ### Record an artifact kept outside git
 
 Write a manifest into `research/manifests/` (fields in its
