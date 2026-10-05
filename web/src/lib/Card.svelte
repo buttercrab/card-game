@@ -3,7 +3,8 @@
   import type { Seal } from './cards';
   import { SUIT_NAME } from './SuitIcon.svelte';
 
-  export type CardSize = 'hand' | 'trick' | 'mini';
+  /** 'fluid' takes its width from the --card-size its container sets. */
+  export type CardSize = 'hand' | 'trick' | 'mini' | 'fluid';
 
   const RANK: Record<number, string> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
   const SEAL_NAME: Record<Seal, string> = { mighty: '마이티', joker: '조커', call: '조커콜' };
@@ -35,6 +36,7 @@
 </script>
 
 <script lang="ts">
+  import type { Attachment } from 'svelte/attachments';
   import CardBack from './CardBack.svelte';
   import CourtArt from './CourtArt.svelte';
   import CueIcon, { type Cue } from './CueIcon.svelte';
@@ -52,8 +54,14 @@
     won = false,
     kitty = false,
     powerless = false,
+    picked = false,
+    leading = false,
+    dimmed = false,
+    overlapped = false,
+    tilt = 0,
     width,
     id,
+    attach,
     onclick,
   }: {
     /** null draws the back. */
@@ -70,10 +78,24 @@
     kitty?: boolean;
     /** Played where its special power does not apply. */
     powerless?: boolean;
+    /** Chosen among several (the exchange's discards): lifted clear of its
+     * row, with no raised shadow, which would show as a second edge. */
+    picked?: boolean;
+    /** Winning the round so far: it sits up a little, outlined in ink (news,
+     * not a call to act, which is what plum means). */
+    leading?: boolean;
+    /** Lost the round as it resolves: less colour, still solid paper. */
+    dimmed?: boolean;
+    /** Under the next card in a fan: its stray corner glyph is not drawn. */
+    overlapped?: boolean;
+    /** Lying a little crooked on the table, in degrees. */
+    tilt?: number;
     /** Overrides the size's width in pixels. */
     width?: number;
-    /** Exposed as data-card so motion can find this card on screen. */
+    /** Exposed as data-card, for tests and for the hand's own lookups. */
     id?: string;
+    /** Registers the card's element (the table's motion finds it so). */
+    attach?: Attachment<HTMLElement>;
     onclick?: () => void;
   } = $props();
 
@@ -100,7 +122,7 @@
   const jokerLabel = $derived(twoJokers ? (joker === 'Red' ? '홍' : '흑') : '조커');
   // On a desktop, a card under the pointer leans toward it a little, like
   // a real card picked up by one corner (Balatro, kept to a few degrees).
-  function tilt(e: PointerEvent) {
+  function lean(e: PointerEvent) {
     if (e.pointerType !== 'mouse' || unplayable) return;
     const el = e.currentTarget as HTMLElement;
     const r = el.getBoundingClientRect();
@@ -109,7 +131,7 @@
     el.style.setProperty('--ry', `${(x * 14).toFixed(1)}deg`);
     el.style.setProperty('--rx', `${(-y * 14).toFixed(1)}deg`);
   }
-  function untilt(e: PointerEvent) {
+  function unlean(e: PointerEvent) {
     const el = e.currentTarget as HTMLElement;
     el.style.removeProperty('--ry');
     el.style.removeProperty('--rx');
@@ -174,15 +196,21 @@
     class:unplayable
     class:won
     class:powerless
+    class:picked
+    class:leading
+    class:dimmed
+    class:overlapped
     style:--w={width ? `${width}px` : undefined}
+    style:rotate={tilt ? `${tilt}deg` : undefined}
     data-card={id}
     draggable="false"
     aria-label={label}
-    aria-pressed={raised}
+    aria-pressed={raised || picked}
     aria-disabled={unplayable}
     {onclick}
-    onpointermove={tilt}
-    onpointerleave={untilt}
+    onpointermove={lean}
+    onpointerleave={unlean}
+    {@attach attach}
   >
     {@render face()}
   </button>
@@ -197,11 +225,17 @@
     class:unplayable
     class:won
     class:powerless
+    class:picked
+    class:leading
+    class:dimmed
+    class:overlapped
     style:--w={width ? `${width}px` : undefined}
+    style:rotate={tilt ? `${tilt}deg` : undefined}
     data-card={id}
     draggable="false"
     role="img"
     aria-label={label}
+    {@attach attach}
   >
     {@render face()}
   </div>
@@ -246,7 +280,10 @@
   }
   .mini {
     --w: 40px;
-    border-radius: 6px;
+    border-radius: var(--r-mini);
+  }
+  .fluid {
+    --w: var(--card-size, 60px);
   }
   @media (min-width: 1024px) {
     .hand {
@@ -509,6 +546,27 @@
     translate: 0 4px;
     filter: saturate(0.4) brightness(0.9);
   }
+  .picked {
+    translate: 0 -18px;
+    box-shadow: var(--shadow-card);
+  }
+  /* A phone's tray has less room above the row, under your role tag. */
+  @media (max-width: 599px) {
+    .picked {
+      translate: 0 -10px;
+    }
+  }
+  .leading {
+    translate: 0 -6px;
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .dimmed {
+    filter: saturate(0.4) brightness(0.9);
+  }
+  .overlapped .glyph {
+    visibility: hidden;
+  }
   .hinted {
     outline: 2px dashed var(--accent);
     outline-offset: 3px;
@@ -532,7 +590,7 @@
     border-color: var(--card-edge);
   }
   /* Touching a card previews the lift. */
-  button.card:active:not(.unplayable):not(.raised) {
+  button.card:active:not(.unplayable):not(.raised):not(.picked) {
     translate: 0 -6px;
     box-shadow: var(--shadow-card);
   }
@@ -550,7 +608,7 @@
     outline-offset: 2px;
   }
   @media (hover: hover) {
-    button.card:hover:not(.unplayable):not(.raised) {
+    button.card:hover:not(.unplayable):not(.raised):not(.picked) {
       translate: 0 -6px;
     }
   }

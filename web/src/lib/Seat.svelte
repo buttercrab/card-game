@@ -1,5 +1,12 @@
+<script lang="ts" module>
+  /** Where a seat sits at five: you at the bottom, then round the table. */
+  export type Place = 'bottom' | 'right' | 'top-right' | 'top-left' | 'left' | 'free';
+  export const PLACES: Place[] = ['bottom', 'right', 'top-right', 'top-left', 'left'];
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte';
+  import type { Attachment } from 'svelte/attachments';
   import Callout from './Callout.svelte';
   import { juice } from './motion';
   import PlayerFigure from './PlayerFigure.svelte';
@@ -18,7 +25,9 @@
     turn = false,
     bubble = null,
     reaction = null,
-    reactSide = 'up',
+    place = 'free',
+    picked = false,
+    attach,
     cue = null,
     dim = false,
     reveal = false,
@@ -43,9 +52,14 @@
     bubble?: string | null;
     /** A reaction the player just sent; `id` replays it when repeated. */
     reaction?: { text: string; id: number } | null;
-    /** Where a reaction rises: over the seat, or beside it, outwards, for the
-     * top seats, whose space above is the status line. */
-    reactSide?: 'up' | 'left' | 'right';
+    /** Where it sits round the table: a reaction rises beside the top seats
+     * (outwards: their space above is the status line), and a bid on a
+     * right-hand seat hangs inwards. */
+    place?: Place;
+    /** Chosen first in a swap: it stands up a little. */
+    picked?: boolean;
+    /** Registers the seat's element (the table's motion finds it so). */
+    attach?: Attachment<HTMLElement>;
     /** A big moment at this seat: it wiggles, with a short label under it
      * when `text` is set. A new `id` plays it again. */
     cue?: { text: string | null; id: number } | null;
@@ -91,7 +105,7 @@
   });
 </script>
 
-<div class="seat" bind:this={el} class:turn class:dim class:reveal class:empty aria-current={turn ? 'true' : undefined}>
+<div class="seat {place}" bind:this={el} class:turn class:dim class:reveal class:empty class:picked aria-current={turn ? 'true' : undefined} {@attach attach}>
   <!-- On its turn the name tag lights up in plum. -->
   <div class="stand">
     {#if empty}
@@ -131,7 +145,7 @@
   {#if gained}{#key gained.id}<span class="gain" aria-hidden="true">+{gained.n}</span>{/key}{/if}
   {#if cue?.text}{#key cue.id}<Callout text={cue.text} />{/key}{/if}
   {#if reaction}
-    {#key reaction.id}<Bubble text={reaction.text} side={reactSide} />{/key}
+    {#key reaction.id}<Bubble text={reaction.text} side={place === 'top-right' ? 'right' : place === 'top-left' ? 'left' : 'up'} />{/key}
   {/if}
 </div>
 
@@ -180,6 +194,11 @@
   }
   .seat.dim {
     opacity: 0.6;
+  }
+  /* Picked first in a swap: it stands up a little, in ink. */
+  .seat.picked {
+    translate: 0 -4px;
+    color: var(--ink);
   }
   /* An empty seat: an outline the size of a figure, and a muted name. */
   .outline {
@@ -334,6 +353,29 @@
     line-height: 1.2;
     text-align: center;
     word-break: keep-all;
+  }
+  /* Phones: a long name on a top seat ends sooner, so it keeps clear of
+     the trick's top cards beside it. */
+  @media (max-width: 599px) {
+    :is(.top-right, .top-left) .name {
+      max-width: 5em;
+    }
+  }
+  /* Phones and tablets: a bid on a right-hand seat hangs inwards. */
+  @media (max-width: 1023px), (max-height: 639px) {
+    :is(.right, .top-right) .bubble {
+      left: auto;
+      right: calc(100% - 6px);
+    }
+  }
+  /* Phones on their side: the bottom seats show their bid above, clear of
+     the hand. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    :is(.right, .left) .bubble {
+      top: -12px;
+      bottom: auto;
+      transform: translate(-50%, -50%);
+    }
   }
   /* Tablets: the seats grow with the table instead of staying phone-sized. */
   @media (min-width: 600px) {

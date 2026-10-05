@@ -1,12 +1,14 @@
 <script lang="ts">
   // The player's own cards: one overlapping row, or two when they would not fit.
   import { flip } from 'svelte/animate';
+  import type { Attachment } from 'svelte/attachments';
   import { innerHeight } from 'svelte/reactivity/window';
   import { cubicOut } from 'svelte/easing';
   import Card from './Card.svelte';
   import { sameCard, type Seal } from './cards';
   import { motion, settings } from './settings.svelte';
   import { sound } from './sound';
+  import { cardKey, Registry } from './table/registry';
   import { MEDIA } from './tokens';
   import type { Card as CardT } from './types';
 
@@ -25,6 +27,8 @@
     onrefuse,
     hinted = null,
     raised = $bindable(null),
+    attachCard,
+    lifted = false,
   }: {
     cards: CardT[];
     /** 'play' raises then plays one card; 'choose' toggles several, as when discarding. */
@@ -47,13 +51,32 @@
     hinted?: CardT | null;
     /** The card lifted by a first tap, so the table can say what a second does. */
     raised?: CardT | null;
+    /** Registers each card's element with the table, by `cardKey`. */
+    attachCard?: (key: string) => Attachment<HTMLElement>;
+    /** Your turn: the whole hand rises a touch to meet you. */
+    lifted?: boolean;
   } = $props();
+
+  const cardEls = new Registry<string>();
+  /** Registers a card here (for its shake) and with the table. */
+  function register(key: string): Attachment<HTMLElement> {
+    const mine = cardEls.at(key);
+    const theirs = attachCard?.(key);
+    return (el) => {
+      const a = mine(el);
+      const b = theirs?.(el);
+      return () => {
+        if (typeof a === 'function') a();
+        if (typeof b === 'function') b();
+      };
+    };
+  }
 
   const buzz = (pattern: number | number[]) => settings.haptics && navigator.vibrate?.(pattern);
 
   /** A refused card shakes its head, clearly: ±9px easing out over 420 ms. */
   function shake(card: CardT) {
-    const el = document.querySelector(`.hand [data-card='${JSON.stringify(card)}']`);
+    const el = cardEls.get(cardKey(card));
     if (!el || typeof el.animate !== 'function' || motion.level !== 'full') return;
     el.animate(
       [0, -9, 9, -7, 7, -4, 4, -1, 0].map((x) => ({ transform: `translateX(${x}px)` })),
@@ -132,10 +155,8 @@
     }
   }
 
-  function isRaised(card: CardT): boolean {
-    if (mode === 'choose') return chosen.some((c) => sameCard(c, card));
-    return raised !== null && sameCard(raised, card);
-  }
+  const isRaised = (card: CardT) => mode !== 'choose' && raised !== null && sameCard(raised, card);
+  const isPicked = (card: CardT) => mode === 'choose' && chosen.some((c) => sameCard(c, card));
 </script>
 
 <!-- Tapping the tray outside a card lowers the raised one. -->
@@ -147,25 +168,28 @@
   class="hand"
   class:deal
   class:quick={quickDeal}
-  class:choose={mode === 'choose'}
   class:two={rows.length > 1}
+  class:lifted
   style:--row-h="{Math.round(cardWidth * 1.4)}px"
   bind:clientWidth={width}
   onclick={(e) => e.target === e.currentTarget && (raised = null)}
 >
   {#each rows as row, r (r)}
     {@const step = stepFor(row.length)}
-    <div class="row" class:overlapped={step < cardWidth} style:--overlap="{step - cardWidth}px">
+    <div class="row" style:--overlap="{step - cardWidth}px">
       {#each row as card, i (JSON.stringify(card))}
         <div class="spot" class:fresh={kitty.some((k) => sameCard(k, card))} style:--i={i} style:--rot="{((i * 37) % 7) - 3}deg" animate:flip={{ duration: motion.level === 'full' ? 240 : 0, easing: cubicOut }}>
         <Card
           {card}
           width={cardWidth}
-          id={JSON.stringify(card)}
+          id={cardKey(card)}
+          attach={register(cardKey(card))}
           seal={seal(card)}
           {twoJokers}
           kitty={kitty.some((k) => sameCard(k, card))}
           raised={isRaised(card)}
+          picked={isPicked(card)}
+          overlapped={step < cardWidth && i < row.length - 1}
           hinted={hinted !== null && sameCard(hinted, card)}
           unplayable={mode !== 'view' && !playable(card)}
           onclick={mode === 'view' ? undefined : () => tap(card)}
@@ -197,27 +221,12 @@
   .spot:not(:first-child) {
     margin-left: var(--overlap);
   }
-  /* A raised card keeps its place in the fan: it lifts, but never comes
-     forward over the card after it. */
-  /* Choosing discards: a chosen card lifts clear of the row, as far as the
-     tray's top padding allows (the exchange controls sit just above its
-     rim). It casts no raised shadow, which would show under it as a second
-     edge; the lift alone says it is picked. */
-  .choose :global(.card.raised) {
-    translate: 0 -18px;
-    box-shadow: var(--shadow-card);
-    animation: none;
+  /* Your turn: the hand rises a touch to meet you. */
+  .hand {
+    transition: translate 420ms var(--ease-settle);
   }
-  /* A phone's tray has less room above the row, under your role tag. */
-  @media (max-width: 599px) {
-    .choose :global(.card.raised) {
-      translate: 0 -10px;
-    }
-  }
-  /* An overlapped card's corner glyph would peek out from under the next
-     card as a stray sliver; only the last card in a row shows its own. */
-  .overlapped .spot:not(:last-child) :global(.glyph) {
-    visibility: hidden;
+  .lifted {
+    translate: 0 -4px;
   }
   .deal .spot {
     animation: deal-in var(--dur-travel) var(--ease-settle) both;
