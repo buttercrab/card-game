@@ -7,8 +7,10 @@ an embedding of its index, plus the embedding of its template and its
 number (``models.actions``: what it does, read from the spec's names),
 plus the trunk's token of the card it names, if any: so "play ♠A" sees
 everything the trunk worked out about ♠A in this position (whether it is
-playable, would win the trick, is the mighty...). An MLP over the state
-and the action gives the value.
+playable, would win the trick, is the mighty...). Then the action looks
+over every card token (attention, the action as the query): "bid ♦14"
+names no card, but can learn to weigh the diamonds in hand. An MLP over
+the state and the action gives the value.
 
 Only the actions asked for are scored, ``[batch, k]`` indices at a time:
 the legal ones when playing, the one taken when training, so the trunk
@@ -16,6 +18,8 @@ runs once per observation whatever ``k`` is. Nothing here knows a game's
 rules: action features come from the spec's names, everything else from
 the observation.
 """
+
+import math
 
 import torch
 from torch import Tensor, nn
@@ -59,6 +63,10 @@ class QModel(TokenTrunk):
         # Per template, the direction its number moves the action along.
         self.number = nn.Embedding(templates, width)
         self.named_card = nn.Linear(width, width)
+        self.heads = config.trunk.heads
+        self.look_query = nn.Linear(width, width)
+        self.look_keys = nn.Linear(width, 2 * width)
+        self.look_out = nn.Linear(width, width)
         layers: list[nn.Module] = [nn.Linear(2 * width, config.head_width), nn.GELU()]
         for _ in range(config.head_layers - 1):
             layers += [nn.Linear(config.head_width, config.head_width), nn.GELU()]
@@ -96,5 +104,22 @@ class QModel(TokenTrunk):
             + self.number(template) * self.action_number[actions]
             + named
         )
+        action = action + self.look_out(self._look(action, card_tokens))
         both = torch.cat((state.unsqueeze(1).expand(-1, k, -1), action), dim=-1)
         return self.head(both).squeeze(-1)
+
+    def _look(self, action: Tensor, card_tokens: Tensor) -> Tensor:
+        """Multi-head attention of each action ``[B, K, W]`` over the card
+        tokens ``[B, S, W]``: ``[B, K, W]``. Written out in plain operators,
+        as the trunk's, for export."""
+        batch, k, width = action.shape
+        slots, per = card_tokens.shape[1], width // self.heads
+        q = self.look_query(action).reshape(batch, k, self.heads, per).transpose(1, 2)
+        keys, values = (
+            self.look_keys(card_tokens)
+            .reshape(batch, slots, 2, self.heads, per)
+            .permute(2, 0, 3, 1, 4)
+            .unbind(0)
+        )
+        scores = (q @ keys.transpose(-1, -2)) * (1 / math.sqrt(per))
+        return (scores.softmax(-1) @ values).transpose(1, 2).reshape(batch, k, width)

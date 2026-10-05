@@ -29,10 +29,10 @@ reward_scale = 0.025
 checkpoint_minutes = 10.0
 log_seconds = 60.0
 
-# Five and a quarter hours of the Mac, leaving time for suite v1 afterwards.
+# Three and a half hours of the Mac, leaving time for suite v1 afterwards.
 [budget]
 hands = 20000000
-hours = 5.25
+hours = 3.5
 
 # About 0.6M parameters: the belief model's trunk one layer shallower,
 # so both the CPU actors and the GPU learner go faster.
