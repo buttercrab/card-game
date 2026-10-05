@@ -53,6 +53,16 @@ pub enum Action {
     },
 }
 
+impl Action {
+    /// The card a play puts down; `None` for any other action.
+    pub fn played_card(&self) -> Option<Card> {
+        match self {
+            Action::Play { card, .. } => Some(*card),
+            _ => None,
+        }
+    }
+}
+
 /// One turn of the bidding, as everyone at the table heard it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Bid {

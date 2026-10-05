@@ -7,8 +7,8 @@
 //! People are not the simple bot: every decision may be a slip, and bids
 //! are read on a sliding scale, so no single odd play rules a deal out.
 
-use crate::bot::{SimpleBot, bit};
-use crate::card::{Card, Suit};
+use crate::bot::SimpleBot;
+use crate::card::{Card, CardSet, Suit};
 use crate::endgame::Mix;
 use crate::rules::{Contract, Rules};
 use crate::state::{Action, Exchange, FriendCall, Phase, Play, State};
@@ -71,10 +71,10 @@ pub(crate) struct Memo {
     /// Keyed by the decision's place in the hand, the hand, and the
     /// declarer's discards when the declarer is the one deciding. Holds the
     /// legal cards and the card chosen.
-    plays: HashMap<(usize, u64, u64), (u64, Card), BuildHasherDefault<Mix>>,
+    plays: HashMap<(usize, CardSet, CardSet), (CardSet, Card), BuildHasherDefault<Mix>>,
     /// The log weight of the declarer's friend call, by the hand it kept
     /// and its discards.
-    calls: HashMap<(u64, u64), f64, BuildHasherDefault<Mix>>,
+    calls: HashMap<(CardSet, CardSet), f64, BuildHasherDefault<Mix>>,
 }
 
 impl Reading {
@@ -196,16 +196,16 @@ impl Reading {
         let rules = &world.rules;
         let trump = now.contract.trump;
         let discards = if me == now.declarer {
-            0
+            CardSet::EMPTY
         } else {
-            now.discards.iter().fold(0, |m, &c| m | bit(c))
+            now.discards.iter().collect()
         };
         // Most of the simple bot's choices are remembered from other deals,
         // so the hand is replayed on a state only up to where one is not:
         // `masks` follows every hand, `state` catches up when needed.
-        let mut masks = [0u64; 8];
+        let mut masks = [CardSet::EMPTY; 8];
         for (mask, hand) in masks.iter_mut().zip(&hands) {
-            *mask = hand.iter().fold(0, |m, &c| m | bit(c));
+            *mask = hand.iter().collect();
         }
         let mut hands = Some(hands);
         let build = |hands: Vec<Vec<Card>>| State {
@@ -225,7 +225,7 @@ impl Reading {
         };
         let mut log = 0.0;
         if me != now.declarer {
-            let key = (masks[now.declarer], now.discards.iter().fold(0, |m, &c| m | bit(c)));
+            let key = (masks[now.declarer], now.discards.iter().collect());
             log += *memo.calls.entry(key).or_insert_with(|| {
                 let state = build(hands.clone().expect("not yet used"));
                 self.friend_call(policy, &state, now.call)
@@ -263,7 +263,11 @@ impl Reading {
             for (i, played) in plays.iter().enumerate() {
                 let seat = played.seat;
                 if seat != me && !(call_card && i > 0) {
-                    let key = (index, masks[seat], if seat == now.declarer { discards } else { 0 });
+                    let key = (
+                        index,
+                        masks[seat],
+                        if seat == now.declarer { discards } else { CardSet::EMPTY },
+                    );
                     let (legal, choice) = *memo.plays.entry(key).or_insert_with(|| {
                         let state = state.get_or_insert_with(|| {
                             let mut state = build(hands.take().expect("built once"));
@@ -279,7 +283,7 @@ impl Reading {
                     });
                     log += self.card(legal, choice, played.card);
                 }
-                masks[seat] &= !bit(played.card);
+                masks[seat].remove(played.card);
                 events.push(Event::Card(played));
                 index += 1;
             }
@@ -313,9 +317,9 @@ impl Reading {
 
     /// How likely a seat whose legal cards were `legal` played `card`,
     /// when the simple bot would have played `choice`.
-    fn card(&self, legal: u64, choice: Card, card: Card) -> f64 {
-        let options = f64::from(legal.count_ones());
-        if legal & bit(card) == 0 {
+    fn card(&self, legal: CardSet, choice: Card, card: Card) -> f64 {
+        let options = legal.len() as f64;
+        if !legal.contains(card) {
             IMPOSSIBLE
         } else if options <= 1.0 {
             0.0
@@ -359,10 +363,10 @@ impl Event<'_> {
 }
 
 /// The legal cards for `seat` in `state`, and the one the simple bot plays.
-fn decide(policy: &SimpleBot, state: &State, seat: Seat) -> (u64, Card) {
+fn decide(policy: &SimpleBot, state: &State, seat: Seat) -> (CardSet, Card) {
     let legal = state.legal_actions();
-    let cards = legal.iter().fold(0, |m, a| m | bit(card_of(a)));
-    let choice = if cards.count_ones() > 1 {
+    let cards: CardSet = legal.iter().map(card_of).collect();
+    let choice = if cards.len() > 1 {
         card_of(&policy.decide(&View::for_policy(state, seat), &legal))
     } else {
         card_of(&legal[0])
@@ -371,10 +375,7 @@ fn decide(policy: &SimpleBot, state: &State, seat: Seat) -> (u64, Card) {
 }
 
 fn card_of(action: &Action) -> Card {
-    match action {
-        Action::Play { card, .. } => *card,
-        other => unreachable!("{other:?} during play"),
-    }
+    action.played_card().expect("only plays during play")
 }
 
 fn play_mut(state: &mut State) -> &mut Play {

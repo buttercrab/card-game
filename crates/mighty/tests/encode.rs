@@ -7,7 +7,7 @@ mod common;
 use common::{check_golden, pinned_games, write_golden};
 use engine::{Encode, Game, Observation, Spec, Turn, Viewer};
 use mighty::card::{ACE, Card, Color, Suit};
-use mighty::encode::{ACTIONS, BURIED, MAX_EVENTS, MAX_SEATS, SLOTS, slot};
+use mighty::encode::{ACTIONS, BURIED, MAX_EVENTS, MAX_SEATS, SLOTS};
 use mighty::rules::{Preset, Rules};
 use mighty::{Action, Mighty, Options, State};
 use rand::seq::IndexedRandom;
@@ -73,7 +73,7 @@ fn card_feature(spec: &Spec, obs: &Observation, card: Card, name: &str) -> f32 {
         .iter()
         .position(|n| n == name)
         .unwrap_or_else(|| panic!("no {name}"));
-    obs.cards[slot(card) * spec.card_features.len() + column]
+    obs.cards[card.slot() * spec.card_features.len() + column]
 }
 
 fn global_feature(spec: &Spec, obs: &Observation, name: &str) -> f32 {
@@ -322,7 +322,7 @@ fn belief_targets_say_where_hidden_cards_are() {
                 assert_eq!(targets.len(), SLOTS);
                 let mut held = [0; MAX_SEATS];
                 for (slot, &target) in targets.iter().enumerate() {
-                    let card = mighty::encode::card_at(slot);
+                    let card = Card::from_slot(slot);
                     let unseen = card_feature(&spec, &obs, card, "unseen") == 1.0;
                     assert_eq!(target >= 0, unseen && dealt, "{card} for seat {seat}");
                     if target == BURIED {

@@ -15,12 +15,12 @@
 //! the counts alone (see `cardgame_ml.models.belief`): so a model that
 //! says nothing deals exactly as uniformly does.
 
-use crate::card::Card;
-use crate::encode::{BURIED, MAX_SEATS, SLOTS, slot};
+use crate::Mighty;
+use crate::card::{Card, CardSet, SLOTS};
+use crate::encode::{BURIED, MAX_SEATS};
 use crate::search::{Dealer, Dealt};
 use crate::state::Action;
 use crate::view::View;
-use crate::{Mighty, bot};
 use engine::{Belief, Encode};
 use rand::{Rng, RngCore};
 use std::fmt;
@@ -158,11 +158,11 @@ impl ByBelief {
     fn deal(&self, cards: &[Card], dealer: &Dealer, rng: &mut dyn RngCore) -> Option<Dealt> {
         let seats = dealer.capacity.len();
         let mut held = [0usize; MAX_SEATS];
-        let mut hands = [0u64; MAX_SEATS];
+        let mut hands = [CardSet::EMPTY; MAX_SEATS];
         let mut down = Vec::with_capacity(dealer.hidden_down);
         for &card in cards {
             let suit = card.suit().map_or(0, |s| 1 << s as u8);
-            let odds = &self.odds[slot(card)];
+            let odds = &self.odds[card.slot()];
             let mut weights = [0.0; MAX_SEATS + 1];
             for s in 0..seats {
                 if held[s] < dealer.capacity[s] && dealer.void[s] & suit == 0 {
@@ -188,7 +188,7 @@ impl ByBelief {
                 down.push(card);
             } else {
                 held[place] += 1;
-                hands[place] |= bot::bit(card);
+                hands[place].insert(card);
             }
         }
         Some((hands, down))
@@ -282,10 +282,10 @@ mod tests {
                         continue;
                     };
                     for (s, &hand) in hands.iter().enumerate().take(rules.players) {
-                        assert_eq!(hand.count_ones() as usize, dealer.capacity[s]);
+                        assert_eq!(hand.len(), dealer.capacity[s]);
                         for suit in Suit::ALL {
                             if dealer.void[s] & (1 << suit as u8) != 0 {
-                                assert!(crate::bot::cards(hand).all(|c| c.suit() != Some(suit)));
+                                assert!(hand.iter().all(|c| c.suit() != Some(suit)));
                             }
                         }
                     }
@@ -314,12 +314,12 @@ mod tests {
         for _ in 0..n {
             let (hands, down) = deal();
             for (seat, &hand) in hands.iter().enumerate() {
-                for card in crate::bot::cards(hand) {
-                    counts[slot(card)][seat] += 1.0;
+                for card in hand.iter() {
+                    counts[card.slot()][seat] += 1.0;
                 }
             }
             for card in down {
-                counts[slot(card)][MAX_SEATS] += 1.0;
+                counts[card.slot()][MAX_SEATS] += 1.0;
             }
         }
         counts.iter().map(|c| c.map(|x| x / n as f64)).collect()
@@ -377,7 +377,7 @@ mod tests {
         });
         let view = view.unwrap();
         let dealer = Dealer::new(&view).unwrap();
-        let joker = slot(Card::Joker(crate::card::Color::Black));
+        let joker = Card::Joker(crate::card::Color::Black).slot();
         if view.hand.contains(&Card::Joker(crate::card::Color::Black)) {
             return;
         }

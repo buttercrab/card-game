@@ -7,7 +7,7 @@
 //! side's points, so the sides' best play for points is their best play for
 //! payoff too.
 
-use crate::card::{Card, Suit};
+use crate::card::{Card, CardSet};
 use crate::rules::Rules;
 use crate::state::{self, Action, FriendCall, Phase, Play, State, TrickState};
 use crate::trick::{self, Lead, Played, TrickContext};
@@ -75,7 +75,7 @@ fn friend(state: &State, p: &Play) -> Option<Option<Seat>> {
 
 /// The remaining cards of every seat as bits, for recognising a position
 /// reached by playing the same cards in another order.
-type Key = ([u64; 8], usize);
+type Key = ([CardSet; 8], usize);
 
 /// A quick hash for keys of card sets, which are already well spread bits;
 /// the standard one is built to resist attacks and costs more than the
@@ -103,21 +103,8 @@ impl Hasher for Mix {
     }
 }
 
-fn bit(card: Card) -> u64 {
-    match card {
-        Card::Normal(suit, rank) => {
-            let suit = Suit::ALL.iter().position(|&s| s == suit).expect("every suit is listed");
-            1 << (suit * 13 + usize::from(rank) - 2)
-        }
-        Card::Joker(color) => 1 << (52 + color as usize),
-    }
-}
-
 fn card_of(action: &Action) -> Card {
-    match action {
-        Action::Play { card, .. } => *card,
-        _ => unreachable!("only plays while playing"),
-    }
+    action.played_card().expect("only plays while playing")
 }
 
 /// A rough order of strength for move ordering: jokers above everything,
@@ -137,14 +124,14 @@ struct Solver<'a> {
     plays: Vec<Played>,
     /// Points not yet won by anyone: in hands and in the trick under way.
     left: u8,
-    /// Every seat's hand as bits, kept up to date as cards are played.
-    masks: [u64; 8],
+    /// Every seat's hand as a set, kept up to date as cards are played.
+    masks: [CardSet; 8],
     /// The cards whose holders' order among a suit's ranks matters: in
     /// hands or on the table. Cards out of play are no longer in the way.
-    live: u64,
+    live: CardSet,
     /// Cards with powers of their own, never interchangeable with a plain
     /// card of their suit: the mighty and the joker-call cards.
-    special: u64,
+    special: CardSet,
     /// Whether plain cards of a suit, with nothing live between them, may
     /// be treated as one; not when the rules single out cards.
     merge: bool,
@@ -167,18 +154,18 @@ impl<'a> Solver<'a> {
             .collect();
         let in_play = state.hands.iter().flatten().chain(p.plays.iter().map(|pl| &pl.card));
         let left = in_play.filter(|c| c.is_point()).count() as u8;
-        let mut masks = [0u64; 8];
+        let mut masks = [CardSet::EMPTY; 8];
         for (mask, hand) in masks.iter_mut().zip(&state.hands) {
-            *mask = hand.iter().fold(0, |m, &c| m | bit(c));
+            *mask = hand.iter().collect();
         }
-        let live = masks.iter().fold(0, |m, h| m | h) | p.plays.iter().fold(0, |m, pl| m | bit(pl.card));
+        let live = masks.iter().fold(CardSet::EMPTY, |m, &h| m | h) | p.plays.iter().map(|pl| pl.card).collect();
         let trump = p.contract.trump;
         let calls = rules
             .deck
             .jokers()
             .iter()
             .filter_map(|&j| rules.joker_call_card(j, trump));
-        let special = calls.fold(bit(rules.mighty(trump)), |m, c| m | bit(c));
+        let special = calls.chain([rules.mighty(trump)]).collect();
         Solver {
             rules,
             seats: rules.players,
@@ -204,11 +191,11 @@ impl<'a> Solver<'a> {
     /// its suit in the same hand is a legal play too, worth the same
     /// points, and no card still in play ranks between them: either falls
     /// the same way in every trick to come.
-    fn redundant(&self, seat: Seat, card: Card, legal: u64) -> bool {
+    fn redundant(&self, seat: Seat, card: Card, legal: CardSet) -> bool {
         let (Some(suit), Some(rank)) = (card.suit(), card.rank()) else {
             return false;
         };
-        if !self.merge || self.special & bit(card) != 0 {
+        if !self.merge || self.special.contains(card) {
             return false;
         }
         let hand = &self.hands[seat];
@@ -219,15 +206,11 @@ impl<'a> Solver<'a> {
         else {
             return false;
         };
-        if lower.is_point() != card.is_point() || self.special & bit(lower) != 0 {
+        if lower.is_point() != card.is_point() || self.special.contains(lower) || !legal.contains(lower) {
             return false;
         }
-        if legal & bit(lower) == 0 {
-            return false;
-        }
-        // The bits strictly between the two cards.
-        let between = (bit(card) - 1) & !((bit(lower) << 1) - 1);
-        between & self.live & !self.masks[seat] == 0
+        let between = CardSet::between(suit, lower.rank().unwrap_or(0), rank);
+        ((between & self.live) - self.masks[seat]).is_empty()
     }
 
     /// The points the declarer's side will win from here on, with the trick
@@ -258,14 +241,17 @@ impl<'a> Solver<'a> {
         let gone = &self.gone;
         let mut moves = state::legal_plays(self.rules, &self.hands[seat], t, |j| gone.contains(&j));
         // The cards that may be played plainly, without calling a joker.
-        let plain = moves.iter().fold(0, |m, a| match a {
-            Action::Play {
-                card,
-                call_joker: false,
-                ..
-            } => m | bit(*card),
-            _ => m,
-        });
+        let plain: CardSet = moves
+            .iter()
+            .filter_map(|a| match a {
+                Action::Play {
+                    card,
+                    call_joker: false,
+                    ..
+                } => Some(*card),
+                _ => None,
+            })
+            .collect();
         moves.retain(
             |a| !matches!(a, Action::Play { card, call_joker: false, .. } if self.redundant(seat, *card, plain)),
         );
@@ -391,7 +377,7 @@ impl<'a> Solver<'a> {
             .position(|&c| c == card)
             .expect("a legal card is held");
         self.hands[seat].remove(index);
-        self.masks[seat] &= !bit(card);
+        self.masks[seat].remove(card);
         if self.plays.is_empty() {
             t.lead = if card.is_joker() {
                 joker_lead
@@ -414,7 +400,7 @@ impl<'a> Solver<'a> {
         };
         self.plays.pop();
         self.hands[seat].insert(index, card);
-        self.masks[seat] |= bit(card);
+        self.masks[seat].insert(card);
         value
     }
 
@@ -437,8 +423,8 @@ impl<'a> Solver<'a> {
         let jokers = self.gone.len();
         self.gone.extend(plays.iter().map(|p| p.card).filter(|c| c.is_joker()));
         self.left -= points;
-        let out = plays.iter().fold(0, |m, p| m | bit(p.card));
-        self.live &= !out;
+        let out: CardSet = plays.iter().map(|p| p.card).collect();
+        self.live = self.live - out;
         let next = TrickState {
             trump: t.trump,
             trick_no: trick_no + 1,

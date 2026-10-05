@@ -1,7 +1,7 @@
 //! House rules. Every regional variant is a [`Rules`] value; [`Preset`]
 //! holds the ones ported from web-mighty.
 
-use crate::card::{ACE, Card, DeckKind, Suit};
+use crate::card::{ACE, Card, CardSet, DeckKind, Suit};
 use crate::state::HandSummary;
 use engine::Seat;
 use rand::Rng;
@@ -435,6 +435,19 @@ impl Rules {
             .collect();
         cards.sort();
         cards
+    }
+
+    /// [`Rules::cards`] as a set, built without listing them: the search's
+    /// playouts ask for it every play.
+    pub fn card_set(&self) -> CardSet {
+        // Each suit's ranks from `lowest_rank` to the ace, then the low
+        // cards dealt anyway and the jokers.
+        let low = u32::from(self.lowest_rank.max(2) - 2);
+        let ranks = 0x1fff & u64::MAX.checked_shl(low).unwrap_or(0);
+        let suits = CardSet::from_bits((0..4).fold(0, |m, suit| m | (ranks << (suit * 13))));
+        let extra: CardSet = self.extra_cards.iter().filter(|c| !c.is_joker()).collect();
+        let jokers: CardSet = self.deck.jokers().iter().collect();
+        suits | extra | jokers
     }
 
     /// The usual rules for `players` at the table, from these five-player
@@ -1003,6 +1016,28 @@ mod tests {
             Card::Joker(crate::card::Color::Red),
         ]);
         assert_eq!(r.deck_size(), r.cards().len());
+    }
+
+    /// The card set is the cards the rules deal, not every card of the
+    /// deck kind: 3마 starts at 7, 4마 at 5 plus the joker-call threes.
+    #[test]
+    fn the_card_set_is_the_cards_dealt() {
+        let odd = Rules {
+            lowest_rank: 10,
+            extra_cards: vec![Card::new(Suit::Heart, 9), Card::new(Suit::Club, 3)],
+            ..Rules::default()
+        };
+        let mut all = vec![odd];
+        for deck in [DeckKind::OneJoker, DeckKind::TwoJokers] {
+            let five = Rules {
+                deck,
+                ..Rules::default()
+            };
+            all.extend((3..=7).filter_map(|n| five.for_players(n)));
+        }
+        for rules in all {
+            assert_eq!(rules.card_set().iter().collect::<Vec<_>>(), rules.cards(), "{rules:?}");
+        }
     }
 
     #[test]

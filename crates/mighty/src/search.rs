@@ -9,7 +9,7 @@
 
 use crate::Mighty;
 use crate::bot::SimpleBot;
-use crate::card::{ACE, Card, Suit};
+use crate::card::{ACE, Card, CardSet, Suit};
 use crate::deal::Deal;
 pub use crate::deal::Sampler;
 use crate::read::Memo;
@@ -458,7 +458,7 @@ impl Dealer {
                         if !free && !lead.follows(p.card) {
                             // Not following a colour shows both of its suits are gone.
                             for suit in Suit::ALL.into_iter().filter(|&s| lead.follows(Card::new(s, 2))) {
-                                void[p.seat][suit_index(suit)] = true;
+                                void[p.seat][suit.index()] = true;
                             }
                         }
                     }
@@ -473,12 +473,8 @@ impl Dealer {
             }
             _ => return None,
         };
-        let seen = seen.iter().fold(0u64, |m, &c| m | crate::bot::bit(c));
-        let unseen: Vec<Card> = rules
-            .cards()
-            .into_iter()
-            .filter(|&c| seen & crate::bot::bit(c) == 0)
-            .collect();
+        let seen: CardSet = seen.iter().collect();
+        let unseen: Vec<Card> = (rules.card_set() - seen).iter().collect();
         let mut capacity: Vec<usize> = view.hand_sizes.clone();
         capacity[me] = 0;
 
@@ -582,7 +578,7 @@ impl Dealer {
         let Some((seat, contract, played)) = &self.bidder else {
             return true;
         };
-        let mut hand: Vec<Card> = crate::bot::cards(hands[*seat]).collect();
+        let mut hand: Vec<Card> = hands[*seat].iter().collect();
         hand.extend(played);
         let rules = &self.template.rules;
         policy.estimate(rules, &hand, contract.trump) >= policy.needed(rules, *contract)
@@ -617,7 +613,7 @@ impl Dealer {
                 hand.extend(&self.hand);
                 hand.sort();
             } else {
-                hand.extend(crate::bot::cards(hands[seat]));
+                hand.extend(hands[seat].iter());
             }
         }
         match &mut world.phase {
@@ -628,9 +624,8 @@ impl Dealer {
     }
 }
 
-/// Cards dealt to every seat, as [`bit`](crate::bot::bit) sets, and the
-/// cards dealt face down.
-pub(crate) type Dealt = ([u64; 8], Vec<Card>);
+/// Cards dealt to every seat, and the cards dealt face down.
+pub(crate) type Dealt = ([CardSet; 8], Vec<Card>);
 
 /// Deals `cards` into hands of the given sizes plus `discards` face-down
 /// cards. Each card goes to a random place with room, weighted by room left.
@@ -647,7 +642,7 @@ fn deal(
     // bit sets.
     let seats = capacity.len();
     let mut held = [0usize; 8];
-    let mut hands = [0u64; 8];
+    let mut hands = [CardSet::EMPTY; 8];
     let mut down = Vec::with_capacity(discards);
     for &card in cards {
         let suit = card.suit().map_or(0, |s| 1 << s as u8);
@@ -675,16 +670,12 @@ fn deal(
         match seat {
             Some(s) => {
                 held[s] += 1;
-                hands[s] |= crate::bot::bit(card);
+                hands[s].insert(card);
             }
             None => down.push(card),
         }
     }
     Some((hands, down))
-}
-
-fn suit_index(suit: Suit) -> usize {
-    Suit::ALL.iter().position(|&s| s == suit).expect("every suit is listed")
 }
 
 /// The moves [`SearchBot`] weighs for the seat to act in `view`, out of
