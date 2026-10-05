@@ -6,6 +6,7 @@ Every spec is checked when it enters the queue (the researcher's
 included, file by file) and again when it starts.
 """
 
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 from cardgame_ml.loop.configs import base_config, strings
 from cardgame_ml.loop.methods import METHODS
 from cardgame_ml.loop.policy import Policy
+from cardgame_ml.loop.safety import UnsafePathError, relative
 from cardgame_ml.loop.spec import Spec, SpecError, load_spec
 
 FORBIDDEN = ("research/evals", "heldout-rules", "evals/v1")
@@ -44,6 +46,7 @@ def check(spec: Spec, policy: Policy, repo: Path, known: Known, *, researcher: b
     problems += _resources(spec, policy)
     problems += _evals(spec, policy, method.trains if method else False)
     problems += _references(spec, known, researcher)
+    problems += _arguments(spec)
     for path, text in strings(spec.to_toml()):
         if any(word in text for word in FORBIDDEN):
             problems.append(f"{path}: names the evals or held-out sets ({text!r})")
@@ -134,6 +137,33 @@ def _references(spec: Spec, known: Known, researcher: bool) -> list[str]:
     if researcher and (spec.confirms is not None or "confirmation" in spec.tags):
         problems.append("confirmations are queued by the runner, not by hand")
     for path in spec.requires:
-        if path.startswith("/") or ".." in Path(path).parts:
+        try:
+            relative(path, "requires")
+        except UnsafePathError:
             problems.append(f"requires: {path!r} must be a path inside the artifact store")
+    return problems
+
+
+_ARTIFACT_REF = re.compile(r"\{artifacts\}/?([^\s:,@]*)")
+
+
+def _arguments(spec: Spec) -> list[str]:
+    """What becomes a command's arguments or a path on some host: every
+    ``{artifacts}/…`` names a folder of two safe segments or more (the
+    executors refuse anything else, and ``rsync --delete`` mirrors only
+    that folder), and no bot or baseline starts with ``-`` (an option)."""
+    problems: list[str] = []
+    for where, text in strings(spec.to_toml()):
+        for match in _ARTIFACT_REF.finditer(text):
+            try:
+                relative(match.group(1).rstrip("/"), "artifact", min_parts=2)
+            except UnsafePathError:
+                problems.append(
+                    f"{where}: {match.group(0)!r}: an artifact is {{artifacts}}/<folder>/<name>, "
+                    "letters, digits, - _ . only"
+                )
+    bot = spec.options.get("bot")
+    for value in (*spec.evals.baselines, *([bot] if isinstance(bot, str) else [])):
+        if value.startswith("-") or any(c.isspace() or c == "\0" for c in value):
+            problems.append(f"bot or baseline {value!r}: no leading - and no spaces")
     return problems

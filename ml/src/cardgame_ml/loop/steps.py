@@ -14,6 +14,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from cardgame_ml.loop.safety import name as safe_name
+
 PLACEHOLDERS = ("python", "repo", "run", "out", "artifacts", "eval", "commit", "machine")
 _ARTIFACT = re.compile(r"\{artifacts\}/([A-Za-z0-9_./-]+)")
 
@@ -36,6 +38,11 @@ class Step:
     clean: bool = False
     """Refuses uncommitted changes (it writes a manifest naming the
     commit): the runner commits its records first."""
+
+    def __post_init__(self) -> None:
+        safe_name(self.name, "step")
+        if self.cwd not in ("repo", "ml"):
+            raise ValueError(f"step {self.name}: cwd {self.cwd!r} is repo or ml")
 
     def expand(self, places: Mapping[str, str]) -> list[str]:
         return [expand(arg, places) for arg in self.argv]

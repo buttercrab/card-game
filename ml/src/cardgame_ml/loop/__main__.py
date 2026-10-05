@@ -28,6 +28,7 @@ from cardgame_ml.loop.policy import Policy
 from cardgame_ml.loop.queue import read_queue
 from cardgame_ml.loop.records import Records, now_utc
 from cardgame_ml.loop.researcher import Researcher, command
+from cardgame_ml.loop.safety import name as safe_name
 from cardgame_ml.loop.scheduler import Hook, Runner, other_training
 from cardgame_ml.loop.status import status
 from cardgame_ml.loop.validate import Known, check_file
@@ -143,10 +144,16 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         if args.dry_run:
             print(researcher.briefing(now).text(policy))
             print()
-            print(json.dumps(command(policy, "<researcher.md + briefing>"), indent=1))
+            print(json.dumps(command(policy, "<researcher.md + briefing>", repo), indent=1))
+            print(f"spent in the last day: ${researcher.spent(now):.2f}")
             print(f"not due because: {researcher.not_due(now) or '(it is due)'}")
         else:
-            researcher.start(now)
+            if researcher.state_file.exists():
+                raise SystemExit("a call is under way")
+            try:
+                researcher.start(now)
+            except RuntimeError as e:
+                raise SystemExit(str(e)) from None
             print("called; the runner (or `status`) shows when it is done")
     elif args.command == "pause":
         layout.pause.parent.mkdir(parents=True, exist_ok=True)
@@ -155,7 +162,8 @@ def main() -> None:  # noqa: PLR0912, PLR0915
         layout.pause.unlink(missing_ok=True)
     elif args.command == "cancel":
         layout.cancel.mkdir(parents=True, exist_ok=True)
-        (layout.cancel / args.run_id).write_text("cancelled\n", encoding="utf-8")
+        run_id = safe_name(args.run_id, "run id")
+        (layout.cancel / run_id).write_text("cancelled\n", encoding="utf-8")
     elif args.command == "fresh-suite":
         source_dir = repo / "research" / "evals" / policy.protocol.suite
         source = json.loads((source_dir / "suite.json").read_text(encoding="utf-8"))

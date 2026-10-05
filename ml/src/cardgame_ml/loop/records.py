@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from cardgame_ml.loop.safety import UnsafePathError, inside, name
 from cardgame_ml.loop.steps import Step
 
 SCHEMA = "loop-run/1"
@@ -134,6 +135,7 @@ class RunRecord:
         if data.get("schema") != SCHEMA:
             raise ValueError(f"not a {SCHEMA} record")
         fields = dict(data)
+        name(fields.get("folder"), "run folder")
         fields["steps"] = [StepRecord.from_json(s) for s in fields["steps"]]
         return cls(**fields)
 
@@ -159,20 +161,20 @@ class Records:
         self.root, self.live = experiments, live
 
     def folder(self, record: RunRecord) -> Path:
-        return self.root / record.folder
+        return inside(self.root, name(record.folder, "run folder"))
 
     def new_folder(self, run_id: str, when: datetime) -> str:
         day = when.astimezone().strftime("%Y-%m-%d")
-        name = f"{day}-{run_id}"
+        folder = name(f"{day}-{run_id}", "run folder")
         k = 2
-        while (self.root / name).exists() or (self.live / f"{name}.json").exists():
-            name = f"{day}-{run_id}-{k}"
+        while (self.root / folder).exists() or (self.live / f"{folder}.json").exists():
+            folder = name(f"{day}-{run_id}-{k}", "run folder")
             k += 1
-        return name
+        return folder
 
     def save(self, record: RunRecord) -> None:
         text = json.dumps(record.to_json(), indent=1, ensure_ascii=False) + "\n"
-        live = self.live / f"{record.folder}.json"
+        live = inside(self.live, f"{name(record.folder, 'run folder')}.json")
         if record.finished:
             self.folder(record).mkdir(parents=True, exist_ok=True)
             _write(self.folder(record) / "run.json", text)
@@ -186,7 +188,10 @@ class Records:
         for path in [*sorted(self.root.glob("*/run.json")), *sorted(self.live.glob("*.json"))]:
             data: Any = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, dict) and cast(dict[str, Any], data).get("schema") == SCHEMA:
-                record = RunRecord.from_json(cast(dict[str, Any], data))
+                try:
+                    record = RunRecord.from_json(cast(dict[str, Any], data))
+                except UnsafePathError:
+                    continue  # a crafted record: never acted on
                 found[record.folder] = record
         return sorted(found.values(), key=lambda r: (r.created, r.folder))
 

@@ -19,6 +19,8 @@ from pathlib import Path
 from cardgame_ml.loop.fields import FieldError, Table
 
 ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
+RUN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9](-s-?\d{1,18})?$")
+"""A run's id: a spec's, or a replicate's (``<id>-s<seed>``)."""
 TAGS = frozenset(
     {
         "baseline",
@@ -259,6 +261,7 @@ def _parse(data: dict[str, object], where: str) -> Spec:
     parent = t.opt_text("parent")
     if parent is not None and not parent.startswith(PARENT_BOT) and not ID.match(parent):
         raise SpecError(f"{where}: parent: a loop run's id or bot:<spec>")
+    after, confirms = _run_refs(t, where)
     spec = Spec(
         id=spec_id,
         hypothesis=hypothesis,
@@ -267,14 +270,24 @@ def _parse(data: dict[str, object], where: str) -> Spec:
         parent=parent,
         priority=t.integer("priority", 0),
         seeds=seeds,
-        after=t.texts("after", ()),
+        after=after,
         requires=t.texts("requires", ()),
         budget=budget,
         resources=resources,
         evals=evals,
         config=ConfigSource(base, overrides, inline),
         options=t.raw_table("options"),
-        confirms=t.opt_text("confirms"),
+        confirms=confirms,
     )
     t.done()
     return spec
+
+
+def _run_refs(t: Table, where: str) -> tuple[tuple[str, ...], str | None]:
+    """``after`` and ``confirms``: loop run ids, nothing else."""
+    after = t.texts("after", ())
+    confirms = t.opt_text("confirms")
+    for ref in (*after, *([confirms] if confirms is not None else [])):
+        if not RUN_ID.match(ref):
+            raise SpecError(f"{where}: after/confirms: {ref!r} is not a loop run's id")
+    return after, confirms

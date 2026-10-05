@@ -49,8 +49,13 @@ min_interval_hours = 2.0
 max_calls_per_day = 6
 # Called when fewer runnable specs than this wait in the queue.
 low_water = 3
+# A call is killed past this.
 timeout_minutes = 40.0
-max_budget_usd = 0.0
+# One call's cap (claude --max-budget-usd), and what the calls of the last
+# 24 hours may cost in all, by claude's own reported cost; a call starts
+# only if a whole call still fits under the day's cap.
+max_budget_usd = 5.0
+max_usd_per_day = 20.0
 
 # How every run is scored.
 [protocol]

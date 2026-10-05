@@ -13,10 +13,19 @@ CPU steps (``eval``, which needs nothing but cargo there), from a
 ``~/<root>/code/<commit>`` and built there, at ``nice`` 15 with capped
 threads; nothing starts while its load is high, and the loop touches
 nothing outside ``~/<root>`` (never Docker, systemd or the worker).
+
+Every name that becomes a path (a run's folder, a step, an artifact, a
+commit, the ``ssh`` destination) is checked by ``safety`` first, every
+path is resolved and kept inside its root, ``rsync`` and ``ssh`` get
+``--`` before their operands, ``rsync --delete`` only ever mirrors one
+checked artifact folder (``models/x``, never a parent), and ``rm -rf``
+only a checked step folder. Steps get the runner's environment without
+anything that looks like a secret (here) or a clean one (there).
 """
 
 import contextlib
 import os
+import posixpath
 import shlex
 import signal
 import subprocess
@@ -28,6 +37,18 @@ from typing import Protocol
 
 from cardgame_ml.loop.policy import Host
 from cardgame_ml.loop.records import RunRecord, StepRecord
+from cardgame_ml.loop.safety import (
+    COMMIT,
+    UnsafePathError,
+    absolute,
+    commit,
+    inside,
+    name,
+    relative,
+    remote_inside,
+    ssh_destination,
+    step_environment,
+)
 
 RUNNING = "running"
 LOST = "lost"
@@ -83,8 +104,8 @@ class LocalExecutor:
 
     def start(self, run: RunRecord, record: StepRecord, log: Path) -> None:
         step = record.step
-        folder = self.places.experiments / run.folder
-        out = folder / "results" / step.name
+        folder = inside(self.places.experiments, name(run.folder, "run folder"))
+        out = inside(folder, "results", name(step.name, "step"))
         out.mkdir(parents=True, exist_ok=True)
         log.parent.mkdir(parents=True, exist_ok=True)
         exit_file = _exit_file(log)
@@ -102,7 +123,7 @@ class LocalExecutor:
             }
         )
         cwd = self.places.repo / ("ml" if step.cwd == "ml" else "")
-        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        env = {**step_environment(os.environ), "PYTHONUNBUFFERED": "1"}
         with log.open("ab") as sink:
             child = subprocess.Popen(
                 ["nice", "-n", str(self.host.nice), "sh", "-c", _WRAPPER, str(exit_file), *argv],
@@ -157,6 +178,44 @@ def run_shell(
         return None
 
 
+def upload_argv(ssh: str, artifacts: Path, root: str, path: str) -> list[str]:
+    """``rsync`` of one folder of the artifact store to the same place under
+    the remote root. ``path`` (from a step's ``{artifacts}/…``) must be a
+    safe relative path of two segments or more (``models/x``, never a whole
+    top folder), inside the store here and there: ``--delete`` then only
+    ever mirrors that one folder."""
+    relative(path, "artifact", min_parts=2)
+    source = inside(artifacts, *path.split("/"))
+    target = remote_inside(root, "artifacts", *path.split("/"))
+    return ["rsync", "-a", "--delete", "--", f"{source}/", f"{ssh_destination(ssh)}:{target}/"]
+
+
+def run_folder(root: str, run: RunRecord, step: str) -> str:
+    """A remote step's folder, ``<root>/runs/<run folder>/<step>``."""
+    return remote_inside(root, "runs", name(run.folder, "run folder"), name(step, "step"))
+
+
+def checked_workdir(root: str, workdir: str) -> str:
+    """A step folder read back from a record: exactly
+    ``<root>/runs/<run folder>/<step>``, both safe names."""
+    absolute(workdir, "workdir")
+    parts = posixpath.relpath(posixpath.normpath(workdir), f"{root}/runs").split("/")
+    if len(parts) != 2:  # noqa: PLR2004
+        raise UnsafePathError(f"{workdir} is not a step folder under {root}/runs")
+    return remote_inside(root, "runs", name(parts[0], "run folder"), name(parts[1], "step"))
+
+
+def collect_argvs(ssh: str, root: str, workdir: str, out: Path, log: Path) -> list[list[str]]:
+    """The ``rsync`` commands that bring a remote step's output and log
+    here (no ``--delete``): ``workdir`` must lie under ``<root>/runs``."""
+    work = checked_workdir(root, workdir)
+    dest = ssh_destination(ssh)
+    return [
+        ["rsync", "-a", "--", f"{dest}:{work}/out/", f"{out}/"],
+        ["rsync", "-a", "--", f"{dest}:{work}/log", str(log)],
+    ]
+
+
 class RemoteExecutor:
     """Steps on a host reached by ``ssh`` (the home server)."""
 
@@ -172,21 +231,24 @@ class RemoteExecutor:
     ) -> None:
         if host.ssh is None or not host.root:
             raise ValueError(f"host {host.name}: a remote host needs ssh and root")
+        ssh_destination(host.ssh)
+        relative(host.root, f"host {host.name}: root")
         self.host, self.repo, self.artifacts, self.experiments = host, repo, artifacts, experiments
         self.shell, self.label = shell, label
+        self.ssh: str = host.ssh
         self._home: str | None = None
 
     # ``ssh <host> bash -s``: the login shell may be anything (fish at
     # home), so every remote script is bash read from stdin.
     def _bash(self, script: str, timeout: float = 30.0) -> str | None:
-        assert self.host.ssh is not None
         argv = [
             "ssh",
             "-o",
             "BatchMode=yes",
             "-o",
             "ConnectTimeout=10",
-            self.host.ssh,
+            "--",
+            self.ssh,
             "bash",
             "-s",
         ]
@@ -200,8 +262,8 @@ class RemoteExecutor:
             home = self._bash('echo "$HOME"')
             if home is None:
                 return None
-            self._home = home.strip()
-        return f"{self._home}/{self.host.root}"
+            self._home = absolute(home.strip(), f"{self.host.name}: $HOME")
+        return remote_inside(self._home, *self.host.root.split("/"))
 
     def load(self) -> float | None:
         out = self._bash("cut -d' ' -f1 /proc/loadavg")
@@ -210,24 +272,25 @@ class RemoteExecutor:
         except ValueError:
             return None
 
-    def _code(self, commit: str) -> str:
+    def _code(self, run_commit: str) -> str:
         root = self._root()
         if root is None:
             raise ConnectionError(f"{self.host.name}: unreachable")
-        code = f"{root}/code/{commit[:12]}"
-        present = self._bash(f"test -f {shlex.quote(code)}/.extracted && echo yes || echo no")
+        full = commit(run_commit)
+        code = remote_inside(root, "code", full[:12])
+        q = shlex.quote(code)
+        present = self._bash(f"test -f {q}/.extracted && echo yes || echo no")
         if present is None:
             raise ConnectionError(f"{self.host.name}: unreachable")
         if present.strip() != "yes":
             archive = subprocess.run(
-                ["git", "-C", str(self.repo), "archive", "--format=tar", commit],
+                ["git", "-C", str(self.repo), "archive", "--format=tar", full, "--"],
                 capture_output=True,
                 check=True,
             )
-            unpack = f"mkdir -p {code} && tar -x -C {code} && touch {code}/.extracted"
-            assert self.host.ssh is not None
+            unpack = f"mkdir -p {q} && tar -x -C {q} && touch {q}/.extracted"
             subprocess.run(
-                ["ssh", "-o", "BatchMode=yes", self.host.ssh, "bash", "-c", shlex.quote(unpack)],
+                ["ssh", "-o", "BatchMode=yes", "--", self.ssh, "bash", "-c", shlex.quote(unpack)],
                 input=archive.stdout,
                 check=True,
                 timeout=600,
@@ -236,30 +299,27 @@ class RemoteExecutor:
 
     def _upload(self, paths: list[str]) -> None:
         root = self._root()
-        assert self.host.ssh is not None
-        assert root is not None
-        for path in paths:
-            target = f"{root}/artifacts/{path}"
-            self._bash(f"mkdir -p {shlex.quote(target)}")
-            subprocess.run(
-                [
-                    "rsync",
-                    "-a",
-                    "--delete",
-                    f"{self.artifacts / path}/",
-                    f"{self.host.ssh}:{target}/",
-                ],
-                check=True,
-                timeout=1800,
-            )
+        if root is None:
+            raise ConnectionError(f"{self.host.name}: unreachable")
+        argvs = [upload_argv(self.ssh, self.artifacts, root, path) for path in paths]
+        for path, argv in zip(paths, argvs, strict=True):
+            target = remote_inside(root, "artifacts", *path.split("/"))
+            self._bash(f"mkdir -p -- {shlex.quote(target)}")
+            subprocess.run(argv, check=True, timeout=1800)
 
     def start(self, run: RunRecord, record: StepRecord, log: Path) -> None:
         step = record.step
+        # Everything that becomes a path there is checked before ssh is used.
+        name(run.folder, "run folder")
+        name(step.name, "step")
+        commit(run.commit)
+        for path in step.uploads():
+            relative(path, "artifact", min_parts=2)
         code = self._code(run.commit)
         self._upload(step.uploads())
         root = self._root()
         assert root is not None
-        work = f"{root}/runs/{run.folder}/{step.name}"
+        work = run_folder(root, run, step.name)
         argv = step.expand(
             {
                 "repo": ".",
@@ -276,13 +336,17 @@ class RemoteExecutor:
             "&& touch .built; fi"
         )
         inner = f"{build} && {shlex.join(argv)}"
+        # The step gets a clean environment: home, path and locale only, so
+        # nothing in the login environment (a bot token, say) reaches it.
+        q = shlex.quote(work)
         script = f"""
 export PATH="$HOME/.cargo/bin:$PATH"
-mkdir -p {shlex.quote(work)}/out
-rm -f {shlex.quote(work)}/exit
-cd {shlex.quote(code)}
-nohup setsid nice -n {self.host.nice} sh -c {shlex.quote(_WRAPPER)} {shlex.quote(work + "/exit")} \\
-    bash -c {shlex.quote(inner)} > {shlex.quote(work)}/log 2>&1 < /dev/null &
+mkdir -p -- {q}/out
+rm -f -- {q}/exit
+cd -- {shlex.quote(code)}
+env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 \\
+    nohup setsid nice -n {int(self.host.nice)} sh -c {shlex.quote(_WRAPPER)} {q}/exit \\
+    bash -c {shlex.quote(inner)} > {q}/log 2>&1 < /dev/null &
 echo $!
 """
         out = self._bash(script)
@@ -298,7 +362,7 @@ echo $!
         work = shlex.quote(record.workdir)
         out = self._bash(
             f"if [ -f {work}/exit ]; then cat {work}/exit; "
-            f"elif kill -0 {record.pid} 2>/dev/null; then echo {RUNNING}; else echo {LOST}; fi"
+            f"elif kill -0 {int(record.pid)} 2>/dev/null; then echo {RUNNING}; else echo {LOST}; fi"
         )
         if out is None:
             return UNKNOWN
@@ -308,26 +372,23 @@ echo $!
     def stop(self, record: StepRecord, force: bool) -> None:
         if record.pid is not None:
             sig = "KILL" if force else "TERM"
-            self._bash(f"kill -{sig} -- -{record.pid} 2>/dev/null || true")
+            self._bash(f"kill -{sig} -- -{int(record.pid)} 2>/dev/null || true")
 
     def collect(self, run: RunRecord, record: StepRecord, log: Path) -> None:
         if record.workdir is None:
             return
-        assert self.host.ssh is not None
-        out = self.experiments / run.folder / "results" / record.step.name
+        root = self._root()
+        if root is None:
+            return
+        folder = inside(self.experiments, name(run.folder, "run folder"))
+        out = inside(folder, "results", name(record.step.name, "step"))
         out.mkdir(parents=True, exist_ok=True)
         log.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            ["rsync", "-a", f"{self.host.ssh}:{record.workdir}/out/", f"{out}/"],
-            check=False,
-            timeout=600,
-        )
-        subprocess.run(
-            ["rsync", "-a", f"{self.host.ssh}:{record.workdir}/log", str(log)],
-            check=False,
-            timeout=600,
-        )
-        self._bash(f"rm -rf {shlex.quote(record.workdir)}")
+        # Checked before anything runs: the remote folder is removed after.
+        argvs = collect_argvs(self.ssh, root, record.workdir, out, log)
+        for argv in argvs:
+            subprocess.run(argv, check=False, timeout=600)
+        self._bash(f"rm -rf -- {shlex.quote(checked_workdir(root, record.workdir))}")
 
     def prune(self, keep: set[str]) -> None:
         """Removes unpacked code of commits no run uses (``keep``: the
@@ -335,9 +396,9 @@ echo $!
         root = self._root()
         if root is None:
             return
-        kept = " ".join(shlex.quote(c[:12]) for c in sorted(keep))
+        kept = " ".join(shlex.quote(c[:12]) for c in sorted(keep) if COMMIT.fullmatch(c))
         self._bash(
-            f"cd {shlex.quote(root)}/code 2>/dev/null || exit 0\n"
+            f"cd -- {shlex.quote(root)}/code 2>/dev/null || exit 0\n"
             f"keep=({kept})\n"
             "ls -t | tail -n +4 | while read -r d; do\n"
             '  case " ${keep[*]:-} " in *" $d "*) ;; *) rm -rf -- "$d" ;; esac\n'
@@ -370,11 +431,11 @@ def executors(
     hosts: Mapping[str, Host], places: Places, remote_shell: Shell = run_shell
 ) -> dict[str, HostExecutor]:
     out: dict[str, HostExecutor] = {}
-    for name, host in hosts.items():
+    for host_name, host in hosts.items():
         if host.ssh is None:
-            out[name] = LocalExecutor(host, places)
+            out[host_name] = LocalExecutor(host, places)
         else:
-            out[name] = RemoteExecutor(
+            out[host_name] = RemoteExecutor(
                 host,
                 repo=places.repo,
                 artifacts=places.artifacts,
