@@ -116,6 +116,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx svelte-check --tsconfig ./tsconfig.json --threshold error
+      # Unit tests (vitest); the scoring test reads crates/mighty/tests/payoffs.json.
+      - run: npm test
 
   # Every page and /preview state at four sizes, light and dark, served by
   # the real server (web/e2e). Known layout bugs are marked expected-fail

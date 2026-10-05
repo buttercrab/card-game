@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SUITS, trumpLabel } from './cards';
+  import { eachFrame, share } from './frame';
   import SuitIcon from './SuitIcon.svelte';
   import type { Action, Contract, Suit } from './types';
 
@@ -18,15 +19,28 @@
     onact: (a: Action) => void;
   } = $props();
 
-  // The bid button holds back until the wait is over.
+  // The bid button holds back until the wait is over. A bar fills it as
+  // the wait runs out, drawn from the clock on each frame (frame.ts) so it
+  // tells the time under reduced motion and with 끄기 too.
   let held = $state(false);
+  /** How much of the wait is over, 0 to 1. */
+  let waited = $state(1);
   $effect(() => {
     if (wait <= 0) return;
     held = true;
+    const until = performance.now() + wait;
     const timer = setTimeout(() => (held = false), wait);
+    // A local, so the effect never depends on what it writes.
+    const stop = eachFrame((now) => {
+      const done = 1 - share(until, wait, now);
+      waited = done;
+      return done < 1;
+    });
     return () => {
       clearTimeout(timer);
+      stop();
       held = false;
+      waited = 1;
     };
   });
 
@@ -93,8 +107,9 @@
       <button onclick={() => onact('Pass')}>패스</button>
     {/if}
     {#if bids.length > 0}
-      <button class="primary" class:held disabled={held} style:--wait="{wait}ms" onclick={() => onact({ Bid: bid })}>
+      <button class="primary" class:held disabled={held} onclick={() => onact({ Bid: bid })}>
         공약 {trumpLabel(bid.trump)} {bid.count}
+        {#if held}<span class="hold" style:transform="scaleX({waited})" aria-hidden="true"></span>{/if}
       </button>
     {/if}
   </div>
@@ -177,25 +192,13 @@
     position: relative;
     overflow: hidden;
   }
-  .primary.held::after {
-    content: '';
+  .hold {
     position: absolute;
     inset: auto 0 0 0;
     height: 3px;
     background: currentColor;
     opacity: 0.5;
     transform-origin: left;
-    animation: hold var(--wait) linear both;
-  }
-  @keyframes hold {
-    from {
-      transform: scaleX(0);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .primary.held::after {
-      animation: none;
-    }
   }
   @media (min-width: 600px) {
     .bid {

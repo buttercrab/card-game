@@ -300,7 +300,7 @@
     game: idle ? null : game,
     seat: which === 'spectate' || watching ? null : 0,
     onmove: null,
-    error: null,
+    toasts: { current: null },
     status: 'open',
     clock:
       which === 'timer' || which === 'spectate'

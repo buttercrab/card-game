@@ -1,4 +1,5 @@
 import { sound } from './sound';
+import { Toasts } from './toast.svelte';
 import type { Action, BotLevel, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
 interface Saved {
@@ -77,7 +78,10 @@ export class RoomClient {
   room = $state<RoomMsg | null>(null);
   game = $state<StateMsg | null>(null);
   seat = $state<number | null>(null);
-  error = $state<string | null>(null);
+  /** The toast: the server's errors, which sound, and the table's notices, which don't. */
+  toasts = new Toasts((t) => {
+    if (t.kind === 'error') sound.error();
+  });
   status = $state<'connecting' | 'open' | 'closed' | 'missing'>('connecting');
   /** The latest reaction per seat, cleared after a few seconds. `id` restarts its animation. */
   reactions = $state<Record<number, { text: string; id: number }>>({});
@@ -94,7 +98,10 @@ export class RoomClient {
   #ws: WebSocket | null = null;
   #closed = false;
   #retry = 500;
-  #errorTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The pending reconnect, cancelled by close(). */
+  #reconnect: ReturnType<typeof setTimeout> | undefined;
+  /** Each reaction's clearing timer, cancelled by close(). */
+  #reactionTimers = new Set<ReturnType<typeof setTimeout>>();
   #reactionId = 0;
   /** Seats are moving: the server said where they went, and this tab's new
    * seat waits for the room that seats everyone there, so the table never
@@ -114,6 +121,10 @@ export class RoomClient {
   }
 
   #connect() {
+    this.#reconnect = undefined;
+    // A closed client never opens another socket: a reconnect that was
+    // already due, or one scheduled across an await, stops here.
+    if (this.#closed) return;
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
     const ws = new WebSocket(`${scheme}://${location.host}/api/rooms/${this.#id}/ws`);
     this.#ws = ws;
@@ -131,16 +142,24 @@ export class RoomClient {
       // Only to take back our own seat: if it was given away meanwhile, we watch.
       if (saved?.token) this.#send({ type: 'join', name: saved.name, token: saved.token, device: device(), reclaim: true });
     };
-    ws.onmessage = (event) => this.#receive(JSON.parse(event.data) as ServerMsg);
+    ws.onmessage = (event) => {
+      if (!this.#closed) this.#receive(JSON.parse(event.data) as ServerMsg);
+    };
     ws.onclose = async () => {
       if (this.#closed) return;
-      if (!opened && !(await this.#exists())) {
-        this.status = 'missing';
-        return;
+      if (!opened) {
+        const exists = await this.#exists();
+        // Left (or unmounted) while asking: stay closed.
+        if (this.#closed) return;
+        if (!exists) {
+          this.status = 'missing';
+          return;
+        }
       }
       this.status = 'closed';
       this.seat = null;
-      setTimeout(() => this.#connect(), this.#retry);
+      clearTimeout(this.#reconnect);
+      this.#reconnect = setTimeout(() => this.#connect(), this.#retry);
       this.#retry = Math.min(this.#retry * 2, 8000);
     };
   }
@@ -183,7 +202,8 @@ export class RoomClient {
         this.hint = null;
         break;
       case 'hint':
-        this.hint = msg.action;
+        // Asked for a state the hand has since moved on from: no longer true.
+        if (this.game && msg.version === this.game.version) this.hint = msg.action;
         break;
       case 'welcome': {
         if (this.#moving) this.#movedSeat = msg.seat;
@@ -222,16 +242,16 @@ export class RoomClient {
         this.reactions[msg.seat] = { text: msg.text, id };
         sound.react();
         // By its id, wherever its seat has moved since.
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          this.#reactionTimers.delete(timer);
           for (const [seat, r] of Object.entries(this.reactions)) if (r.id === id) delete this.reactions[Number(seat)];
         }, 2800);
+        this.#reactionTimers.add(timer);
         break;
       }
       case 'error':
         this.#starting = false;
-        this.error = translate(msg.message);
-        clearTimeout(this.#errorTimer);
-        this.#errorTimer = setTimeout(() => (this.error = null), 4000);
+        this.toasts.show('error', translate(msg.message));
         break;
     }
   }
@@ -247,9 +267,12 @@ export class RoomClient {
     this.#send({ type: 'join', name, token: saved?.token || null, seat: seat ?? null, device: device() });
   }
 
+  /** Gives up this tab's seat, and forgets its token even when not seated
+   * just now (the link dropped), so a reconnect can never reclaim it. */
   leave() {
-    this.#send({ type: 'leave' });
+    if (this.seat !== null) this.#send({ type: 'leave' });
     this.seat = null;
+    this.#movedSeat = null;
     this.#forget();
   }
 
@@ -291,15 +314,18 @@ export class RoomClient {
     this.#send({ type: 'remove_bot', seat });
   }
 
-  setRules(preset: string, rules: Rules | null) {
-    this.#send({ type: 'set_settings', settings: rules ? { preset, rules } : { preset } });
+  /** `presetRules`: the preset's rules as the table pinned them, to keep
+   * them; without it the server pins the preset as it is today. */
+  setRules(preset: string, rules: Rules | null, presetRules?: Rules) {
+    this.#send({
+      type: 'set_settings',
+      settings: { preset, ...(rules ? { rules } : {}), ...(presetRules ? { preset_rules: presetRules } : {}) },
+    });
   }
 
-  /** Shows a short message in the error toast, as if the server had said it. */
+  /** Shows a short message in the toast, without the error sound. */
   notice(text: string) {
-    this.error = text;
-    clearTimeout(this.#errorTimer);
-    this.#errorTimer = setTimeout(() => (this.error = null), 2500);
+    this.toasts.show('notice', text);
   }
 
   askHint() {
@@ -321,8 +347,15 @@ export class RoomClient {
     this.#send({ type: 'act', action });
   }
 
+  /** Stops for good: no socket, no reconnect, no timer left running. */
   close() {
     this.#closed = true;
+    clearTimeout(this.#reconnect);
+    this.#reconnect = undefined;
+    for (const timer of this.#reactionTimers) clearTimeout(timer);
+    this.#reactionTimers.clear();
+    this.toasts.clear();
     this.#ws?.close();
+    this.#ws = null;
   }
 }

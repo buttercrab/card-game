@@ -4,29 +4,37 @@
   import Rulebook from './Rulebook.svelte';
   import RuleDiff from './RuleDiff.svelte';
   import { differences, otherDifferences } from './ruleFields';
-  import { loadCustom, presetRules } from './rulesets';
+  import { loadCustom, presetRules, tableRules } from './rulesets';
   import type { Rules } from './types';
 
   let {
     preset,
     rules = null,
+    base: pinned = null,
     title,
     onclose,
   }: {
     preset: string;
     /** The table's own rules, when its players changed the preset's. */
     rules?: Rules | null;
+    /** The preset's rules as the table pinned them (the room's
+     * `preset_rules`); null for the preset's today. */
+    base?: Rules | null;
     /** What to call the changed set; 이 테이블 by default. */
     title?: string;
     onclose: () => void;
   } = $props();
 
-  let base = $state<Rules | null>(null);
+  let fetched = $state<Rules | null>(null);
+  const base = $derived(pinned ?? fetched);
   $effect(() => {
+    if (pinned) return;
     presetRules(preset)
-      .then((r) => (base = r))
-      .catch(() => (base = null));
+      .then((r) => (fetched = r))
+      .catch(() => (fetched = null));
   });
+  /** What the table plays by: its own rules, or its pinned preset's. */
+  const effective = $derived(tableRules({ rules: rules ?? undefined, preset_rules: pinned ?? undefined }));
   const name = $derived(PRESET_NAME[preset] ?? preset);
   const custom = $derived(rules && base && (differences(rules, base).length || otherDifferences(rules, base)) ? rules : null);
   let comparing = $state(false);
@@ -47,7 +55,7 @@
         <RuleDiff a={base} b={custom} aName={name} bName={title ?? '이 테이블'} />
       </section>
     {/if}
-    <Rulebook {preset} rules={rules ?? null} />
+    <Rulebook {preset} rules={effective} changed={rules !== null} />
   </div>
   <form method="dialog" class="sheet-foot">
     <button type="button" class="ghost" onclick={() => (comparing = true)} disabled={!base}>다른 규칙과 비교</button>
@@ -58,7 +66,7 @@
 {#if comparing}
   <CompareSheet
     name={custom ? (title ?? '이 테이블') : name}
-    rules={rules ?? null}
+    rules={effective}
     {preset}
     against={custom ? preset : preset === 'default' ? 'gshs' : 'default'}
     customs={loadCustom()}

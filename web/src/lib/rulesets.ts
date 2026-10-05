@@ -17,6 +17,13 @@ export function presetRules(id: string): Promise<Rules> {
   return p;
 }
 
+/** What a table plays by: its own rules, or its preset's as the table
+ * pinned them (which may differ from the preset's today); null from a
+ * server too old to say. */
+export function tableRules(settings: { rules?: Rules; preset_rules?: Rules }): Rules | null {
+  return settings.rules ?? settings.preset_rules ?? null;
+}
+
 /** Every preset's rules, by id. */
 export async function allPresetRules(): Promise<Record<string, Rules>> {
   const entries = await Promise.all(PRESETS.map(async (p) => [p.id, await presetRules(p.id)] as const));
