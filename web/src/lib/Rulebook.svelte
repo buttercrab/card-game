@@ -262,14 +262,15 @@
     if (m.joker_value !== 0) parts.push(`조커 ${value(m.joker_value)}`);
     for (const [card, v] of m.card_values) parts.push(`${cardLabel(card)} ${value(v)}`);
     const when = m.ask_first
-      ? '공약을 시작하기 전에 첫 사람부터 모두 딜미스인지 답하고, 그때'
+      ? '패를 받자마자, 누가 첫 공약을 하기 전까지'
       : m.after_bidding
-        ? '자기가 부를 차례에, 이미 공약했더라도'
-        : '공약하기 전에';
+        ? '패를 받자마자, 공약이 끝나기 전까지 (이미 공약했더라도)'
+        : '패를 받자마자, 자기가 공약하기 전까지';
     const lines = [
       `받은 패가 약하면 ${when} 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${num(m.threshold)}점 이하일 때예요.`,
     ];
-    if (m.ask_first) lines.push('여럿이 딜미스라고 하면 첫 사람에게서 가장 가까운 사람의 딜미스예요. 그 사람은 패를 보여 줘요.');
+    lines.push('자기 차례가 아니어도 되고, 패스한 뒤에는 못 해요. 먼저 부른 사람의 딜미스예요. 그 사람은 패를 보여 줘요.');
+    if (m.ask_first) lines.push('첫 공약은 패를 받고 2초쯤 기다렸다가 할 수 있어요. 그사이 딜미스할 사람이 있는지 봐요.');
     if (m.caller_deals) lines.push('딜미스를 한 사람이 새로 나눈 판에서 먼저 불러요.');
     if (m.all_points) lines.push('받은 카드가 모두 점수 카드여도 딜미스를 할 수 있어요.');
     if (m.declarer) lines.push('주공도 키티를 가져온 뒤 버리기 전에, 가진 카드 전부로 세어 딜미스를 할 수 있어요.');

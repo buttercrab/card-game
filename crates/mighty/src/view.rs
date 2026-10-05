@@ -34,12 +34,9 @@ pub enum PhaseView {
         to_act: Seat,
         best: Option<(Seat, Contract)>,
         passed: Vec<bool>,
-        /// Who has bid at least once; they may no longer call a misdeal.
+        /// Who has bid at least once; unless the rules say otherwise, they
+        /// may no longer call a misdeal.
         has_bid: Vec<bool>,
-        /// Everyone is answering whether they call a misdeal before any
-        /// bid (`misdeal.ask_first`); a pass now means "no misdeal".
-        #[serde(default)]
-        asking_misdeal: bool,
     },
     Exchange {
         declarer: Seat,
@@ -129,7 +126,6 @@ impl View {
                 best: b.best,
                 passed: b.passed.clone(),
                 has_bid: b.has_bid.clone(),
-                asking_misdeal: b.asking,
             },
             Phase::Exchange(e) => PhaseView::Exchange {
                 declarer: e.declarer,

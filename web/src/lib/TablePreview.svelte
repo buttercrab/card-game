@@ -1,7 +1,9 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
-  // /preview?state=bidding | waiting | misdeal | exchange | friend | secret | nofriend | play | watch | late | sweep | done | won | run
-  // (waiting and watch are the bidding and the play on someone else's turn).
+  // /preview?state=bidding | waiting | misdeal | misdealnow | grace | exchange | friend | secret | nofriend | play | watch | late | sweep | done | won | run
+  // (waiting and watch are the bidding and the play on someone else's turn;
+  // misdealnow is 딜미스 outside your turn, grace the first bid held back
+  // after the deal).
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
   import type { Bid, Card, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
@@ -87,6 +89,8 @@
   ];
   const phases: Record<string, PhaseView> = {
     bidding: { Bidding: { to_act: 0, best: [2, { trump: 'Heart', count: 15 }], passed: [false, true, false, true, false], has_bid: [false, false, true, false, false] } },
+    // Fresh off the deal: nobody has bid yet.
+    grace: { Bidding: { to_act: 0, best: null, passed: [false, false, false, false, false], has_bid: [false, false, false, false, false] } },
     exchange: { Exchange: { declarer: 0, contract, trump_changed: false, discards: [] } },
     // The discards are down; the declarer names the friend.
     friend: { Exchange: { declarer: 0, contract, trump_changed: false, discards: kittyCards } },
@@ -128,6 +132,7 @@
   };
   const legal: Record<string, StateMsg['legal']> = {
     bidding: ['Pass', ...[15, 16, 17].map((count) => ({ Bid: { trump: 'Spade' as const, count } }))],
+    grace: ['Pass', ...[14, 15, 16, 17].map((count) => ({ Bid: { trump: 'Spade' as const, count } }))],
     exchange: [...hand, ...kittyCards].map((card) => ({ Discard: card })),
     friend: [
       // Every card, as in a real hand: the picker must hold the whole deck.
@@ -167,10 +172,12 @@
             ]
           : [[n('Club', 10)], [n('Heart', 10)], [n('Spade', 13), n('Club', 12)], [], [n('Diamond', 14)]],
       phase,
-      bids: key === 'bidding' ? bids.slice(0, 3) : bids,
+      bids: key === 'bidding' ? bids.slice(0, 3) : key === 'grace' ? [] : bids,
     },
     legal: legal[key] ?? [],
     turn,
+    out_of_turn: which === 'misdealnow' ? ['Misdeal'] : [],
+    grace_ms: key === 'grace' ? 2000 : 0,
   });
   const room: RoomMsg = {
     type: 'room',
@@ -194,10 +201,10 @@
     in_hand: which !== 'done' && which !== 'won' && which !== 'run',
   };
 
-  const alias: Record<string, string> = { sweep: 'play', misdeal: 'bidding', waiting: 'bidding' };
+  const alias: Record<string, string> = { sweep: 'play', misdeal: 'bidding', waiting: 'bidding', misdealnow: 'bidding' };
   const key = alias[which] ?? which;
   const turn: StateMsg['turn'] =
-    key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' ? { Seat: 4 } : which === 'watch' ? { Seat: 3 } : { Seat: 0 };
+    key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' || which === 'misdealnow' ? { Seat: 4 } : which === 'watch' ? { Seat: 3 } : { Seat: 0 };
   const client = $state({
     room,
     // The exchange opens on the bidding, so the table sees which cards came from the kitty.

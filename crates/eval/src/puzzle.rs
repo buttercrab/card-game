@@ -46,10 +46,23 @@ impl<G: EvalGame> Puzzle<G> {
     pub fn position(&self) -> Result<Position<G>, String> {
         let fail = |e: String| format!("puzzle {}: {e}", self.id);
         let rules = preset::<G>(&self.rules).map_err(fail)?;
-        let mut state = G::new_game(&G::options(&rules, self.deal)).map_err(|e| fail(e.to_string()))?;
-        for (i, action) in self.log.iter().enumerate() {
-            G::apply(&mut state, action.clone()).map_err(|e| fail(format!("action {i}: {e}")))?;
-        }
+        let options = G::options(&rules, self.deal);
+        let replay = |steps: Vec<(Option<Seat>, G::Action)>| -> Result<G::State, String> {
+            let mut state = G::new_game(&options).map_err(|e| e.to_string())?;
+            for (i, (seat, action)) in steps.into_iter().enumerate() {
+                let applied = match seat {
+                    Some(seat) => G::apply_out_of_turn(&mut state, seat, action),
+                    None => G::apply(&mut state, action),
+                };
+                applied.map_err(|e| format!("action {i}: {e}"))?;
+            }
+            Ok(state)
+        };
+        // As recorded; failing that, as recorded under an earlier flow.
+        let as_is = self.log.iter().map(|a| (None, a.clone())).collect();
+        let state = replay(as_is)
+            .or_else(|e| replay(G::upgrade_log(&options, &self.log)).map_err(|_| e))
+            .map_err(fail)?;
         let Turn::Seat(seat) = G::turn(&state) else {
             return Err(fail("no seat is to act".into()));
         };

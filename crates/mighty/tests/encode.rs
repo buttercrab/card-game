@@ -175,9 +175,9 @@ fn encodings_are_pinned() {
             }
         });
     }
-    assert_eq!(positions, 8433);
+    assert_eq!(positions, 7828);
     assert_eq!(
-        fingerprint.0, 0x0f76_b0fa_82f4_9af6,
+        fingerprint.0, 0x10d0_f0d6_8f10_71af,
         "the encoding changed: bump VERSION and pin the new fingerprint (only re-pin if a preset's rules changed)"
     );
 }
@@ -342,14 +342,11 @@ fn card_rows_carry_what_the_rules_make_of_a_card() {
     assert_eq!(feature(c(Suit::Spade, ACE), "strength"), 1.0);
     assert!(feature(c(Suit::Heart, 2), "strength") < feature(c(Suit::Heart, 10), "strength"));
     assert!(feature(c(Suit::Heart, 10), "strength") < feature(joker, "strength"));
-    assert_eq!(global_feature(&spec, &obs, "phase=misdeal_round"), 1.0);
+    assert_eq!(global_feature(&spec, &obs, "phase=bidding"), 1.0);
     assert_eq!(global_feature(&spec, &obs, "rules.players=5"), 1.0);
 
     // Once ♠ is the trump bid, the mighty moves to ♦A.
     let mut state = state;
-    for action in [Action::Pass, Action::Pass, Action::Pass, Action::Pass, Action::Pass] {
-        Mighty::apply(&mut state, action).unwrap();
-    }
     let spades = mighty::rules::Contract {
         trump: Some(Suit::Spade),
         count: 14,

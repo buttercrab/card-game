@@ -1,5 +1,5 @@
 {
-  "version": "mighty-2",
+  "version": "mighty-3",
   "global": [
     "rules.players=1",
     "rules.players=2",
@@ -110,7 +110,6 @@
     "rules.next_dealer=rotate",
     "rules.next_dealer=friend_or_declarer",
     "phase=dealing",
-    "phase=misdeal_round",
     "phase=bidding",
     "phase=exchange",
     "phase=play",
@@ -360,7 +359,6 @@
   ],
   "max_events": 160,
   "event_features": [
-    "kind=no_misdeal",
     "kind=pass",
     "kind=bid",
     "kind=contract",

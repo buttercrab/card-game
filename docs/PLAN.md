@@ -122,7 +122,8 @@ Done (2026-10-04), pending CI on the branch:
   a legal mask over a fixed action space. Seats are relative to the
   viewer, with presence masks for seats and cards. Belief targets come
   from the full state, separately. Mighty's spec, `mighty-1` (now
-  `mighty-2`, which adds the failed-contract scoring), is one for
+  `mighty-3`: `mighty-2` added the failed-contract scoring, `mighty-3`
+  dropped the misdeal round), is one for
   every rule set the engine accepts (up to 8 seats, contracts up to 30)
   and is pinned in `crates/mighty/tests/encoding.json`, which `ml/` reads.
   About 40 µs an encoding in release.
@@ -256,7 +257,7 @@ our environment directly.
 
 - **Agent:** a network scores every legal action, `Q(observation, action)`:
   the observation is the Mighty encoding (`mighty-1` when planned,
-  `mighty-2` since 2026-10-05; shared with the belief model's token
+  `mighty-3` since the faster 딜미스 of 2026-10-05; shared with the belief model's token
   layout), each action an embedding of its index plus features of the
   card or contract it names. Play picks the best legal action, with
   ε-greedy exploration while learning.

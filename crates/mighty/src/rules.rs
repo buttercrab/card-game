@@ -78,9 +78,10 @@ pub struct Misdeal {
     /// judged on every card they then hold.
     #[serde(default)]
     pub declarer: bool,
-    /// Before any bid, everyone from the first bidder on answers whether
-    /// they call a misdeal; nobody may call one later. The first to call
-    /// it is the one nearest the dealer, as when all answer at once.
+    /// Misdeals come before any bid: anyone whose hand qualifies may call
+    /// one from the moment the cards land until the first bid, on their
+    /// turn or not, and nobody later. The server holds the first bid back
+    /// a moment after the deal so a fast bid cannot beat a misdeal.
     #[serde(default)]
     pub ask_first: bool,
     /// Whoever calls a misdeal opens the bidding of the new deal.
@@ -850,7 +851,7 @@ impl Preset {
             Preset::Default => {
                 // Values are doubled to stay whole: J, Q, K, A count 1, a ten
                 // ½, ♠A (the card, not the mighty) 0, the joker −1; ½ or less
-                // qualifies. Everyone answers before the bidding, and whoever
+                // qualifies. A misdeal comes before any bid, and whoever
                 // throws the deal in deals the next one.
                 r.misdeal = Misdeal {
                     point_value: 2,

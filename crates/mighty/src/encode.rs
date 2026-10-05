@@ -38,8 +38,10 @@ use engine::{Encode, Features, Game, Observation, Seat, Spec, Unsupported, Viewe
 /// the layout or to what a feature means; `tests/encoding.json` pins the
 /// spec so that cannot happen unnoticed. `mighty-2` (2026-10-05) added
 /// how a failed contract is scored (`rules.scoring.lose`); models trained
-/// on `mighty-1` cannot read it.
-pub const VERSION: &str = "mighty-2";
+/// on `mighty-1` cannot read it. `mighty-3` (2026-10-05) dropped the
+/// misdeal round (`phase=misdeal_round`, `kind=no_misdeal`): a misdeal is
+/// called from the moment the cards land, so there is no round to show.
+pub const VERSION: &str = "mighty-3";
 
 /// The most players any rule set may seat ([`Rules::validate`]).
 pub const MAX_SEATS: usize = 8;
@@ -90,17 +92,17 @@ const LEAD_LABELS: [&str; LEADS] = ["♠", "♦", "♥", "♣", "black", "red"];
 const POLICY_LABELS: [&str; 4] = ["valid", "no_effect", "invalid", "no_lead"];
 const DOUBLING_LABELS: [&str; 3] = ["never", "win", "always"];
 const CALL_LABELS: [&str; 5] = ["card", "seat", "first_trick", "last_trick", "alone"];
-const PHASE_LABELS: [&str; 6] = ["dealing", "misdeal_round", "bidding", "exchange", "play", "done"];
-const EVENT_LABELS: [&str; 8] = [
-    "no_misdeal",
-    "pass",
-    "bid",
-    "contract",
-    "discard",
-    "call",
-    "play",
-    "trick",
-];
+const PHASE_LABELS: [&str; 5] = ["dealing", "bidding", "exchange", "play", "done"];
+const BIDDING: usize = 1;
+// Event kinds, by their index in `EVENT_LABELS`.
+const PASSED: usize = 0;
+const BID_MADE: usize = 1;
+const CONTRACT_SET: usize = 2;
+const DISCARDED: usize = 3;
+const CALLED: usize = 4;
+const PLAYED: usize = 5;
+const TRICK_DONE: usize = 6;
+const EVENT_LABELS: [&str; 7] = ["pass", "bid", "contract", "discard", "call", "play", "trick"];
 
 /// A card's row, and its index in the card-based action blocks.
 pub fn slot(card: Card) -> usize {
@@ -535,13 +537,10 @@ fn global(f: &mut Features, t: &Table) {
     let view = t.view;
     let phase = match &view.phase {
         PhaseView::Dealing => 0,
-        PhaseView::Bidding {
-            asking_misdeal: true, ..
-        } => 1,
-        PhaseView::Bidding { .. } => 2,
-        PhaseView::Exchange { .. } => 3,
-        PhaseView::Play { .. } => 4,
-        PhaseView::Done { .. } => 5,
+        PhaseView::Bidding { .. } => BIDDING,
+        PhaseView::Exchange { .. } => 2,
+        PhaseView::Play { .. } => 3,
+        PhaseView::Done { .. } => 4,
     };
     f.one_hot("phase", &PHASE_LABELS, Some(phase));
     f.flag("spectator", view.viewer == Viewer::Spectator);
@@ -555,8 +554,10 @@ fn global(f: &mut Features, t: &Table) {
         "redealt.all_passed",
         redealt.is_some_and(|r| r.why == crate::Redeal::AllPassed),
     );
-    let last_chance =
-        t.rules.bidding.last_chance_min.is_some() && phase == 2 && t.best.is_none() && view.bids.len() == t.players;
+    let last_chance = t.rules.bidding.last_chance_min.is_some()
+        && phase == BIDDING
+        && t.best.is_none()
+        && view.bids.len() == t.players;
     f.flag("last_chance", last_chance);
 
     let best = t.best.map(|(_, c)| c);
@@ -884,23 +885,10 @@ fn events(t: &Table) -> Vec<Event> {
     };
     let mut events = Vec::new();
 
-    // With misdeals asked first, everyone from the first bidder on has
-    // said no so far, or the cards would have been dealt again.
-    if t.rules.misdeal.ask_first && !matches!(view.phase, PhaseView::Dealing) {
-        let answered = match view.phase {
-            PhaseView::Bidding {
-                asking_misdeal: true,
-                to_act,
-                ..
-            } => relative(view.first_bidder, to_act, t.players),
-            _ => t.players,
-        };
-        events.extend((0..answered).map(|i| event(0, (view.first_bidder + i) % t.players)));
-    }
     for bid in &view.bids {
         events.push(Event {
             contract: bid.contract,
-            ..event(if bid.contract.is_some() { 2 } else { 1 }, bid.seat)
+            ..event(if bid.contract.is_some() { BID_MADE } else { PASSED }, bid.seat)
         });
     }
     if let (Some(declarer), Some(contract)) = (t.declarer, t.contract)
@@ -908,13 +896,13 @@ fn events(t: &Table) -> Vec<Event> {
     {
         events.push(Event {
             contract: Some(contract),
-            ..event(3, declarer)
+            ..event(CONTRACT_SET, declarer)
         });
     }
     if let Some(declarer) = t.declarer {
         events.extend(t.discards.iter().map(|&card| Event {
             card: Some(card),
-            ..event(4, declarer)
+            ..event(DISCARDED, declarer)
         }));
         if let Some(call) = t.call {
             let card = match call {
@@ -924,7 +912,7 @@ fn events(t: &Table) -> Vec<Event> {
             events.push(Event {
                 call: Some(call),
                 card,
-                ..event(5, declarer)
+                ..event(CALLED, declarer)
             });
         }
     }
@@ -934,7 +922,7 @@ fn events(t: &Table) -> Vec<Event> {
         led: i == 0,
         lead,
         trick: Some(trick),
-        ..event(6, p.seat)
+        ..event(PLAYED, p.seat)
     };
     for (i, trick) in t.tricks.iter().enumerate() {
         events.extend(
@@ -947,7 +935,7 @@ fn events(t: &Table) -> Vec<Event> {
         events.push(Event {
             trick: Some(i),
             points: trick.plays.iter().filter(|p| p.card.is_point()).count(),
-            ..event(7, trick.winner)
+            ..event(TRICK_DONE, trick.winner)
         });
     }
     events.extend(t.plays.iter().enumerate().map(|(j, p)| play(t.trick_no, t.lead, j, p)));
