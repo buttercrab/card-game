@@ -11,6 +11,7 @@ use mighty::{Action, FriendCall, Mighty, Options, PhaseView, State};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 /// Ways the hidden cards are dealt again to prove an answer, besides the
 /// real deal.
@@ -97,6 +98,46 @@ fn every_puzzle_replays_to_its_decision() {
         p.position().unwrap_or_else(|e| panic!("{e}"));
         assert!(!p.title.is_empty() && !p.why.is_empty(), "{}: say what it tests", p.id);
     }
+}
+
+/// A position in a few hex digits: every seat's view of it (the rules
+/// aside), the seat to act and its legal actions.
+fn digest(position: &puzzle::Position<Mighty>) -> String {
+    let views: Vec<serde_json::Value> = (0..Mighty::seat_count(&position.state))
+        .map(|seat| {
+            let mut view = serde_json::to_value(Mighty::view(&position.state, Viewer::Seat(seat))).unwrap();
+            view.as_object_mut().unwrap().remove("rules");
+            view
+        })
+        .collect();
+    let text = json!({ "views": views, "seat": position.seat, "legal": position.legal }).to_string();
+    let hash = Sha256::digest(text.as_bytes());
+    hash[..8].iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Suite v1's logs were recorded before puzzle files carried a log
+/// version, under 기본's old misdeal round; they replay, upgraded, to the
+/// positions they always did. Pinned from the replay before versions.
+#[test]
+fn v1_puzzles_reach_their_pinned_positions() {
+    let pinned = [
+        ("joker-before-last-trick-follow", "5918a3358af7a009"),
+        ("joker-before-last-trick-default", "f7ac0db26e88d12d"),
+        ("joker-before-last-trick-lead", "d724be36a2b5cb38"),
+        ("joker-before-last-trick-trick-nine", "ca9514126b6c7968"),
+        ("partner-trick-bank-the-queen", "ffdaba63cde9e082"),
+        ("joker-before-last-trick-not-always", "a1c374776e8368ab"),
+        ("early-joker-call-own-side-1", "ab9d835e2afe32d1"),
+        ("early-joker-call-own-side-2", "bb554bdf0d50c2de"),
+        ("early-joker-call-own-side-3", "9de9c918a15abcf0"),
+        ("joker-onto-partners-mighty", "64e383155af6ec8c"),
+    ];
+    let got: Vec<(String, String)> = puzzles()
+        .iter()
+        .map(|p| (p.id.clone(), digest(&p.position().unwrap_or_else(|e| panic!("{e}")))))
+        .collect();
+    let want: Vec<(String, String)> = pinned.iter().map(|(i, d)| (i.to_string(), d.to_string())).collect();
+    assert_eq!(got, want, "a v1 puzzle reaches another position");
 }
 
 #[test]
@@ -229,6 +270,7 @@ fn mine() {
                         let proof = proven(&state, deal);
                         found.push(json!({
                             "pattern": format!("{pattern:?}"),
+                            "log_version": <Mighty as eval::EvalGame>::LOG_VERSION,
                             "rules": preset.name(),
                             "deal": deal,
                             "seat": seat,

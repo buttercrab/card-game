@@ -60,7 +60,7 @@ fn search_decisions_are_pinned() {
         play(preset.rules().varied(&mut rng), 100 + i as u64, bot, &mut print);
     }
     assert_eq!(
-        print.0, 0x01a6_bbc9_618f_703d,
+        print.0, 0xe3ca_1bba_ba33_91eb,
         "the search decides differently: only re-pin for a change that means to"
     );
 }

@@ -50,20 +50,70 @@ enum Command {
         #[arg(long)]
         commit: Option<String>,
     },
+    /// Say what a bot spec is and whether a run with it reproduces (no
+    /// clock in its decisions), without loading any model it names. Exits
+    /// 1 if the spec does not parse.
+    CheckBot {
+        /// The bot, by `sim`'s names: `hard`, `search:400:1:0@threads=4`, ...
+        spec: String,
+        /// Print `{"spec", "kind", "reproducible", "reason"}`, or
+        /// `{"spec", "error"}`, as one line of JSON.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// `eval check-bot`.
+fn check_bot(spec: &str, json: bool) -> ExitCode {
+    let checked = sim::spec::check(spec);
+    if json {
+        let line = match &checked {
+            Ok(c) => serde_json::json!({
+                "spec": spec,
+                "kind": c.kind,
+                "reproducible": c.reproducible,
+                "reason": c.reason,
+            }),
+            Err(e) => serde_json::json!({ "spec": spec, "error": e }),
+        };
+        println!("{line}");
+    } else {
+        match &checked {
+            Ok(c) => println!(
+                "{spec}: {}, {}: {}",
+                c.kind,
+                if c.reproducible {
+                    "reproducible"
+                } else {
+                    "not reproducible"
+                },
+                c.reason
+            ),
+            Err(e) => eprintln!("eval: {e}"),
+        }
+    }
+    if checked.is_ok() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 fn main() -> ExitCode {
-    let Command::Run {
-        suite,
-        bot,
-        baseline,
-        out,
-        quick,
-        parts,
-        threads,
-        machine,
-        commit,
-    } = Args::parse().command;
+    let (suite, bot, baseline, out, quick, parts, threads, machine, commit) = match Args::parse().command {
+        Command::CheckBot { spec, json } => return check_bot(&spec, json),
+        Command::Run {
+            suite,
+            bot,
+            baseline,
+            out,
+            quick,
+            parts,
+            threads,
+            machine,
+            commit,
+        } => (suite, bot, baseline, out, quick, parts, threads, machine, commit),
+    };
     let result = (|| {
         let loaded = Loaded::load(&suite)?;
         let parts = if parts.is_empty() { Part::ALL.to_vec() } else { parts };

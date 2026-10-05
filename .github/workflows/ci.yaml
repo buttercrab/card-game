@@ -99,6 +99,9 @@ jobs:
       - run: uv run ruff check . ../crates/env-py/python
       - run: uv run ruff format --check . ../crates/env-py/python
       - run: uv run pyright
+      # For the one test that runs the real `eval check-bot` (the others
+      # stub it); it is skipped when no eval is built.
+      - run: cargo build -p eval
       - run: uv run pytest
 
   web:
