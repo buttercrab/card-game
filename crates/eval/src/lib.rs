@@ -22,15 +22,16 @@
 //! The runner is generic over [`EvalGame`]: a game's bots by name, how a
 //! deal is set up, and its rule sets. Mighty's is in [`mighty`].
 
-pub mod machine;
+pub mod fingerprint;
 pub mod mighty;
 pub mod play;
 pub mod puzzle;
 pub mod report;
 pub mod results;
 pub mod run;
-pub mod stats;
 pub mod suite;
+
+pub use harness::{provenance, stats};
 
 use engine::{Bot, JsonGame, Seat};
 

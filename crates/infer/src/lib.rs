@@ -15,15 +15,16 @@
 //! - `config.json`: how it was trained, with the encoding [`Spec`] under
 //!   `spec`, which says the shapes.
 //! - `parity.json`: observations and the outputs PyTorch gave for them,
-//!   which [`BeliefNet::check_parity`] and [`QNet::check_parity`] compare
-//!   against.
+//!   which [`check_parity`] compares against.
 //!
-//! [`BeliefNet`] implements [`engine::Belief`], so a search can deal
-//! hidden cards by its predictions; [`QBot`] plays by a [`QNet`].
+//! Both kinds share one core ([`Model`]: load, check observations against
+//! the spec, run) and one error, [`ModelError`]. [`BeliefNet`] implements
+//! [`engine::Belief`], so a search can deal hidden cards by its
+//! predictions; [`QBot`] plays by a [`QNet`].
 
 pub mod q;
 
-pub use q::{QBot, QNet, QParity};
+pub use q::{QBot, QNet};
 
 use engine::{Belief, BeliefError, Observation, Spec};
 use serde::Deserialize;
@@ -54,12 +55,62 @@ pub(crate) fn error(context: &str, e: impl fmt::Display) -> ModelError {
     ModelError(format!("{context}: {e}"))
 }
 
+/// What every model here is: a loaded ONNX graph and the encoding its
+/// inputs follow. Cheap to share between threads: runs take `&self`.
+#[derive(Debug, Clone)]
+pub struct Model {
+    plan: Arc<TypedRunnableModel>,
+    spec: Spec,
+}
+
+impl Model {
+    /// Loads an ONNX model whose inputs follow `spec`.
+    pub fn load(path: &Path, spec: Spec) -> Result<Model, ModelError> {
+        let plan = tract_onnx::onnx()
+            .model_for_path(path)
+            .and_then(|model| model.into_optimized())
+            .and_then(|model| model.into_runnable())
+            .map_err(|e| error(&path.display().to_string(), e))?;
+        Ok(Model { plan, spec })
+    }
+
+    /// The model in directory `dir` (see the crate docs), and its
+    /// `config.json` read as `C`, which must hold the spec.
+    pub fn open<C: serde::de::DeserializeOwned + HasSpec>(dir: &Path) -> Result<(Model, C), ModelError> {
+        let config: C = read_json(&dir.join("config.json"))?;
+        let model = Model::load(&dir.join("model.onnx"), config.spec().clone())?;
+        Ok((model, config))
+    }
+
+    /// The encoding the model reads.
+    pub fn spec(&self) -> &Spec {
+        &self.spec
+    }
+
+    /// Runs a batch of observations, checked against the spec, with
+    /// `extra` inputs after the observation's: the first output, flat.
+    /// Events are cut to the longest sequence in the batch.
+    pub fn run(&self, observations: &[&Observation], extra: Vec<Tensor>) -> Result<Vec<f32>, ModelError> {
+        let mut inputs = observation_inputs(&self.spec, observations)?;
+        inputs.extend(extra.into_iter().map(TValue::from));
+        let outputs = self.plan.run(inputs).map_err(|e| error("run", e))?;
+        let output = outputs[0]
+            .to_plain_array_view::<f32>()
+            .map_err(|e| error("output", e))?;
+        Ok(output.iter().copied().collect())
+    }
+}
+
+/// A model's `config.json`, as far as it says the encoding.
+pub trait HasSpec {
+    fn spec(&self) -> &Spec;
+}
+
 /// A belief model, ready to run. Cheap to share between threads: runs
 /// take `&self`.
 #[derive(Debug, Clone)]
 pub struct BeliefNet {
-    plan: Arc<TypedRunnableModel>,
-    spec: Spec,
+    model: Model,
 }
 
 #[derive(Deserialize)]
@@ -67,14 +118,29 @@ struct Config {
     spec: Spec,
 }
 
-/// Observations with the logits PyTorch gave for them.
+impl HasSpec for Config {
+    fn spec(&self) -> &Spec {
+        &self.spec
+    }
+}
+
+/// Observations with the outputs PyTorch gave for them: a belief model's
+/// logits, `[observations][cards × belief_classes]`, or a Q network's
+/// values in its own units, `[observations][legal actions, in index
+/// order]`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Parity {
-    /// How far apart the logits may be: float sums in another order.
+    /// How far apart the outputs may be: float sums in another order.
     pub tolerance: f32,
     pub observations: Vec<Observation>,
-    /// `[observations][cards × belief_classes]`.
-    pub logits: Vec<Vec<f32>>,
+    #[serde(alias = "logits", alias = "values")]
+    pub outputs: Vec<Vec<f32>>,
+}
+
+impl Parity {
+    pub fn load(path: &Path) -> Result<Parity, ModelError> {
+        read_json(path)
+    }
 }
 
 /// How far a model's outputs are from the ones recorded in Python.
@@ -85,91 +151,92 @@ pub struct Agreement {
     pub max_abs_diff: f32,
 }
 
+/// Runs `parity`'s observations through `run`, one at a time and all at
+/// once (padding must not change anything), and compares each output
+/// with the one recorded.
+pub fn check_parity(
+    parity: &Parity,
+    run: impl Fn(&[&Observation]) -> Result<Vec<Vec<f32>>, ModelError>,
+) -> Result<Agreement, ModelError> {
+    let observations: Vec<&Observation> = parity.observations.iter().collect();
+    let batched = run(&observations)?;
+    let mut max_abs_diff = 0f32;
+    for (i, obs) in observations.iter().enumerate() {
+        let single = run(&[obs])?;
+        let recorded = parity
+            .outputs
+            .get(i)
+            .ok_or_else(|| ModelError(format!("observation {i}: nothing recorded")))?;
+        for ours in [&single[0], &batched[i]] {
+            if ours.len() != recorded.len() {
+                return Err(ModelError(format!(
+                    "observation {i}: {} outputs, {} recorded",
+                    ours.len(),
+                    recorded.len()
+                )));
+            }
+            let diff = ours
+                .iter()
+                .zip(recorded)
+                .map(|(a, b)| (a - b).abs())
+                .fold(0.0, f32::max);
+            max_abs_diff = max_abs_diff.max(diff);
+        }
+    }
+    Ok(Agreement {
+        observations: observations.len(),
+        max_abs_diff,
+    })
+}
+
 impl BeliefNet {
     /// Loads the model in directory `dir` (see the crate docs).
-    pub fn open(dir: &Path) -> Result<BeliefNet, BeliefError> {
-        let config: Config = read_json(&dir.join("config.json"))?;
-        BeliefNet::load(&dir.join("model.onnx"), config.spec)
+    pub fn open(dir: &Path) -> Result<BeliefNet, ModelError> {
+        let (model, _) = Model::open::<Config>(dir)?;
+        Ok(BeliefNet { model })
     }
 
     /// Loads an ONNX model whose inputs follow `spec`.
-    pub fn load(path: &Path, spec: Spec) -> Result<BeliefNet, BeliefError> {
+    pub fn load(path: &Path, spec: Spec) -> Result<BeliefNet, ModelError> {
         Ok(BeliefNet {
-            plan: plan(path)?,
-            spec,
+            model: Model::load(path, spec)?,
         })
     }
 
     /// The encoding the model reads.
     pub fn spec(&self) -> &Spec {
-        &self.spec
+        self.model.spec()
     }
 
     /// Runs one batch: per observation, `[cards × belief_classes]` logits.
-    /// Events are cut to the longest sequence in the batch.
-    pub fn run(&self, observations: &[&Observation]) -> Result<Vec<Vec<f32>>, BeliefError> {
-        let spec = &self.spec;
+    pub fn run(&self, observations: &[&Observation]) -> Result<Vec<Vec<f32>>, ModelError> {
         let n = observations.len();
         if n == 0 {
             return Ok(Vec::new());
         }
-        let inputs = observation_inputs(spec, observations)?;
-        let outputs = self.plan.run(inputs).map_err(|e| error("run", e))?;
-        let logits = outputs[0]
-            .to_plain_array_view::<f32>()
-            .map_err(|e| error("output", e))?;
+        let logits = self.model.run(observations, Vec::new())?;
+        let spec = self.spec();
         let per = spec.cards.len() * spec.belief_classes.len();
         if logits.len() != n * per {
-            return Err(BeliefError(format!(
+            return Err(ModelError(format!(
                 "{} logits for {n} observations, expected {per} each",
                 logits.len()
             )));
         }
-        let flat: Vec<f32> = logits.iter().copied().collect();
-        Ok(flat.chunks(per).map(<[f32]>::to_vec).collect())
+        Ok(logits.chunks(per).map(<[f32]>::to_vec).collect())
     }
 
     /// Runs the observations in `parity` and compares with the logits
     /// recorded for them.
-    pub fn check_parity(&self, parity: &Parity) -> Result<Agreement, BeliefError> {
-        let observations: Vec<&Observation> = parity.observations.iter().collect();
-        let mut max_abs_diff = 0f32;
-        // One at a time and all at once: padding must not change anything.
-        let batched = self.run(&observations)?;
-        for (i, obs) in observations.iter().enumerate() {
-            let single = self.run(&[obs])?;
-            for ours in [&single[0], &batched[i]] {
-                max_abs_diff = max_abs_diff.max(
-                    largest_difference(ours, &parity.logits[i])
-                        .map_err(|e| BeliefError(format!("observation {i}: {e}")))?,
-                );
-            }
-        }
-        Ok(Agreement {
-            observations: observations.len(),
-            max_abs_diff,
-        })
-    }
-}
-
-impl Parity {
-    pub fn load(path: &Path) -> Result<Parity, BeliefError> {
-        Ok(read_json(path)?)
+    pub fn check_parity(&self, parity: &Parity) -> Result<Agreement, ModelError> {
+        check_parity(parity, |observations| self.run(observations))
     }
 }
 
 impl Belief for BeliefNet {
     fn logits(&self, observations: &[&Observation]) -> Result<Vec<Vec<f32>>, BeliefError> {
-        self.run(observations)
+        Ok(self.run(observations)?)
     }
-}
-
-/// The largest absolute difference between two equally long lists.
-pub(crate) fn largest_difference(ours: &[f32], theirs: &[f32]) -> Result<f32, String> {
-    if ours.len() != theirs.len() {
-        return Err(format!("{} outputs, {} recorded", ours.len(), theirs.len()));
-    }
-    Ok(ours.iter().zip(theirs).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max))
 }
 
 pub(crate) fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, ModelError> {
@@ -178,19 +245,10 @@ pub(crate) fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T
     serde_json::from_str(&text).map_err(|e| error(&at, e))
 }
 
-/// Loads and optimises an ONNX model.
-pub(crate) fn plan(path: &Path) -> Result<Arc<TypedRunnableModel>, ModelError> {
-    tract_onnx::onnx()
-        .model_for_path(path)
-        .and_then(|model| model.into_optimized())
-        .and_then(|model| model.into_runnable())
-        .map_err(|e| error(&path.display().to_string(), e))
-}
-
 /// The inputs every model here reads, for a batch of observations checked
 /// against `spec`: `global`, `cards`, `events`, `event_cards` and
 /// `events_len`, events cut to the longest sequence among them.
-pub(crate) fn observation_inputs(spec: &Spec, observations: &[&Observation]) -> Result<TVec<TValue>, ModelError> {
+fn observation_inputs(spec: &Spec, observations: &[&Observation]) -> Result<TVec<TValue>, ModelError> {
     let n = observations.len();
     for obs in observations {
         spec.check(obs).map_err(|e| error("observation", e))?;

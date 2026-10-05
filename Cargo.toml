@@ -10,6 +10,7 @@ license = "MIT"
 
 [workspace.dependencies]
 engine = { path = "crates/engine" }
+harness = { path = "crates/harness" }
 mighty = { path = "crates/mighty" }
 mighty-ai = { path = "crates/mighty-ai" }
 env = { path = "crates/env" }

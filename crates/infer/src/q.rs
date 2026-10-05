@@ -7,7 +7,7 @@
 //! `config.json` says how many of those a point is (`reward_scale`), and
 //! [`QNet::values`] returns points.
 
-use crate::{Agreement, ModelError, error, largest_difference, observation_inputs, plan, read_json};
+use crate::{Agreement, HasSpec, Model, ModelError, Parity, check_parity, error};
 use engine::{ActionValues, BeliefError, Bot, Encode, Observation, Spec};
 use rand::{Rng, RngCore};
 use serde::Deserialize;
@@ -19,8 +19,7 @@ use tract_onnx::prelude::*;
 /// `&self`.
 #[derive(Debug, Clone)]
 pub struct QNet {
-    plan: Arc<TypedRunnableModel>,
-    spec: Spec,
+    model: Model,
     reward_scale: f32,
 }
 
@@ -30,26 +29,16 @@ struct Config {
     reward_scale: f32,
 }
 
-/// Observations with the values PyTorch gave their legal actions.
-#[derive(Debug, Clone, Deserialize)]
-pub struct QParity {
-    pub tolerance: f32,
-    pub observations: Vec<Observation>,
-    /// `[observations][legal actions, in index order]`, in the network's
-    /// units (not points).
-    pub values: Vec<Vec<f32>>,
-}
-
-impl QParity {
-    pub fn load(path: &Path) -> Result<QParity, ModelError> {
-        read_json(path)
+impl HasSpec for Config {
+    fn spec(&self) -> &Spec {
+        &self.spec
     }
 }
 
 impl QNet {
     /// Loads the network in directory `dir` (see the crate docs).
     pub fn open(dir: &Path) -> Result<QNet, ModelError> {
-        let config: Config = read_json(&dir.join("config.json"))?;
+        let (model, config) = Model::open::<Config>(dir)?;
         if config.reward_scale.is_nan() || config.reward_scale <= 0.0 {
             return Err(ModelError(format!(
                 "reward_scale {} is not positive",
@@ -57,15 +46,14 @@ impl QNet {
             )));
         }
         Ok(QNet {
-            plan: plan(&dir.join("model.onnx"))?,
-            spec: config.spec,
+            model,
             reward_scale: config.reward_scale,
         })
     }
 
     /// The encoding the network reads.
     pub fn spec(&self) -> &Spec {
-        &self.spec
+        self.model.spec()
     }
 
     /// Runs one batch in the network's own units: per observation, the
@@ -90,13 +78,8 @@ impl QNet {
             let row = &legal[i];
             actions.extend((0..k).map(|j| *row.get(j).unwrap_or(&row[0]) as i64));
         }
-        let mut inputs = observation_inputs(&self.spec, &batch)?;
         let actions = Tensor::from_shape(&[batch.len(), k], &actions).map_err(|e| error("actions", e))?;
-        inputs.push(actions.into());
-        let outputs = self.plan.run(inputs).map_err(|e| error("run", e))?;
-        let values = outputs[0]
-            .to_plain_array_view::<f32>()
-            .map_err(|e| error("output", e))?;
+        let values = self.model.run(&batch, vec![actions])?;
         if values.len() != batch.len() * k {
             return Err(ModelError(format!(
                 "{} values for {} observations of {k} actions",
@@ -104,8 +87,7 @@ impl QNet {
                 batch.len()
             )));
         }
-        let flat: Vec<f32> = values.iter().copied().collect();
-        for (row, &i) in flat.chunks(k).zip(&asked) {
+        for (row, &i) in values.chunks(k).zip(&asked) {
             out[i] = legal[i].iter().zip(row).map(|(&a, &v)| (a, v)).collect();
         }
         Ok(out)
@@ -122,34 +104,26 @@ impl QNet {
     }
 
     /// Runs the observations in `parity`, one at a time and all at once,
-    /// and compares with the values recorded for them.
-    pub fn check_parity(&self, parity: &QParity) -> Result<Agreement, ModelError> {
-        let observations: Vec<&Observation> = parity.observations.iter().collect();
-        let batched = self.raw_values(&observations)?;
-        let mut max_abs_diff = 0f32;
-        for (i, obs) in observations.iter().enumerate() {
-            let single = self.raw_values(&[obs])?;
-            for ours in [&single[0], &batched[i]] {
-                let ours: Vec<f32> = ours.iter().map(|&(_, v)| v).collect();
-                let diff = largest_difference(&ours, &parity.values[i])
-                    .map_err(|e| ModelError(format!("observation {i}: {e}")))?;
-                max_abs_diff = max_abs_diff.max(diff);
-            }
-        }
-        Ok(Agreement {
-            observations: observations.len(),
-            max_abs_diff,
+    /// and compares with the values (in the network's units) recorded for
+    /// them.
+    pub fn check_parity(&self, parity: &Parity) -> Result<Agreement, ModelError> {
+        check_parity(parity, |observations| {
+            let values = self.raw_values(observations)?;
+            Ok(values
+                .into_iter()
+                .map(|row| row.into_iter().map(|(_, v)| v).collect())
+                .collect())
         })
     }
 }
 
 impl ActionValues for QNet {
     fn action_values(&self, observations: &[&Observation]) -> Result<Vec<Vec<(usize, f32)>>, BeliefError> {
-        self.values(observations).map_err(|e| BeliefError(e.to_string()))
+        Ok(self.values(observations)?)
     }
 
     fn spec(&self) -> &Spec {
-        &self.spec
+        self.model.spec()
     }
 }
 

@@ -4,7 +4,7 @@
 //! Python suite checks the same values against PyTorch.
 
 use engine::{Bot, Encode, Game, Turn, Viewer};
-use infer::{QBot, QNet, QParity};
+use infer::{Parity, QBot, QNet};
 use mighty::rules::Preset;
 use mighty::{Action, Mighty, Options};
 use rand::SeedableRng;
@@ -19,7 +19,7 @@ fn fixture() -> PathBuf {
 #[test]
 fn values_match_pytorch() {
     let net = QNet::open(&fixture()).unwrap();
-    let parity = QParity::load(&fixture().join("parity.json")).unwrap();
+    let parity = Parity::load(&fixture().join("parity.json")).unwrap();
     let agreement = net.check_parity(&parity).unwrap();
     assert_eq!(agreement.observations, 6);
     assert!(
@@ -32,7 +32,7 @@ fn values_match_pytorch() {
 #[test]
 fn values_are_in_points_for_the_legal_actions_only() {
     let net = QNet::open(&fixture()).unwrap();
-    let parity = QParity::load(&fixture().join("parity.json")).unwrap();
+    let parity = Parity::load(&fixture().join("parity.json")).unwrap();
     let obs = &parity.observations[1];
     let raw = net.raw_values(&[obs]).unwrap();
     let points = net.values(&[obs]).unwrap();

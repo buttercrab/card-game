@@ -24,6 +24,15 @@ for people) into `--out` (default `target/eval/<suite>`). `--parts
 ladder,cost` runs only some parts; `--threads N` limits the workers (all
 cores by default); `--machine <label>` notes which machine it was.
 
+`eval compare <a>/results.json <b>/results.json` puts two runs side by
+side, part by part. Every run records a **fingerprint** of each field bot
+it met (its choices on 16 fixed probe positions, hashed): a field both
+runs name but whose fingerprint differs (the bot changed between the
+commits, a model directory now holds another network) is not the same
+opponent, so `compare` flags it and exits 1, and the experiment loop marks
+an unpaired comparison across it. A field on a clock can differ from
+itself.
+
 Bots are named as for `sim` (`sim --help`): `random`, `simple`,
 `search:SAMPLES:CONFIDENCE:BUDGET_MS` with `@name=value` settings, and the
 table's levels `easy` (초보), `normal` (보통) and `hard` (고수). The levels
@@ -172,6 +181,7 @@ Schema `eval-results/1`. A change a reader would notice bumps the number.
 | `matches` | Tables |
 | `cost` | `rules`, `field`, `seed`, `deals`, `bot` and `baseline` think times, `seconds` |
 | `puzzles` | `passed` of `scored`, `baseline_passed`, and per puzzle `id`, `title`, `scored`, `bot` and `baseline` answers |
+| `fingerprints` | Every field bot by name: 16 hex digits of its choices on the probe positions (absent in results from before 2026-10-06) |
 
 A **table** is `name`, `rules`, `field`, `seed` (its first), `deals`,
 `bot`, `baseline` and `diff` (estimates; the last two `null` without a

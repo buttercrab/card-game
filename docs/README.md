@@ -146,9 +146,9 @@ with the baseline that knows only how many hidden cards each place holds,
 by phase of the hand; `export` adds `model.onnx` and `parity.json`, and
 `infer check` runs them from Rust, compares the logits with PyTorch's and
 times a call. The search then deals by the model as the bot
-`belief:<model dir>:<samples>` in `eval` and in `sim` (built with
-`--features belief`); `SearchBot::sampler` is the setting, off (uniform)
-by default and at the table.
+`belief:<model dir>:<samples>` in `eval`, `sim` and `lab`;
+`SearchBot::sampler` is the setting, off (uniform) by default and at the
+table.
 
 The model's architecture is pinned by a tiny fixture both test suites
 check (`crates/infer/tests/tiny`); rewrite it with
@@ -202,8 +202,8 @@ then `model.pt` and the manifest. `report` turns the log into the
 curve's table. `export` writes `model.onnx` and `parity.json`
 (`--weights snapshots/<file> --out <dir>` exports a snapshot instead).
 
-The exported directory is a bot for `eval` and `sim` (built with
-`--features dmc`): `dmc:<model dir>` plays the legal action of highest
+The exported directory is a bot for `eval`, `sim` and `lab`:
+`dmc:<model dir>` plays the legal action of highest
 value, `dmc:<model dir>:<temperature>` draws by `exp(value /
 temperature)`, the temperature in points (weaker levels). For example:
 

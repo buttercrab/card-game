@@ -246,7 +246,7 @@ fn pattern(state: &State, me: Seat, legal: &[Action]) -> Option<Pattern> {
 #[ignore = "a tool: prints puzzle drafts"]
 fn mine() {
     let bot: sim::spec::Spec = "hard".parse().expect("a bot");
-    let drafts: Vec<Vec<serde_json::Value>> = sim::parallel(400, None, |deal| {
+    let drafts: Vec<Vec<serde_json::Value>> = harness::parallel(400, None, |deal| {
         let preset = [Preset::Gshs, Preset::Default][deal as usize % 2];
         let options = Options {
             first_bidder: deal as usize % 5,

@@ -50,6 +50,16 @@ enum Command {
         #[arg(long)]
         commit: Option<String>,
     },
+    /// Compare two runs' results part by part (the second minus the
+    /// first), flagging a field bot both name but that is not the same
+    /// bot (its fingerprint differs): numbers against it do not compare.
+    /// Exits 1 if a field differs.
+    Compare {
+        /// The earlier run's results.json.
+        a: PathBuf,
+        /// The later run's results.json.
+        b: PathBuf,
+    },
     /// Say what a bot spec is and whether a run with it reproduces (no
     /// clock in its decisions), without loading any model it names. Exits
     /// 1 if the spec does not parse.
@@ -61,6 +71,27 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+}
+
+/// `eval compare`.
+fn compare(a: &PathBuf, b: &PathBuf) -> ExitCode {
+    let read = |path: &PathBuf| -> Result<eval::results::Results, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    let (a, b) = match (read(a), read(b)) {
+        (Ok(a), Ok(b)) => (a, b),
+        (Err(e), _) | (_, Err(e)) => {
+            eprintln!("eval: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    print!("{}", report::comparison(&a, &b));
+    if a.differing_fields(&b).is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// `eval check-bot`.
@@ -102,6 +133,7 @@ fn check_bot(spec: &str, json: bool) -> ExitCode {
 fn main() -> ExitCode {
     let (suite, bot, baseline, out, quick, parts, threads, machine, commit) = match Args::parse().command {
         Command::CheckBot { spec, json } => return check_bot(&spec, json),
+        Command::Compare { a, b } => return compare(&a, &b),
         Command::Run {
             suite,
             bot,

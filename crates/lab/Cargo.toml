@@ -1,6 +1,6 @@
 [package]
-name = "eval"
-description = "Eval suites and their runner: ladder, presets, held-out rules, think time and puzzles"
+name = "lab"
+description = "Experiments on where Mighty's bots lose points, by replaying recorded hands with one change"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,8 +16,8 @@ rand.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 sim.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

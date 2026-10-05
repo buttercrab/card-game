@@ -24,25 +24,6 @@ pub struct Phased {
 }
 
 impl Phased {
-    /// `BID+EXCHANGE+PLAY` (after the `phased:` prefix).
-    pub fn parse(rest: &str) -> Result<Phased, String> {
-        let parts: Vec<&str> = rest.split('+').collect();
-        let [bid, exchange, play] = parts[..] else {
-            return Err(format!("phased:{rest}: expected phased:BID+EXCHANGE+PLAY"));
-        };
-        let parse = |s: &str| -> Result<Spec, String> {
-            if s.starts_with("phased:") {
-                return Err(format!("phased:{rest}: phases do not nest"));
-            }
-            s.parse()
-        };
-        Ok(Phased {
-            bid: parse(bid)?,
-            exchange: parse(exchange)?,
-            play: parse(play)?,
-        })
-    }
-
     /// The bot for `seat`.
     pub fn build(&self, seat: Seat) -> PhasedBot {
         PhasedBot {
