@@ -90,7 +90,7 @@
         {#each trick.plays as p, i (p.seat)}
           <li class:won={p.seat === trick.winner}>
             <span class="slot">
-              <Card card={p.card} size="mini" seal={seal(p.card)} {twoJokers} powerless={!p.powered} won={p.seat === trick.winner} />
+              <Card card={p.card} size="mini" seal={seal(p.card)} {twoJokers} powerless={!p.powered} />
               {#if i === 0 && 'Joker' in p.card}<LeadTag lead={trick.lead} compact />{/if}
             </span>
             <span class="who">
@@ -200,11 +200,10 @@
     gap: 6px;
     font-weight: 700;
   }
+  /* A long name wraps rather than running off the sheet. */
   .name {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .took {
     flex: none;

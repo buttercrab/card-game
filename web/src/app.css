@@ -31,6 +31,8 @@
   --danger: light-dark(#b3261e, #ef6b62);
   /* The hand's one huge moment (런, a big win), and earned awards. */
   --gold: light-dark(#a77a12, #d9b04f);
+  /* Gold words on the paper (런 찬스), dark enough to read at 4.5:1. */
+  --gold-text: light-dark(#7d5a09, #d9b04f);
 
   /* Suits, on card faces. Cards stay light in dark mode, so these and
      everything else drawn on card paper keep their light-theme values. */

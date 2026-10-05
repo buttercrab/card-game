@@ -393,22 +393,23 @@
   /** 런, counted out: the table settles once under the gold word. */
   let nudge = $state(false);
 
-  /** Where the result sits on wider screens, from the felt's top: under
-   * the side seats when it fits there; else under the top seats and as
-   * wide as the ring, so it covers the side seats whole instead of
-   * slicing them. */
+  /** Where the result sits, from the felt's top: on wider screens under
+   * the side seats when it fits there; else (and always on phones) under
+   * the top seats, covering the side seats whole instead of slicing them,
+   * and on wider screens as wide as the ring. */
   let resultNeed = $state(0);
   let resultFit = $state<{ top: number; width: number | null } | null>(null);
   $effect(() => {
     if (!done || folded || !felt || !section) return;
     void resultNeed;
     const measure = () => {
-      if (!felt || !section || innerWidth < 600) return (resultFit = null);
+      if (!felt || !section) return;
       const f = felt.getBoundingClientRect();
       const side = seatEls.rect(ring.seatAt(1)) ?? seatEls.rect(ring.seatAt(n - 1));
       const top = seatEls.rect(ring.seatAt(2)) ?? seatEls.rect(ring.seatAt(3));
       const ringBox = ringEl?.getBoundingClientRect();
-      if (!side || !top || !ringBox) return;
+      if (!side || !top || !ringBox) return (resultFit = null);
+      if (innerWidth < 600) return (resultFit = { top: Math.max(0, top.bottom - f.top + 8), width: null });
       const floor = section.getBoundingClientRect().bottom;
       const under = side.bottom - f.top + 8;
       resultFit =
@@ -645,6 +646,7 @@
   class:tips={settings.tips}
   class:swapping={swapFrom !== null}
   class:result-open={done !== null && !folded}
+  class:controls-out={controls}
   style:--over="{controls ? controlsHeight : 0}px"
   style:--tools-w="{toolsWidth}px"
 >
@@ -679,6 +681,7 @@
       attachSpot={(s) => spots.at(s)}
       attachCard={(s) => trickCards.at(s)}
       {between}
+      controlsOut={controls}
       {swapFrom}
       {seatTap}
       {seatActs}
@@ -966,6 +969,22 @@
   }
   .tools-area.crowded {
     display: none;
+  }
+  /* Phones, while bids or the exchange are out: the felt's foot is theirs,
+     so your tools sit at the end of the top line, which keeps room. */
+  @media (max-width: 599px) {
+    .controls-out .tools-area,
+    .controls-out .tools-area.crowded {
+      display: block;
+      grid-area: status;
+      align-self: center;
+      justify-self: end;
+      z-index: calc(var(--z-status) + 1);
+      margin: 0;
+    }
+    .controls-out .status-area {
+      padding-inline-end: calc(var(--tools-w) + 4px);
+    }
   }
   /* While the result shows: at the start of its footer, which keeps room. */
   .result-open .tools-area {

@@ -28,6 +28,8 @@ export const THEME = {
   'team-defense': { light: '#3b4a6b', dark: '#8fa3c9' },
   'on-team-defense': { light: '#ffffff', dark: '#17191c' },
   gold: { light: '#a77a12', dark: '#d9b04f' },
+  /** Gold words on the table's paper (런 찬스): darker, to read at 4.5:1. */
+  'gold-text': { light: '#7d5a09', dark: '#d9b04f' },
   danger: { light: '#b3261e', dark: '#ef6b62' },
 } as const satisfies Record<string, Pair>;
 

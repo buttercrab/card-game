@@ -115,14 +115,27 @@
   /** Room enough for the index alone (its column is about 31% of the card):
    * a 13- or 14-card hand still fits one row at this step. */
   const minStep = $derived(Math.max(20, Math.ceil(cardWidth * 0.31)));
+  /** The least a phone's hand card is drawn (docs/DESIGN.md). */
+  const MIN_CARD = 56;
 
-  function stepFor(count: number): number {
-    if (count <= 1 || width === 0) return cardWidth + 6;
-    return Math.min(cardWidth + 6, (width - cardWidth) / (count - 1));
+  function stepFor(count: number, cw: number): number {
+    if (count <= 1 || width === 0) return cw + 6;
+    return Math.min(cw + 6, (width - cw) / (count - 1));
   }
 
+  /** The width the cards are drawn at: a big hand (the exchange's fourteen
+   * on a narrow phone) is drawn a little smaller, down to MIN_CARD, rather
+   * than in two rows, whose first would rise over the tray's rim and under
+   * the exchange's controls. The tray keeps its height either way. */
+  const drawWidth = $derived.by(() => {
+    if (wide || short || stepFor(cards.length, cardWidth) >= minStep) return cardWidth;
+    const fit = Math.floor(width / (1 + (cards.length - 1) * 0.31));
+    return fit >= MIN_CARD && fit < cardWidth && stepFor(cards.length, fit) >= fit * 0.31 ? fit : cardWidth;
+  });
+
   const rows = $derived.by(() => {
-    if (stepFor(cards.length) >= minStep) return [cards];
+    const need = drawWidth === cardWidth ? minStep : drawWidth * 0.31;
+    if (stepFor(cards.length, drawWidth) >= need) return [cards];
     const half = Math.ceil(cards.length / 2);
     return [cards.slice(0, half), cards.slice(half)];
   });
@@ -175,13 +188,13 @@
   onclick={(e) => e.target === e.currentTarget && (raised = null)}
 >
   {#each rows as row, r (r)}
-    {@const step = stepFor(row.length)}
-    <div class="row" style:--overlap="{step - cardWidth}px">
+    {@const step = stepFor(row.length, drawWidth)}
+    <div class="row" style:--overlap="{step - drawWidth}px">
       {#each row as card, i (JSON.stringify(card))}
         <div class="spot" class:fresh={kitty.some((k) => sameCard(k, card))} style:--i={i} style:--rot="{((i * 37) % 7) - 3}deg" animate:flip={{ duration: motion.level === 'full' ? 240 : 0, easing: cubicOut }}>
         <Card
           {card}
-          width={cardWidth}
+          width={drawWidth}
           id={cardKey(card)}
           attach={register(cardKey(card))}
           seal={seal(card)}
@@ -189,7 +202,7 @@
           kitty={kitty.some((k) => sameCard(k, card))}
           raised={isRaised(card)}
           picked={isPicked(card)}
-          overlapped={step < cardWidth && i < row.length - 1}
+          overlapped={step < drawWidth && i < row.length - 1}
           hinted={hinted !== null && sameCard(hinted, card)}
           unplayable={mode !== 'view' && !playable(card)}
           onclick={mode === 'view' ? undefined : () => tap(card)}

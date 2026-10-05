@@ -51,6 +51,7 @@
     attachSpot,
     attachCard,
     between,
+    controlsOut = false,
     swapFrom,
     seatTap,
     seatActs,
@@ -81,6 +82,8 @@
     attachCard: (seat: number) => Attachment<HTMLElement>;
     /** Between hands: each seat is a button, and the middle holds `children`. */
     between: boolean;
+    /** Bids or the exchange rise over the felt's foot. */
+    controlsOut?: boolean;
     swapFrom: number | null;
     /** A seat's button between hands. */
     seatTap: Snippet<[number]>;
@@ -100,7 +103,7 @@
 <div class="felt" bind:this={felt}>
   <!-- The seats and the trick sit in a ring no wider than the felt is tall,
        so on a wide screen the seats stay near their cards. -->
-  <div class="ring" class:watching bind:this={ringEl}>
+  <div class="ring" class:watching class:lift-sides={controlsOut} bind:this={ringEl}>
     {#each around as r (r)}
       {@const s = ring.seatAt(r)}
       {@const d = ring.direction(r)}
@@ -237,6 +240,15 @@
     left: 0;
     top: var(--cy);
     transform: translateY(-50%);
+  }
+  /* A short felt (an iPhone SE), while bids or the exchange rise over its
+     foot: the side seats step up, just under the top ones, so the
+     controls leave their names clear. */
+  @container (max-height: 260px) {
+    .lift-sides .spot.right,
+    .lift-sides .spot.left {
+      top: max(calc(var(--seat-h) + 4px + var(--seat-h) / 2), calc(var(--cy) - 30px));
+    }
   }
   .seat-box {
     position: relative;

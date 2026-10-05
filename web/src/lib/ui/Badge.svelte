@@ -123,6 +123,6 @@
   }
   .tag.gold {
     border-color: var(--gold);
-    color: var(--gold);
+    color: var(--gold-text);
   }
 </style>

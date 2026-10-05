@@ -97,6 +97,13 @@
   .mine {
     outline-color: var(--accent);
   }
+  /* The narrowest phones: the hand takes all but the ring's width, so the
+     exchange's fourteen cards still fit one row (Hand.svelte). */
+  @media (max-width: 360px) {
+    .tray {
+      padding-inline: 3px;
+    }
+  }
   .me-row {
     display: flex;
     justify-content: center;
