@@ -34,6 +34,10 @@ until a time budget runs out: that keeps every run reproducible.
 cards it cannot see by the belief model in `MODEL_DIR` (an exported run,
 `ml/`'s `cardgame_ml.export`) instead of uniformly, without reading the
 table on top (the model has; `@read.on=true` reads again).
+`dmc:MODEL_DIR[:TEMPERATURE]` plays by a Q network trained by self-play
+(`ml/`'s `cardgame_ml.train.dmc`, exported): the legal action it values
+most, or with a temperature in points one drawn by `exp(value /
+temperature)`; no search.
 
 ## Suites
 
