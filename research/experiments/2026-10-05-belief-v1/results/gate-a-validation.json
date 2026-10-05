@@ -1,0 +1,86 @@
+{
+  "run": "belief-v1",
+  "dataset": "selfplay-v1",
+  "eval_only": false,
+  "decisions": "validation games",
+  "count": 61004,
+  "parameters": 603273,
+  "torch": "2.14.1",
+  "scores": {
+    "all": {
+      "model": {
+        "cards": 1573771,
+        "log_loss": 1.461097436519045,
+        "accuracy": 0.3341337462693111
+      },
+      "baseline": {
+        "cards": 1573771,
+        "log_loss": 1.5947035111101873,
+        "accuracy": 0.2429807132041447
+      },
+      "gain": {
+        "nats": 0.13360607459114227
+      }
+    },
+    "bidding": {
+      "model": {
+        "cards": 466901,
+        "log_loss": 1.6655627216307705,
+        "accuracy": 0.24129526387820974
+      },
+      "baseline": {
+        "cards": 466901,
+        "log_loss": 1.6798424500279787,
+        "accuracy": 0.21080700191261104
+      },
+      "gain": {
+        "nats": 0.014279728397208258
+      }
+    },
+    "exchange": {
+      "model": {
+        "cards": 177296,
+        "log_loss": 1.4211624325897498,
+        "accuracy": 0.2986361790452125
+      },
+      "baseline": {
+        "cards": 177296,
+        "log_loss": 1.4414565127624328,
+        "accuracy": 0.2524986463315585
+      },
+      "gain": {
+        "nats": 0.02029408017268297
+      }
+    },
+    "early tricks": {
+      "model": {
+        "cards": 679829,
+        "log_loss": 1.4496598908184,
+        "accuracy": 0.3457487103374525
+      },
+      "baseline": {
+        "cards": 679829,
+        "log_loss": 1.612454564619157,
+        "accuracy": 0.23189213758165655
+      },
+      "gain": {
+        "nats": 0.16279467380075707
+      }
+    },
+    "late tricks": {
+      "model": {
+        "cards": 249745,
+        "log_loss": 1.138331597878922,
+        "accuracy": 0.5012793048909888
+      },
+      "baseline": {
+        "cards": 249745,
+        "log_loss": 1.4960066128477931,
+        "accuracy": 0.3265570882299946
+      },
+      "gain": {
+        "nats": 0.3576750149688712
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+# Belief v1: the first belief model (P3). Where each hidden card is, from
+# what one seat has seen, over every rule set of self-play v1.
+#
+#   cd ml && uv sync --extra torch
+#   nice -n 10 uv run python -m cardgame_ml.train \
+#       --config ../research/experiments/2026-10-05-belief-v1/config.toml
+#
+# Weights go to models/belief-v1/ in the artifact store, the manifest to
+# research/manifests/belief-v1.json.
+
+name = "belief-v1"
+dataset = "selfplay/selfplay-v1"
+seed = 20261005
+# About 2 200 steps an epoch.
+eval_every = 2000
+device = "auto"
+
+# 5% of the games (about 1 000) are held back for validation.
+[split]
+val_fraction = 0.05
+seed = 1
+
+# About 0.6M parameters: 1.6 ms an observation in Rust on one core.
+[model]
+width = 128
+heads = 4
+layers = 4
+feedforward = 256
+dropout = 0.0
+
+[optim]
+batch_size = 512
+epochs = 12
+lr = 0.001
+weight_decay = 0.01
+warmup_steps = 500
+min_lr_ratio = 0.05
+grad_clip = 1.0

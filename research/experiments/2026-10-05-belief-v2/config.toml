@@ -1,0 +1,36 @@
+# Belief v2: belief v1's model and steps on three times the data
+# (self-play v2, 60 000 fresh games), to see whether data is what v1
+# lacks (v1 large, four times the parameters on v1's data, overfit).
+#
+#   cd ml && nice -n 10 uv run python -m cardgame_ml.train \
+#       --config ../research/experiments/2026-10-05-belief-v2/config.toml
+#
+# Compare with v1 on v1's validation games and the held-out rule sets
+# (python -m cardgame_ml.train.score): v2 never saw either.
+
+name = "belief-v2"
+dataset = "selfplay/selfplay-v2"
+seed = 20261005
+eval_every = 4000
+device = "auto"
+
+[split]
+val_fraction = 0.02
+seed = 1
+
+[model]
+width = 128
+heads = 4
+layers = 4
+feedforward = 256
+dropout = 0.0
+
+# About as many steps as v1's twelve epochs.
+[optim]
+batch_size = 512
+epochs = 4
+lr = 0.001
+weight_decay = 0.01
+warmup_steps = 500
+min_lr_ratio = 0.05
+grad_clip = 1.0

@@ -6,7 +6,7 @@
 //! side filled (no copy), one per field, and runs without the GIL.
 
 use env::selfplay::Config as SelfplayConfig;
-use env::{Batch, BotPool, Config, Env, EnvGame, Error, RuleSampler, RuleSource, Setup, load_excluded};
+use env::{Batch, BotPool, Config, Env, EnvGame, Error, RuleSampler, RuleSource, Setup, load_rule_sets};
 use mighty::Mighty;
 use numpy::{IntoPyArray, PyArrayMethods, PyReadonlyArray1};
 use pyo3::exceptions::{PyOSError, PyValueError};
@@ -80,7 +80,7 @@ struct Options {
 
 fn build<G: EnvGame>(o: Options) -> Result<Box<dyn AnyEnv>, Error> {
     let excluded = match &o.exclude {
-        Some(path) => load_excluded(path)?,
+        Some(path) => load_rule_sets(path)?,
         None => Vec::new(),
     };
     let mut controlled = vec![o.controlled.is_none(); G::MAX_SEATS];

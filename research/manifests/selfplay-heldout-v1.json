@@ -1,0 +1,28 @@
+{
+  "artifacts": [
+    {
+      "bytes": 63221324,
+      "path": "selfplay/selfplay-heldout-v1/shard-00000.npz",
+      "sha256": "53cd99cf6d8dc267cf950675f16936031fba78b6aaf3c6bf9da180a9da0606e8"
+    },
+    {
+      "bytes": 23565,
+      "path": "selfplay/selfplay-heldout-v1/meta.json",
+      "sha256": "3a2e731e7c57dacfbaef8a0723a5fa5ea8beec34ffe08c49587a6549e07eae92"
+    },
+    {
+      "bytes": 4067,
+      "path": "selfplay/selfplay-heldout-v1/rules.jsonl.gz",
+      "sha256": "3b4f4f2002ac82c27d14975abdfa99dadba68ebc8924a9dc5757468bbb138595"
+    }
+  ],
+  "commit": "4224aa5e01653ac055071abab6da3c6a4cfb0778",
+  "config": "research/experiments/2026-10-05-selfplay-heldout-v1/config.toml",
+  "created": "2026-10-04",
+  "encoding": "mighty-1",
+  "kind": "eval",
+  "name": "selfplay-heldout-v1",
+  "seeds": [
+    20261007
+  ]
+}

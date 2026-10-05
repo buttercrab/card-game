@@ -229,6 +229,24 @@ B — beats live 고수 at equal think time on 경기과고 and 기본 (aim +0.3
 seat-hand) with no loss on held-out rules; C — p99 think time within budget.
 Passing B and C, with the owner's go-ahead, ships it.
 
+Result (2026-10-05), stopped by the owner to move to self-play RL
+([belief v1](../research/experiments/2026-10-05-belief-v1)):
+- `cardgame_ml.models.belief` (0.6M parameters, logits relative to the
+  public counts), its training library and CLIs, ONNX export with a
+  parity fixture checked from both sides, `crates/infer` (tract, 1.4 ms
+  a call) and `SearchBot::sampler` (off by default; decisions with it
+  off pinned and checked identical), bot spec `belief:<model>:<samples>`.
+- Gate A passed: 1.461 against 1.595 nats per hidden card on validation
+  games, 1.517 against 1.645 on the held-out rules; better than the
+  search's own reading (1.33 against 1.40 on 경기과고).
+- Gate B not passed: at equal think time (1200 samples) presets +0.02 ±
+  0.29 a seat-hand against `hard`, 경기과고 −0.40 ± 0.95, 기본 +0.14 ±
+  0.81, held-out +0.87 ± 0.93; at 200 samples presets +0.15 ± 0.30.
+- Gate C: at 200 samples median 19 ms and p99 139 ms against `hard`'s
+  104 and 212 ms (Mac; not re-checked on the home server). Not shipped.
+- Not run: belief v2 on more data (self-play v2 cut short), larger
+  head-to-heads.
+
 ### P3b — Self-play RL (owner, 2026-10-05: RL right after P3)
 
 The closest published match to Mighty is DouZero (DouDizhu, 2021): pure

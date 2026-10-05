@@ -12,6 +12,7 @@ license = "MIT"
 engine = { path = "crates/engine" }
 mighty = { path = "crates/mighty" }
 env = { path = "crates/env" }
+infer = { path = "crates/infer" }
 server = { path = "crates/server" }
 sim = { path = "crates/sim" }
 axum = { version = "0.8", features = ["ws"] }

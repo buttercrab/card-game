@@ -4,7 +4,7 @@
 use env::selfplay::{self, BotWeight, Config, Provenance};
 use flate2::read::GzDecoder;
 use mighty::Mighty;
-use mighty::rules::Rules;
+use mighty::rules::{Preset, Rules};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -33,6 +33,7 @@ fn config(exclude: Option<&str>) -> Config {
             })
             .collect(),
         shard_decisions: 800,
+        eval_only: false,
     }
 }
 
@@ -104,6 +105,35 @@ fn datasets_are_reproducible_and_avoid_excluded_rules() {
     std::fs::remove_dir_all(&root).unwrap();
 }
 
+/// An eval-only dataset over a fixed list of rule sets: the evals'
+/// held-out ones, measured on and never trained on.
+#[test]
+fn eval_only_datasets_play_a_listed_pool() {
+    let root = scratch("eval");
+    let pool: Vec<Rules> = [Preset::Gshs, Preset::Default].iter().map(|p| p.rules()).collect();
+    std::fs::write(root.join("pool.json"), serde_json::to_string(&pool).unwrap()).unwrap();
+    let config = Config {
+        rules: "file:pool.json".into(),
+        games: 12,
+        eval_only: true,
+        ..config(None)
+    };
+    let data = selfplay::run::<Mighty>(&config, &root, &root.join("out"), 2, |_| {}).unwrap();
+    let played = read_rules(&root.join("out"));
+    assert!(!played.is_empty() && played.iter().all(|r| pool.contains(r)));
+    let meta: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("out/meta.json")).unwrap()).unwrap();
+    assert_eq!(meta["eval_only"], true);
+    let provenance = Provenance {
+        commit: "0".repeat(40),
+        config: "research/experiments/x/config.toml".into(),
+        created: "2026-10-05".into(),
+    };
+    let manifest = selfplay::manifest(&config, &data, &root.join("out"), "selfplay/eval", &provenance).unwrap();
+    assert_eq!(manifest["kind"], "eval");
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
 #[test]
 fn bad_configs_are_refused() {
     let root = scratch("bad");
@@ -115,6 +145,9 @@ fn bad_configs_are_refused() {
     c.bots[0].spec = "genius".into();
     assert!(run(&c).is_err());
     let c = config(Some("missing.json"));
+    assert!(run(&c).is_err());
+    let mut c = config(None);
+    c.rules = "file:missing.json".into();
     assert!(run(&c).is_err());
     assert!(Config::from_toml("name = 1").is_err());
     std::fs::remove_dir_all(&root).unwrap();

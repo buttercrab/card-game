@@ -27,7 +27,7 @@ pub mod npz;
 pub mod selfplay;
 
 pub use env::{Batch, Config, Env};
-pub use game::{EnvGame, RuleSampler, RuleSource, load_excluded, rules_id, rules_key};
+pub use game::{EnvGame, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
 pub use hand::{BotPool, Decision, Hand, Setup, Status};
 
 /// Why the environment could not do what was asked.

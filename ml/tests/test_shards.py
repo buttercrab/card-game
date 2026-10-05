@@ -2,39 +2,9 @@
 
 import numpy as np
 import pytest
-from cardgame_env import Env, selfplay
+from cardgame_env import Env
 
 from cardgame_ml.data.shards import ARRAYS, Batch, Dataset
-
-CONFIG = """
-name = "tiny"
-game = "mighty"
-seed = 3
-games = 24
-rules = "varied"
-shard_decisions = 400
-
-[[bots]]
-spec = "random"
-weight = 1.0
-
-[[bots]]
-spec = "simple"
-weight = 1.0
-
-[[bots]]
-spec = "초보"
-weight = 1.0
-"""
-
-
-@pytest.fixture(scope="module")
-def dataset(tmp_path_factory: pytest.TempPathFactory) -> Dataset:
-    out = tmp_path_factory.mktemp("selfplay") / "tiny"
-    stats = selfplay(CONFIG, out, threads=2)
-    dataset = Dataset.open(out)
-    assert stats["decisions"] == dataset.decisions
-    return dataset
 
 
 def concat(batches: list[Batch]) -> Batch:
@@ -45,6 +15,7 @@ def test_reads_the_metadata(dataset: Dataset) -> None:
     assert dataset.name == "tiny"
     assert dataset.encoding == dataset.spec.version == "mighty-1"
     assert dataset.bots == ("random", "simple", "초보")
+    assert not dataset.eval_only
     assert len(dataset.shards) >= 2
     assert sum(s.games for s in dataset.shards) == 24
     rules = dataset.rules()

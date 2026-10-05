@@ -60,6 +60,19 @@ class EncodingSpec:
             raise JsonError("max_events: must not be negative")
         return spec
 
+    def to_json(self) -> dict[str, object]:
+        """The JSON form Rust's ``engine::Spec`` reads."""
+        return {
+            "version": self.version,
+            "global": list(self.global_features),
+            "cards": list(self.cards),
+            "card_features": list(self.card_features),
+            "max_events": self.max_events,
+            "event_features": list(self.event_features),
+            "actions": list(self.actions),
+            "belief_classes": list(self.belief_classes),
+        }
+
     @classmethod
     def load(cls, path: Path) -> "EncodingSpec":
         return cls.from_json(json.loads(path.read_text(encoding="utf-8")))

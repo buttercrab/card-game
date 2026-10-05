@@ -59,8 +59,9 @@ jobs:
 
   # Lint, types and tests for the Python side, the environment's bindings
   # (crates/env-py) included: `uv sync` builds them with maturin, and the
-  # tests replay positions the Rust side recorded. Installs without the
-  # torch extra, which nothing here needs yet.
+  # tests replay positions the Rust side recorded. The torch extra comes
+  # from PyTorch's CPU-only index on Linux, so the models type-check and
+  # their tests (tiny, on CPU) run here too.
   ml:
     runs-on: ubuntu-latest
     defaults:
@@ -74,7 +75,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: ml/uv.lock
-      - run: uv sync --locked
+      - run: uv sync --locked --extra torch
       - run: uv run ruff check . ../crates/env-py/python
       - run: uv run ruff format --check . ../crates/env-py/python
       - run: uv run pyright

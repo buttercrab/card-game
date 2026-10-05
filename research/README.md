@@ -41,3 +41,9 @@ Each phase ends with a short entry here.
   dataset, [self-play v1](experiments/2026-10-04-selfplay-v1): 1.19
   million decisions by mixed bots over varied rules, manifest
   `manifests/selfplay-v1.json`.
+- **P3, belief model (2026-10):** [belief v1](experiments/2026-10-05-belief-v1)
+  says where hidden cards are better than the counts (0.13 nats a card,
+  also on held-out rules) and better than the search's own reading, but
+  dealing by it does not make 고수 measurably stronger at equal think
+  time (presets +0.02 ± 0.29); at a fifth of the time it plays as well.
+  Stopped by the owner for self-play RL; self-play v2 was cut short.

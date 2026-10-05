@@ -7,9 +7,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# `belief:` bot specs, which run belief models (ONNX, through crates/infer).
+# Off by default, so what depends on sim (the environment and its Python
+# bindings) builds without an inference runtime; eval turns it on.
+belief = ["dep:infer"]
+
 [dependencies]
 clap.workspace = true
 engine.workspace = true
+infer = { workspace = true, optional = true }
 mighty.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true

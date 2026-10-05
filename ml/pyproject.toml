@@ -7,14 +7,20 @@ license = "MIT"
 dependencies = ["cardgame-env", "numpy>=2.3"]
 
 [project.optional-dependencies]
-# Kept out of the default install so CI and checks stay light; training
-# needs it: `uv sync --extra torch` (MPS on the Mac).
-torch = ["torch>=2.8"]
+# Training and ONNX export: `uv sync --extra torch` (MPS on the Mac). On
+# Linux it comes from PyTorch's CPU-only index, which keeps CI light.
+torch = ["torch>=2.8", "onnx>=1.19", "onnxscript>=0.5"]
 
 [tool.uv.sources]
 # The Rust environment's bindings (crates/env-py), built by maturin on
 # `uv sync`; that needs a Rust toolchain.
 cardgame-env = { path = "../crates/env-py" }
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [dependency-groups]
 dev = ["pyright>=1.1.400", "pytest>=8.4", "ruff>=0.13"]

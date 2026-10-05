@@ -151,6 +151,9 @@ class Dataset:
     bots: tuple[str, ...]
     """Bot styles, by ``style`` index."""
     shards: tuple[ShardInfo, ...]
+    eval_only: bool
+    """Data to measure with, never to train on (the evals' held-out rule
+    sets): training refuses it."""
 
     @classmethod
     def open(cls, root: Path) -> "Dataset":
@@ -171,6 +174,7 @@ class Dataset:
             spec=EncodingSpec.from_json(get(meta, "spec")),
             bots=get_str_tuple(meta, "bots"),
             shards=shards,
+            eval_only=meta.get("eval_only") is True,
         )
         if dataset.spec.version != dataset.encoding:
             raise ValueError(f"{root}: the spec is {dataset.spec.version}, not {dataset.encoding}")

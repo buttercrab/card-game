@@ -40,7 +40,7 @@
 //! reproducible byte for byte from its config.
 
 use crate::Error;
-use crate::game::{EnvGame, RuleSampler, RuleSource, load_excluded, rules_id, rules_key};
+use crate::game::{EnvGame, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
 use crate::hand::{BotPool, Decision, Hand, Setup, Status, stream};
 use crate::npz::{Element, NpzWriter};
 use engine::{Observation, Spec};
@@ -76,7 +76,9 @@ pub struct Config {
     pub game: String,
     pub seed: u64,
     pub games: u64,
-    /// A rule source, as [`RuleSource::parse`] reads it.
+    /// A rule source, as [`RuleSource::parse`] reads it, or `file:PATH`:
+    /// a pool of rule sets from a JSON array file, relative to the
+    /// repository root.
     pub rules: String,
     /// Rule sets never to play (a JSON array), relative to the repository
     /// root: the evals' held-out rule sets.
@@ -85,6 +87,11 @@ pub struct Config {
     pub bots: Vec<BotWeight>,
     /// A shard closes after the game that takes it to this many decisions.
     pub shard_decisions: usize,
+    /// Data to measure with, never to train on (games on the evals'
+    /// held-out rule sets, say): `meta.json` says so, the manifest's kind
+    /// is `eval`, and the training side refuses it.
+    #[serde(default)]
+    pub eval_only: bool,
 }
 
 impl Config {
@@ -338,7 +345,7 @@ pub fn run<G: EnvGame>(
     let (excluded, exclusion) = match &config.exclude {
         Some(path) => {
             let full = root.join(path);
-            let excluded = load_excluded::<G::Rules>(&full)?;
+            let excluded = load_rule_sets::<G::Rules>(&full)?;
             let bytes = std::fs::read(&full).map_err(io(&full))?;
             let sha256: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
             let record = json!({"path": path, "sha256": sha256, "rule_sets": excluded.len()});
@@ -346,9 +353,13 @@ pub fn run<G: EnvGame>(
         }
         None => (Vec::new(), Value::Null),
     };
+    let source = match config.rules.strip_prefix("file:") {
+        Some(path) => RuleSource::Pool(load_rule_sets(&root.join(path))?),
+        None => RuleSource::parse::<G>(&config.rules)?,
+    };
     let bots: Vec<(String, f64)> = config.bots.iter().map(|b| (b.spec.clone(), b.weight)).collect();
     let setup = Setup::<G> {
-        rules: RuleSampler::new(RuleSource::parse::<G>(&config.rules)?, excluded)?,
+        rules: RuleSampler::new(source, excluded)?,
         bots: BotPool::new::<G>(&bots)?,
         controlled: Vec::new(),
     };
@@ -439,6 +450,7 @@ pub fn run<G: EnvGame>(
         "game": G::ID,
         "encoding": spec.version,
         "config": config,
+        "eval_only": config.eval_only,
         "bots": setup.bots.names(),
         "shards": shards,
         "rules": RULES,
@@ -491,7 +503,7 @@ pub fn manifest(
         .collect::<Result<Vec<Value>, Error>>()?;
     Ok(json!({
         "name": config.name,
-        "kind": "self-play",
+        "kind": if config.eval_only { "eval" } else { "self-play" },
         "created": provenance.created,
         "commit": provenance.commit,
         "config": provenance.config,

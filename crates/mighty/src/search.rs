@@ -4,11 +4,14 @@
 //! of the hand with [`SimpleBot`] in every seat, and picks the one with the
 //! best average payoff (Perfect Information Monte Carlo). Deals count by
 //! how well they explain what the other players have bid and played; see
-//! [`Reading`].
+//! [`Reading`]. How the unseen cards are dealt is a setting too: uniformly,
+//! or by a belief model ([`Sampler`]).
 
 use crate::Mighty;
 use crate::bot::SimpleBot;
 use crate::card::{ACE, Card, Suit};
+use crate::deal::Deal;
+pub use crate::deal::Sampler;
 use crate::read::Memo;
 pub use crate::read::Reading;
 use crate::rules::Contract;
@@ -45,6 +48,9 @@ pub struct SearchBot {
     /// known in a sampled deal (see [`crate::endgame`]), instead of playing
     /// them with the simple bot. 0 plays every trick with the simple bot.
     pub endgame: usize,
+    /// How the unseen cards are dealt. Uniformly by default, as at the
+    /// table; by a belief model's predictions with [`Sampler::Belief`].
+    pub sampler: Sampler,
 }
 
 impl Default for SearchBot {
@@ -57,6 +63,7 @@ impl Default for SearchBot {
             reading: Reading::default(),
             threads: 1,
             endgame: 0,
+            sampler: Sampler::Uniform,
         }
     }
 }
@@ -75,12 +82,21 @@ impl Bot<Mighty> for SearchBot {
         if candidates.len() == 1 {
             return candidates[0].clone();
         }
+        let Some(dealer) = Dealer::new(view) else {
+            return self.policy.act(view, legal, rng);
+        };
         // Every candidate is scored on the same deals, so luck in the
         // sampling affects them all alike.
         let started = Instant::now();
+        // Worked out once for the whole decision: a model is asked once.
+        let deal = self.sampler.prepare(view, legal, &dealer);
+        let world = Worlds {
+            dealer: &dealer,
+            deal: &*deal,
+        };
         let threads = self.threads.max(1);
         let (scores, log_weights) = if threads == 1 {
-            self.search(view, me, &candidates, self.samples, started, rng)
+            self.search(&world, me, &candidates, self.samples, started, rng)
         } else {
             let share = self.samples.div_ceil(threads);
             let seeds: Vec<u64> = (0..threads).map(|_| rng.next_u64()).collect();
@@ -89,10 +105,10 @@ impl Bot<Mighty> for SearchBot {
                 let handles: Vec<_> = seeds
                     .into_iter()
                     .map(|seed| {
-                        let candidates = &candidates;
+                        let (candidates, world) = (&candidates, &world);
                         scope.spawn(move || {
                             let mut rng = StdRng::seed_from_u64(seed);
-                            bot.search(view, me, candidates, share, started, &mut rng)
+                            bot.search(world, me, candidates, share, started, &mut rng)
                         })
                     })
                     .collect();
@@ -139,7 +155,13 @@ impl SearchBot {
         let Some(dealer) = Dealer::new(view) else {
             return Vec::new();
         };
-        let drawn: Vec<(State, f64)> = (0..n).filter_map(|_| self.draw(&dealer, me, rng, &mut memo)).collect();
+        // Whatever the seat may do next: these worlds are for any choice.
+        let deal = self.sampler.prepare(view, &[], &dealer);
+        let world = Worlds {
+            dealer: &dealer,
+            deal: &*deal,
+        };
+        let drawn: Vec<(State, f64)> = (0..n).filter_map(|_| self.draw(&world, me, rng, &mut memo)).collect();
         let log_weights: Vec<f64> = drawn.iter().map(|(_, w)| *w).collect();
         let weights = self.reading.weights(&log_weights);
         drawn.into_iter().map(|(s, _)| s).zip(weights).collect()
@@ -150,7 +172,7 @@ impl SearchBot {
     /// and each deal's log weight.
     fn search(
         &self,
-        view: &View,
+        worlds: &Worlds,
         me: Seat,
         candidates: &[Action],
         samples: usize,
@@ -160,14 +182,11 @@ impl SearchBot {
         let mut scores: Vec<Vec<i64>> = vec![Vec::new(); candidates.len()];
         let mut log_weights = Vec::new();
         let mut memo = Memo::default();
-        let Some(dealer) = Dealer::new(view) else {
-            return (scores, log_weights);
-        };
         for _ in 0..samples {
             if self.budget.is_some_and(|budget| started.elapsed() >= budget) {
                 break;
             }
-            let Some((world, log_weight)) = self.draw(&dealer, me, rng, &mut memo) else {
+            let Some((world, log_weight)) = self.draw(worlds, me, rng, &mut memo) else {
                 continue;
             };
             log_weights.push(log_weight);
@@ -182,9 +201,10 @@ impl SearchBot {
     /// several and keeps one in proportion to its weight, so that fewer
     /// playouts go to deals the other players' actions rule out; the one
     /// kept carries their average weight.
-    fn draw(&self, dealer: &Dealer, me: Seat, rng: &mut dyn RngCore, memo: &mut Memo) -> Option<(State, f64)> {
+    fn draw(&self, worlds: &Worlds, me: Seat, rng: &mut dyn RngCore, memo: &mut Memo) -> Option<(State, f64)> {
+        let dealer = worlds.dealer;
         if !self.reading.on {
-            return Some((self.sample(dealer, rng)?, 0.0));
+            return Some((self.sample(worlds, rng)?, 0.0));
         }
         let mut kept = None;
         let mut total = f64::NEG_INFINITY;
@@ -192,7 +212,7 @@ impl SearchBot {
         // Most draws are read and dropped: deal them all into one world.
         let mut world = dealer.template.clone();
         for _ in 0..draws {
-            dealer.fill(&mut world, self.sample_hands(dealer, rng)?);
+            dealer.fill(&mut world, self.sample_hands(worlds, rng)?);
             let log_weight = self.reading.log_weight(&self.policy, &world, me, memo);
             let top = total.max(log_weight);
             total = top + ((total - top).exp() + (log_weight - top).exp()).ln();
@@ -206,23 +226,32 @@ impl SearchBot {
     /// A determinized world, redealt up to 20 times until the policy would
     /// have bid what the declarer, or the best bidder so far, did. Past
     /// that, a wrong guess about how they bid is likelier than bad luck.
-    fn sample(&self, dealer: &Dealer, rng: &mut dyn RngCore) -> Option<State> {
-        let mut world = dealer.template.clone();
-        dealer.fill(&mut world, self.sample_hands(dealer, rng)?);
+    fn sample(&self, worlds: &Worlds, rng: &mut dyn RngCore) -> Option<State> {
+        let mut world = worlds.dealer.template.clone();
+        worlds.dealer.fill(&mut world, self.sample_hands(worlds, rng)?);
         Some(world)
     }
 
     /// The cards of [`SearchBot::sample`]'s world, before it is built.
-    fn sample_hands(&self, dealer: &Dealer, rng: &mut dyn RngCore) -> Option<Dealt> {
-        let mut dealt = dealer.deal_hands(rng)?;
+    fn sample_hands(&self, worlds: &Worlds, rng: &mut dyn RngCore) -> Option<Dealt> {
+        let Worlds { dealer, deal } = *worlds;
+        let mut dealt = deal.hands(dealer, rng)?;
         for _ in 0..20 {
             if dealer.agrees_with_bidding(&self.policy, &dealt) {
                 break;
             }
-            dealt = dealer.deal_hands(rng)?;
+            dealt = deal.hands(dealer, rng)?;
         }
         Some(dealt)
     }
+}
+
+/// What one decision's worlds are dealt from: the view, worked out, and
+/// the [`Sampler`]'s strategy for it.
+#[derive(Clone, Copy)]
+struct Worlds<'a> {
+    dealer: &'a Dealer,
+    deal: &'a dyn Deal,
 }
 
 fn best_average(scores: &[Vec<i64>], weights: &[f64]) -> usize {
@@ -381,18 +410,18 @@ pub(crate) fn determinize(view: &View, rng: &mut dyn RngCore) -> Option<State> {
 /// What [`determinize`] works out from a view before dealing: worked out
 /// once, it serves every deal of a search, which deals thousands.
 pub(crate) struct Dealer {
-    me: Seat,
+    pub(crate) me: Seat,
     /// The cards `me` has not seen, in deck order.
-    unseen: Vec<Card>,
+    pub(crate) unseen: Vec<Card>,
     /// How many unseen cards each seat holds; none for `me`.
-    capacity: Vec<usize>,
+    pub(crate) capacity: Vec<usize>,
     /// Unseen cards lying face down: the kitty, or the discards.
-    hidden_down: usize,
+    pub(crate) hidden_down: usize,
     /// The suits each seat has shown it lacks, a bit each.
-    void: Vec<u8>,
+    pub(crate) void: Vec<u8>,
     hand: Vec<Card>,
     /// The world, but for the unseen cards.
-    template: State,
+    pub(crate) template: State,
     /// Another seat that bid, what it bid, and the cards it has played
     /// since: a deal should give it a hand worth the bid.
     bidder: Option<(Seat, Contract, Vec<Card>)>,
@@ -571,7 +600,7 @@ impl Dealer {
 
     /// The unseen cards dealt at random: every seat's hand (`me`'s still
     /// empty) and the cards face down.
-    fn deal_hands(&self, rng: &mut dyn RngCore) -> Option<Dealt> {
+    pub(crate) fn deal_hands(&self, rng: &mut dyn RngCore) -> Option<Dealt> {
         let mut unseen = self.unseen.clone();
         (0..20).find_map(|attempt| {
             unseen.shuffle(rng);
@@ -582,7 +611,7 @@ impl Dealer {
     }
 
     /// Puts these cards into `world`, a copy of the template.
-    fn fill(&self, world: &mut State, (hands, down): Dealt) {
+    pub(crate) fn fill(&self, world: &mut State, (hands, down): Dealt) {
         world.hands.resize(self.capacity.len(), Vec::new());
         for (seat, hand) in world.hands.iter_mut().enumerate() {
             hand.clear();
@@ -603,7 +632,7 @@ impl Dealer {
 
 /// Cards dealt to every seat, as [`bit`](crate::bot::bit) sets, and the
 /// cards dealt face down.
-type Dealt = ([u64; 8], Vec<Card>);
+pub(crate) type Dealt = ([u64; 8], Vec<Card>);
 
 /// Deals `cards` into hands of the given sizes plus `discards` face-down
 /// cards. Each card goes to a random place with room, weighted by room left.

@@ -9,5 +9,7 @@ Subpackages, by stage of the work (docs/PLAN.md):
 - ``scaling``: sweeps and curve fitting.
 
 ``manifest`` describes artifacts kept outside git (shards, weights) by
-path, size and SHA-256, with the commit and config that produced them.
+path, size and SHA-256, with the commit and config that produced them;
+``store`` says where they live, ``runs`` where a trained model goes, and
+``provenance`` which commit made it.
 """

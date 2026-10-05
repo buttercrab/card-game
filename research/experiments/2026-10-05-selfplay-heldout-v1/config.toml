@@ -1,0 +1,37 @@
+# Held-out self-play v1: games on eval suite v1's 40 held-out rule sets,
+# to measure belief models on rules they never trained on (gate A of P3).
+# EVALUATION ONLY: the dataset says so and training refuses it.
+#
+#   nice -n 10 cargo run --release -p env --bin selfplay -- \
+#       --config research/experiments/2026-10-05-selfplay-heldout-v1/config.toml \
+#       --stats research/experiments/2026-10-05-selfplay-heldout-v1/results/stats.json
+
+name = "selfplay-heldout-v1"
+game = "mighty"
+seed = 20261007
+eval_only = true
+# Some 50 games a rule set: about 115 000 decisions.
+games = 2000
+rules = "file:research/evals/v1/heldout-rules.json"
+shard_decisions = 200000
+
+# Self-play v1's mix, so the two measure alike.
+[[bots]]
+spec = "hard:50"
+weight = 3.0
+
+[[bots]]
+spec = "hard"
+weight = 1.0
+
+[[bots]]
+spec = "보통"
+weight = 3.0
+
+[[bots]]
+spec = "초보"
+weight = 2.0
+
+[[bots]]
+spec = "random"
+weight = 1.0
