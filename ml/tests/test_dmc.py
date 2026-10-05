@@ -3,6 +3,7 @@ committed configs, choosing among legal actions, and the replay buffer."""
 
 import itertools
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -11,6 +12,7 @@ from cardgame_ml.data.spec import EncodingSpec
 from cardgame_ml.models.actions import ActionFeatures
 from cardgame_ml.models.config import QConfig, TrunkConfig
 from cardgame_ml.train.config import ConfigError
+from cardgame_ml.train.dmc import report
 from cardgame_ml.train.dmc.buffer import Decisions, ReplayBuffer
 from cardgame_ml.train.dmc.config import DmcConfig
 
@@ -138,3 +140,28 @@ def test_the_buffer_keeps_the_latest_and_restores_events(spec: EncodingSpec) -> 
     # Sorted by length before cutting: batches barely overlap in length.
     spans = sorted((int(length.min()), int(length.max())) for length in lengths)
     assert all(a[1] <= b[0] for a, b in itertools.pairwise(spans))
+
+
+def test_the_report_reads_the_curve_off_the_log() -> None:
+    def train(decisions: int, explained: float, rate: float) -> dict[str, Any]:
+        phase = {"decisions": decisions, "mse": 0.5, "explained": explained}
+        return {"event": "train", "phases": {"bidding": phase}, "throughput": {"hands": rate}}
+
+    def point(hands: int, mean: float) -> dict[str, Any]:
+        score = {"mean": mean, "ci95": 0.5, "n": 10}
+        return {
+            "event": "curve",
+            "hands": hands,
+            "decisions": 60 * hands,
+            "step": hands // 10,
+            "seconds": 36 * hands,
+            "scores": {"normal": score},
+        }
+
+    log = [point(0, -9.0), train(10, 0.2, 1.0), train(30, 0.6, 3.0), point(100, 1.5)]
+    points = report.curve(log)
+    assert [p["hands"] for p in points] == [0, 100]
+    assert points[1]["throughput"] == {"hands": 2.0}
+    assert points[1]["phases"]["bidding"]["explained"] == pytest.approx(0.5)
+    text = report.table(points)
+    assert "| 100 | 6,000 | 1.00 | +1.50 ± 0.50 |" in text
