@@ -7,6 +7,11 @@ import { expect, test, type Page } from '@playwright/test';
 // - show every hand card's corner index, and hit that card when tapped there;
 // - log no console errors.
 
+/** Previews that open a seat's popover: a bot's, another player's (and
+ * sending them to watch), your own, an empty seat's, and a watcher's name
+ * entry at an empty seat and at a bot's. */
+const POPOVERS = ['seatbot', 'seatperson', 'seatkick', 'seatme', 'seatempty', 'seatsit', 'seatsitbot'];
+
 const STATES = [
   'bidding',
   'waiting',
@@ -27,18 +32,16 @@ const STATES = [
   'lobby',
   'lobbywatch',
   'room',
+  'pending',
   'folded',
-  'seatbot',
-  'seatperson',
-  'seatme',
-  'seatempty',
+  ...POPOVERS,
   'swap',
   'menu',
   'leave',
 ];
 
 /** States with no cards in hand: the result, and the table between hands. */
-const NO_HAND = ['done', 'won', 'run', 'lobby', 'lobbywatch', 'room', 'folded', 'seatbot', 'seatperson', 'seatme', 'seatempty', 'swap', 'menu'];
+const NO_HAND = ['done', 'won', 'run', 'lobby', 'lobbywatch', 'room', 'pending', 'folded', ...POPOVERS, 'swap', 'menu'];
 
 const PAGES: { name: string; path: string }[] = [
   { name: 'home', path: '/' },
@@ -277,4 +280,117 @@ test('back stays at the table; 나가기 leaves', async ({ page }, info) => {
   await page.waitForURL((url) => url.pathname === '/');
   expect(await page.evaluate(() => history.state)).toBeNull();
   await expect(page.getByRole('button', { name: '테이블 만들기' })).toBeVisible();
+});
+
+/** What of the seat's popover is not wholly on screen (inside `view`, the
+ * visible part of the page) or sticks out of the card itself. */
+function popoverOverflow(page: Page, view?: { top: number; height: number }) {
+  return page.evaluate((view) => {
+    const card = document.querySelector('.pop-card');
+    if (!card) return ['no popover'];
+    const out: string[] = [];
+    const top = view?.top ?? 0;
+    const bottom = top + (view?.height ?? innerHeight);
+    const c = card.getBoundingClientRect();
+    const off = (r: DOMRect) => r.left < -0.5 || r.right > innerWidth + 0.5 || r.top < top - 0.5 || r.bottom > bottom + 0.5;
+    const fmt = (r: DOMRect) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+    if (getComputedStyle(card).visibility !== 'visible') out.push('card is hidden');
+    if (off(c)) out.push(`card off screen at ${fmt(c)} in ${innerWidth}x${innerHeight}`);
+    // Every control: inside the card, so on screen too (a card too tall
+    // scrolls inside, so only its width counts there).
+    for (const el of card.querySelectorAll('button, input')) {
+      const r = el.getBoundingClientRect();
+      const name = `${el.tagName.toLowerCase()} "${(el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 12)}"`;
+      if (r.left < c.left - 0.5 || r.right > c.right + 0.5) out.push(`${name} sticks out of the card: ${fmt(r)} in ${fmt(c)}`);
+    }
+    return out;
+  }, view);
+}
+
+// Every seat's popover fits the screen at every size: none of it off the
+// edge, and nothing in it wider than the card (on CI's fonts the name field
+// once pushed 앉기 off the card and off the screen).
+for (const state of POPOVERS) {
+  test(`popover-${state}`, async ({ page }) => {
+    await page.goto(`/preview?state=${state}`);
+    await page.locator('.pop-card').waitFor();
+    await page.waitForTimeout(400);
+    expect(await popoverOverflow(page)).toEqual([]);
+    // Playwright itself can reach every control in it.
+    for (const control of await page.locator('.pop-card button:not([disabled]), .pop-card input').all()) {
+      await control.click({ trial: true, timeout: 2000 });
+    }
+  });
+}
+
+// A phone's keyboard covers the bottom of the screen while a watcher types
+// a name: the popover moves up into what is left, 앉기 still in reach.
+test('popover stays above the keyboard', async ({ page }, info) => {
+  test.skip(sizeOf(info.project.name) === '1440x900', 'phones only');
+  // A stand-in visual viewport the test can shrink, as a keyboard does.
+  await page.addInitScript(() => {
+    const target = new EventTarget();
+    const vv = Object.assign(target, { width: innerWidth, height: innerHeight, offsetLeft: 0, offsetTop: 0, pageLeft: 0, pageTop: 0, scale: 1 });
+    Object.defineProperty(window, 'visualViewport', { get: () => vv, configurable: true });
+    (window as unknown as { keyboard: (h: number) => void }).keyboard = (h: number) => {
+      vv.height = innerHeight - h;
+      vv.dispatchEvent(new Event('resize'));
+    };
+  });
+  await page.goto('/preview?state=seatsit');
+  await page.locator('.pop-card input').waitFor();
+  await page.waitForTimeout(300);
+  const { height } = page.viewportSize()!;
+  const keyboard = Math.round(height * 0.45);
+  await page.evaluate((h) => (window as unknown as { keyboard: (h: number) => void }).keyboard(h), keyboard);
+  await page.waitForTimeout(100);
+  expect(await popoverOverflow(page, { top: 0, height: height - keyboard })).toEqual([]);
+  await page.locator('.pop-card input').fill('테스트');
+  const submit = await page.locator('.pop-card button[type=submit]').boundingBox();
+  expect(submit && submit.y + submit.height).toBeLessThanOrEqual(height - keyboard);
+});
+
+// Two tabs at one table: 섞기 marks the next hand for everyone, 시작
+// shuffles the seats, and every name (bots' too) moves with its seat.
+test('섞기 waits for the next hand and names follow their seats', async ({ browser, page }, info) => {
+  test.skip(sizeOf(info.project.name) !== '390x844', 'one size is enough');
+  await page.addInitScript(() => localStorage.setItem('mighty.settings', JSON.stringify({ sound: false, music: false, speed: 'off' })));
+  await page.goto('/');
+  await page.getByRole('button', { name: '테이블 만들기' }).click();
+  await page.waitForURL(/\/r\/[a-z0-9]+$/);
+  await page.locator('.seat-act', { hasText: '앉기' }).first().click();
+  await page.locator('.pop-card input').fill('나');
+  await page.locator('.pop-card button[type=submit]').click();
+  for (let i = 0; i < 4; i++) {
+    await page.locator('.seat-act', { hasText: '+ 봇' }).first().click();
+    await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(3 - i);
+  }
+  // Everyone at the table, by name, from this tab's seat round.
+  const names = () => page.locator('.ring .spot .seat .name').allTextContents();
+  const before = await names();
+  expect(new Set(before).size).toBe(4);
+
+  const watcher = await browser.newPage();
+  await watcher.goto(page.url());
+  await page.getByRole('button', { name: /^섞기/ }).click();
+  await expect(page.getByRole('button', { name: /섞기 취소/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(watcher.locator('.shuffle-note', { hasText: '다음 판 시작할 때 자리를 섞어요' })).toBeVisible();
+  expect(await names()).toEqual(before);
+  // Pressed again it is off, and on once more.
+  await page.getByRole('button', { name: /섞기 취소/ }).click();
+  await expect(watcher.locator('.shuffle-note')).toHaveCount(0);
+  await page.getByRole('button', { name: /^섞기/ }).click();
+  await expect(page.locator('.shuffle-note', { hasText: '다음 판 시작할 때 자리를 섞어요' })).toBeVisible();
+
+  const watcherNames = await watcher.locator('.ring .spot .seat .name').allTextContents();
+  await page.getByRole('button', { name: '시작', exact: true }).click();
+  await expect(page.locator('.shuffle-note')).toHaveCount(0);
+  await expect(page.locator('.hand .card').first()).toBeVisible();
+  // The same four, bots keeping their names, and the watcher's table agrees.
+  const after = await names();
+  expect([...after].sort()).toEqual([...before].sort());
+  const watcherAfter = await watcher.locator('.ring .spot .seat .name').allTextContents();
+  expect([...watcherAfter].sort()).toEqual([...watcherNames].sort());
+  expect(watcherAfter).toContain('나');
+  await watcher.close();
 });

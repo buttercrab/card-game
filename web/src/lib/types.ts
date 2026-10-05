@@ -264,6 +264,9 @@ export interface TableSettings {
   turn_secs: number;
   /** The seats are shuffled before every hand. */
   shuffle: boolean;
+  /** 섞기 was pressed: the seats are shuffled when the next hand starts.
+   * Older servers leave this out. */
+  shuffle_next?: boolean;
 }
 
 /** A finished hand in brief, for the session's share card. */

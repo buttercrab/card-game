@@ -30,10 +30,10 @@
     settings: { preset: 'gshs' },
     seats: [
       { kind: 'human', name: '재용', connected: true },
-      { kind: 'bot', name: 'Bot 2' },
+      { kind: 'bot', name: '콩떡' },
       { kind: 'human', name: '아주긴이름의친구입니다', connected: true },
       { kind: 'human', name: '민수', connected: false },
-      { kind: 'bot', name: 'Bot 5' },
+      { kind: 'bot', name: '호두' },
     ],
     scores: [18, -3, 5, -8, -12],
     hands_played: hands.length,

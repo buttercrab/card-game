@@ -35,13 +35,17 @@ pub trait SessionGame:
     fn freeze(settings: &mut Self::Settings);
 
     /// Options for hand number `hand` (0-based) of a session; `last` is the
-    /// hand before it in brief, when known.
-    fn hand_options(settings: &Self::Settings, hand: u32, last: Option<&Self::Summary>) -> Self::Options;
+    /// hand before it in brief, when known. Where the opening seat moves
+    /// round the table hand by hand, it is the one `shift` seats on from
+    /// hand number `hand`'s, so the room can keep the rotation with the
+    /// players when they change seats.
+    fn hand_options(settings: &Self::Settings, hand: u32, last: Option<&Self::Summary>, shift: usize) -> Self::Options;
 
-    /// A bot of this strength for `seat`, which may think for about `think`
-    /// (zero for its own default) on `threads` threads. Seats differ a
-    /// little in temperament so a table of bots does not play as one.
-    fn bot(level: BotLevel, seat: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
+    /// A bot of this strength with temperament number `temper`, which may
+    /// think for about `think` (zero for its own default) on `threads`
+    /// threads. Bots differ a little in temperament so a table of bots
+    /// does not play as one; a seated bot keeps its own when it moves.
+    fn bot(level: BotLevel, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
 
     /// A finished hand in brief, for the session's story.
     type Summary: Clone + Serialize + DeserializeOwned + Send + 'static;
@@ -190,15 +194,21 @@ impl SessionGame for Mighty {
 
     /// The first bidder moves one seat to the left each hand, unless the
     /// rules hand the deal to last hand's friend or declarer.
-    fn hand_options(settings: &MightySettings, hand: u32, last: Option<&mighty::HandSummary>) -> mighty::Options {
+    fn hand_options(
+        settings: &MightySettings,
+        hand: u32,
+        last: Option<&mighty::HandSummary>,
+        shift: usize,
+    ) -> mighty::Options {
         let rules = settings.rules();
-        let first_bidder = rules.first_bidder(hand, last);
+        let n = rules.players as u32;
+        let first_bidder = rules.first_bidder(hand % n + (shift as u32) % n, last);
         mighty::Options { rules, first_bidder }
     }
 
-    fn bot(level: BotLevel, seat: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
-        // Bolder or more careful bidders, by seat.
-        let policy = tempered(seat);
+    fn bot(level: BotLevel, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
+        // Bolder or more careful bidders.
+        let policy = tempered(temper);
         match level {
             BotLevel::Easy => Box::new(Clumsy::easy(policy)),
             BotLevel::Normal => Box::new(policy),
@@ -306,7 +316,7 @@ mod tests {
         let mut seen = Vec::new();
         for seed in 0..20 {
             let settings = MightySettings::default();
-            let mut state = Mighty::new_game(&Mighty::hand_options(&settings, 0, None)).unwrap();
+            let mut state = Mighty::new_game(&Mighty::hand_options(&settings, 0, None, 0)).unwrap();
             let mut rng = StdRng::seed_from_u64(seed);
             loop {
                 let action = match Mighty::turn(&state) {

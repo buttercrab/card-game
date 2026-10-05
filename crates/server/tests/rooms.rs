@@ -713,6 +713,8 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     // Spectators may not move anyone.
     send(&mut watcher, json!({ "type": "shuffle_seats" })).await;
     next(&mut watcher, "error").await;
+    send(&mut watcher, json!({ "type": "set_table", "shuffle_next": true })).await;
+    next(&mut watcher, "error").await;
 
     // A whole hand plays itself: both players let every turn run out.
     send(&mut a, json!({ "type": "set_table", "turn_secs": 20 })).await;
@@ -738,32 +740,33 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     let declarer = before["hands"][0]["declarer"].as_u64().unwrap() as usize;
     let declarer_was = before["seats"][declarer].clone();
 
-    send(&mut b, json!({ "type": "shuffle_seats" })).await;
+    // 섞기 waits for the next hand; 다음 판 shuffles, then deals.
+    send(&mut b, json!({ "type": "set_table", "shuffle_next": true })).await;
+    next_where(&mut watcher, "room", |r| r["table"]["shuffle_next"] == true).await;
+    send(&mut b, json!({ "type": "start" })).await;
     let news = next_where(&mut a, "seats_moved", |m| m["how"] == "shuffle").await;
     // B hears where everyone went before its own new seat, so its table can
     // slide each seat from where it was.
     let b_news = next(&mut b, "seats_moved").await;
     let b_welcome = next(&mut b, "welcome").await;
-    let after = next_where(&mut watcher, "room", |r| {
-        r["hands_played"] == 1 && r["showing"] == false
-    })
-    .await;
+    let after = next_where(&mut watcher, "room", |r| r["hands_played"] == 1 && r["in_hand"] == true).await;
+    assert_eq!(after["table"]["shuffle_next"], false, "a shuffle is used once");
     let (a_seat, a_after) = score(&after, "A");
     let (b_seat, b_after) = score(&after, "B");
     assert_eq!((a_after, b_after), (a_score, b_score), "scores follow the players");
     assert_eq!(after["history"][0][a_seat], a_hist, "so does each hand's payoff");
     let moved_declarer = after["hands"][0]["declarer"].as_u64().unwrap() as usize;
     assert_eq!(after["seats"][moved_declarer]["kind"], declarer_was["kind"]);
-    // Bots are named by seat ("Bot 3"), so only a person keeps their name.
-    if declarer_was["kind"] == "human" {
-        assert_eq!(after["seats"][moved_declarer]["name"], declarer_was["name"]);
-    }
+    // Bots keep their names too.
+    assert_eq!(after["seats"][moved_declarer]["name"], declarer_was["name"]);
     assert_eq!(after["hands_played"], 1);
     assert_eq!(news["order"][a_was], a_seat, "the news says where each seat went");
     assert_eq!(b_news, news);
 
     // Each tab learns its new seat, and the token still finds it.
     assert_eq!(b_welcome["seat"].as_u64().unwrap() as usize, b_seat);
+    // That hand plays itself out too before the seats move again.
+    next_where(&mut watcher, "room", |r| r["hands_played"] == 2).await;
     drop(b);
     next_where(&mut watcher, "room", |r| r["seats"][b_seat]["connected"] == false).await;
     let mut again = connect(addr, &room).await;
@@ -840,13 +843,171 @@ fn rooms_saved_before_table_settings_still_restore() {
     use server::session::MightySettings;
     let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), Duration::ZERO);
     let mut snapshot = room.snapshot();
-    assert_eq!(snapshot["table"], json!({ "turn_secs": 0, "shuffle": false }));
+    assert_eq!(
+        snapshot["table"],
+        json!({ "turn_secs": 0, "shuffle": false, "shuffle_next": false })
+    );
     snapshot.as_object_mut().unwrap().remove("table");
     assert!(Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).is_ok());
     snapshot["table"] = json!({ "turn_secs": 40, "shuffle": true });
-    let restored = Room::<Mighty>::restore(snapshot, Duration::ZERO).unwrap();
+    let restored = Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).unwrap();
     assert_eq!(
         restored.snapshot()["table"],
-        json!({ "turn_secs": 40, "shuffle": true })
+        json!({ "turn_secs": 40, "shuffle": true, "shuffle_next": false })
     );
+    // A shuffle pressed for the next hand survives a restart.
+    snapshot["table"]["shuffle_next"] = json!(true);
+    let restored = Room::<Mighty>::restore(snapshot, Duration::ZERO).unwrap();
+    assert_eq!(restored.snapshot()["table"]["shuffle_next"], true);
+}
+
+#[test]
+fn bots_saved_before_they_had_names_get_their_seats_names() {
+    use mighty::Mighty;
+    use server::room::Room;
+    use server::session::MightySettings;
+    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), Duration::ZERO);
+    let mut snapshot = room.snapshot();
+    snapshot["seats"] = json!([
+        { "kind": "human", "name": "A", "token": "t" },
+        { "kind": "bot", "level": "easy" },
+        { "kind": "empty" },
+        { "kind": "bot" },
+        { "kind": "bot", "level": "normal", "name": "콩떡" },
+    ]);
+    let restored = Room::<Mighty>::restore(snapshot, Duration::ZERO).unwrap().snapshot();
+    let seats = restored["seats"].as_array().unwrap();
+    assert_eq!(seats[1], json!({ "kind": "bot", "level": "easy", "name": "모과" }));
+    assert_eq!(seats[3], json!({ "kind": "bot", "level": "hard", "name": "보리" }));
+    assert_eq!(seats[4]["name"], "콩떡", "a saved name stays");
+    // Saved before seats could move: no rotation yet.
+    assert_eq!(restored["rotation"], 0);
+}
+
+/// Each seat's name (a person's or a bot's), and a bot's level, by seat.
+fn occupants(room: &Value) -> Vec<(String, String)> {
+    room["seats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["name"].as_str().unwrap_or("").to_string(),
+                s["level"].as_str().unwrap_or("").to_string(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn bots_keep_their_names_and_levels_when_seats_move() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    join(&mut a, "A", None).await;
+    for (bot, level) in [(1, "easy"), (2, "normal"), (3, "hard"), (4, "easy")] {
+        send(&mut a, json!({ "type": "add_bot", "seat": bot, "level": level })).await;
+    }
+    let before = next_where(&mut a, "room", |r| r["seats"][4]["kind"] == "bot").await;
+    // Every bot has a name of its own: its seat's, while nobody has it.
+    let names: Vec<String> = occupants(&before).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(names, ["A", "모과", "호두", "보리", "단추"]);
+    // A new level keeps the name.
+    send(&mut a, json!({ "type": "add_bot", "seat": 2, "level": "hard" })).await;
+    let changed = next_where(&mut a, "room", |r| r["seats"][2]["level"] == "hard").await;
+    assert_eq!(changed["seats"][2]["name"], "호두");
+
+    // A swap moves a bot with its name and level.
+    send(&mut a, json!({ "type": "swap_seats", "a": 1, "b": 3 })).await;
+    let swapped = next_where(&mut a, "room", |r| r["seats"][1]["name"] == "보리").await;
+    assert_eq!(swapped["seats"][1]["level"], "hard");
+    assert_eq!(swapped["seats"][3]["name"], "모과");
+    assert_eq!(swapped["seats"][3]["level"], "easy");
+    // Two empty seats have nobody to swap.
+    send(&mut a, json!({ "type": "remove_bot", "seat": 4 })).await;
+    send(&mut a, json!({ "type": "remove_bot", "seat": 1 })).await;
+    next_where(&mut a, "room", |r| r["seats"][1]["kind"] == "empty").await;
+    send(&mut a, json!({ "type": "swap_seats", "a": 1, "b": 4 })).await;
+    assert_eq!(next(&mut a, "error").await["message"], "nobody to move");
+    // A bot sitting down never takes a name in use: seat 1's own (모과)
+    // and 호두 are, so it is 보리, free again.
+    send(&mut a, json!({ "type": "add_bot", "seat": 1, "level": "easy" })).await;
+    send(&mut a, json!({ "type": "add_bot", "seat": 4, "level": "normal" })).await;
+    let refilled = next_where(&mut a, "room", |r| r["seats"][4]["kind"] == "bot").await;
+    assert_eq!(refilled["seats"][1]["name"], "보리");
+    assert_eq!(refilled["seats"][4]["name"], "단추");
+
+    // A shuffle moves everyone with their names and levels.
+    let mut was = occupants(&refilled);
+    send(&mut a, json!({ "type": "set_table", "shuffle_next": true })).await;
+    send(&mut a, json!({ "type": "start" })).await;
+    next(&mut a, "seats_moved").await;
+    let shuffled = next_where(&mut a, "room", |r| r["in_hand"] == true).await;
+    let mut now = occupants(&shuffled);
+    assert_ne!(now, was, "someone moved");
+    was.sort();
+    now.sort();
+    assert_eq!(now, was);
+}
+
+#[tokio::test]
+async fn a_shuffle_waits_for_the_next_hand_and_everyone_sees_it_coming() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    join(&mut a, "A", None).await;
+    for bot in 1..5 {
+        send(&mut a, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
+    }
+    let mut watcher = connect(addr, &room).await;
+    let full = next_where(&mut watcher, "room", |r| r["seats"][4]["kind"] == "bot").await;
+
+    // 섞기 only marks the next hand; nobody moves yet.
+    send(&mut a, json!({ "type": "set_table", "shuffle_next": true })).await;
+    let marked = next_where(&mut watcher, "room", |r| r["table"]["shuffle_next"] == true).await;
+    assert_eq!(marked["seats"], full["seats"]);
+    // Pressed again, it is off.
+    send(&mut a, json!({ "type": "set_table", "shuffle_next": false })).await;
+    next_where(&mut watcher, "room", |r| r["table"]["shuffle_next"] == false).await;
+    // An older page's 섞기 marks it too.
+    send(&mut a, json!({ "type": "shuffle_seats" })).await;
+    let marked = next_where(&mut watcher, "room", |r| r["table"]["shuffle_next"] == true).await;
+    assert_eq!(marked["seats"], full["seats"]);
+
+    // 시작 shuffles, tells everyone where the seats went, then deals.
+    send(&mut a, json!({ "type": "start" })).await;
+    let news = next(&mut watcher, "seats_moved").await;
+    assert_eq!(news["how"], "shuffle");
+    let moved = next(&mut a, "seats_moved").await;
+    assert_eq!(moved, news);
+    let welcome = next(&mut a, "welcome").await;
+    let room_now = next(&mut a, "room").await;
+    assert_eq!(room_now["in_hand"], true);
+    assert_eq!(room_now["table"]["shuffle_next"], false, "used once");
+    let seat = welcome["seat"].as_u64().unwrap() as usize;
+    assert_eq!(news["order"][0], seat);
+    assert_eq!(room_now["seats"][seat]["name"], "A");
+    let state = next(&mut a, "state").await;
+    assert_eq!(state["view"]["viewer"]["Seat"], seat, "dealt in the new seat");
+    // Not while a hand is on.
+    send(&mut a, json!({ "type": "set_table", "shuffle_next": true })).await;
+    assert_eq!(next(&mut a, "error").await["message"], "seats move only between hands");
+}
+
+#[tokio::test]
+async fn whoever_opens_the_next_hand_still_does_after_moving() {
+    let addr = spawn_server().await;
+    // 경기과고 opens each hand one seat further round.
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    let (seat, _) = join(&mut a, "A", None).await;
+    assert_eq!(seat, 0, "A would open the first hand");
+    for bot in 1..5 {
+        send(&mut a, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
+    }
+    send(&mut a, json!({ "type": "swap_seats", "a": 0, "b": 2 })).await;
+    assert_eq!(next(&mut a, "welcome").await["seat"], 2);
+    send(&mut a, json!({ "type": "start" })).await;
+    let state = next(&mut a, "state").await;
+    assert_eq!(state["view"]["first_bidder"], 2, "A opens it from seat 2");
 }
