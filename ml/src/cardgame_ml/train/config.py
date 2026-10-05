@@ -3,7 +3,9 @@ experiment (``research/experiments/<folder>/config.toml``).
 
 Every field is spelled out in the file: reading fails on a missing or
 unknown key and on a value of the wrong type, so a config never leans on
-a default that could change under it.
+a default that could change under it. Fields are scalars, nested
+dataclasses (tables), ``tuple[T, ...]`` (arrays) or ``dict[str, T]``
+(tables of values).
 """
 
 import dataclasses
@@ -97,6 +99,17 @@ def from_mapping[T](cls: type[T], data: dict[str, Any], where: str) -> T:
 
 
 def _scalar(kind: object, value: object, at: str) -> object:
+    origin, args = typing.get_origin(kind), typing.get_args(kind)
+    if origin is tuple and len(args) == 2 and args[1] is Ellipsis:  # noqa: PLR2004
+        if not isinstance(value, list):
+            raise ConfigError(f"{at}: expected an array")
+        items = cast(list[object], value)
+        return tuple(_scalar(args[0], item, f"{at}[{i}]") for i, item in enumerate(items))
+    if origin is dict and len(args) == 2 and args[0] is str:  # noqa: PLR2004
+        if not isinstance(value, dict):
+            raise ConfigError(f"{at}: expected a table")
+        table = cast(dict[str, object], value)
+        return {key: _scalar(args[1], item, f"{at}.{key}") for key, item in table.items()}
     # TOML integers are fine where a float is wanted; booleans are never numbers.
     if kind is float and isinstance(value, int) and not isinstance(value, bool):
         return float(value)
