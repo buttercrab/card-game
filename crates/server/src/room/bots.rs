@@ -11,7 +11,8 @@ use mighty::bot::Level;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::json;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 
 /// How long a room waits past a move's thinking time for a bot worker's
 /// answer before thinking itself.

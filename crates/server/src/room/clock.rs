@@ -89,7 +89,7 @@ impl<G: SessionGame> Room<G> {
             }
             _ => None,
         };
-        let second = self.env.turn_second;
+        let second = Duration::from_secs(1);
         let game = self.hand.game.as_ref();
         self.clock.set(key, || {
             let key = key.expect("a timer runs for a turn");

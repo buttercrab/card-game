@@ -9,8 +9,9 @@ use axum::response::Response;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::time::Instant;
 
 /// Up to `burst` at once, refilled at `per_minute`.
 pub struct Limiter {

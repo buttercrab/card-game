@@ -9,7 +9,8 @@ use engine::Turn;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 
 /// One step of a hand, as its log keeps it: replaying the log from the
 /// hand's options gives back the hand exactly.

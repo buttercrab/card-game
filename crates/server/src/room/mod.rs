@@ -20,6 +20,9 @@ mod session;
 mod snapshot;
 mod view;
 
+#[cfg(test)]
+mod tests;
+
 pub use actor::Command;
 pub use seating::{BOT_NAMES, NAME_MAX};
 pub use snapshot::{SnapshotV2, migrate_v1};
@@ -88,8 +91,6 @@ pub struct RoomEnv {
     pub bots: BotConfig,
     /// A room with nobody connected for this long closes.
     pub idle: Duration,
-    /// How long a second of a table's turn limit lasts.
-    pub turn_second: Duration,
     /// Another machine that thinks for bots, when one is connected.
     pub remote: Arc<RemoteBots>,
     pub stats: Arc<Stats>,
@@ -104,7 +105,6 @@ impl RoomEnv {
         RoomEnv {
             bots: BotConfig { delay, think_cap: None },
             idle: Duration::from_secs(crate::IDLE_MINUTES * 60),
-            turn_second: Duration::from_secs(1),
             remote: Arc::default(),
             stats: Arc::new(Stats::in_memory()),
             data: None,

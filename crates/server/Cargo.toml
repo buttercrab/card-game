@@ -27,6 +27,8 @@ ts-rs.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# A paused clock for the room's own tests.
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

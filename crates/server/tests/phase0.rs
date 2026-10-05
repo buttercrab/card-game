@@ -27,38 +27,6 @@ async fn play_out(ws: &mut Socket) {
 }
 
 #[tokio::test]
-async fn reclaiming_a_seat_clears_its_away_mark() {
-    // Turn-limit seconds last 10 ms, so a 20-second turn runs out in 200 ms.
-    let addr = serve(AppState::new(config()).with_turn_second(Duration::from_millis(10))).await;
-    let room = create_room(addr, "gshs").await;
-    let mut ws = connect(addr, &room).await;
-    let (seat, token) = join(&mut ws, "Jae", None).await;
-    send(&mut ws, json!({ "type": "set_table", "turn_secs": 20 })).await;
-    for bot in 1..5 {
-        send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
-    }
-    send(&mut ws, json!({ "type": "start" })).await;
-    // Jae's turn runs out, so the seat is marked away while still connected.
-    next_where(&mut ws, "room", |r| {
-        r["seats"][0]["away"] == true && r["seats"][0]["connected"] == true
-    })
-    .await;
-    drop(ws);
-
-    let mut again = connect(addr, &room).await;
-    send(
-        &mut again,
-        json!({ "type": "join", "name": "Jae", "token": token, "reclaim": true }),
-    )
-    .await;
-    assert_eq!(next(&mut again, "welcome").await["seat"], seat);
-    // The first room message after the welcome is the one the join made.
-    let room = next(&mut again, "room").await;
-    assert_eq!(room["seats"][0]["connected"], true);
-    assert_eq!(room["seats"][0]["away"], false, "coming back clears 자리 비움: {room}");
-}
-
-#[tokio::test]
 async fn leaving_mid_hand_is_counted() {
     let state = AppState::new(Config {
         bot_delay_ms: 50,

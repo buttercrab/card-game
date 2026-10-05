@@ -10,9 +10,10 @@ use crate::protocol::{ClientMsg, ErrorCode, ServerError};
 use crate::session::SessionGame;
 use crate::stats::Event;
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
+use tokio::time::Instant;
 
 /// What the rest of the server asks of a room.
 pub enum Command {

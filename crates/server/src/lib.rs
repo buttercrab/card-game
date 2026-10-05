@@ -87,7 +87,6 @@ impl AppState {
                 think_cap: config.bot_think(),
             },
             idle: config.idle(),
-            turn_second: Duration::from_secs(1),
             remote,
             stats: stats.clone(),
             data: config.data.clone(),
@@ -103,19 +102,6 @@ impl AppState {
 
     pub fn config(&self) -> &Config {
         &self.config
-    }
-
-    /// Makes a turn limit's seconds last `second` instead, so a test need
-    /// not wait out real turns.
-    pub fn with_turn_second(self, second: Duration) -> AppState {
-        let env = RoomEnv {
-            turn_second: second,
-            ..(*self.env).clone()
-        };
-        AppState {
-            env: Arc::new(env),
-            ..self
-        }
     }
 
     /// The stats log, for recording from outside a request.

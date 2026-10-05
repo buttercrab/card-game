@@ -9,8 +9,8 @@ use mighty::bot::Level;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::time::Instant;
 
 /// The longest name a seat takes, in characters; longer ones are cut.
 pub const NAME_MAX: usize = 24;
