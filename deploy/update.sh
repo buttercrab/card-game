@@ -21,6 +21,9 @@
 # GITHUB_TOKEN=..., never in the repository.
 set -euo pipefail
 
+# systemd's PATH leaves out Homebrew, where the home server's jq lives.
+PATH="$PATH:/home/linuxbrew/.linuxbrew/bin"
+
 repo=buttercrab/card-game
 workflow=ci.yaml
 seoul=cards-seoul
