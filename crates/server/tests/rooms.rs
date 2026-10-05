@@ -338,12 +338,31 @@ async fn a_hint_is_one_of_the_legal_actions() {
         m["legal"].as_array().is_some_and(|l| !l.is_empty())
     })
     .await;
+    // The hand may move on while the hint is thought of (a bot throwing the
+    // deal in, out of turn), or before it is asked for: the hint names the
+    // state it was for, so a client can drop a late one.
+    let mut states = std::collections::HashMap::new();
+    states.insert(state["version"].as_u64().expect("states have versions"), state);
     send(&mut ws, json!({ "type": "hint" })).await;
-    let hint = next(&mut ws, "hint").await;
+    let hint = loop {
+        let msg = next_text(&mut ws).await.expect("socket open");
+        match msg["type"].as_str() {
+            Some("state") => {
+                let mine = msg["legal"].as_array().is_some_and(|l| !l.is_empty());
+                states.insert(msg["version"].as_u64().unwrap(), msg);
+                if mine {
+                    // Asked again for this state (at most one a second).
+                    tokio::time::sleep(Duration::from_millis(1100)).await;
+                    send(&mut ws, json!({ "type": "hint" })).await;
+                }
+            }
+            Some("error") => assert_eq!(msg["message"], "it is not your turn"),
+            Some("hint") => break msg,
+            _ => {}
+        }
+    };
+    let state = &states[&hint["version"].as_u64().unwrap()];
     assert!(state["legal"].as_array().unwrap().contains(&hint["action"]));
-    // The hint names the state it was for, so a client can drop a late one.
-    assert!(state["version"].is_u64());
-    assert_eq!(hint["version"], state["version"]);
 }
 
 #[tokio::test]
