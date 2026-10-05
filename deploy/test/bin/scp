@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# A stand-in for scp: notes the copy, or fails with $FAKE/fail-seoul.
+set -euo pipefail
+echo "scp $*" >>"$FAKE/log"
+[[ ! -e "$FAKE/fail-seoul" ]] || exit 1

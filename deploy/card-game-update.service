@@ -1,5 +1,6 @@
 [Unit]
 Description=Deploy the card game when main moves
+OnFailure=card-game-update-failed.service
 
 [Service]
 Type=oneshot

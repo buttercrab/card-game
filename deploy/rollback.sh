@@ -6,7 +6,10 @@
 #   deploy/rollback.sh
 #
 # The rollback holds until main moves: deploy/update.sh deploys only a new
-# green commit, so push the fix (or a revert) when ready. Tables saved by
+# green commit, so push the fix (or a revert) when ready. Meanwhile the
+# site is behind main, so the deploy-watch workflow opens a `deploy` issue
+# after 40 minutes as a reminder; it closes once the fix is deployed.
+# Tables saved by
 # a newer server may not load in an older one; those are set aside as
 # .bad files in the tables volume rather than lost.
 set -euo pipefail

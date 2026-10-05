@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# A stand-in for the GitHub CLI as deploy/watch.sh uses it, answering from
+# $FAKE: head (main's commit), head_run and green_run (workflow runs, as
+# --jq '.workflow_runs[0]' would give them), compare (how the site's
+# commit compares with the green one) and open (the open issue number).
+set -euo pipefail
+echo "gh $*" >>"$FAKE/log"
+read_file() { cat "$FAKE/$1" 2>/dev/null || true; }
+case "$1 $2" in
+  "api repos/o/r/commits/main") read_file head ;;
+  "api repos/o/r/commits/"*) echo "2020-01-01T00:00:00Z" ;;
+  "api repos/o/r/compare/"*) read_file compare ;;
+  "api repos/o/r/actions/workflows/ci.yaml/runs?head_sha="*) read_file head_run ;;
+  "api repos/o/r/actions/workflows/ci.yaml/runs?branch=main"*) read_file green_run ;;
+  "issue list") read_file open ;;
+  "issue create")
+    while (($#)); do
+      [[ "$1" == --body ]] && printf '%s\n' "$2" >"$FAKE/issue-body"
+      shift
+    done
+    echo 42 >"$FAKE/open"
+    ;;
+  "issue close") rm -f "$FAKE/open" ;;
+  "label create") ;;
+  *)
+    echo "fake gh: unexpected $*" >&2
+    exit 1
+    ;;
+esac

@@ -25,6 +25,14 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # The deploy scripts, against stand-ins for docker, ssh, curl and gh.
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: shellcheck deploy/*.sh deploy/seoul/*.sh deploy/test/*.sh deploy/test/bin/* research/loop/ops/*.sh
+      - run: bash deploy/test/run.sh
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:

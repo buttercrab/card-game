@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# A stand-in for curl. GitHub's workflow runs come from $FAKE/ci (success,
+# pending or failure); the site's /version from $FAKE/live, and fails when
+# that is missing. It notes whether a token showed on its command line,
+# and the mode of a --config file.
+set -euo pipefail
+url="${*: -1}"
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  if [[ "${args[i]}" == *secret-token* ]]; then
+    echo "TOKEN-ON-COMMAND-LINE" >>"$FAKE/log"
+  fi
+  if [[ "${args[i]}" == --config ]]; then
+    file="${args[i + 1]}"
+    mode="$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file")"
+    grep -q 'secret-token' "$file" && echo "auth-file $mode" >>"$FAKE/log"
+  fi
+done
+echo "curl $url" >>"$FAKE/log"
+case "$url" in
+  https://api.github.com/*)
+    case "$(cat "$FAKE/ci")" in
+      success) echo '{"workflow_runs":[{"status":"completed","conclusion":"success"}]}' ;;
+      pending) echo '{"workflow_runs":[{"status":"in_progress","conclusion":null}]}' ;;
+      *) echo '{"workflow_runs":[{"status":"completed","conclusion":"failure"}]}' ;;
+    esac
+    ;;
+  */version)
+    [[ -s "$FAKE/live" ]] || exit 22
+    printf '{"commit":"%s","worker":{"connected":true,"commit":"%s"}}\n' "$(cat "$FAKE/live")" "$(cat "$FAKE/live")"
+    ;;
+  *)
+    echo "fake curl: unexpected $url" >&2
+    exit 1
+    ;;
+esac
