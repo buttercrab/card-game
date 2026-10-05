@@ -72,12 +72,23 @@ impl FromStr for Spec {
             "hard" => ("search:200:1:0", true, None),
             _ => (name, false, None),
         };
-        let search = name.starts_with("search");
+        let which = match name {
+            "random" => Which::Random,
+            "simple" => Which::Simple,
+            _ if name == "search" || name.starts_with("search:") => Which::Search,
+            _ => return Err(format!("unknown bot {s:?}")),
+        };
+        if which == Which::Random && !settings.is_empty() {
+            return Err(format!("{s}: the random bot takes no settings"));
+        }
+        let search = which == Which::Search;
         let mut reading = Reading::default();
         let mut search_threads = 1;
         let mut endgame = 0;
         for setting in settings.split(',').filter(|w| !w.is_empty()) {
-            let (key, value) = setting.split_once('=').ok_or(format!("bad weight {setting:?}"))?;
+            let (key, value) = setting
+                .split_once('=')
+                .ok_or(format!("{s}: setting {setting:?} needs a value, as name=value"))?;
             match key.strip_prefix("read.") {
                 Some(key) if search => set_reading(&mut reading, key, value)?,
                 None if key == "threads" && search => {
@@ -86,23 +97,20 @@ impl FromStr for Spec {
                 None if key == "endgame" && search => {
                     endgame = value.parse().map_err(|_| format!("bad value {value:?} for endgame"))?;
                 }
-                None if key == "slips" && name == "simple" => {
+                None if key == "slips" && which == Which::Simple => {
                     slips = Some(value.parse().map_err(|_| format!("bad value {value:?} for slips"))?);
                 }
-                _ => set_weight(&mut policy, key, value)?,
+                None if set_weight(&mut policy, key, value)? => {}
+                _ => return Err(format!("{s}: {}", which.unknown(key))),
             }
         }
-        let kind = match name {
-            "random" => Kind::Random,
-            "simple" => match slips {
+        let kind = match which {
+            Which::Random => Kind::Random,
+            Which::Simple => match slips {
                 Some(slips) => Kind::Clumsy(policy, slips),
                 None => Kind::Simple(policy),
             },
-            _ => {
-                let mut parts = name.split(':');
-                if parts.next() != Some("search") {
-                    return Err(format!("unknown bot {s:?}"));
-                }
+            Which::Search => {
                 let mut bot = SearchBot {
                     policy,
                     reading,
@@ -110,6 +118,7 @@ impl FromStr for Spec {
                     endgame,
                     ..SearchBot::default()
                 };
+                let mut parts = name.split(':').skip(1);
                 if let Some(samples) = parts.next() {
                     bot.samples = samples.parse().map_err(|_| format!("bad sample count in {s:?}"))?;
                 }
@@ -120,10 +129,41 @@ impl FromStr for Spec {
                     let ms: u64 = budget.parse().map_err(|_| format!("bad budget in {s:?}"))?;
                     bot.budget = (ms > 0).then(|| Duration::from_millis(ms));
                 }
+                let extra: Vec<&str> = parts.collect();
+                if !extra.is_empty() {
+                    return Err(format!(
+                        "{s}: a search bot is search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]; {:?} is extra",
+                        extra.join(":")
+                    ));
+                }
                 Kind::Search(bot)
             }
         };
         Ok(Spec { kind, temper })
+    }
+}
+
+/// The built-in bots by name, for which settings each takes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Which {
+    Random,
+    Simple,
+    Search,
+}
+
+impl Which {
+    /// The error for a setting this bot does not take, with those it does.
+    fn unknown(self, key: &str) -> String {
+        let (bot, takes) = match self {
+            Which::Random => ("the random bot", "none"),
+            Which::Simple => ("a simple bot", "the simple bot's weights and slips"),
+            Which::Search => (
+                "a search bot",
+                "the simple bot's weights, threads, endgame and read.on, read.slip, read.bid_scale, \
+                 read.min_share, read.draws",
+            ),
+        };
+        format!("{bot} has no setting {key:?} (it takes {takes})")
     }
 }
 
@@ -363,8 +403,8 @@ impl Spec {
 }
 
 /// Sets one of the simple bot's weights by name, for tuning from the
-/// command line.
-fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String> {
+/// command line; false if it has no such weight.
+fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<bool, String> {
     let bad = || format!("bad value {value:?} for {key}");
     let float = || value.parse::<f32>().map_err(|_| bad());
     let int = || value.parse::<i32>().map_err(|_| bad());
@@ -392,9 +432,9 @@ fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String>
         "misdeal_below_min" => bot.misdeal_below_min = value.parse().map_err(|_| bad())?,
         "bid_spread" => bot.bid_spread = float()?,
         "bid_caution" => bot.bid_caution = float()?,
-        _ => return Err(format!("unknown weight {key:?}")),
+        _ => return Ok(false),
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Sets how the search bot reads the other players, for tuning from the
@@ -443,6 +483,63 @@ mod tests {
         assert!(matches!(spec("easy@slips=0.1").kind, Kind::Clumsy(_, s) if s == 0.1));
         assert!("search@slips=0.5".parse::<Spec>().is_err());
         assert!("expert".parse::<Spec>().is_err());
+    }
+
+    fn error(s: &str) -> String {
+        match s.parse::<Spec>() {
+            Ok(spec) => panic!("{s} parsed, as {spec:?}"),
+            Err(e) => e,
+        }
+    }
+
+    /// Regression: a setting a bot never reads was taken silently (a
+    /// weight on the random bot, `slips` on a search), and extra parts of
+    /// a search were ignored.
+    #[test]
+    fn settings_a_bot_does_not_take_are_refused() {
+        let e = error("random@bid_base=7");
+        assert!(e.contains("the random bot takes no settings"), "{e}");
+        for (s, key, bot) in [
+            ("simple@threads=2", "threads", "a simple bot"),
+            ("normal@read.on=false", "read.on", "a simple bot"),
+            ("easy@endgame=3", "endgame", "a simple bot"),
+            ("simple@nonsense=1", "nonsense", "a simple bot"),
+            ("search@slips=0.5", "slips", "a search bot"),
+            ("hard@bid_bse=7", "bid_bse", "a search bot"),
+        ] {
+            let e = error(s);
+            assert!(e.contains(&format!("{bot} has no setting {key:?}")), "{s}: {e}");
+        }
+        let e = error("search@read.nonsense=1");
+        assert!(e.contains("unknown setting read.nonsense"), "{e}");
+        // Known settings still apply where they belong.
+        assert!(matches!(spec("simple@bid_base=7").kind, Kind::Simple(b) if b.bid_base == 7.0));
+        let Kind::Search(bot) = spec("search:20@bid_base=7,endgame=3").kind else {
+            panic!("a search")
+        };
+        assert_eq!((bot.policy.bid_base, bot.endgame), (7.0, 3));
+    }
+
+    #[test]
+    fn a_setting_needs_a_value() {
+        let e = error("simple@bid_base");
+        assert!(e.contains("setting \"bid_base\" needs a value"), "{e}");
+        let e = error("hard@threads");
+        assert!(e.contains("setting \"threads\" needs a value"), "{e}");
+    }
+
+    #[test]
+    fn a_search_has_at_most_three_numbers() {
+        let e = error("search:20:1:0:junk");
+        assert!(e.contains("\"junk\" is extra"), "{e}");
+        assert!(error("search:20:1:0:5:6").contains("\"5:6\" is extra"));
+        let Kind::Search(bot) = spec("search:20:1:0").kind else {
+            panic!("a search")
+        };
+        assert_eq!((bot.samples, bot.budget), (20, None));
+        for bad in ["searchlight", "random:2", "simple:3", "hard:5"] {
+            assert!(error(bad).contains("unknown bot"), "{bad}");
+        }
     }
 
     #[test]
