@@ -25,6 +25,7 @@
   import { BACK_NAMES, TABLE_NAMES, checkHand, type Achievement } from './achievements';
   import { loadStats, recordHand } from './stats';
   import { sound } from './sound';
+  import { tableRules } from './rulesets';
   import { ledger } from './scoring';
   import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, Rules, StateMsg, Suit, Trick } from './types';
 
@@ -57,7 +58,7 @@
       type: 'state',
       view: {
         viewer: client.seat === null ? 'Spectator' : { Seat: client.seat },
-        rules: room?.settings.rules ?? blankRules(n),
+        rules: (room && tableRules(room.settings)) ?? blankRules(n),
         first_bidder: 0,
         hand: [],
         hand_sizes: Array.from({ length: n }, () => 0),
@@ -68,7 +69,7 @@
       turn: 'Over',
     };
   });
-  /** Enough rules to draw an empty table by, before the preset's arrive. */
+  /** Enough rules to draw an empty table by, from a server that sends none. */
   function blankRules(n: number): Rules {
     return {
       players: n,

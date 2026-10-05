@@ -91,14 +91,17 @@
     const pending = untrack(() => takePending(id));
     if (pending) client.setRules(pending.base, pending.rules);
   });
-  // What this table changed from its preset, for the rules' name.
-  let presetBase = $state<Rules | null>(null);
+  // What this table changed from its preset, for the rules' name: against
+  // the preset as the table pinned it, not as the preset reads today.
+  let fetchedBase = $state<Rules | null>(null);
+  const presetBase = $derived(room?.settings.preset_rules ?? fetchedBase);
   $effect(() => {
     const preset = room?.settings.preset;
-    if (!preset) return;
+    // A server too old to say: the preset as it is today.
+    if (!preset || room?.settings.preset_rules) return;
     presetRules(preset)
-      .then((r) => (presetBase = r))
-      .catch(() => (presetBase = null));
+      .then((r) => (fetchedBase = r))
+      .catch(() => (fetchedBase = null));
   });
   const changedCount = $derived(
     room?.settings.rules && presetBase ? differences(room.settings.rules, presetBase).length : 0,
@@ -241,12 +244,20 @@
   <RuleEditor
     preset={room.settings.preset}
     rules={room.settings.rules ?? null}
-    onsave={(base, rules) => client.setRules(base, rules)}
+    base={room.settings.preset_rules ?? null}
+    onsave={(base, rules) =>
+      // On the same preset, the table keeps the preset's rules it pinned.
+      client.setRules(base, rules, base === room.settings.preset ? room.settings.preset_rules : undefined)}
     onclose={() => (editRules = false)}
   />
 {/if}
 {#if showRules && room}
-  <RulebookSheet preset={room.settings.preset} rules={room.settings.rules ?? null} onclose={() => (showRules = false)} />
+  <RulebookSheet
+    preset={room.settings.preset}
+    rules={room.settings.rules ?? null}
+    base={room.settings.preset_rules ?? null}
+    onclose={() => (showRules = false)}
+  />
 {/if}
 
 <style>

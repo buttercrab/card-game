@@ -314,8 +314,13 @@ export class RoomClient {
     this.#send({ type: 'remove_bot', seat });
   }
 
-  setRules(preset: string, rules: Rules | null) {
-    this.#send({ type: 'set_settings', settings: rules ? { preset, rules } : { preset } });
+  /** `presetRules`: the preset's rules as the table pinned them, to keep
+   * them; without it the server pins the preset as it is today. */
+  setRules(preset: string, rules: Rules | null, presetRules?: Rules) {
+    this.#send({
+      type: 'set_settings',
+      settings: { preset, ...(rules ? { rules } : {}), ...(presetRules ? { preset_rules: presetRules } : {}) },
+    });
   }
 
   /** Shows a short message in the toast, without the error sound. */

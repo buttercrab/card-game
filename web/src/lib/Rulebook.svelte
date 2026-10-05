@@ -7,8 +7,14 @@
   import { bidValue, handValue, scoring } from './scoring';
   import type { Card as CardT, CardPolicy, Contract, Rules, TrickPolicy } from './types';
 
-  /** `rules` overrides the preset's, for a table whose players changed them. */
-  let { preset, rules: given = null }: { preset: string; rules?: Rules | null } = $props();
+  /** `rules` overrides the preset's: a table's own, or the preset's as the
+   * table pinned them. `changed`: the table's players changed them (by
+   * default, whenever `rules` is given). */
+  let {
+    preset,
+    rules: given = null,
+    changed = given !== null,
+  }: { preset: string; rules?: Rules | null; changed?: boolean } = $props();
 
   let rules = $state<Rules | null>(null);
   /** Why the rules are missing: an id no preset has, or a failed fetch. */
@@ -224,7 +230,7 @@
 <article class="book">
   <header>
     <h1>
-      {#if failed === 'unknown'}규칙을 찾을 수 없어요{:else}{PRESET_NAME[preset] ?? preset} 규칙{/if}{#if given}<span
+      {#if failed === 'unknown'}규칙을 찾을 수 없어요{:else}{PRESET_NAME[preset] ?? preset} 규칙{/if}{#if changed}<span
           class="changed">바꾼 규칙</span
         >{/if}
     </h1>

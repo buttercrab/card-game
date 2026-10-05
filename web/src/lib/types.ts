@@ -239,7 +239,10 @@ export interface RoomMsg {
   type: 'room';
   id: string;
   game: string;
-  settings: { preset: string; rules?: Rules };
+  /** `rules`: the table's own, when its players changed the preset's.
+   * `preset_rules`: the preset's rules as pinned when the table chose it,
+   * which may differ from the preset's today. */
+  settings: { preset: string; rules?: Rules; preset_rules?: Rules };
   seats: SeatInfo[];
   scores: number[];
   hands_played: number;
