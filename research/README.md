@@ -47,3 +47,11 @@ Each phase ends with a short entry here.
   dealing by it does not make 고수 measurably stronger at equal think
   time (presets +0.02 ± 0.29); at a fifth of the time it plays as well.
   Stopped by the owner for self-play RL; self-play v2 was cut short.
+- **P3b, self-play RL, shakedown (2026-10):** [DMC v1](experiments/2026-10-05-dmc-v1):
+  a Q network learnt from random weights by Deep Monte Carlo on pure
+  self-play reaches −0.40 a seat-hand against 초보 and −1.38 against
+  보통 after 510 000 hands (2.5 h), then plateaus: card play is learnt,
+  bidding is not (it mostly passes). Exit not met; stopped by the
+  owner for a 경기과고-only run with a bigger network and a search
+  hybrid. The pipeline (actors, learner, curve, export, the `dmc:` bot
+  at 1.45 ms a decision) is in place.

@@ -1,0 +1,44 @@
+{
+  "artifacts": [
+    {
+      "bytes": 23562,
+      "path": "models/dmc-v1-smoke/config.json",
+      "sha256": "51569eb48b75b471c26a193cc6ed4e79328c0092a116b84218c53792db4002aa"
+    },
+    {
+      "bytes": 3001,
+      "path": "models/dmc-v1-smoke/log.jsonl",
+      "sha256": "cc5f4a3bbab059299596dc6b13ccac16216f0421c4e040d24440154210f31598"
+    },
+    {
+      "bytes": 797203,
+      "path": "models/dmc-v1-smoke/model.pt",
+      "sha256": "13061c8f65f1f39971a4c647483f8df8a7d3c473d52588aaafc740cb75e77356"
+    },
+    {
+      "bytes": 801169,
+      "path": "models/dmc-v1-smoke/snapshots/hands-0000000000.pt",
+      "sha256": "726ef59f225e3bec9207608990aa6ac3812f229483c857ffc66c5c3b806af8af"
+    },
+    {
+      "bytes": 801169,
+      "path": "models/dmc-v1-smoke/snapshots/hands-0000003008.pt",
+      "sha256": "96339008eb26abed7bd8962f0f0259888e9a77a7b8c18f60049a8afbd2eba5f7"
+    },
+    {
+      "bytes": 801169,
+      "path": "models/dmc-v1-smoke/snapshots/hands-0000006007.pt",
+      "sha256": "57456ac1015b2f2eba9199f776dba9ac5965da308bfea24b36ead1f501b48a2c"
+    }
+  ],
+  "commit": "270d94fa59fc8f44af4ea92441baa0bbc8b3fdb9",
+  "config": "research/experiments/2026-10-05-dmc-v1/smoke.toml",
+  "created": "2026-10-05",
+  "encoding": "mighty-1",
+  "kind": "weights",
+  "name": "dmc-v1-smoke",
+  "seeds": [
+    1,
+    7
+  ]
+}
