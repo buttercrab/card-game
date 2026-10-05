@@ -19,7 +19,7 @@ from typing import Any
 from cardgame_ml import runs
 from cardgame_ml.provenance import Checkout
 from cardgame_ml.train.dmc.config import DmcConfig
-from cardgame_ml.train.dmc.learner import EncodingMismatchError, train
+from cardgame_ml.train.dmc.learner import ActorError, EncodingMismatchError, train
 
 
 def _terminate(_signum: int, _frame: object) -> None:
@@ -57,6 +57,9 @@ def main() -> None:
             return
         except EncodingMismatchError as e:
             raise SystemExit(f"{e}; start a new run under another name") from None
+        except ActorError as e:
+            log({"event": "failed", "error": str(e)})
+            raise SystemExit(f"failed: {e} (the log has its traceback)") from None
     print(f"done: {progress.hands} hands, {progress.step} steps", file=sys.stderr)
     manifest = runs.record(
         out,
