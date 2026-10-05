@@ -159,11 +159,13 @@ async fn leaving_mid_hand_is_counted() {
     }
     send(&mut ws, json!({ "type": "start" })).await;
     next(&mut ws, "state").await;
+    // Counted from here, so other tables in this process don't matter.
+    let before = stats.summary(server::stats::now()).totals.left_mid_hand;
     send(&mut ws, json!({ "type": "leave" })).await;
     let mut watcher = connect(addr, &room).await;
     next_where(&mut watcher, "room", |r| r["seats"][0]["kind"] == "bot").await;
     let s = stats.summary(server::stats::now());
-    assert_eq!(s.totals.left_mid_hand, 1);
+    assert_eq!(s.totals.left_mid_hand, before + 1);
 }
 
 /// A stand-in for the bot worker that speaks the link by hand.
