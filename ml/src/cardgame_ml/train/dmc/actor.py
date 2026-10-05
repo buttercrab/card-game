@@ -2,7 +2,9 @@
 network and send every finished decision to the learner, labelled with
 the Monte Carlo return (the acting seat's payoff for the hand, scaled).
 
-Every seat of every hand is the current network, ε-greedy. An actor
+Every seat of every hand is the current network, exploring: a draw
+by the softmax of its values at a small temperature, and with a small
+probability a uniformly random legal action. An actor
 reloads the weights whenever the learner has published newer ones, and
 each draws its hands from its own seed, so actors never play the same
 hands.
@@ -144,7 +146,7 @@ def run(  # noqa: PLR0913, PLR0917
                 seen = version.value
         started = time.monotonic()
         actions, values = legal_values(model, step, device, a.groups)
-        chosen = choose(actions, values, a.epsilon, rng)
+        chosen = choose(actions, values, a.epsilon, rng, a.temperature)
         hands.record(step, chosen)
         stepped = time.monotonic()
         step = env.step(chosen)

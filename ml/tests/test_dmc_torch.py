@@ -2,6 +2,7 @@
 hands, the Q export's parity fixture, and a tiny run end to end."""
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -89,6 +90,12 @@ def test_choosing_is_greedy_or_uniform_among_the_legal() -> None:
     picks = np.stack([choose(actions, values, 1.0, rng) for _ in range(300)])
     assert set(picks[:, 0].tolist()) == {4, 9, 2}
     assert set(picks[:, 1].tolist()) == {7}
+    # A softmax at a temperature: mostly the best, sometimes the next.
+    warm = np.stack([choose(actions, values, 0.0, rng, 0.3) for _ in range(400)])
+    share = Counter(int(x) for x in warm[:, 0])
+    assert share[9] > share[4] > share[2]
+    assert set(warm[:, 1].tolist()) == {7}
+    assert (choose(actions, values, 0.0, rng, 1e-6) == [9, 7]).all()
 
 
 def test_hands_label_every_decision_with_its_seats_payoff(spec: EncodingSpec) -> None:

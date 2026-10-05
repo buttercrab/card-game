@@ -29,6 +29,13 @@ class ActorConfig:
     of about one sequence length (less padding)."""
     epsilon: float
     """Share of decisions taken uniformly among the legal actions."""
+    temperature: float
+    """The others are drawn with probability proportional to ``exp(Q /
+    temperature)``, in the network's units (0: the best). Uniform
+    exploration alone mostly tries absurd actions (a random bid is
+    usually far too high), so the network learns that bidding loses and
+    passes for ever; the softmax keeps trying the actions it values
+    nearly as much as its best."""
     refresh_every: int
     """Learner steps between publishing weights to the actors."""
     chunk: int
@@ -118,6 +125,8 @@ class DmcConfig:
             raise ValueError("buffer: min_fill exceeds capacity")
         if not 0 <= self.actors.epsilon <= 1:
             raise ValueError("actors: epsilon is a probability")
+        if self.actors.temperature < 0:
+            raise ValueError("actors: the temperature is not negative")
 
     @classmethod
     def load(cls, path: Path) -> "DmcConfig":

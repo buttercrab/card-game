@@ -36,6 +36,8 @@ threads = 2
 env_threads = 1
 groups = 4
 epsilon = 0.02
+# Two points (targets are points / 40).
+temperature = 0.05
 refresh_every = 20
 chunk = 512
 

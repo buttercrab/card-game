@@ -74,11 +74,20 @@ def choose(
     values: NDArray[np.float32],
     epsilon: float,
     rng: np.random.Generator,
+    temperature: float = 0.0,
 ) -> NDArray[np.int64]:
-    """One action index per decision: the best by ``values``, or with
-    probability ``epsilon`` one of the legal actions uniformly."""
+    """One action index per decision: the best by ``values`` or, with a
+    ``temperature``, one drawn with probability proportional to
+    ``exp(value / temperature)``; and with probability ``epsilon``
+    instead one of the legal actions uniformly."""
     rows = np.arange(len(actions))
-    best = actions[rows, values.argmax(axis=1)]
+    if temperature > 0:
+        # Gumbel-max: the argmax of values / T plus Gumbel noise is a
+        # softmax draw.
+        noise = rng.gumbel(size=values.shape).astype(np.float32)
+        best = actions[rows, (values / np.float32(temperature) + noise).argmax(axis=1)]
+    else:
+        best = actions[rows, values.argmax(axis=1)]
     if epsilon <= 0:
         return best
     legal = np.isfinite(values)
