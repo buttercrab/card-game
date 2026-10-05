@@ -1,7 +1,7 @@
 // House rules the server knows, by id, in the order players pick them.
 export const PRESETS: { id: string; name: string; note?: string }[] = [
-  { id: 'gshs', name: '경기과고', note: '조커 두 장' },
   { id: 'default', name: '기본' },
+  { id: 'gshs', name: '경기과고', note: '조커 두 장' },
   { id: 'ddshs', name: '대전동신과고' },
   { id: 'dshs', name: '대구과고' },
   { id: 'kmla', name: '민사고' },

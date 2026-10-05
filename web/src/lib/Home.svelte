@@ -16,9 +16,21 @@
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
-  /** A preset id, or `custom:<id>` for rules saved on this device. */
-  let choice = $state('gshs');
+  /** A preset id, or `custom:<id>` for rules saved on this device: the last
+   * one used here, or 기본. */
+  let choice = $state(
+    (() => {
+      try {
+        return localStorage.getItem('mighty.preset') ?? 'default';
+      } catch {
+        return 'default';
+      }
+    })(),
+  );
   let customs = $state(loadCustom());
+  // A remembered choice that no longer exists falls back to 기본.
+  if (choice.startsWith('custom:') ? !customs.some((c) => `custom:${c.id}` === choice) : !(choice in PRESET_NAME))
+    choice = 'default';
   const chosen = $derived(choice.startsWith('custom:') ? (customs.find((c) => `custom:${c.id}` === choice) ?? null) : null);
   const preset = $derived(chosen?.base ?? choice);
   const chosenName = $derived(chosen ? customName(chosen) : (PRESET_NAME[preset] ?? preset));
@@ -48,11 +60,18 @@
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preset: practice ? 'gshs' : preset }),
+        body: JSON.stringify({ preset: practice ? 'default' : preset }),
       });
       if (!res.ok) throw new Error(String(res.status));
       const id: string = (await res.json()).id;
       if (!practice && chosen) setPending(id, chosen.base, chosen.rules);
+      if (!practice) {
+        try {
+          localStorage.setItem('mighty.preset', choice);
+        } catch {
+          // Next time starts from 기본 again.
+        }
+      }
       if (practice) {
         settings.tips = true;
         settings.hints = true;
@@ -247,6 +266,7 @@
     display: grid;
     gap: 2px;
     justify-items: start;
+    justify-content: start;
     padding: 14px 20px;
     border-radius: 16px;
     background: var(--panel);
