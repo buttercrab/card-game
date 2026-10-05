@@ -16,7 +16,7 @@ from cardgame_ml.loop.layout import Layout
 from cardgame_ml.loop.leaderboard import Row, rows
 from cardgame_ml.loop.policy import Policy
 from cardgame_ml.loop.queue import read_queue, waiting_for
-from cardgame_ml.loop.records import Records, RunRecord, now_utc, parse_stamp
+from cardgame_ml.loop.records import Records, RunRecord, RunStatus, now_utc, parse_stamp
 
 
 def due(layout: Layout, policy: Policy, now: datetime) -> date | None:
@@ -64,9 +64,9 @@ def researcher_calls(layout: Layout, span: tuple[datetime, datetime]) -> list[di
     return calls
 
 
-def write_daily(layout: Layout, policy: Policy, day: date) -> Path:
+def write_daily(layout: Layout, policy: Policy, day: date, records: Records | None = None) -> Path:
     span = day_span(day)
-    records = Records(layout.experiments, layout.live)
+    records = records or Records(layout.experiments, layout.live)
     runs = records.all()
 
     def within(stamp_: str | None) -> bool:
@@ -75,14 +75,14 @@ def write_daily(layout: Layout, policy: Policy, day: date) -> Path:
     started = [r for r in runs if within(r.created)]
     ended = [r for r in runs if within(r.ended)]
     touched = [r for r in runs if any(overlap_hours(s.started, s.ended, span) for s in r.steps)]
-    board = [r for r in rows(layout, policy) if r.rating is not None]
+    board = [r for r in rows(layout, policy, records) if r.rating is not None]
     by_id = {r.id: r for r in board}
     used = compute_on(touched, span)
     lines = [
         f"# Experiment loop: {day.isoformat()}",
         "",
         f"{len(started)} runs started, {len(ended)} ended "
-        f"({sum(r.status == 'succeeded' for r in ended)} succeeded). Compute: "
+        f"({sum(r.status == RunStatus.SUCCEEDED for r in ended)} succeeded). Compute: "
         f"**{used['gpu']:.1f} GPU h**, "
         + ", ".join(f"{h} {v:.0f} thread-h" for h, v in used.items() if h != "gpu")
         + ".",
@@ -116,7 +116,7 @@ def write_daily(layout: Layout, policy: Policy, day: date) -> Path:
     lines += ["", "## Notable", ""]
     notable = _notable(ended, layout, span)
     lines += notable or ["Nothing beyond the results above."]
-    failures = [r for r in ended if r.status != "succeeded"]
+    failures = [r for r in ended if r.status != RunStatus.SUCCEEDED]
     lines += ["", "## Failures", ""]
     lines += [f"- {r.id}: {r.status}: {r.failure or 'no detail'}" for r in failures] or ["None."]
     lines += ["", "## Researcher", ""]
@@ -151,7 +151,7 @@ def _notable(ended: list[RunRecord], layout: Layout, span: tuple[datetime, datet
         if r.candidate:
             out.append(f"- **{r.id} beat its parent**; confirmation `{r.confirmation}` queued.")
         if r.confirms is not None:
-            verdict = "confirmed" if (r.comparison or {}).get("beats") else "not confirmed"
+            verdict = "confirmed" if r.comparison and r.comparison.beats else "not confirmed"
             out.append(f"- {r.confirms}: {verdict} on fresh deals by {r.id}.")
     for notes in sorted(layout.experiments.glob("*/notes.md")):
         modified = datetime.fromtimestamp(notes.stat().st_mtime).astimezone()

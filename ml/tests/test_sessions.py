@@ -4,14 +4,13 @@ from pathlib import Path
 
 import pytest
 
+from cardgame_ml.runtime import write_json
 from cardgame_ml.train.sessions import (
     ConfigChangedError,
     check_resume,
     config_sha256,
     differences,
-    recorded_sessions,
     session,
-    write_json,
 )
 
 RECORDED = {
@@ -49,12 +48,12 @@ def test_a_changed_resume_is_refused_unless_accepted(tmp_path: Path) -> None:
 
 def test_a_session_entry() -> None:
     entry = session(2, "a" * 40, False, RECORDED, 1, ["optim.lr (0.001 → 0.0001)"])
-    assert entry["session"] == 2
-    assert entry["config_sha256"] == config_sha256(RECORDED)
-    assert entry["config_changed"] == ["optim.lr (0.001 → 0.0001)"]
+    assert entry.session == 2
+    assert entry.config_sha256 == config_sha256(RECORDED)
+    assert entry.config_changed == ("optim.lr (0.001 → 0.0001)",)
+    assert entry.to_json()["config_changed"] == ["optim.lr (0.001 → 0.0001)"]
+    assert "config_changed" not in session(1, None, True, RECORDED, 1).to_json()
     assert config_sha256(RECORDED) != config_sha256({**RECORDED, "seed": 2})
-    assert recorded_sessions({"sessions": [entry, "junk"]}) == [entry]
-    assert recorded_sessions({}) == []
 
 
 def test_json_is_written_whole(tmp_path: Path) -> None:

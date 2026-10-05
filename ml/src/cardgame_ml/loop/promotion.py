@@ -6,7 +6,8 @@ primary metric is a *candidate*: the runner queues its confirmation, the
 same spec on a new training seed, played deal by deal against the
 parent's bot on a fresh-deal suite (``protocol.confirm_suite``). The
 candidate is *confirmed* when that run beats the parent too; only then
-does the leaderboard call it a win.
+does the leaderboard call it a win. Only the primary metric decides: a
+run that did not measure it is not compared at all.
 """
 
 import dataclasses
@@ -18,6 +19,7 @@ from cardgame_ml.loop.evals import FRESH_PARTS, Comparison, EvalResult, compare
 from cardgame_ml.loop.policy import Policy
 from cardgame_ml.loop.records import RunRecord
 from cardgame_ml.loop.spec import Spec
+from cardgame_ml.loop.steps import PARENT, Role
 
 CONFIRM_PRIORITY = 1000
 """Added to a candidate's priority: confirmations go first."""
@@ -29,9 +31,22 @@ def eval_results(folder: Path) -> dict[str, EvalResult]:
     for path in sorted(folder.glob("results/*/results.json")):
         try:
             out[path.parent.name] = EvalResult.load(path)
-        except (ValueError, KeyError):
+        except ValueError:
             continue
     return out
+
+
+def result_of(record: RunRecord, folder: Path, baseline: str) -> EvalResult | None:
+    """The run's suite results against ``baseline`` (as its spec names
+    it: a bot, or ``parent``), found by the step's role."""
+    step = record.eval_step(baseline)
+    return None if step is None else eval_results(folder).get(step.step.name)
+
+
+def cost_of(record: RunRecord, folder: Path) -> EvalResult | None:
+    """The run's think-time results, if it measured them."""
+    step = record.role(Role.COST)
+    return None if step is None else eval_results(folder).get(step.step.name)
 
 
 def assess(
@@ -41,21 +56,16 @@ def assess(
     runs: Mapping[str, RunRecord],
     experiments: Path,
 ) -> Comparison | None:
-    """The run against its parent on the primary metric, if both were
-    measured."""
-    results = eval_results(folder)
-    baseline_step = f"eval-{policy.protocol.baseline}"
-    own = results.get(baseline_step)
-    against_parent = results.get("eval-parent")
+    """The run against its parent on the protocol's primary metric, if
+    both were measured on it."""
+    baseline = policy.protocol.baseline
+    own = result_of(record, folder, baseline)
+    against_parent = result_of(record, folder, PARENT)
     parents = None
     parent = runs.get(record.parent) if record.parent else None
     if parent is not None:
-        parents = eval_results(experiments / parent.folder).get(baseline_step)
-    for metric in (policy.protocol.primary, "presets", "matches"):
-        comparison = compare(metric, against_parent, own, parents)
-        if comparison is not None:
-            return comparison
-    return None
+        parents = result_of(parent, experiments / parent.folder, baseline)
+    return compare(policy.protocol.primary, against_parent, own, parents)
 
 
 def confirmation(spec: Spec, policy: Policy) -> Spec:
@@ -72,7 +82,11 @@ def confirmation(spec: Spec, policy: Policy) -> Spec:
         seeds=(spec.seed + protocol.confirm_seed_shift,),
         after=(),
         evals=dataclasses.replace(
-            spec.evals, suite=protocol.confirm_suite, parts=parts, baselines=("parent",), cost=False
+            spec.evals,
+            suite=protocol.confirm_suite,
+            parts=parts,
+            baselines=(PARENT,),
+            cost=False,
         ),
         confirms=spec.id,
     )

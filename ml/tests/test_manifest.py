@@ -41,7 +41,7 @@ def test_round_trips_through_json() -> None:
         ({"kind": "notes"}, "kind"),
         ({"commit": "abc123"}, "40-digit"),
         ({"seeds": []}, "seeds"),
-        ({"seeds": [True]}, "integers"),
+        ({"seeds": [True]}, r"seeds\[0\]: expected int"),
         ({"artifacts": []}, "no artifacts"),
         ({"created": "yesterday"}, "isoformat"),
         ({"encoding": 1}, "encoding"),
@@ -86,6 +86,10 @@ SESSION = {
     "started": "2026-10-05T01:00:00Z",
 }
 
+DESCRIBED: dict[str, object] = {"config": {}, "encoding": "mighty-1", "spec": {}, "parameters": 1}
+"""A run directory's ``config.json`` from before ``kind`` and ``sessions``
+were recorded (a belief model's, by the absence of a reward scale)."""
+
 
 def test_sessions_and_export_round_trip() -> None:
     manifest = Manifest.from_json(manifest_json(sessions=[SESSION], exported_at="e" * 40))
@@ -108,14 +112,15 @@ def test_an_export_keeps_the_training_provenance(
     store, repo = tmp_path / "store", tmp_path / "repo"
     monkeypatch.setenv("CARDGAME_ARTIFACTS", str(store))
     (repo / "research" / "manifests").mkdir(parents=True)
-    run = runs.run_dir("m")
-    run.mkdir(parents=True)
+    run = runs.RunDir.named("m")
+    folder = run.path
+    folder.mkdir(parents=True)
     second = {**SESSION, "session": 2, "commit": "b" * 40}
-    described = {"encoding": "mighty-1", "sessions": [SESSION, second]}
-    (run / "config.json").write_text(json.dumps(described), encoding="utf-8")
-    (run / "model.pt").write_bytes(b"weights")
-    (run / "checkpoint.pt").write_bytes(b"resume state")
-    (run / "metrics.json.tmp").write_bytes(b"a write under way")
+    described = {**DESCRIBED, "sessions": [SESSION, second]}
+    (folder / "config.json").write_text(json.dumps(described), encoding="utf-8")
+    (folder / "model.pt").write_bytes(b"weights")
+    (folder / "checkpoint.pt").write_bytes(b"resume state")
+    (folder / "metrics.json.tmp").write_bytes(b"a write under way")
 
     trained = Checkout(repo, "b" * 40, dirty=False)
     path = runs.record(run, trained, "research/x/config.toml", (7, 1), "mighty-1")
@@ -125,7 +130,7 @@ def test_an_export_keeps_the_training_provenance(
     assert manifest.exported_at is None
     assert {a.path for a in manifest.artifacts} == {"models/m/config.json", "models/m/model.pt"}
 
-    (run / "model.onnx").write_bytes(b"onnx")
+    (folder / "model.onnx").write_bytes(b"onnx")
     exported = Checkout(repo, "f" * 40, dirty=False)
     again = Manifest.load(runs.rerecord(run, exported))
     assert again.commit == "b" * 40  # still the training commit
@@ -148,10 +153,11 @@ def test_an_old_manifest_is_rerecorded_without_losing_its_commit(
     store, repo = tmp_path / "store", tmp_path / "repo"
     monkeypatch.setenv("CARDGAME_ARTIFACTS", str(store))
     (repo / "research" / "manifests").mkdir(parents=True)
-    run = runs.run_dir("old")
-    run.mkdir(parents=True)
-    (run / "config.json").write_text(json.dumps({"encoding": "mighty-1"}), encoding="utf-8")
-    (run / "model.pt").write_bytes(b"weights")
+    run = runs.RunDir.named("old")
+    folder = run.path
+    folder.mkdir(parents=True)
+    (folder / "config.json").write_text(json.dumps(DESCRIBED), encoding="utf-8")
+    (folder / "model.pt").write_bytes(b"weights")
     old = manifest_json(name="old", kind="weights", commit="b" * 40)
     (repo / "research" / "manifests" / "old.json").write_text(json.dumps(old), encoding="utf-8")
     again = Manifest.load(runs.rerecord(run, Checkout(repo, "f" * 40, dirty=False)))

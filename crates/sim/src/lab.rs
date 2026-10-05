@@ -369,6 +369,8 @@ pub fn replay(rules: &Rules, record: &Record, upto: usize) -> State {
 pub struct Outcome {
     pub payoffs: Vec<i64>,
     pub declarer: Seat,
+    #[serde(default)]
+    pub friend: Option<Seat>,
     pub contract: Contract,
     pub team_points: u8,
 }
@@ -377,6 +379,7 @@ pub fn outcome(state: &State) -> Outcome {
     let PhaseView::Done {
         declarer,
         contract,
+        friend,
         team_points,
         payoffs,
         ..
@@ -387,6 +390,7 @@ pub fn outcome(state: &State) -> Outcome {
     Outcome {
         payoffs,
         declarer,
+        friend,
         contract,
         team_points,
     }
@@ -1373,6 +1377,12 @@ pub struct DeclareResult {
     pub declarer_payoff: i64,
     /// The focus seat's payoff.
     pub payoff: i64,
+    /// The declarer's friend, once known (none when it played alone).
+    #[serde(default)]
+    pub friend: Option<Seat>,
+    /// Misdeals the focus seat called, in every deal of the hand.
+    #[serde(default)]
+    pub misdeals: usize,
 }
 
 /// Plays hand `deal` from the deal on with `bot` in one seat and `field`
@@ -1384,6 +1394,7 @@ pub fn declare(rules: &Rules, deal: u64, bot: Actor, field: Actor) -> DeclareRes
     let mut state = Mighty::new_game(&options(rules, deal)).expect("valid rules");
     let mut log = Vec::new();
     let mut bids = Vec::new();
+    let mut misdeals = 0;
     for (phase, tag) in [
         (Phase::Bidding, TAG_BID),
         (Phase::Exchange, TAG_EXCHANGE),
@@ -1397,6 +1408,9 @@ pub fn declare(rules: &Rules, deal: u64, bot: Actor, field: Actor) -> DeclareRes
         advance(&mut state, &table, &mut rngs, &mut log, phase, &mut |d| {
             if d.seat == focus && matches!(d.action, Action::Bid(_)) {
                 bids.push(d.index);
+            }
+            if d.seat == focus && matches!(d.action, Action::Misdeal) {
+                misdeals += 1;
             }
         });
     }
@@ -1415,6 +1429,8 @@ pub fn declare(rules: &Rules, deal: u64, bot: Actor, field: Actor) -> DeclareRes
         team_points: o.team_points,
         declarer_payoff: o.payoffs[o.declarer],
         payoff: o.payoffs[focus],
+        friend: o.friend,
+        misdeals,
     }
 }
 

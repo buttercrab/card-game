@@ -9,6 +9,10 @@ loop_branch = "loop"
 exclude = "research/evals/v1/heldout-rules.json"
 # Yesterday's daily report is written after this local hour.
 report_hour = 7
+# Host roles: training (and every GPU step) runs on train_host, this
+# machine; think time is measured on cost_host, where bots serve from.
+train_host = "mac"
+cost_host = "home"
 
 # This Mac: 14 cores, one 20-core GPU, around the clock. One GPU job at a
 # time is the scheduler's rule; this is the thread budget for the loop's

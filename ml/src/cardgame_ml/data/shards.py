@@ -29,7 +29,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from cardgame_ml._json import as_object, get, get_int, get_list, get_str, get_str_tuple
+from cardgame_ml import schema
 from cardgame_ml.data.spec import EncodingSpec
 
 ARRAYS = (
@@ -65,6 +65,26 @@ class ShardInfo:
     path: str
     games: int
     decisions: int
+
+
+@dataclass(frozen=True)
+class _Meta:
+    """What a dataset's ``meta.json`` says that is read here (it says more:
+    the generator's config and statistics)."""
+
+    name: str
+    game: str
+    encoding: str
+    spec: EncodingSpec
+    bots: tuple[str, ...]
+    shards: tuple[ShardInfo, ...]
+    eval_only: bool = False
+
+
+@dataclass(frozen=True)
+class _RulesLine:
+    id: str
+    rules: dict[str, object]
 
 
 class Shard:
@@ -157,24 +177,19 @@ class Dataset:
 
     @classmethod
     def open(cls, root: Path) -> "Dataset":
-        meta = as_object(json.loads((root / "meta.json").read_text(encoding="utf-8")), "meta")
-        shards = tuple(
-            ShardInfo(
-                path=get_str(s, "path"),
-                games=get_int(s, "games"),
-                decisions=get_int(s, "decisions"),
-            )
-            for s in (as_object(item, "shard") for item in get_list(meta, "shards"))
+        path = root / "meta.json"
+        meta = schema.read(
+            _Meta, json.loads(path.read_text(encoding="utf-8")), str(path), unknown="ignore"
         )
         dataset = cls(
             root=root,
-            name=get_str(meta, "name"),
-            game=get_str(meta, "game"),
-            encoding=get_str(meta, "encoding"),
-            spec=EncodingSpec.from_json(get(meta, "spec")),
-            bots=get_str_tuple(meta, "bots"),
-            shards=shards,
-            eval_only=meta.get("eval_only") is True,
+            name=meta.name,
+            game=meta.game,
+            encoding=meta.encoding,
+            spec=meta.spec,
+            bots=meta.bots,
+            shards=meta.shards,
+            eval_only=meta.eval_only,
         )
         if dataset.spec.version != dataset.encoding:
             raise ValueError(f"{root}: the spec is {dataset.spec.version}, not {dataset.encoding}")
@@ -190,8 +205,8 @@ class Dataset:
         rules: dict[str, dict[str, object]] = {}
         with gzip.open(self.root / "rules.jsonl.gz", "rt", encoding="utf-8") as lines:
             for line in lines:
-                entry = as_object(json.loads(line), "rules line")
-                rules[get_str(entry, "id")] = as_object(get(entry, "rules"), "rules")
+                entry = schema.read(_RulesLine, json.loads(line), "rules.jsonl.gz")
+                rules[entry.id] = entry.rules
         return rules
 
     def load(self, shard: int, arrays: Collection[str] | None = None) -> Shard:

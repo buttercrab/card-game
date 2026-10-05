@@ -406,3 +406,11 @@ model work for it unchanged.
 - 2026-10-05: P7 is Texas hold'em only.
 - 2026-10-05: ratings stay internal to the evals; players see none on the
   site for now.
+- 2026-10-06: learned-bot training is paused (P3b, P4, P5). dmc-v2 was
+  stopped at about 119k hands and assessed
+  ([research/experiments/2026-10-06-rl-assessment](../research/experiments/2026-10-06-rl-assessment/README.md)).
+  Work moves to the codebase plan ([REFACTOR.md](REFACTOR.md)). When
+  training resumes, start from the assessment's recommendations: fix the
+  redeal labels, and start a share of hands from contracts chosen by
+  lookahead with the network's own play. Using 고수's search for those
+  contracts is still the owner's call.

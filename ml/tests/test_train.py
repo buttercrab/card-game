@@ -1,5 +1,6 @@
 """Training configs, the split and batching, and a tiny run on CPU."""
 
+import dataclasses
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from cardgame_ml.train.config import (
     SplitConfig,
     from_mapping,
 )
-from cardgame_ml.train.metrics import PHASES, Report, phases
+from cardgame_ml.train.metrics import PHASES, PhaseFeaturesError, Report, phases
 
 
 def test_reads_a_config(train_config: dict[str, Any]) -> None:
@@ -61,6 +62,14 @@ def test_phases_follow_the_hand(dataset: Dataset) -> None:
     first = games == games[0]
     # A hand goes bidding, (exchange), play: phases never go back.
     assert (np.diff(labels[first]) >= 0).all()
+
+
+def test_phases_need_the_games_phase_features(dataset: Dataset) -> None:
+    """Another game's encoding is refused with what is missing, rather
+    than reporting every decision in no phase."""
+    other = dataclasses.replace(dataset.spec, version="other-1", global_features=("pot", "trick"))
+    with pytest.raises(PhaseFeaturesError, match=r"other-1 has no phase=bidding, phase=exchange"):
+        phases(other, np.zeros((2, 2), np.float32))
 
 
 def test_reports_add_up_by_phase() -> None:

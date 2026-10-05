@@ -2,14 +2,14 @@
 what was varied, what it cost, what the suite said, against the parent,
 and where the logs are."""
 
-import json
 from pathlib import Path
-from typing import Any
 
 from cardgame_ml.loop.evals import EvalResult
+from cardgame_ml.loop.methods.base import CURVE_STEP
 from cardgame_ml.loop.promotion import eval_results
 from cardgame_ml.loop.records import RunRecord
 from cardgame_ml.loop.spec import Spec
+from cardgame_ml.train.dmc.report import CURVE_FILE, CurveReport
 
 
 def compute(record: RunRecord) -> dict[str, float]:
@@ -22,6 +22,17 @@ def compute(record: RunRecord) -> dict[str, float]:
         key = f"cpu_{step.step.host}"
         out[key] = out.get(key, 0.0) + hours * step.step.threads
     return out
+
+
+def varied(params: dict[str, object], equals: str = " = ") -> list[str]:
+    """What a run varies (its ``params``), one ``key = value`` each."""
+    return [f"{k}{equals}{v}" for k, v in params.items()]
+
+
+def curve_report(folder: Path) -> CurveReport | None:
+    """The learning curve a run's curve step wrote, if it has one."""
+    path = folder / "results" / CURVE_STEP / CURVE_FILE
+    return CurveReport.load(path) if path.is_file() else None
 
 
 def eval_row(name: str, r: EvalResult) -> str:
@@ -43,28 +54,23 @@ def eval_row(name: str, r: EvalResult) -> str:
 
 
 def curve_tail(folder: Path, points: int = 5) -> list[str]:
-    path = folder / "results" / "curve" / "curve.json"
-    if not path.is_file():
+    report = curve_report(folder)
+    if report is None or not report.curve:
         return []
-    data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
-    curve: list[dict[str, Any]] = data.get("curve", [])
-    if not curve:
-        return []
-    opponents = list(curve[0]["scores"])
+    opponents = list(report.curve[0].scores)
     lines = [
         "| hands | hours | " + " | ".join(opponents) + " |",
         "| ---: | ---: | " + " | ".join("---:" for _ in opponents) + " |",
     ]
-    for p in curve[-points:]:
-        scores = " | ".join(
-            f"{p['scores'][o]['mean']:+.2f} ± {p['scores'][o]['ci95']:.2f}" for o in opponents
-        )
-        lines.append(f"| {p['hands']:,} | {p['seconds'] / 3600:.2f} | {scores} |")
+    for p in report.curve[-points:]:
+        scores = " | ".join(f"{p.scores[o].mean:+.2f} ± {p.scores[o].ci95:.2f}" for o in opponents)
+        lines.append(f"| {p.hands:,} | {p.seconds / 3600:.2f} | {scores} |")
     return lines
 
 
 def write_summary(record: RunRecord, spec: Spec, folder: Path) -> Path:
     used = compute(record)
+    params = ", ".join(f"`{p}`" for p in varied(record.params)) or "nothing (the base config)"
     lines = [
         f"# {record.id}",
         "",
@@ -72,20 +78,18 @@ def write_summary(record: RunRecord, spec: Spec, folder: Path) -> Path:
         "",
         f"- Method: `{record.method}`; tags: {', '.join(record.tags)}",
         f"- Parent: {record.parent or 'none'}; bot: `{record.bot or '-'}`",
-        f"- Varied: {_params(record.params)}",
+        f"- Varied: {params}",
         f"- Commit: `{record.commit}`; seeds: {', '.join(str(s) for s in spec.seeds)}",
         f"- Status: **{record.status}**" + (f" ({record.failure})" if record.failure else ""),
         f"- Compute: {used['gpu']:.2f} GPU h; "
         + ", ".join(f"{k[4:]} {v:.1f} thread-h" for k, v in used.items() if k.startswith("cpu_"))
         + f" (budget {record.wall_hours} h wall)",
     ]
-    if record.comparison:
-        c = record.comparison
-        diff = c["diff"]
-        assert isinstance(diff, dict)
+    c = record.comparison
+    if c is not None:
         lines.append(
-            f"- Against the parent ({c['metric']}, {'paired' if c['paired'] else 'unpaired'}): "
-            f"{diff['mean']:+.2f} ± {diff['ci95']:.2f}" + (" — **beats it**" if c["beats"] else "")
+            f"- Against the parent ({c.metric}, {'paired' if c.paired else 'unpaired'}): "
+            f"{c.diff}" + (" — **beats it**" if c.beats else "")
         )
     if record.candidate:
         lines.append(f"- Candidate: confirmation `{record.confirmation}` queued")
@@ -119,9 +123,3 @@ def write_summary(record: RunRecord, spec: Spec, folder: Path) -> Path:
     path = folder / "summary.md"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
-
-
-def _params(params: dict[str, object]) -> str:
-    if not params:
-        return "nothing (the base config)"
-    return ", ".join(f"`{k} = {v}`" for k, v in params.items())

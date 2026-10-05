@@ -33,6 +33,11 @@ anything under ``research/loop``: confirmations wait in
 ``Layout.held`` and the leaderboard waits, until the call has been
 checked (``Researcher.settle``) and the next tick catches up.
 
+Each tick reads the run records once (``Records.refresh``); a record that
+does not read is quarantined, not fatal. A tick that fails anyway is
+logged with its traceback, and repeated failures back off (``backoff``).
+GPU steps run on the policy's ``train_host``.
+
 Only one runner works at a time (``RunnerLock``). Steps run in their own
 process groups and outlive the runner, which adopts them on restart.
 """
@@ -41,6 +46,7 @@ import fcntl
 import os
 import subprocess
 import time
+import traceback
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -58,7 +64,9 @@ from cardgame_ml.loop.queue import Queued, read_queue, reject, waiting_for
 from cardgame_ml.loop.records import (
     Records,
     RunRecord,
+    RunStatus,
     StepRecord,
+    StepStatus,
     environment,
     now_utc,
     parse_stamp,
@@ -98,7 +106,7 @@ class Usage:
         usage = cls()
         for run in runs:
             for record in run.steps:
-                if record.status == "running":
+                if record.status == StepStatus.RUNNING:
                     host = record.step.host
                     usage.threads[host] = usage.threads.get(host, 0) + record.step.threads
                     usage.gpu |= record.step.gpu
@@ -132,6 +140,20 @@ def admit(
         usage.threads[step.host] = used + step.threads
         usage.gpu |= step.gpu
     return admitted
+
+
+def own_groups(active: list[RunRecord], policy: Policy) -> set[int]:
+    """The process groups of the loop's running steps on this machine
+    (local hosts: the processes ``ps`` here can see)."""
+    return {
+        r.pid
+        for run in active
+        for r in run.steps
+        if r.status == StepStatus.RUNNING
+        and r.pid is not None
+        and r.step.host in policy.hosts
+        and policy.hosts[r.step.host].local
+    }
 
 
 def other_training(own_groups: set[int]) -> list[str]:
@@ -216,7 +238,7 @@ class Runner:
         self.layout, self.policy, self.executors = layout, policy, executors
         self.git, self.clock, self.gpu_elsewhere = git, clock, gpu_elsewhere
         self.hooks, self.say = hooks, say
-        self.records = Records(layout.experiments, layout.live)
+        self.records = Records(layout.experiments, layout.live, say=say)
         self.finished: list[RunRecord] = []
         """Runs finished during the last tick."""
         self._board_stale = False
@@ -230,6 +252,7 @@ class Runner:
 
     def tick(self) -> None:
         now = self.clock()
+        self.records.refresh()  # read once a tick, kept current by every save
         self.finished = []
         calling = self.calling()
         released = [] if calling else self._release_held()
@@ -239,7 +262,7 @@ class Runner:
         if self._board_stale and not calling:
             from cardgame_ml.loop.leaderboard import write_leaderboard  # noqa: PLC0415
 
-            write_leaderboard(self.layout, self.policy)
+            write_leaderboard(self.layout, self.policy, self.records)
             self._board_stale = False
         if self.finished or released:
             done = [f"{r.id} finished" for r in self.finished] + [f"queued {f}" for f in released]
@@ -281,18 +304,18 @@ class Runner:
     def _advance(self, run: RunRecord, now: datetime) -> None:  # noqa: PLR0912
         current = run.current()
         if current is None:
-            self._finish(run, "succeeded", now)
+            self._finish(run, RunStatus.SUCCEEDED, now)
             return
         cancel = (self.layout.cancel / run.id).exists()
         over = now >= parse_stamp(run.deadline)
-        ending = "cancelled" if cancel else "timeout"
-        if current.status == "pending":
+        ending = RunStatus.CANCELLED if cancel else RunStatus.TIMEOUT
+        if current.status == StepStatus.PENDING:
             if cancel or over:
                 self._finish(run, ending, now, f"{ending} before {current.step.name}")
             return
         executor = self.executors.get(current.step.host)
         if executor is None:
-            self._finish(run, "failed", now, f"no executor for host {current.step.host}")
+            self._finish(run, RunStatus.FAILED, now, f"no executor for host {current.step.host}")
             return
         result = executor.poll(current)
         if result in (RUNNING, UNKNOWN):
@@ -305,27 +328,32 @@ class Runner:
         if isinstance(result, int):
             current.exit_code = result
         if current.stopping is not None:
-            current.status = "killed"
+            current.status = StepStatus.KILLED
             self._finish(run, ending, now, f"{current.step.name} stopped: {ending}")
         elif result == 0:
-            current.status = "done"
+            current.status = StepStatus.DONE
             if run.current() is None:
-                self._finish(run, "succeeded", now)
+                self._finish(run, RunStatus.SUCCEEDED, now)
             else:
                 self.records.save(run)
         elif result == LOST:
             if current.attempts < self.policy.limits.max_attempts:
                 self.say(f"{run.id}: {current.step.name} was lost; starting it again")
-                current.status, current.pid, current.ended = "pending", None, None
+                current.status, current.pid, current.ended = StepStatus.PENDING, None, None
                 self.records.save(run)
             else:
-                current.status = "failed"
+                current.status = StepStatus.FAILED
                 self._finish(
-                    run, "interrupted", now, f"{current.step.name} lost {current.attempts} times"
+                    run,
+                    RunStatus.INTERRUPTED,
+                    now,
+                    f"{current.step.name} lost {current.attempts} times",
                 )
         else:
-            current.status = "failed"
-            self._finish(run, "failed", now, f"{current.step.name} exited {result}: {_tail(log)}")
+            current.status = StepStatus.FAILED
+            self._finish(
+                run, RunStatus.FAILED, now, f"{current.step.name} exited {result}: {_tail(log)}"
+            )
 
     def _stop(
         self, run: RunRecord, record: StepRecord, executor: HostExecutor, now: datetime
@@ -339,18 +367,18 @@ class Runner:
             executor.stop(record, force=True)
 
     def _finish(
-        self, run: RunRecord, status: str, now: datetime, failure: str | None = None
+        self, run: RunRecord, status: RunStatus, now: datetime, failure: str | None = None
     ) -> None:
         run.status, run.ended, run.failure = status, stamp(now), failure
         for record in run.steps:
-            if record.status == "running":
-                record.status = "killed"
+            if record.status == StepStatus.RUNNING:
+                record.status = StepStatus.KILLED
         folder = self.records.folder(run)
         spec = load_spec(folder / "spec.toml")
         runs = self.records.by_id()
-        if status == "succeeded":
+        if status == RunStatus.SUCCEEDED:
             comparison = assess(run, folder, self.policy, runs, self.layout.experiments)
-            run.comparison = comparison.to_json() if comparison else None
+            run.comparison = comparison
             beats = comparison is not None and comparison.beats
             # Only the scoreboard has fresh-deal twins to confirm on.
             scoreboard = spec.evals.suite == self.policy.protocol.suite
@@ -392,7 +420,7 @@ class Runner:
             Want(current.step, run=run)
             for run in active
             if (current := run.current()) is not None
-            and current.status == "pending"
+            and current.status == StepStatus.PENDING
             and (intake or not current.step.clean)
         ]
         if intake:
@@ -400,12 +428,7 @@ class Runner:
         if not wants:
             return []
         loads = {name: self._load(name) for name in {w.step.host for w in wants}}
-        own = {
-            r.pid
-            for run in active
-            for r in run.steps
-            if r.status == "running" and r.pid is not None and r.step.host == "mac"
-        }
+        own = own_groups(active, self.policy)
         elsewhere = bool(self.gpu_elsewhere(own)) if any(w.step.gpu for w in wants) else False
         started: list[str] = []
         for want in admit(wants, Usage.of(active), self.policy.hosts, loads, elsewhere):
@@ -502,8 +525,8 @@ class Runner:
             executor.start(run, record, self._log(run, record))
         except UnsafePathError as e:
             self.say(f"{run.id}: refused to start {record.step.name}: {e}")
-            record.status = "failed"
-            self._finish(run, "failed", now, f"{record.step.name}: {e}")
+            record.status = StepStatus.FAILED
+            self._finish(run, RunStatus.FAILED, now, f"{record.step.name}: {e}")
             return False
         except (ConnectionError, OSError, subprocess.SubprocessError) as e:
             self.say(f"{run.id}: could not start {record.step.name}: {e}")
@@ -512,7 +535,7 @@ class Runner:
                 record.started = None
             self.records.save(run)
             return False
-        record.status = "running"
+        record.status = StepStatus.RUNNING
         self.records.save(run)
         return True
 
@@ -521,19 +544,48 @@ class Runner:
 
     # -- serving -------------------------------------------------------
 
-    def serve(self, interval: float = 30.0, once: bool = False) -> None:
+    def serve(
+        self,
+        interval: float = 30.0,
+        once: bool = False,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+        ticks: int | None = None,
+    ) -> None:
+        """Ticks every ``interval`` seconds (``ticks`` times, or for ever).
+        A failed tick is logged with its traceback and the next one tries
+        again; after ``FAILURES_BEFORE_BACKOFF`` failures in a row the wait
+        doubles with each further one, up to ``MAX_BACKOFF_SECONDS``."""
         with RunnerLock(self.layout.lock):
             self.say(f"runner up: {len(self.records.active())} active runs to watch")
+            failures = done = 0
             while True:
                 try:
                     self.tick()
+                    failures = 0
                 except Exception as e:
                     # A bad tick (a disk hiccup, a malformed file) must not
                     # take the runner down; the next one tries again.
-                    self.say(f"tick failed: {type(e).__name__}: {e}")
-                if once:
+                    failures += 1
+                    self.say(f"tick failed ({failures} in a row): {type(e).__name__}: {e}")
+                    self.say(traceback.format_exc().rstrip())
+                done += 1
+                if once or (ticks is not None and done >= ticks):
                     return
-                time.sleep(interval)
+                sleep(backoff(interval, failures))
+
+
+FAILURES_BEFORE_BACKOFF = 3
+MAX_BACKOFF_SECONDS = 1800.0
+
+
+def backoff(interval: float, failures: int) -> float:
+    """Seconds to wait before the next tick, after ``failures`` failed
+    ticks in a row."""
+    extra = failures - FAILURES_BEFORE_BACKOFF + 1
+    if extra <= 0:
+        return interval
+    return min(interval * 2.0**extra, max(MAX_BACKOFF_SECONDS, interval))
 
 
 def _tail(log: Path, lines: int = 8) -> str:

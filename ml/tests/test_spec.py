@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from cardgame_ml._json import JsonError
 from cardgame_ml.data.spec import EncodingSpec
+from cardgame_ml.schema import SchemaError
 
 
 def mighty_spec(repo: Path) -> EncodingSpec:
@@ -34,7 +34,7 @@ def test_shapes_follow_the_names(repo: Path) -> None:
 
 
 def test_rejects_malformed_specs() -> None:
-    with pytest.raises(JsonError, match="missing field 'version'"):
+    with pytest.raises(SchemaError, match="missing version"):
         EncodingSpec.from_json({})
-    with pytest.raises(JsonError, match="expected an object"):
+    with pytest.raises(SchemaError, match="expected a table"):
         EncodingSpec.from_json([])

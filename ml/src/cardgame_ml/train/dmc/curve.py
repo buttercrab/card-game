@@ -11,7 +11,6 @@ scoreboard).
 """
 
 import math
-from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -19,18 +18,7 @@ from cardgame_env import Env
 
 from cardgame_ml.models.q import QModel
 from cardgame_ml.train.dmc.policy import GREEDY, choose, legal_values
-
-
-@dataclass(frozen=True)
-class Score:
-    """Points per seat-hand: mean, 95% half-width, deals."""
-
-    mean: float
-    ci95: float
-    n: int
-
-    def to_json(self) -> dict[str, float | int]:
-        return {"mean": self.mean, "ci95": self.ci95, "n": self.n}
+from cardgame_ml.train.dmc.report import Score
 
 
 def play(  # noqa: PLR0913

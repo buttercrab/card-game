@@ -14,10 +14,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from cardgame_ml.data.shards import Batch
 from cardgame_ml.data.spec import EncodingSpec
-
-type Batch = dict[str, NDArray[np.generic]]
-"""Arrays by name, batch first."""
 
 
 @dataclass(frozen=True)

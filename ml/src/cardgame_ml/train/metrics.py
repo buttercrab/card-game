@@ -5,8 +5,10 @@ and by phase of the hand.
 Phases are read from the global vector by feature name: the bidding
 (``phase=bidding``, and ``phase=misdeal_round`` in ``mighty-1`` and
 ``mighty-2``, which ``mighty-3`` dropped), the exchange, and the play,
-split at half the hand by ``trick`` (the share of tricks done). An
-encoding without them reports the overall numbers only.
+split at half the hand by ``trick`` (the share of tricks done). These
+are Mighty's names: an encoding without them is refused
+(``PhaseFeaturesError``) when training starts, rather than reporting
+every decision in no phase.
 """
 
 from collections.abc import Iterable, Mapping
@@ -20,23 +22,41 @@ from cardgame_ml.data.spec import EncodingSpec
 PHASES = ("bidding", "exchange", "early tricks", "late tricks")
 """Phase labels, by the index :func:`phases` gives (-1: none of these)."""
 
+PHASE_FEATURES = ("phase=bidding", "phase=exchange", "phase=play", "trick")
+"""The global features phases are read from."""
+
 LATE = 0.5
 """The share of tricks done from which the play counts as late."""
 
 
+class PhaseFeaturesError(ValueError):
+    """An encoding without the features phases are read from."""
+
+
+def phase_columns(spec: EncodingSpec) -> dict[str, int]:
+    """Where each feature :func:`phases` reads sits in the global vector
+    (``phase=misdeal_round`` when the encoding has it)."""
+    names = {name: i for i, name in enumerate(spec.global_features)}
+    missing = [name for name in PHASE_FEATURES if name not in names]
+    if missing:
+        raise PhaseFeaturesError(
+            f"encoding {spec.version} has no {', '.join(missing)} among its global features: "
+            "the phases of the hand (train.metrics) are read from them"
+        )
+    wanted = (*PHASE_FEATURES, "phase=misdeal_round")
+    return {name: names[name] for name in wanted if name in names}
+
+
 def phases(spec: EncodingSpec, global_: NDArray[np.float32]) -> NDArray[np.int64]:
     """The phase of each decision ``[B]``, an index into :data:`PHASES`."""
-    names = {name: i for i, name in enumerate(spec.global_features)}
+    columns = phase_columns(spec)
     out = np.full(len(global_), -1, np.int64)
-    wanted = ("phase=bidding", "phase=exchange", "phase=play", "trick")
-    if not all(name in names for name in wanted):
-        return out
 
     def column(name: str) -> NDArray[np.float32]:
-        return global_[:, names[name]]
+        return global_[:, columns[name]]
 
     bidding = column("phase=bidding") > 0
-    if "phase=misdeal_round" in names:
+    if "phase=misdeal_round" in columns:
         bidding |= column("phase=misdeal_round") > 0
     out[bidding] = 0
     out[column("phase=exchange") > 0] = 1

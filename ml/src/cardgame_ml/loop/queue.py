@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from cardgame_ml.loop.records import RunRecord
+from cardgame_ml.loop.records import RunRecord, RunStatus
 from cardgame_ml.loop.spec import Spec, SpecError, load_spec
 
 
@@ -40,7 +40,7 @@ def waiting_for(spec: Spec, runs: Mapping[str, RunRecord], artifacts: Path) -> s
             return f"waiting for {dep} to run"
         if not record.finished:
             return f"waiting for {dep} to finish"
-        if record.status != "succeeded":
+        if record.status != RunStatus.SUCCEEDED:
             return f"blocked: {dep} {record.status}"
     for path in spec.requires:
         if not (artifacts / path).exists():

@@ -4,20 +4,24 @@ scored by. People change it by commit; the researcher may read it but
 never change it (the runner reverts its edits and stops calling it)."""
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
-from cardgame_ml.loop.fields import FieldError, Table
-from cardgame_ml.loop.safety import UnsafePathError, relative, ssh_destination
+from cardgame_ml import schema
+from cardgame_ml.loop.safety import relative, ssh_destination
+from cardgame_ml.schema import TABLE_KEY, SchemaError
+from cardgame_ml.train.dmc.config import CurveConfig
 
 SCHEMA = "loop-policy/1"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Host:
     """A machine the runner starts steps on."""
 
-    name: str
+    name: str = field(default="", metadata=TABLE_KEY)
+    """Its key under ``[hosts]``."""
     threads: int
     """Threads the loop's steps may hold at once (a step bigger than this
     starts only when the host is otherwise idle)."""
@@ -27,17 +31,26 @@ class Host:
     table."""
     gpu: bool
     nice: int
-    ssh: str | None
+    ssh: str | None = None
     """The ``ssh`` destination; ``None`` for this machine."""
-    root: str
+    root: str = ""
     """Scratch folder for the loop's code and outputs, relative to the
     home directory (remote hosts only)."""
-    max_load: float
+    max_load: float = 1e9
     """No new step starts while the one-minute load average is above this
     (remote hosts: the live bot worker comes first)."""
 
+    def __post_init__(self) -> None:
+        if self.ssh is not None:
+            ssh_destination(self.ssh)
+            relative(self.root, f"hosts.{self.name}.root")
 
-@dataclass(frozen=True)
+    @property
+    def local(self) -> bool:
+        return self.ssh is None
+
+
+@dataclass(frozen=True, kw_only=True)
 class Limits:
     methods: tuple[str, ...]
     """Methods the researcher may queue (the agenda's runnable ones)."""
@@ -50,7 +63,7 @@ class Limits:
     """Times a step is started before its run is given up (restarts)."""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ResearcherPolicy:
     claude: str
     model: str
@@ -66,35 +79,20 @@ class ResearcherPolicy:
     own ``total_cost_usd``; a call that reported none counts as
     ``max_budget_usd``). A call starts only if it fits whole."""
 
-
-@dataclass(frozen=True)
-class Curve:
-    """The learning curve every RL run measures: a training config's
-    ``[curve]`` table is replaced by this, so curves compare."""
-
-    every_hands: int
-    deals: int
-    rules: str
-    opponents: tuple[str, ...]
-    seed: int
-    threads: int
-
-    def to_table(self) -> dict[str, object]:
-        return {
-            "every_hands": self.every_hands,
-            "deals": self.deals,
-            "rules": self.rules,
-            "opponents": list(self.opponents),
-            "seed": self.seed,
-            "threads": self.threads,
-        }
+    def __post_init__(self) -> None:
+        if not 0 < self.max_budget_usd <= self.max_usd_per_day:
+            raise ValueError("0 < max_budget_usd <= max_usd_per_day")
+        if not self.timeout_minutes > 0:
+            raise ValueError("timeout_minutes above 0")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Protocol:
     """How every run is scored."""
 
-    curve: Curve
+    curve: CurveConfig
+    """The learning curve every RL run measures: a training config's
+    ``[curve]`` table is replaced by this, so curves compare."""
     suite: str
     parts: tuple[str, ...]
     """Parts a spec may ask for."""
@@ -109,14 +107,18 @@ class Protocol:
     ``research/loop``, never in ``research/evals``)."""
     confirm_seed_shift: int
     """Added to a candidate's training seed for its confirmation."""
-    suites: tuple[str, ...]
+    suites: tuple[str, ...] = ()
     """Other suites a spec may play: the loop's own, in
     ``research/loop/suites`` (head-to-heads on a few rule sets, say).
     They are not the scoreboard: a win on one is not confirmed by the
     runner, and the leaderboard's suite columns stay empty for them."""
 
+    def __post_init__(self) -> None:
+        if not set(self.required_parts) <= set(self.parts):
+            raise ValueError("required_parts must be among parts")
 
-@dataclass(frozen=True)
+
+@dataclass(frozen=True, kw_only=True)
 class Reference:
     """A fixed row of the leaderboard: a bot measured outside the loop."""
 
@@ -125,8 +127,9 @@ class Reference:
     results: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class Policy:
+    schema: Literal["loop-policy/1"]
     loop_branch: str
     """The runner commits its records only on this branch."""
     exclude: str
@@ -134,17 +137,30 @@ class Policy:
     never change it."""
     report_hour: int
     """Local hour after which yesterday's daily report is written."""
+    train_host: str
+    """Where training (and anything else on the GPU) runs: this machine,
+    with a GPU. ``eval`` is built here before steps run here."""
+    cost_host: str
+    """Where think time is measured (the machine bots serve from)."""
     hosts: dict[str, Host]
     limits: Limits
     researcher: ResearcherPolicy
     protocol: Protocol
-    references: tuple[Reference, ...]
+    references: tuple[Reference, ...] = ()
+
+    def __post_init__(self) -> None:
+        for role, host in (("train_host", self.train_host), ("cost_host", self.cost_host)):
+            if host not in self.hosts:
+                raise ValueError(f"{role}: no host {host!r} in hosts")
+        train = self.hosts[self.train_host]
+        if not train.local or not train.gpu:
+            raise ValueError(f"train_host: {train.name} must be this machine, with a GPU")
 
     def host(self, name: str) -> Host:
         try:
             return self.hosts[name]
         except KeyError:
-            raise FieldError(f"no host {name!r} in the policy") from None
+            raise SchemaError(f"no host {name!r} in the policy") from None
 
     @classmethod
     def load(cls, path: Path) -> "Policy":
@@ -153,100 +169,4 @@ class Policy:
 
 
 def parse_policy(data: dict[str, object], where: str) -> Policy:
-    t = Table(data, where)
-    if t.text("schema") != SCHEMA:
-        raise FieldError(f"{where}: schema is not {SCHEMA}")
-    hosts: dict[str, Host] = {}
-    hosts_table = t.table("hosts")
-    for name in list(hosts_table.data):
-        h = hosts_table.table(name)
-        hosts[name] = Host(
-            name=name,
-            threads=h.integer("threads"),
-            cores=h.integer("cores"),
-            gpu=h.flag("gpu"),
-            nice=h.integer("nice"),
-            ssh=h.opt_text("ssh"),
-            root=h.text("root", ""),
-            max_load=h.number("max_load", 1e9),
-        )
-        h.done()
-        host = hosts[name]
-        try:
-            if host.ssh is not None:
-                ssh_destination(host.ssh)
-                relative(host.root, f"hosts.{name}.root")
-        except UnsafePathError as e:
-            raise FieldError(f"{where}: hosts.{name}: {e}") from None
-    hosts_table.done()
-    if "mac" not in hosts:
-        raise FieldError(f"{where}: hosts: the Mac (mac) is required")
-    lim = t.table("limits")
-    limits = Limits(
-        methods=lim.texts("methods"),
-        max_wall_hours=lim.number("max_wall_hours"),
-        max_gpu_hours_queued=lim.number("max_gpu_hours_queued"),
-        max_specs_per_call=lim.integer("max_specs_per_call"),
-        max_attempts=lim.integer("max_attempts"),
-    )
-    lim.done()
-    r = t.table("researcher")
-    researcher = ResearcherPolicy(
-        claude=r.text("claude"),
-        model=r.text("model"),
-        min_interval_hours=r.number("min_interval_hours"),
-        max_calls_per_day=r.integer("max_calls_per_day"),
-        low_water=r.integer("low_water"),
-        timeout_minutes=r.number("timeout_minutes"),
-        max_budget_usd=r.number("max_budget_usd"),
-        max_usd_per_day=r.number("max_usd_per_day"),
-    )
-    r.done()
-    if not 0 < researcher.max_budget_usd <= researcher.max_usd_per_day:
-        raise FieldError(f"{where}: researcher: 0 < max_budget_usd <= max_usd_per_day")
-    if not researcher.timeout_minutes > 0:
-        raise FieldError(f"{where}: researcher: timeout_minutes above 0")
-    p = t.table("protocol")
-    c = p.table("curve")
-    curve = Curve(
-        every_hands=c.integer("every_hands"),
-        deals=c.integer("deals"),
-        rules=c.text("rules"),
-        opponents=c.texts("opponents"),
-        seed=c.integer("seed"),
-        threads=c.integer("threads"),
-    )
-    c.done()
-    protocol = Protocol(
-        curve=curve,
-        suite=p.text("suite"),
-        parts=p.texts("parts"),
-        required_parts=p.texts("required_parts"),
-        baseline=p.text("baseline"),
-        primary=p.text("primary"),
-        confirm_suite=p.text("confirm_suite"),
-        confirm_seed_shift=p.integer("confirm_seed_shift"),
-        suites=p.texts("suites", ()),
-    )
-    p.done()
-    if not set(protocol.required_parts) <= set(protocol.parts):
-        raise FieldError(f"{where}: protocol: required_parts must be among parts")
-    reference_tables = t.tables("references")
-    references = tuple(
-        Reference(name=x.text("name"), bot=x.text("bot"), results=x.text("results"))
-        for x in reference_tables
-    )
-    for x in reference_tables:
-        x.done()
-    policy = Policy(
-        loop_branch=t.text("loop_branch"),
-        exclude=t.text("exclude"),
-        report_hour=t.integer("report_hour"),
-        hosts=hosts,
-        limits=limits,
-        researcher=researcher,
-        protocol=protocol,
-        references=references,
-    )
-    t.done()
-    return policy
+    return schema.read(Policy, data, where)

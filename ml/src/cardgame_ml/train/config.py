@@ -1,25 +1,23 @@
 """Typed training configs, read from TOML files committed with an
 experiment (``research/experiments/<folder>/config.toml``).
 
-Every field is spelled out in the file: reading fails on a missing or
-unknown key and on a value of the wrong type, so a config never leans on
-a default that could change under it. Fields are scalars, nested
-dataclasses (tables), ``tuple[T, ...]`` (arrays) or ``dict[str, T]``
-(tables of values).
+Every field is spelled out in the file: reading (``schema.read``, with
+defaults off) fails on a missing or unknown key and on a value of the
+wrong type, so a config never leans on a default that could change under
+it.
 """
 
 import dataclasses
 import tomllib
-import types
-import typing
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
 
+from cardgame_ml import schema
 from cardgame_ml.models.config import BeliefConfig
+from cardgame_ml.schema import SchemaError
 
-
-class ConfigError(ValueError):
-    """A config file does not match its schema."""
+ConfigError = SchemaError
+"""A config file does not match its schema."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -72,52 +70,7 @@ class BeliefTrainConfig:
             return from_mapping(cls, tomllib.load(f), str(path))
 
 
-def from_mapping[T](cls: type[T], data: dict[str, Any], where: str) -> T:
-    """Builds the dataclass ``cls`` from ``data``, every field present and
-    of its declared type; nested dataclasses come from tables."""
-    hints = typing.get_type_hints(cls)
-    fields = [f.name for f in dataclasses.fields(cast(Any, cls))]
-    missing = [name for name in fields if name not in data]
-    unknown = [key for key in data if key not in fields]
-    if missing or unknown:
-        problems = [f"missing {', '.join(missing)}"] if missing else []
-        problems += [f"unknown {', '.join(unknown)}"] if unknown else []
-        raise ConfigError(f"{where}: {'; '.join(problems)}")
-    values: dict[str, object] = {}
-    for name in fields:
-        kind, value, at = hints[name], data[name], f"{where}: {name}"
-        if dataclasses.is_dataclass(kind):
-            if not isinstance(value, dict):
-                raise ConfigError(f"{at}: expected a table")
-            values[name] = from_mapping(cast(type, kind), cast(dict[str, Any], value), at)
-        else:
-            values[name] = _scalar(kind, value, at)
-    try:
-        return cls(**values)
-    except ValueError as e:
-        raise ConfigError(f"{where}: {e}") from e
-
-
-def _scalar(kind: object, value: object, at: str) -> object:
-    origin, args = typing.get_origin(kind), typing.get_args(kind)
-    if origin is tuple and len(args) == 2 and args[1] is Ellipsis:  # noqa: PLR2004
-        if not isinstance(value, list):
-            raise ConfigError(f"{at}: expected an array")
-        items = cast(list[object], value)
-        return tuple(_scalar(args[0], item, f"{at}[{i}]") for i, item in enumerate(items))
-    if origin is dict and len(args) == 2 and args[0] is str:  # noqa: PLR2004
-        if not isinstance(value, dict):
-            raise ConfigError(f"{at}: expected a table")
-        table = cast(dict[str, object], value)
-        return {key: _scalar(args[1], item, f"{at}.{key}") for key, item in table.items()}
-    # TOML integers are fine where a float is wanted; booleans are never numbers.
-    if kind is float and isinstance(value, int) and not isinstance(value, bool):
-        return float(value)
-    if isinstance(kind, type) and kind is not bool and isinstance(value, bool):
-        raise ConfigError(f"{at}: expected {kind.__name__}, got a boolean")
-    if isinstance(kind, type) and isinstance(value, kind):
-        return value
-    if isinstance(kind, types.UnionType):
-        raise ConfigError(f"{at}: union types are not supported in configs")
-    name = getattr(kind, "__name__", str(kind))
-    raise ConfigError(f"{at}: expected {name}, got {type(value).__name__}")
+def from_mapping[T](cls: type[T], data: Mapping[str, object], where: str) -> T:
+    """Builds the training config ``cls`` from ``data``: every field present
+    (no defaults) and of its declared type (``schema.read``)."""
+    return schema.read(cls, data, where, defaults=False)
