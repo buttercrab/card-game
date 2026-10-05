@@ -1,0 +1,29 @@
+# DMC v1 (P3b) on the full protocol: the parent of every DMC run.
+id = "dmc-v1-score"
+hypothesis = """DMC v1, trained by self-play alone for 5.25 hours, is meant to beat 보통 on suite v1's ladder (P3b's exit) but not 고수; this measures it on every part against 고수, deal by deal, so later DMC runs have a parent to beat."""
+method = "eval-only"
+tags = ["baseline", "eval"]
+parent = "bot:hard"
+priority = 100
+seeds = [1]
+requires = ["models/dmc-v1/model.onnx"]
+
+[budget]
+wall_hours = 10.0
+gpu = false
+
+[resources]
+host = "mac"
+threads = 10
+eval_host = "mac"
+eval_threads = 10
+
+[evals]
+curve = false
+suite = "v1"
+parts = ["ladder", "presets", "heldout", "puzzles"]
+baselines = ["hard"]
+cost = true
+
+[options]
+bot = "dmc:{artifacts}/models/dmc-v1"

@@ -5,7 +5,7 @@ import importlib
 import pytest
 
 
-@pytest.mark.parametrize("stage", ["data", "models", "train", "export", "scaling"])
+@pytest.mark.parametrize("stage", ["data", "models", "train", "export", "scaling", "loop"])
 def test_stage_imports(stage: str) -> None:
     module = importlib.import_module(f"cardgame_ml.{stage}")
     assert module.__doc__, f"cardgame_ml.{stage} says what goes there"

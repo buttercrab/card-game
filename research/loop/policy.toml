@@ -1,0 +1,82 @@
+# The experiment loop's fixed rules (cardgame_ml.loop.policy). People
+# change this file by commit; the researcher may read it, never change it.
+
+schema = "loop-policy/1"
+# The runner commits its records on this branch only (its own worktree),
+# and never pushes.
+loop_branch = "loop"
+# Training excludes these rule sets; configs may name the file, never change it.
+exclude = "research/evals/v1/heldout-rules.json"
+# Yesterday's daily report is written after this local hour.
+report_hour = 7
+
+# This Mac: 14 cores, one 20-core GPU, around the clock. One GPU job at a
+# time is the scheduler's rule; this is the thread budget for the loop's
+# steps (a DMC run holds 12 of them).
+[hosts.mac]
+threads = 14
+cores = 14
+gpu = true
+nice = 10
+
+# The home server: 12 cores beside the live bot worker. The loop sends it
+# CPU steps only (eval), at nice 15, at most 6 threads in all, nothing new
+# while its load is above 6, and keeps to ~/research/card-game.
+[hosts.home]
+threads = 6
+# A step may hold all 12 (a search thinking on every core, as at the
+# table) only when no other loop step runs there; still at nice 15.
+cores = 12
+gpu = false
+nice = 15
+ssh = "home"
+root = "research/card-game"
+max_load = 6.0
+
+[limits]
+# What the researcher may queue: the methods with code today.
+methods = ["dmc", "eval-only", "search-tuning", "belief"]
+# A DMC run: 5.25 h of training, then suite v1 on the home server.
+max_wall_hours = 48.0
+max_gpu_hours_queued = 60.0
+max_specs_per_call = 8
+max_attempts = 3
+
+[researcher]
+claude = "~/.local/bin/claude"
+model = "claude-opus-5-5"
+min_interval_hours = 2.0
+max_calls_per_day = 6
+# Called when fewer runnable specs than this wait in the queue.
+low_water = 3
+timeout_minutes = 40.0
+max_budget_usd = 0.0
+
+# How every run is scored.
+[protocol]
+suite = "v1"
+parts = ["ladder", "presets", "heldout", "matches", "puzzles"]
+required_parts = ["ladder", "presets", "heldout"]
+baseline = "hard"
+primary = "ladder"
+confirm_suite = "v1-fresh-1"
+confirm_seed_shift = 1000
+# The loop's own suites (research/loop/suites), not scoreboards: wins on
+# them are not confirmed by the runner.
+suites = ["think-gshs", "think-default"]
+
+# The learning curve every RL run records (DMC v1's): greedy, one seat of
+# 경기과고 against four 초보 and against four 보통, the same 2 000 deals at
+# every point.
+[protocol.curve]
+every_hands = 50000
+deals = 2000
+rules = "gshs"
+opponents = ["easy", "normal"]
+seed = 20261006
+threads = 2
+
+[[references]]
+name = "고수 (hard)"
+bot = "hard"
+results = "research/experiments/2026-10-04-eval-v1-baseline/results/results.json"

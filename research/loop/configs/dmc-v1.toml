@@ -1,0 +1,76 @@
+# The loop's base DMC config: DMC v1's (P3b), as committed with it in
+# research/experiments/2026-10-05-dmc-v1/config.toml (commit 696c128 on
+# the P3b branch). Specs start from it and change keys with
+# `[config] set`; the loop then sets `name`, `seed`, `[budget]` from the
+# spec and `[curve]` from the policy's protocol, and never lets a spec
+# change `exclude`.
+#
+# From scratch, by the owner's rule (2026-10-05): random initial weights,
+# no imitation or datasets, every seat of every training hand is the
+# current network; the built-in bots only measure it.
+
+name = "dmc-v1"
+seed = 20261005
+device = "auto"
+# Fresh draws around every preset, 3 to 7 players, never a held-out set.
+rules = "varied"
+exclude = "research/evals/v1/heldout-rules.json"
+# Payoffs in self-play v1 have a standard deviation of about 40 points:
+# targets are points / 40.
+reward_scale = 0.025
+checkpoint_minutes = 10.0
+log_seconds = 60.0
+
+[budget]
+hands = 20000000
+hours = 5.25
+
+# About 0.6M parameters: the belief model's trunk one layer shallower.
+[model]
+head_width = 256
+head_layers = 2
+
+[model.trunk]
+width = 128
+heads = 4
+layers = 3
+feedforward = 256
+dropout = 0.0
+
+# Five actors of two PyTorch threads and one Rust thread each, on the
+# Mac's 14 cores with the learner's: about two left for the system.
+[actors]
+processes = 5
+envs = 128
+threads = 2
+env_threads = 1
+groups = 4
+epsilon = 0.02
+# Two points (targets are points / 40).
+temperature = 0.05
+runner_up = 0.05
+refresh_every = 10
+chunk = 2048
+
+# About 2 500 hands of decisions; float16 rows, about 4 GB.
+[buffer]
+capacity = 200000
+min_fill = 20000
+window = 8
+replay_ratio = 2.0
+
+[optim]
+batch_size = 1024
+lr = 0.0003
+weight_decay = 0.0
+warmup_steps = 500
+grad_clip = 1.0
+
+# Replaced by the policy's protocol in every loop run.
+[curve]
+every_hands = 50000
+deals = 2000
+rules = "gshs"
+opponents = ["easy", "normal"]
+seed = 20261006
+threads = 2

@@ -1,0 +1,28 @@
+# Search tuning: solve the last 3 tricks exactly in playouts.
+id = "search-endgame-3"
+hypothesis = """Solving the last three tricks of each playout exactly (endgame = 3) instead of playing them with the simple bot makes playout values less noisy late in the hand; the benchmark saw no endgame headroom, so a gain here would come from better values of earlier cards."""
+method = "search-tuning"
+tags = ["search", "method"]
+parent = "bot:hard"
+priority = 42
+seeds = [1]
+
+[budget]
+wall_hours = 16.0
+gpu = false
+
+[resources]
+host = "home"
+threads = 6
+eval_host = "home"
+eval_threads = 6
+
+[evals]
+curve = false
+suite = "v1"
+parts = ["presets", "heldout"]
+baselines = ["parent"]
+cost = false
+
+[options]
+bot = "hard@endgame=3"
