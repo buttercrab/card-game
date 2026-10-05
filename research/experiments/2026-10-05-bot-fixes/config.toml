@@ -1,0 +1,35 @@
+# The bot fixes of docs/FIXES.md 1.7, each measured with paired sim runs:
+# the focus seat (rotating) plays the change, then the same games again
+# with the baseline in its place; the other four seats are the field.
+# Old behaviour stays reachable through SimpleBot settings, so one binary
+# measures both sides:
+#   old = bid_base=6.5,aim_joker_call=false,spare_declarer_joker=false,
+#         misdeal_below_min=false,bid_spread=0
+
+presets = ["gshs", "default"]       # 경기과고 (scoring G) and 기본
+seed = 0                            # sim --seed; deals = seed + game
+simple_games = 200000               # per preset, simple-bot changes
+search_games = [1000, 3000]         # search bot: seed 0, then seed 1000 (fresh deals; 2000 for some)
+easy_games = 100000
+
+[run]
+code = "155fbae"                    # the bot changes as committed
+# The search-bot comparisons of redeals (scripts/batch_hard*.sh) need the
+# old playout too: they ran on 155fbae plus a temporary SearchBot setting
+# `replay_redeals` (sim spec `search@replay_redeals=true`) that played a
+# redeal out as before; it was removed before the commit.
+# 초보 before and after (scripts/easy.sh) compares the binary at e83d54b
+# (base/sim) with 155fbae (sim).
+scripts = "scripts/"                # pair.sh and the batches, run from a folder holding the binaries
+commands = [
+  "bash scripts/batch1.sh       # misdeal, bid_base 6.0, bid_spread 1.9/3/4",
+  "bash scripts/batch2.sh       # bid_spread 5 and 7 on gshs",
+  "bash scripts/pair.sh spread4-vs-1.9 simple@aim_joker_call=false,spare_declarer_joker=false,bid_spread=1.9 simple@aim_joker_call=false,spare_declarer_joker=false,bid_spread=4 simple@aim_joker_call=false,spare_declarer_joker=false,bid_spread=1.9 200000 gshs",
+  "bash scripts/batch3.sh       # bid_base 5.5, aim_joker_call, spare_declarer_joker, temper",
+  "bash scripts/easy.sh         # 초보 against 보통, before and after",
+  "bash scripts/redeals.sh      # redeals per hand, simple-bot tables, lab gen 20000 deals",
+  "bash scripts/batch_hard.sh 1000 && bash scripts/batch_hard2.sh   # search bot (batch_hard2 stopped by its time limit during 기본)",
+  "bash scripts/batch_hard3.sh  # 기본, everything against the old, 2000 games seed 1000",
+  "lab --preset gshs --out gen-gshs.jsonl gen --deals 20000 --bot simple; python3 scripts/calib.py gen-gshs.jsonl  # make rate by estimate margin (at e83d54b)",
+]
+machine = "the Mac (M4 Pro, 14 threads), shared with a DMC training run; nice -n 10, 2-4 threads"

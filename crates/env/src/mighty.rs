@@ -8,8 +8,8 @@
 //! sets them up (`crates/server/src/session.rs`, `SessionGame::bot`), each
 //! seat a little bolder or more careful in its bidding:
 //!
-//! - `초보` or `easy`: the simple bot, choosing a random card a third of
-//!   the time.
+//! - `초보` or `easy`: the simple bot, bidding more carefully and slipping
+//!   to a random cheap card a third of the time.
 //! - `보통` or `normal`: the simple bot.
 //! - `고수` or `hard`: the search bot, without a time limit so that its
 //!   choices depend only on the seed; `고수:N` or `hard:N` deals `N`
@@ -20,18 +20,11 @@
 
 use crate::game::EnvGame;
 use engine::{Bot, Seat};
-use mighty::bot::SimpleBot;
+use mighty::bot::{Clumsy, tempered};
 use mighty::rules::{Preset, Rules};
 use mighty::search::SearchBot;
-use mighty::{Action, Mighty, Options, View};
-use rand::seq::IndexedRandom;
+use mighty::{Mighty, Options};
 use rand::{Rng, RngCore};
-
-/// How often 초보 picks a random card, as on the server.
-const EASY_SLIPS: f64 = 0.35;
-
-/// Bolder or more careful bidders, by seat, as on the server.
-const TEMPER: [f32; 8] = [0.0, 0.4, -0.4, 0.2, -0.2, 0.3, -0.3, 0.1];
 
 /// A bot by name; see the module docs.
 #[derive(Debug, Clone, Copy)]
@@ -41,32 +34,6 @@ pub enum BotSpec {
     /// The search bot with this many samples, or its default.
     Hard(Option<usize>),
     Sim(sim::spec::Spec),
-}
-
-/// The simple bot with `seat`'s temper.
-fn tempered(seat: Seat) -> SimpleBot {
-    let mut policy = SimpleBot::default();
-    policy.bid_base += TEMPER[seat % TEMPER.len()];
-    policy
-}
-
-/// The simple bot that, when playing a card, picks one at random this
-/// often: the server's 초보.
-#[derive(Debug, Clone, Copy)]
-struct Clumsy {
-    inner: SimpleBot,
-    slips: f64,
-}
-
-impl Bot<Mighty> for Clumsy {
-    fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
-        let playing = legal.iter().all(|a| matches!(a, Action::Play { .. }));
-        if playing && rng.random_bool(self.slips) {
-            legal.choose(rng).expect("a bot acts only with legal actions").clone()
-        } else {
-            self.inner.act(view, legal, rng)
-        }
-    }
 }
 
 impl EnvGame for Mighty {
@@ -128,10 +95,7 @@ impl EnvGame for Mighty {
 
     fn bot(spec: &BotSpec, seat: Seat) -> Box<dyn Bot<Mighty> + Send> {
         match *spec {
-            BotSpec::Easy => Box::new(Clumsy {
-                inner: tempered(seat),
-                slips: EASY_SLIPS,
-            }),
+            BotSpec::Easy => Box::new(Clumsy::easy(tempered(seat))),
             BotSpec::Normal => Box::new(tempered(seat)),
             BotSpec::Hard(samples) => {
                 let default = SearchBot::default();

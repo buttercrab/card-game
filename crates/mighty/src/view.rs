@@ -1,6 +1,6 @@
 use crate::card::Card;
 use crate::rules::{Contract, Rules};
-use crate::state::{Bid, FriendCall, Phase, Play, Redealt, State};
+use crate::state::{Action, Bid, FriendCall, Phase, Play, Redealt, State};
 use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
@@ -174,6 +174,66 @@ impl View {
             bids: Vec::new(),
             redealt: None,
         }
+    }
+}
+
+impl View {
+    /// Whether the choice among `legal` is no real choice: one action, or
+    /// cards following a trick that are all alike. Alike means one suit,
+    /// all point cards or none, no mighty or joker, and no card anyone
+    /// could still hold ranking between them, so whichever is played the
+    /// trick and the hand go the same way.
+    pub fn obvious(&self, legal: &[Action]) -> bool {
+        if legal.len() <= 1 {
+            return true;
+        }
+        let PhaseView::Play {
+            contract,
+            lead: Some(_),
+            plays,
+            tricks,
+            ..
+        } = &self.phase
+        else {
+            return false;
+        };
+        let mighty = self.rules.mighty(contract.trump);
+        let mut cards = Vec::with_capacity(legal.len());
+        for a in legal {
+            match a {
+                Action::Play {
+                    card,
+                    joker_lead: None,
+                    call_joker: false,
+                } if !card.is_joker() && *card != mighty => cards.push(*card),
+                _ => return false,
+            }
+        }
+        let first = cards[0];
+        if cards
+            .iter()
+            .any(|c| c.suit() != first.suit() || c.is_point() != first.is_point())
+        {
+            return false;
+        }
+        let (Some(suit), Some(low), Some(high)) = (
+            first.suit(),
+            cards.iter().filter_map(|c| c.rank()).min(),
+            cards.iter().filter_map(|c| c.rank()).max(),
+        ) else {
+            return false;
+        };
+        let played = |card: Card| {
+            tricks
+                .iter()
+                .flat_map(|t| &t.plays)
+                .chain(plays)
+                .any(|p| p.card == card)
+        };
+        (low + 1..high).all(|rank| {
+            let card = Card::new(suit, rank);
+            self.hand.contains(&card) || played(card)
+        })
     }
 }
 

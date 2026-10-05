@@ -450,8 +450,11 @@ mod tests {
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
             let pick = &legal[rng.random_range(0..legal.len())];
             let index = Mighty::action_index(&view, pick).unwrap();
+            // Played out to the end, so the deals disagree: a fixed leaf
+            // value would give every deal the same margin, which no
+            // confidence can outweigh.
             let net = fake(Some(index));
-            let mut hybrid = bot(net, 2, Baseline::Network, Some(0));
+            let mut hybrid = bot(net, 2, Baseline::Network, None);
             hybrid.search.confidence = 1e9;
             assert_eq!(&hybrid.act(&view, &legal, &mut rng), pick);
             // A prior of one weighs nothing but the favourite: one call.

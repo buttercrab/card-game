@@ -3,7 +3,7 @@
 //! their move back as a command.
 
 use crate::bots::RemoteBots;
-use crate::session::{BotLevel, SessionGame};
+use crate::session::{BotLevel, Decision, SessionGame};
 use crate::stats::{Event, Hand, Stats};
 use engine::{Turn, Viewer};
 use rand::rngs::StdRng;
@@ -23,15 +23,33 @@ pub type ConnId = u64;
 /// answer before thinking itself.
 const REMOTE_GRACE: Duration = Duration::from_secs(2);
 
-/// A bot's move time against the server's bot delay. Stronger bots take
-/// longer, as people do, and the 고수 bot spends it thinking.
-fn pace(level: BotLevel) -> f32 {
-    match level {
+/// A bot's move time, in units of the server's bot delay (one second by
+/// default), by what it is deciding, as a person would take: bids 2 to 3
+/// s, discards and the friend call 3 to 4 s, a lead about 2 s, an obvious
+/// follow about 0.6 s, with [`JITTER`] on top. The 고수 bot spends most
+/// of it thinking; 초보 and 보통 are a little quicker.
+fn pace(level: BotLevel, decision: Decision) -> f32 {
+    let base = match decision {
+        Decision::Obvious => 0.6,
+        Decision::Follow => 1.2,
+        Decision::Lead => 2.0,
+        Decision::Bid => 2.5,
+        Decision::Plan => 3.5,
+    };
+    let level = match level {
         BotLevel::Easy => 0.75,
-        BotLevel::Normal => 1.0,
-        BotLevel::Hard => 1.6,
-    }
+        BotLevel::Normal => 0.85,
+        BotLevel::Hard => 1.0,
+    };
+    base * level
 }
+
+/// How much every bot move varies around its pace.
+const JITTER: std::ops::Range<f32> = 0.85..1.15;
+
+/// The most a 고수 bot thinks per move, in units of the bot delay: what it
+/// had before moves were paced by decision. Longer waits are for show.
+const THINK: f32 = 1.28;
 
 /// How long a hint may think: the player is waiting for it.
 const HINT_THINK: Duration = Duration::from_millis(800);
@@ -252,7 +270,7 @@ pub struct Room<G: SessionGame> {
     /// kept have fewer of them than `history`.
     hands: Vec<G::Summary>,
     rng: StdRng,
-    /// A 보통 bot's move time; see [`pace`].
+    /// The unit of a bot's move time; see [`pace`].
     bot_delay: Duration,
     /// The most a 고수 bot may think on this server, if limited.
     think_cap: Option<Duration>,
@@ -1118,11 +1136,10 @@ impl<G: SessionGame> Room<G> {
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game);
         let (seed, version) = (self.rng.random::<u64>(), self.version);
-        // People take a moment, and longer when there is a real choice: a
-        // forced move comes quicker, and every move varies a little.
-        let forced = if legal.len() == 1 { 0.5 } else { 1.0 };
-        let jitter = self.rng.random_range(0.8..1.2);
-        let delay = self.bot_delay.mul_f32(pace(level) * forced * jitter);
+        // People take a moment, longer for a real choice, and every move
+        // varies a little.
+        let jitter = self.rng.random_range(JITTER);
+        let delay = self.bot_delay.mul_f32(pace(level, G::decision(&view, &legal)) * jitter);
         // A move that must wait after the deal waits a little past it.
         let grace = legal.iter().map(|a| G::grace(game, a)).max().unwrap_or_default();
         let waited = self.dealt_at.map_or(grace, |t| t.elapsed());
@@ -1132,7 +1149,7 @@ impl<G: SessionGame> Room<G> {
         };
         // Bots wait out the delay anyway so people can follow along; spend
         // most of it thinking, leaving a little for the move to travel.
-        let think = delay.mul_f32(0.8);
+        let think = delay.mul_f32(0.8).min(self.bot_delay.mul_f32(THINK));
         let local_think = self.think_cap.map_or(think, |cap| think.min(cap));
         let remote = self.remote.clone().filter(|r| r.available());
         let job = remote.as_ref().map(|_| {
