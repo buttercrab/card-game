@@ -2,6 +2,9 @@
 //! view, that every legal action has its own index, and that belief
 //! targets say where hidden cards really are.
 
+mod common;
+
+use common::{check_golden, pinned_games, write_golden};
 use engine::{Encode, Game, Observation, Spec, Turn, Viewer};
 use mighty::card::{ACE, Card, Color, Suit};
 use mighty::encode::{ACTIONS, BURIED, MAX_EVENTS, MAX_SEATS, SLOTS, slot};
@@ -125,6 +128,40 @@ fn spec_matches_the_snapshot() {
     );
 }
 
+/// FNV-1a of the spec's JSON, its version left out: what
+/// [`mighty::encode::SPECS`] lists for each version.
+fn spec_fingerprint(spec: &Spec) -> u64 {
+    let mut unversioned = spec.clone();
+    unversioned.version = String::new();
+    let mut fingerprint = Fingerprint::new();
+    fingerprint.add(serde_json::to_string(&unversioned).unwrap().as_bytes());
+    fingerprint.0
+}
+
+/// A changed spec needs a new `VERSION`: the last of `SPECS` names the
+/// current version and its spec, and no version is listed twice.
+#[test]
+fn the_spec_changes_only_with_its_version() {
+    use mighty::encode::{SPECS, VERSION};
+    let (version, pinned) = *SPECS.last().unwrap();
+    assert_eq!(version, VERSION, "the last line of SPECS is for VERSION");
+    let now = spec_fingerprint(&spec());
+    assert_eq!(
+        pinned, now,
+        "the encoding spec changed (now {now:#018x}): bump VERSION, append (VERSION, {now:#018x}) to SPECS \
+         in crates/mighty/src/encode.rs and run scripts/regenerate-fixtures.sh"
+    );
+    for (i, (version, fingerprint)) in SPECS.iter().enumerate() {
+        for (other, other_fingerprint) in &SPECS[i + 1..] {
+            assert_ne!(version, other, "{version} is listed twice");
+            assert_ne!(
+                fingerprint, other_fingerprint,
+                "{version} and {other} have the same spec"
+            );
+        }
+    }
+}
+
 #[test]
 #[ignore]
 fn write_spec_snapshot() {
@@ -159,27 +196,41 @@ impl Fingerprint {
 }
 
 /// What every seat sees at every position of a fixed set of random games,
-/// bit for bit. The values change with `VERSION`, or when a preset these
-/// games are drawn from changes its rules (then re-pin, keeping `VERSION`);
-/// faster encoders must reproduce this exactly.
+/// bit for bit, one line per game in `tests/pinned/encodings.jsonl`. The
+/// games' rules are frozen (`tests/pinned/encode-games.json`), so only a
+/// change to the encoding moves this, and then `VERSION` changes too.
+/// Faster encoders must reproduce it exactly.
+fn pinned_encodings() -> Vec<String> {
+    pinned_games("encode-games.json")
+        .iter()
+        .enumerate()
+        .map(|(game, pinned)| {
+            let players = pinned.rules.players;
+            let mut fingerprint = Fingerprint::new();
+            let mut positions = 0;
+            play(&pinned.options(), pinned.seed, |state| {
+                for seat in 0..players {
+                    fingerprint.observation(&encode(state, seat));
+                    positions += 1;
+                }
+            });
+            format!(
+                r#"{{"game": {game}, "players": {players}, "positions": {positions}, "fingerprint": "{:016x}"}}"#,
+                fingerprint.0
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn encodings_are_pinned() {
-    let mut fingerprint = Fingerprint::new();
-    let mut positions = 0;
-    for (i, rules) in rule_sets().into_iter().enumerate().step_by(4) {
-        let players = rules.players;
-        play(&options(rules, i % players), i as u64, |state| {
-            for seat in 0..players {
-                fingerprint.observation(&encode(state, seat));
-                positions += 1;
-            }
-        });
-    }
-    assert_eq!(positions, 7828);
-    assert_eq!(
-        fingerprint.0, 0x10d0_f0d6_8f10_71af,
-        "the encoding changed: bump VERSION and pin the new fingerprint (only re-pin if a preset's rules changed)"
-    );
+    check_golden("encodings.jsonl", &pinned_encodings(), "encode");
+}
+
+#[test]
+#[ignore]
+fn write_pinned_encodings() {
+    write_golden("encodings.jsonl", &pinned_encodings());
 }
 
 /// Each legal action of every position of many random games has its own

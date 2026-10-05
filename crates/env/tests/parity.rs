@@ -1,12 +1,14 @@
 //! Recorded positions for the Rust–Python parity test.
 //!
 //! `parity.json` pins what the environment returns, field by field, for a
-//! fixed run: varied rules, every seat played by a choice anyone can
-//! repeat ([`common::choose`]). `ml/tests/test_env.py` replays the same
-//! run through the Python bindings and must get the same bytes. The
-//! fixture changes only with the encoding (bump its version) or the
-//! environment's seeding; rewrite it with
-//! `cargo test -p env --test parity -- --ignored write_parity_fixture`.
+//! fixed run: a pool of rule sets frozen in `parity-rules.json` (copied
+//! once from the presets and varied draws of them, so changing a preset
+//! moves nothing here), every seat played by a choice anyone can repeat
+//! ([`common::choose`]). `ml/tests/test_env.py` replays the same run
+//! through the Python bindings and must get the same bytes. The fixture
+//! changes only with the encoding (bump its version) or the environment's
+//! seeding; rewrite it with `scripts/regenerate-fixtures.sh` (or
+//! `cargo test -p env --test parity -- --ignored write_parity_fixture`).
 
 mod common;
 
@@ -16,6 +18,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 const SEED: u64 = 7;
+/// The rule sets the run draws from, as the Python side reads them too.
+const RULES: &str = include_str!("parity-rules.json");
 const NUM_ENVS: usize = 3;
 const STEPS: usize = 120;
 
@@ -50,7 +54,7 @@ fn hashes(batch: &Batch, belief: &[i32]) -> Value {
 }
 
 fn record() -> Value {
-    let mut env = env(setup("varied", &[0, 1, 2, 3, 4, 5, 6, 7], &[]), NUM_ENVS, SEED, 0);
+    let mut env = env(setup(RULES, &[0, 1, 2, 3, 4, 5, 6, 7], &[]), NUM_ENVS, SEED, 0);
     let actions = env.spec().actions.len();
     let mut batch = env.reset(None).unwrap();
     let mut steps = vec![json!({"actions": null, "hashes": hashes(&batch, &env.belief_targets().unwrap())})];
@@ -62,7 +66,7 @@ fn record() -> Value {
     json!({
         "game": "mighty",
         "encoding": env.spec().version,
-        "rules": "varied",
+        "rules": "crates/env/tests/parity-rules.json",
         "seed": SEED,
         "num_envs": NUM_ENVS,
         "steps": steps,

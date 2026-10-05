@@ -4,9 +4,12 @@ import { defineConfig, devices } from '@playwright/test';
 // server (it answers /api/presets for the rulebook and the 404 status for
 // unknown paths, which `vite preview` does not). Build first:
 //   cargo build --release -p server && npm run build
-// SERVER_BIN points at another server binary; PORT moves it.
+// SERVER_BIN points at another server binary; PORT moves it. A second
+// server, on the next port, has bots that move at once, for the tests that
+// play a hand (play.spec.ts).
 const port = Number(process.env.PORT ?? 4317);
 const server = process.env.SERVER_BIN ?? '../target/release/server';
+const quickBotsURL = `http://127.0.0.1:${port + 1}`;
 
 const sizes = [
   { name: '320x568', width: 320, height: 568, mobile: true },
@@ -41,11 +44,20 @@ export default defineConfig({
       },
     })),
   ),
-  webServer: {
-    command: `${server} --web dist --addr 127.0.0.1:${port}`,
-    env: { STATS_TOKEN: 'x', RUST_LOG: 'warn' },
-    url: `http://127.0.0.1:${port}/healthz`,
-    reuseExistingServer: false,
-    timeout: 30_000,
-  },
+  webServer: [
+    {
+      command: `${server} --web dist --addr 127.0.0.1:${port}`,
+      env: { STATS_TOKEN: 'x', RUST_LOG: 'warn' },
+      url: `http://127.0.0.1:${port}/healthz`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    {
+      command: `${server} --web dist --addr 127.0.0.1:${port + 1} --bot-delay-ms 20 --bot-think-ms 20`,
+      env: { RUST_LOG: 'warn' },
+      url: `${quickBotsURL}/healthz`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+  ],
 });

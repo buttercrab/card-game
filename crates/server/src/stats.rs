@@ -699,9 +699,9 @@ mod tests {
 
     #[test]
     fn the_log_survives_a_restart() {
-        let dir = std::env::temp_dir().join(format!("cards-stats-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let stats = Stats::open(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let stats = Stats::open(dir).unwrap();
         let player = stats.player("token");
         stats.record(Event::HandStarted {
             hand: hand("a", "gshs", 1),
@@ -721,12 +721,11 @@ mod tests {
             .write_all(b"{\"t\":1,\"type\":\"from_the_future\"}\nnot json\n")
             .unwrap();
 
-        let stats = Stats::open(&dir).unwrap();
+        let stats = Stats::open(dir).unwrap();
         assert_eq!(stats.player("token"), player, "the salt is kept");
         assert!(stats.error_last_seen("g").is_some());
         let s = stats.summary(now());
         assert_eq!(s.totals.hands_started, 1);
         assert_eq!(s.players.active_7, 1);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,7 +1,5 @@
 <script lang="ts">
-  import DeckPreview from './lib/DeckPreview.svelte';
-  import TablePreview from './lib/TablePreview.svelte';
-  import SharePreview from './lib/SharePreview.svelte';
+  import type { Component } from 'svelte';
   import About from './lib/About.svelte';
   import Home from './lib/Home.svelte';
   import NotFound from './lib/NotFound.svelte';
@@ -49,6 +47,14 @@
               : '페이지를 찾을 수 없어요 · 마이티';
   });
 
+  // The tool pages (the deck, the table's states, the share image) load on
+  // their own, so players never download them.
+  const tools: Record<string, () => Promise<{ default: Component }>> = {
+    '/deck': () => import('./lib/DeckPreview.svelte'),
+    '/preview': () => import('./lib/TablePreview.svelte'),
+    '/share': () => import('./lib/SharePreview.svelte'),
+  };
+
   /** Links between the app's own pages move without reloading it. */
   function follow(event: MouseEvent) {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -66,12 +72,10 @@
 <svelte:window onpopstate={() => (path = location.pathname)} />
 <svelte:document onclick={follow} />
 
-{#if page === '/deck'}
-  <DeckPreview />
-{:else if page === '/preview'}
-  <TablePreview />
-{:else if page === '/share'}
-  <SharePreview />
+{#if tools[page]}
+  {#await tools[page]() then { default: Tool }}
+    <Tool />
+  {/await}
 {:else if rulesFor}
   <main class="page"><Rulebook preset={rulesFor} /></main>
 {:else if roomId}

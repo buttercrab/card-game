@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.91"
 license = "MIT"
 
 [workspace.dependencies]
@@ -25,13 +25,18 @@ rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+tempfile = "3"
 thiserror = "2"
 toml = "1"
 ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = "0.30"
+# The version axum's WebSockets use, so there is one tungstenite.
+tokio-tungstenite = "0.29"
+# TLS for the bot worker's link (wss://), in Rust: no OpenSSL to build or
+# ship. One crypto provider, so rustls picks it without being told.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.7", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs", "limit"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
@@ -42,6 +47,19 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 
-# Unoptimised deflate is far too slow for the tests that write shards.
-[profile.dev.package.zlib-rs]
+# Tests play thousands of hands and search deeply: unoptimised they spend
+# most of their time in the engine. A light optimisation of the workspace
+# and a full one of the dependencies (built once and cached) make the test
+# binaries several times faster for a little more compile time.
+[profile.test]
+opt-level = 1
+
+[profile.dev.package."*"]
 opt-level = 3
+
+# The Python bindings (crates/env-py, built by maturin). Release, but
+# unstripped: stable rustc's strip leaves a library recent macOS refuses to
+# load ("mis-aligned LINKEDIT string pool").
+[profile.wheel]
+inherits = "release"
+strip = false

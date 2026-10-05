@@ -686,15 +686,14 @@ mod tests {
 
     #[test]
     fn the_page_lists_reports_newest_first_and_escapes_them() {
-        let dir = std::env::temp_dir().join(format!("reports-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
         std::fs::write(dir.join("100-000001.json"), r#"{"text":"첫 신고","room_id":"abc"}"#).unwrap();
         std::fs::write(dir.join("200-000002.json"), r#"{"text":"<b>둘째</b>","room_id":null}"#).unwrap();
         std::fs::write(dir.join("notes.txt"), "ignored").unwrap();
-        let rows = recent_reports(&dir);
+        let rows = recent_reports(dir);
         assert_eq!(rows.iter().map(|r| r.time).collect::<Vec<_>>(), [200, 100]);
         let html = page_with(&crate::stats::Stats::in_memory().summary(1_791_105_000), &rows);
         assert!(html.contains("&lt;b&gt;둘째&lt;/b&gt;") && html.contains("/stats/reports/100-000001.json"));
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

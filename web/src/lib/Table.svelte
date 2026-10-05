@@ -19,7 +19,7 @@
   import { savedName, type RoomClient } from './client.svelte';
   import SeatMenu from './SeatMenu.svelte';
   import { after, later } from './clock';
-  import { EASE_STANDARD, flyFrom, flyTo, juice, pop, ring, settle } from './motion';
+  import { EASE_STANDARD, flyFrom, flyTo, hold, juice, pop, ring, settle } from './motion';
   import { setMood } from './music.svelte';
   import { settings } from './settings.svelte';
   import { BACK_NAMES, TABLE_NAMES, checkHand, type Achievement } from './achievements';
@@ -531,8 +531,15 @@
     if (!fresh || settings.speed === 'off') return;
     dealing = true;
     sound.shuffle();
-    const timer = setTimeout(() => (dealing = false), 900);
-    return () => clearTimeout(timer);
+    const release = hold();
+    const timer = setTimeout(() => {
+      dealing = false;
+      release();
+    }, 900);
+    return () => {
+      clearTimeout(timer);
+      release();
+    };
   });
   let felt: HTMLElement;
   /** Set when the player acts: finish what is animating and show the latest state. */
@@ -603,6 +610,7 @@
   async function pump() {
     if (running) return;
     running = true;
+    const release = hold();
     try {
       // Seats moved for this hand (a shuffle at 다음 판): they slide to
       // their places first, then the cards are dealt.
@@ -627,6 +635,7 @@
     } finally {
       running = false;
       hurry = false;
+      release();
     }
   }
 

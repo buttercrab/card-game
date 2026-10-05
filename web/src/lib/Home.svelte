@@ -12,27 +12,26 @@
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import { CATALOG, isPreset, presetTitle } from './catalog';
-  import { customName, loadCustom } from './rulesets';
+  import { customName, loadCustom, type CustomSet } from './rulesets';
   import { responseError } from './errorText';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
-  let customs = $state(loadCustom());
-  /** A preset id, or `custom:<id>` for rules saved on this device: the last
-   * one used here, or the default preset when that no longer exists. */
-  let choice = $state(
-    (() => {
-      const saved = (() => {
-        try {
-          return localStorage.getItem('mighty.preset');
-        } catch {
-          return null;
-        }
-      })();
-      const known = saved?.startsWith('custom:') ? loadCustom().some((c) => `custom:${c.id}` === saved) : saved !== null && isPreset(saved);
-      return known && saved !== null ? saved : CATALOG.default_preset;
-    })(),
-  );
+  /** The preset last used here, if it still exists, or the default one. */
+  function remembered(saved: CustomSet[]): string {
+    let id: string = CATALOG.default_preset;
+    try {
+      id = localStorage.getItem('mighty.preset') ?? id;
+    } catch {
+      // Private mode: start from the default.
+    }
+    const known = id.startsWith('custom:') ? saved.some((c) => `custom:${c.id}` === id) : isPreset(id);
+    return known ? id : CATALOG.default_preset;
+  }
+  const saved = loadCustom();
+  let customs = $state(saved);
+  /** A preset id, or `custom:<id>` for rules saved on this device. */
+  let choice = $state(remembered(saved));
   const chosen = $derived(choice.startsWith('custom:') ? (customs.find((c) => `custom:${c.id}` === choice) ?? null) : null);
   const preset = $derived(chosen?.base ?? choice);
   const chosenName = $derived(chosen ? customName(chosen) : presetTitle(preset));
