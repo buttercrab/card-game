@@ -1,12 +1,11 @@
 //! The turn timer: under a table's turn limit, a person's turn that runs
 //! out is played for them by a 보통 bot, and their seat is marked away.
 
-use super::{Room, log_action};
+use super::Room;
 use crate::protocol::ClockInfo;
 use crate::session::SessionGame;
 use crate::stats::Event;
-use engine::{Turn, Viewer};
-use mighty::bot::Level;
+use engine::Turn;
 use std::time::Duration;
 use tokio::time::Instant;
 
@@ -107,21 +106,12 @@ impl<G: SessionGame> Room<G> {
     pub(super) fn on_clock(&mut self) -> bool {
         let Some(key) = self.clock.take() else { return false };
         let seat = key.seat;
-        let Some(game) = self.hand.game.as_ref() else {
-            return false;
-        };
-        if key.version != self.hand.version || G::turn(game) != Turn::Seat(seat) {
+        if key.version != self.hand.version || self.hand.turn() != Some(Turn::Seat(seat)) {
             return false;
         }
-        let view = G::view(game, Viewer::Seat(seat));
-        let legal = G::legal_actions(game);
-        let action = G::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut self.rng);
-        let logged = log_action(&action);
-        if let Err(e) = self.hand.apply(action) {
-            tracing::error!(room = %self.id, seat, action = %logged, "the stand-in chose an illegal action: {e}");
+        if !self.stand_in(seat, "turn ran out") {
             return false;
         }
-        tracing::info!(room = %self.id, seat, action = %logged, "turn ran out");
         self.seating.away[seat] = true;
         self.record(Event::TurnTimedOut { table: self.id.clone() });
         true

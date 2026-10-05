@@ -228,9 +228,9 @@ impl AppState {
         room: Room<G>,
     ) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let (registry, key, me) = (self.rooms.clone(), id.clone(), tx.downgrade());
+        let (registry, key) = (self.rooms.clone(), id.clone());
         tokio::spawn(async move {
-            room.run(me, rx).await;
+            room.run(rx).await;
             registry.lock().remove(&key);
             tracing::info!(room = key, "room closed");
         });

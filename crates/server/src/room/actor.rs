@@ -1,6 +1,7 @@
-//! The room's task: it waits for a command, its turn timer or its idle
-//! timeout, handles the one that comes, and settles.
+//! The room's task: it waits for a command, a bot's move, its turn timer or
+//! its idle timeout, handles the one that comes, and settles.
 
+use super::bots::Internal;
 use super::seating::Conn;
 use super::view::Preview;
 use super::{ConnId, Msg, REACTIONS, Room, TURN_LIMITS, log_action};
@@ -8,11 +9,11 @@ use crate::protocol::{ClientMsg, ErrorCode, ServerError};
 use crate::session::SessionGame;
 use crate::stats::Event;
 use serde_json::Value;
-use std::any::Any;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, WeakUnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 
+/// What the rest of the server asks of a room.
 pub enum Command {
     Connect {
         conn: ConnId,
@@ -33,29 +34,17 @@ pub enum Command {
     Describe {
         reply: oneshot::Sender<Preview>,
     },
-    /// A bot's chosen action (a boxed `G::Action`), for game `version`.
-    BotMove {
-        version: u64,
-        seat: usize,
-        action: Box<dyn Any + Send>,
-    },
     /// The server is stopping: save the room, keep its file, and end. `done`
     /// answers once the snapshot is written.
     Shutdown {
         done: oneshot::Sender<()>,
     },
-    /// A bot's out-of-turn action (a boxed `G::Action`), decided when deal
-    /// number `deal` landed.
-    BotOutOfTurn {
-        deal: u64,
-        seat: usize,
-        action: Box<dyn Any + Send>,
-    },
 }
 
 /// What the room's loop woke up for.
-enum Wake {
+enum Wake<A> {
     Command(Command),
+    Internal(Internal<A>),
     Clock,
     Closed,
 }
@@ -73,13 +62,13 @@ impl Effects {
 }
 
 impl<G: SessionGame> Room<G> {
-    /// `me` must send to `rx`; bots use it to report their moves. Returns
-    /// once nobody has been connected for the server's idle time.
+    /// Runs the room on the commands from `rx` until every sender is gone
+    /// or nobody has been connected for the server's idle time.
     ///
     /// With a data directory, the room is written there after every change
     /// and the file removed when the room closes.
-    pub async fn run(mut self, me: WeakUnboundedSender<Command>, mut rx: UnboundedReceiver<Command>) {
-        self.me = Some(me);
+    pub async fn run(mut self, mut rx: UnboundedReceiver<Command>) {
+        let mut inbox = self.inbox.take().expect("a room runs once");
         let idle = self.env.idle;
         // A restored room may have a bot to act.
         self.settle(Effects::NONE);
@@ -89,6 +78,8 @@ impl<G: SessionGame> Room<G> {
             let deadline = self.clock.deadline();
             let next = tokio::select! {
                 cmd = rx.recv() => cmd.map_or(Wake::Closed, Wake::Command),
+                // The room holds a sender itself, so this never ends.
+                Some(message) = inbox.recv() => Wake::Internal(message),
                 () = tokio::time::sleep_until(empty_since.map_or(now, |since| since + idle)), if empty_since.is_some() => Wake::Closed,
                 () = tokio::time::sleep_until(deadline.unwrap_or(now)), if deadline.is_some() => Wake::Clock,
             };
@@ -99,6 +90,9 @@ impl<G: SessionGame> Room<G> {
                     return;
                 }
                 Wake::Command(cmd) => self.handle(cmd),
+                Wake::Internal(message) => Effects {
+                    changed: self.on_internal(message),
+                },
                 Wake::Clock => Effects {
                     changed: self.on_clock(),
                 },
@@ -167,17 +161,8 @@ impl<G: SessionGame> Room<G> {
                 let _ = reply.send(self.describe());
                 Effects::NONE
             }
-            Command::BotMove { version, seat, action } => {
-                self.thinking = false;
-                Effects {
-                    changed: self.bot_move(version, seat, action),
-                }
-            }
             // Handled by `run`, which ends the room.
             Command::Shutdown { .. } => Effects::NONE,
-            Command::BotOutOfTurn { deal, seat, action } => Effects {
-                changed: self.bot_out_of_turn(deal, seat, action),
-            },
         }
     }
 

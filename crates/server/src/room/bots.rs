@@ -1,8 +1,9 @@
 //! Bots at the table: how long they seem to take over a move, thinking
 //! here or on a bot worker, the out-of-turn plans they make on a deal, and
-//! the 고수 bot's hints for players.
+//! the 고수 bot's hints for players. A bot's move comes back to the room
+//! on its own typed channel ([`Internal`]).
 
-use super::{Command, ConnId, Msg, Room, log_action};
+use super::{ConnId, Msg, Room, log_action};
 use crate::protocol::{ErrorCode, ServerError};
 use crate::session::{Decision, SessionGame};
 use engine::{Turn, Viewer};
@@ -10,9 +11,7 @@ use mighty::bot::Level;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::json;
-use std::any::Any;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc::WeakUnboundedSender;
 
 /// How long a room waits past a move's thinking time for a bot worker's
 /// answer before thinking itself.
@@ -49,15 +48,27 @@ const THINK: f32 = 1.28;
 /// How long a hint may think: the player is waiting for it.
 const HINT_THINK: Duration = Duration::from_millis(800);
 
+/// What the room's own bot tasks send it, for game action `A`.
+#[derive(Debug)]
+#[allow(clippy::enum_variant_names)] // The bots are all it carries, for now.
+pub(super) enum Internal<A> {
+    /// A bot's move for hand `version`.
+    BotMove { version: u64, seat: usize, action: A },
+    /// The bot for hand `version` failed to think (it panicked): the 보통
+    /// bot moves for it instead.
+    BotFailed { version: u64, seat: usize },
+    /// A bot's out-of-turn action, decided when deal number `deal` landed.
+    BotOutOfTurn { deal: u64, seat: usize, action: A },
+}
+
 impl<G: SessionGame> Room<G> {
     /// Starts a bot thinking if one is to act. Its move arrives as
-    /// [`Command::BotMove`] no sooner than its pace.
+    /// [`Internal::BotMove`] no sooner than its pace.
     pub(super) fn think(&mut self) {
         if self.thinking {
             return;
         }
-        let me = self.me.as_ref().and_then(WeakUnboundedSender::upgrade);
-        let (Some(seat), Some(game), Some(tx)) = (self.bot_to_act(), self.hand.game.as_ref(), me) else {
+        let (Some(seat), Some(game)) = (self.bot_to_act(), self.hand.game.as_ref()) else {
             return;
         };
         let Some((level, temper)) = self.seating.bot(seat) else {
@@ -88,9 +99,10 @@ impl<G: SessionGame> Room<G> {
                 "view": view, "legal": legal,
             })
         });
+        let tx = self.internal.clone();
         self.thinking = true;
         tokio::spawn(async move {
-            let started = Instant::now();
+            let started = tokio::time::Instant::now();
             // A worker gets the move's thinking time and a grace period; past
             // that, or with no worker, the room thinks for itself.
             let mut remote_choice = None;
@@ -112,27 +124,41 @@ impl<G: SessionGame> Room<G> {
             };
             // Thinking time counts toward the delay that lets people follow along.
             tokio::time::sleep(delay.saturating_sub(started.elapsed())).await;
-            let action: Box<dyn Any + Send> = match choice {
-                Ok(action) => Box::new(action),
+            let message = match choice {
+                Ok(action) => Internal::BotMove { version, seat, action },
                 Err(e) => {
-                    tracing::error!("bot failed: {e}");
-                    Box::new(())
+                    tracing::error!(seat, "bot failed: {e}");
+                    Internal::BotFailed { version, seat }
                 }
             };
-            let _ = tx.send(Command::BotMove { version, seat, action });
+            let _ = tx.send(message);
         });
     }
 
-    /// Applies a bot's move if the hand has not moved on. Returns whether it did.
-    pub(super) fn bot_move(&mut self, version: u64, seat: usize, action: Box<dyn Any + Send>) -> bool {
-        if version != self.hand.version || self.bot_to_act() != Some(seat) {
-            return false;
+    /// What the room's own tasks sent; returns whether anything changed.
+    pub(super) fn on_internal(&mut self, message: Internal<G::Action>) -> bool {
+        match message {
+            Internal::BotMove { version, seat, action } => {
+                self.thinking = false;
+                self.is_current(version, seat) && self.bot_move(seat, action)
+            }
+            Internal::BotFailed { version, seat } => {
+                self.thinking = false;
+                self.is_current(version, seat) && self.stand_in(seat, "the bot failed; a 보통 bot moved")
+            }
+            Internal::BotOutOfTurn { deal, seat, action } => self.bot_out_of_turn(deal, seat, action),
         }
-        let Ok(action) = action.downcast::<G::Action>() else {
-            return false;
-        };
-        let logged = log_action(&*action);
-        if let Err(e) = self.hand.apply(*action) {
+    }
+
+    /// Whether a bot's move for hand `version` is still the one to make.
+    fn is_current(&self, version: u64, seat: usize) -> bool {
+        version == self.hand.version && self.bot_to_act() == Some(seat)
+    }
+
+    /// Applies a bot's move. Returns whether it did.
+    fn bot_move(&mut self, seat: usize, action: G::Action) -> bool {
+        let logged = log_action(&action);
+        if let Err(e) = self.hand.apply(action) {
             tracing::error!(room = %self.id, seat, action = %logged, "bot chose an illegal action: {e}");
             return false;
         }
@@ -140,29 +166,41 @@ impl<G: SessionGame> Room<G> {
         true
     }
 
-    /// Applies a bot's out-of-turn action if it is still allowed. Returns
-    /// whether it did.
-    pub(super) fn bot_out_of_turn(&mut self, deal: u64, seat: usize, action: Box<dyn Any + Send>) -> bool {
-        let Ok(action) = action.downcast::<G::Action>() else {
+    /// A 보통 bot makes `seat`'s move, at once (`why` goes to the log).
+    /// Returns whether it did.
+    pub(super) fn stand_in(&mut self, seat: usize, why: &str) -> bool {
+        let Some(game) = self.hand.game.as_ref() else {
             return false;
         };
+        let view = G::view(game, Viewer::Seat(seat));
+        let legal = G::legal_actions(game);
+        let action = G::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut self.rng);
+        let logged = log_action(&action);
+        if let Err(e) = self.hand.apply(action) {
+            tracing::error!(room = %self.id, seat, action = %logged, "the stand-in chose an illegal action: {e}");
+            return false;
+        }
+        tracing::info!(room = %self.id, seat, action = %logged, "{why}");
+        true
+    }
+
+    /// Applies a bot's out-of-turn action if it is still allowed. Returns
+    /// whether it did.
+    fn bot_out_of_turn(&mut self, deal: u64, seat: usize, action: G::Action) -> bool {
         let allowed = self
             .hand
             .game
             .as_ref()
-            .is_some_and(|g| G::out_of_turn_actions(g, seat).contains(&*action));
+            .is_some_and(|g| G::out_of_turn_actions(g, seat).contains(&action));
         if deal != self.hand.deals || self.seating.bot(seat).is_none() || !allowed {
             return false;
         }
-        self.out_of_turn(seat, *action).is_ok()
+        self.out_of_turn(seat, action).is_ok()
     }
 
     /// Right after a deal, each bot decides once whether to act out of
     /// turn (a 딜미스), and does so after a short pause, as a person would.
     pub(super) fn plan_out_of_turn(&mut self) {
-        let Some(tx) = self.me.as_ref().and_then(WeakUnboundedSender::upgrade) else {
-            return;
-        };
         let Some(game) = self.hand.game.as_ref() else { return };
         for seat in 0..self.seating.len() {
             let Some((level, _)) = self.seating.bot(seat) else {
@@ -172,11 +210,10 @@ impl<G: SessionGame> Room<G> {
                 continue;
             };
             let pause = self.env.bots.delay.mul_f32(self.rng.random_range(1.0..1.5));
-            let (tx, deal) = (tx.clone(), self.hand.deals);
+            let (tx, deal) = (self.internal.clone(), self.hand.deals);
             tokio::spawn(async move {
                 tokio::time::sleep(pause).await;
-                let action: Box<dyn Any + Send> = Box::new(action);
-                let _ = tx.send(Command::BotOutOfTurn { deal, seat, action });
+                let _ = tx.send(Internal::BotOutOfTurn { deal, seat, action });
             });
         }
     }

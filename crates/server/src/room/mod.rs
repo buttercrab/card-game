@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::WeakUnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub type ConnId = u64;
 
@@ -139,8 +139,10 @@ pub struct Room<G: SessionGame> {
     rng: StdRng,
     /// What every room on the server shares.
     env: Arc<RoomEnv>,
-    /// Weak so the room still ends when every other sender is gone.
-    me: Option<WeakUnboundedSender<Command>>,
+    /// Where the room's bot tasks send their moves.
+    internal: UnboundedSender<bots::Internal<G::Action>>,
+    /// The other end, until [`Room::run`] takes it.
+    inbox: Option<UnboundedReceiver<bots::Internal<G::Action>>>,
     saver: snapshot::Saver,
 }
 
@@ -148,7 +150,10 @@ impl<G: SessionGame> Room<G> {
     pub fn new(id: String, settings: G::Settings, env: Arc<RoomEnv>) -> Room<G> {
         let n = G::seats(&settings);
         let saver = snapshot::Saver::new(env.data.as_ref().map(|dir| dir.join(format!("{id}.json"))));
+        let (internal, inbox) = tokio::sync::mpsc::unbounded_channel();
         Room {
+            internal,
+            inbox: Some(inbox),
             saver,
             id,
             settings,
@@ -160,7 +165,6 @@ impl<G: SessionGame> Room<G> {
             thinking: false,
             rng: StdRng::from_os_rng(),
             env,
-            me: None,
         }
     }
 
