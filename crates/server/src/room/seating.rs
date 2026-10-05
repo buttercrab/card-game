@@ -10,7 +10,6 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::time::Instant;
 
 /// The longest name a seat takes, in characters; longer ones are cut.
 pub const NAME_MAX: usize = 24;
@@ -46,23 +45,17 @@ pub(super) enum Occupant {
     },
 }
 
+/// A connection to the room: where its messages go, and the seat it plays
+/// at, if any. How fast it may send is the connection's own business (see
+/// [`crate::limit`]).
 pub(super) struct Conn {
     pub tx: UnboundedSender<String>,
     pub seat: Option<usize>,
-    /// When this connection last reacted, to keep reactions from flooding.
-    pub reacted: Option<Instant>,
-    /// When this connection last asked for a hint; a bot's think is not free.
-    pub hinted: Option<Instant>,
 }
 
 impl Conn {
     pub fn new(tx: UnboundedSender<String>) -> Conn {
-        Conn {
-            tx,
-            seat: None,
-            reacted: None,
-            hinted: None,
-        }
+        Conn { tx, seat: None }
     }
 }
 

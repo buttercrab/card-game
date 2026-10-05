@@ -1,5 +1,4 @@
-//! The server's limits and restarts, over HTTP and WebSockets. Its own test
-//! binary, since one test holds the server-wide hint places.
+//! The server's limits and restarts, over HTTP and WebSockets.
 
 mod common;
 
@@ -78,13 +77,15 @@ async fn a_dealt_table(addr: SocketAddr) -> (Vec<Socket>, usize) {
 
 #[tokio::test]
 async fn hints_wait_for_a_free_search_and_are_rate_limited() {
-    let addr = serve(AppState::new(config())).await;
+    let state = AppState::new(config());
+    let pool = state.hint_pool();
+    let addr = serve(state).await;
     let (mut players, mover) = a_dealt_table(addr).await;
     let ws = &mut players[mover];
 
     // Every search place is taken: the hint is declined, politely.
     let held: Vec<_> = (0..server::limit::HINT_SEARCHES)
-        .map(|_| server::limit::hint_permit().unwrap())
+        .map(|_| pool.try_permit().unwrap())
         .collect();
     send(ws, json!({ "type": "hint" })).await;
     assert_eq!(next(ws, "error").await["code"], "hints_busy");

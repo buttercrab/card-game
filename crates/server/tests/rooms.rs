@@ -475,8 +475,7 @@ async fn a_hint_is_one_of_the_legal_actions() {
                 let mine = msg["legal"].as_array().is_some_and(|l| !l.is_empty());
                 states.insert(msg["version"].as_u64().unwrap(), msg);
                 if mine {
-                    // Asked again for this state (at most one a second).
-                    tokio::time::sleep(Duration::from_millis(1100)).await;
+                    // Asked again for this state.
                     send(&mut ws, json!({ "type": "hint" })).await;
                 }
             }

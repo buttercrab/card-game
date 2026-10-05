@@ -10,10 +10,8 @@ use crate::protocol::{ClientMsg, ErrorCode, ServerError};
 use crate::session::SessionGame;
 use crate::stats::Event;
 use serde_json::Value;
-use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
-use tokio::time::Instant;
 
 /// What the rest of the server asks of a room.
 pub enum Command {
@@ -222,7 +220,7 @@ impl<G: SessionGame> Room<G> {
                 self.set_settings(settings)
             }
             ClientMsg::Hint => self.hint(conn, seated()?),
-            ClientMsg::React { text } => self.react(conn, seated()?, text),
+            ClientMsg::React { text } => self.react(seated()?, text),
             ClientMsg::Start => {
                 seated()?;
                 self.start()
@@ -276,16 +274,12 @@ impl<G: SessionGame> Room<G> {
     }
 
     /// Shows `seat`'s reaction to the whole table.
-    fn react(&mut self, conn: ConnId, seat: usize, text: String) -> Result<(), ServerError> {
+    /// Shows `seat`'s reaction to the whole table. (How often a connection
+    /// may react is its own limit: `limit::ws_reactions`.)
+    fn react(&mut self, seat: usize, text: String) -> Result<(), ServerError> {
         if !REACTIONS.contains(&text.as_str()) {
             return Err(ErrorCode::UnknownReaction.into());
         }
-        let c = self.seating.conns.get_mut(&conn).ok_or(ErrorCode::NotSeated)?;
-        // Too fast: drop it quietly rather than nag.
-        if c.reacted.is_some_and(|t| t.elapsed() < Duration::from_millis(700)) {
-            return Ok(());
-        }
-        c.reacted = Some(Instant::now());
         self.tell_all(&Msg::<G>::Reaction { seat, text });
         Ok(())
     }

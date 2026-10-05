@@ -90,6 +90,7 @@ impl AppState {
             remote,
             stats: stats.clone(),
             data: config.data.clone(),
+            hints: limit::HintPool::default(),
         };
         AppState {
             config: Arc::new(config),
@@ -112,6 +113,11 @@ impl AppState {
     /// The connection to a bot worker, if one dials in.
     pub fn remote_bots(&self) -> Arc<bots::RemoteBots> {
         self.env.remote.clone()
+    }
+
+    /// The places for hint searches the server's rooms share.
+    pub fn hint_pool(&self) -> limit::HintPool {
+        self.env.hints.clone()
     }
 
     /// Reopens the rooms saved under the data directory, returning how many.
@@ -467,12 +473,25 @@ async fn connect(
         .on_upgrade(move |socket| serve_connection(socket, room, conn))
 }
 
-/// A table connection's message limits; see [`limit::ws_messages`].
+/// A table connection's message limits; see [`limit::ws_messages`]. Every
+/// limit on what one connection sends is kept here, before the room.
 struct ConnLimits {
     messages: limit::ConnBucket,
     hints: limit::ConnBucket,
+    reactions: limit::ConnBucket,
     /// Messages dropped in a row.
     over: u32,
+}
+
+/// What becomes of a message the connection may send at all.
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    /// On to the room.
+    Send,
+    /// Dropped quietly (a reaction too soon after the last).
+    Drop,
+    /// Refused, with why.
+    Refuse(ServerError),
 }
 
 /// What becomes of one message under a connection's limits.
@@ -489,7 +508,21 @@ impl ConnLimits {
         ConnLimits {
             messages: limit::ws_messages(),
             hints: limit::ws_hints(),
+            reactions: limit::ws_reactions(),
             over: 0,
+        }
+    }
+
+    /// Counts a message against its own kind's limit, if it has one.
+    fn verdict(&mut self, msg: &ClientMsg) -> Verdict {
+        match msg {
+            ClientMsg::Hint if !self.hints.take() => Verdict::Refuse(ErrorCode::HintsTooOften.into()),
+            // Too fast: drop it quietly rather than nag. (One the room does
+            // not know goes on, to be refused.)
+            ClientMsg::React { text } if room::REACTIONS.contains(&text.as_str()) && !self.reactions.take() => {
+                Verdict::Drop
+            }
+            _ => Verdict::Send,
         }
     }
 
@@ -542,10 +575,13 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
                     }
                     let Message::Text(text) = message else { continue };
                     match serde_json::from_str::<ClientMsg>(&text) {
-                        Ok(ClientMsg::Hint) if !limits.hints.take() => error(ErrorCode::HintsTooOften.into()),
-                        Ok(msg) => {
-                            let _ = room.send(Command::Message { conn, msg });
-                        }
+                        Ok(msg) => match limits.verdict(&msg) {
+                            Verdict::Send => {
+                                let _ = room.send(Command::Message { conn, msg });
+                            }
+                            Verdict::Drop => {}
+                            Verdict::Refuse(e) => error(e),
+                        },
                         Err(e) => error(ServerError::with_detail(ErrorCode::BadMessage, e)),
                     }
                 }
@@ -577,5 +613,23 @@ mod tests {
             }
         }
         assert_eq!(seen, [Admit::Pass, Admit::Drop, Admit::Close]);
+    }
+
+    /// A connection asking for hints too often is told; one reacting too
+    /// fast is not, its extra reactions dropped. Both refill with time.
+    #[tokio::test(start_paused = true)]
+    async fn hints_and_reactions_have_their_own_limits() {
+        let mut limits = ConnLimits::new();
+        let react = ClientMsg::React { text: "굿".into() };
+        assert_eq!(limits.verdict(&react), Verdict::Send);
+        assert_eq!(limits.verdict(&react), Verdict::Drop);
+        tokio::time::advance(Duration::from_millis(700)).await;
+        assert_eq!(limits.verdict(&react), Verdict::Send);
+        let hints: Vec<_> = (0..5).map(|_| limits.verdict(&ClientMsg::Hint)).collect();
+        assert_eq!(hints[..4], [Verdict::Send, Verdict::Send, Verdict::Send, Verdict::Send]);
+        assert_eq!(hints[4], Verdict::Refuse(ErrorCode::HintsTooOften.into()));
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert_eq!(limits.verdict(&ClientMsg::Hint), Verdict::Send);
+        assert_eq!(limits.verdict(&ClientMsg::Start), Verdict::Send);
     }
 }

@@ -12,7 +12,6 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::json;
 use std::time::Duration;
-use tokio::time::Instant;
 
 /// How long a room waits past a move's thinking time for a bot worker's
 /// answer before thinking itself.
@@ -225,14 +224,10 @@ impl<G: SessionGame> Room<G> {
         if G::turn(game) != Turn::Seat(seat) {
             return Err(ErrorCode::NotYourTurn.into());
         }
-        let c = self.seating.conns.get_mut(&conn).ok_or(ErrorCode::NotSeated)?;
-        if c.hinted.is_some_and(|t| t.elapsed() < Duration::from_secs(1)) {
-            return Ok(());
-        }
-        // Searches are capped across the server; see `limit::HINTS`.
-        let permit = crate::limit::hint_permit().ok_or(ErrorCode::HintsBusy)?;
-        c.hinted = Some(Instant::now());
-        let tx = c.tx.clone();
+        let tx = self.seating.conns.get(&conn).ok_or(ErrorCode::NotSeated)?.tx.clone();
+        // Searches are capped across the server (see `limit::HintPool`);
+        // how often one connection asks, by its own limit (`limit::ws_hints`).
+        let permit = self.env.hints.try_permit().ok_or(ErrorCode::HintsBusy)?;
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game);
         let (seed, version) = (self.rng.random::<u64>(), self.hand.version);

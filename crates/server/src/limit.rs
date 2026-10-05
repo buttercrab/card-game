@@ -8,9 +8,10 @@ use axum::http::request::Parts;
 use axum::response::Response;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 
 /// Up to `burst` at once, refilled at `per_minute`.
@@ -110,11 +111,26 @@ impl ConnBucket {
 /// server has few.
 pub const HINT_SEARCHES: usize = 2;
 
-pub static HINTS: Semaphore = Semaphore::const_new(HINT_SEARCHES);
+/// The server's places for hint searches, shared by its rooms.
+#[derive(Clone)]
+pub struct HintPool(Arc<Semaphore>);
 
-/// A place for one hint search, or `None` while [`HINT_SEARCHES`] already run.
-pub fn hint_permit() -> Option<SemaphorePermit<'static>> {
-    HINTS.try_acquire().ok()
+impl HintPool {
+    pub fn new(searches: usize) -> HintPool {
+        HintPool(Arc::new(Semaphore::new(searches)))
+    }
+
+    /// A place for one hint search, held until dropped, or `None` while
+    /// every place is taken.
+    pub fn try_permit(&self) -> Option<OwnedSemaphorePermit> {
+        self.0.clone().try_acquire_owned().ok()
+    }
+}
+
+impl Default for HintPool {
+    fn default() -> HintPool {
+        HintPool::new(HINT_SEARCHES)
+    }
 }
 
 /// The largest WebSocket message or frame a client may send. Its biggest,
@@ -132,6 +148,12 @@ pub const WS_FLOOD: u32 = 100;
 /// Hints one connection may ask for: a few in a row, then one every five seconds.
 pub fn ws_hints() -> ConnBucket {
     ConnBucket::new(12, 4)
+}
+
+/// Reactions one connection may send: one about every 0.7 s. Faster ones
+/// are dropped quietly.
+pub fn ws_reactions() -> ConnBucket {
+    ConnBucket::new(86, 1)
 }
 
 /// At most `max` in any hour, from everyone together.
@@ -268,12 +290,13 @@ mod tests {
 
     #[test]
     fn hint_searches_are_capped_across_the_server() {
+        let pool = HintPool::default();
         let held: Vec<_> = (0..HINT_SEARCHES)
-            .map(|_| hint_permit().expect("a free place"))
+            .map(|_| pool.try_permit().expect("a free place"))
             .collect();
-        assert!(hint_permit().is_none(), "every place is taken");
+        assert!(pool.try_permit().is_none(), "every place is taken");
         drop(held);
-        assert!(hint_permit().is_some());
+        assert!(pool.try_permit().is_some());
     }
 
     #[test]

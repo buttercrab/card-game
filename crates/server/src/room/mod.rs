@@ -96,6 +96,8 @@ pub struct RoomEnv {
     pub stats: Arc<Stats>,
     /// Where rooms are saved so they survive a restart, if anywhere.
     pub data: Option<PathBuf>,
+    /// The places for hint searches, shared across the server.
+    pub hints: crate::limit::HintPool,
 }
 
 impl RoomEnv {
@@ -108,6 +110,7 @@ impl RoomEnv {
             remote: Arc::default(),
             stats: Arc::new(Stats::in_memory()),
             data: None,
+            hints: crate::limit::HintPool::default(),
         }
     }
 }
