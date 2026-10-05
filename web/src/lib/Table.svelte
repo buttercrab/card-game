@@ -846,6 +846,8 @@
       if (kind(now) === 'Exchange' && typeof now === 'object' && 'Exchange' in now) cueAt(now.Exchange.declarer, null, 'declarer');
       if (kind(now) === 'Play' && kind(was) === 'Exchange') sound.call();
       if (kind(now) === 'Bidding') sound.shuffle();
+    } else if (redeal && JSON.stringify(redeal) !== JSON.stringify(prev.view.redealt)) {
+      sound.shuffle();
     }
     if (typeof was === 'object' && 'Bidding' in was && typeof now === 'object' && 'Bidding' in now) {
       const moved = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best) ||
@@ -876,12 +878,17 @@
   async function transition(prev: StateMsg, next: StateMsg, k: number) {
     const before = roundOf(prev.view.phase);
     const after = roundOf(next.view.phase);
-    const newHand = typeof next.view.phase === 'object' && 'Bidding' in next.view.phase && !('Bidding' in Object(prev.view.phase));
+    // A redeal (딜미스, or everyone passing) is a fresh deal too: the cards
+    // are gathered and dealt again, as at a real table.
+    const redealt = next.view.redealt != null && JSON.stringify(next.view.redealt) !== JSON.stringify(prev.view.redealt);
+    const newHand =
+      typeof next.view.phase === 'object' && 'Bidding' in next.view.phase && (!('Bidding' in Object(prev.view.phase)) || redealt);
     if (!before || !after) {
       shown = next;
       if (newHand) {
+        // Like a trick's end, the deal is not hurried by your turn.
         dealing = true;
-        await pause(900 * k);
+        await pause(900 * paceUnhurried());
         dealing = false;
       }
       return;
