@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# A stand-in for ssh to the Seoul instance: `images.sh load` keeps the
+# shipped image id in $FAKE/seoul, and `images.sh up` makes the site serve
+# its commit ($FAKE/live). Touch $FAKE/fail-seoul to make it fail.
+set -euo pipefail
+host="$1"
+shift
+echo "ssh $host $*" >>"$FAKE/log"
+if [[ -e "$FAKE/fail-seoul" ]]; then
+  cat >/dev/null
+  exit 255
+fi
+case "$*" in
+  *"images.sh load"*) gunzip >"$FAKE/seoul" ;;
+  *"images.sh up"*)
+    id="$(cat "$FAKE/seoul")"
+    echo "${id#sha-}" >"$FAKE/live"
+    ;;
+esac

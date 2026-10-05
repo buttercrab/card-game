@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# A stand-in for docker on the home server, keeping its state in $FAKE:
+# latest and previous (image ids), bots (the worker's running image).
+# Images are named sha-<commit>. Touch $FAKE/fail-worker to make the
+# worker fail to start.
+set -euo pipefail
+echo "docker $*" >>"$FAKE/log"
+
+read_file() { cat "$FAKE/$1" 2>/dev/null || true; }
+resolve() {
+  case "$1" in
+    card-game:latest) read_file latest ;;
+    card-game:previous) read_file previous ;;
+    *) echo "$1" ;;
+  esac
+}
+
+case "$1" in
+  image)
+    case "$2" in
+      inspect)
+        id="$(resolve "${*: -1}")"
+        [[ -n "$id" ]] || exit 1
+        echo "$id"
+        ;;
+      ls | prune | rm) ;;
+    esac
+    ;;
+  inspect)
+    # The image a container runs: only the worker exists here.
+    [[ "${*: -1}" == card-game-bots && -s "$FAKE/bots" ]] || exit 1
+    cat "$FAKE/bots"
+    ;;
+  compose)
+    if [[ " $* " == *" build"* ]]; then
+      echo "compose build" >>"$FAKE/log"
+      echo "sha-${GIT_COMMIT:?update.sh passes the commit}" >"$FAKE/latest"
+    elif [[ " $* " == *" up "* ]]; then
+      [[ ! -e "$FAKE/fail-worker" ]] || exit 1
+      [[ " $* " == *" --no-build "* ]] || { echo "the worker must not rebuild" >&2; exit 1; }
+      read_file latest >"$FAKE/bots"
+    fi
+    ;;
+  tag)
+    if [[ "$3" == card-game:previous ]]; then
+      resolve "$2" >"$FAKE/previous"
+    fi
+    ;;
+  save)
+    read_file latest
+    ;;
+  *)
+    echo "fake docker: unexpected $*" >&2
+    exit 1
+    ;;
+esac

@@ -9,7 +9,11 @@ services:
   # too small to search deeply. It dials out, so no port is opened here.
   # The shared secret lives outside the repository.
   bots:
-    build: ..
+    build:
+      context: ..
+      args:
+        # Set by deploy/update.sh; the server reports it at /version.
+        GIT_COMMIT: ${GIT_COMMIT:-}
     image: card-game:latest
     container_name: card-game-bots
     restart: unless-stopped
