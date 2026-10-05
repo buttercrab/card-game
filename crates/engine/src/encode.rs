@@ -178,6 +178,22 @@ impl fmt::Display for BeliefError {
 
 impl std::error::Error for BeliefError {}
 
+/// A learned value of each legal action: what a Q network trained by
+/// self-play (`cardgame_ml.train.dmc`) predicts the acting seat's payoff
+/// for the hand to be, in points, if it takes that action. A search can
+/// lean on it to pick which moves to consider and to stop its playouts
+/// early. Implemented outside the games, by an inference runtime
+/// (`crates/infer`).
+pub trait ActionValues: Send + Sync {
+    /// For each observation, `(action index, value in points)` for every
+    /// legal action by [`Observation::legal`], in index order; none for
+    /// an observation without a legal action.
+    fn action_values(&self, observations: &[&Observation]) -> Result<Vec<Vec<(usize, f32)>>, BeliefError>;
+
+    /// The encoding the model reads.
+    fn spec(&self) -> &Spec;
+}
+
 /// Builds a feature vector and, on request, the name of every feature in
 /// the same pass, so names and values cannot drift apart: a game writes
 /// each group once, and its spec is that code run with names on.

@@ -8,7 +8,7 @@
 //! [`QNet::values`] returns points.
 
 use crate::{Agreement, ModelError, error, largest_difference, observation_inputs, plan, read_json};
-use engine::{Bot, Encode, Observation, Spec};
+use engine::{ActionValues, BeliefError, Bot, Encode, Observation, Spec};
 use rand::{Rng, RngCore};
 use serde::Deserialize;
 use std::path::Path;
@@ -140,6 +140,16 @@ impl QNet {
             observations: observations.len(),
             max_abs_diff,
         })
+    }
+}
+
+impl ActionValues for QNet {
+    fn action_values(&self, observations: &[&Observation]) -> Result<Vec<Vec<(usize, f32)>>, BeliefError> {
+        self.values(observations).map_err(|e| BeliefError(e.to_string()))
+    }
+
+    fn spec(&self) -> &Spec {
+        &self.spec
     }
 }
 

@@ -13,7 +13,7 @@ pub mod dynamic;
 pub mod encode;
 
 pub use dynamic::{DynError, DynGame, DynState, Erased, JsonGame, PresetInfo, Registry};
-pub use encode::{Belief, BeliefError, Encode, Features, Observation, Spec, Unsupported};
+pub use encode::{ActionValues, Belief, BeliefError, Encode, Features, Observation, Spec, Unsupported};
 
 use rand::RngCore;
 use rand::seq::IndexedRandom;

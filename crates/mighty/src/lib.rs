@@ -6,6 +6,7 @@ pub mod card;
 pub mod deal;
 pub mod encode;
 pub mod endgame;
+pub mod hybrid;
 mod read;
 pub mod rules;
 pub mod search;
