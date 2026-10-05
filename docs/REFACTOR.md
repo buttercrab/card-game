@@ -182,9 +182,11 @@ Work goes in phases. Each phase ships on its own, keeps every test green, and ge
 - Split `engine-ml` (spec, observation, belief, action values) out of `engine`.
 - Front end: a `room/` that knows nothing about Mighty, and a game registry.
 
-## Owner decisions
+## Owner decisions (2026-10-05)
 
-1. **Merge to `main` only through pull requests with green CI.** Agent branches become PRs, and the deploy flow is unchanged otherwise. Recommended.
-2. **Deploy alerts:** open a GitHub issue (as the uptime check does) when a deploy fails or is blocked for over an hour. Recommended.
-3. **Where `research/loop` lives:** keep it in this repo with its own CI job, or move it to a private repo.
-4. **Rules in the browser:** compile `mighty` to WASM for the rule editor's live checks, or rely on server-computed values from Phase 2. Decide after Phase 2.
+1. **Merge to `main` only through pull requests with green CI:** yes. Agent branches become PRs, and the deploy flow is otherwise unchanged.
+2. **Deploy alerts:** yes. Open a GitHub issue when a deploy fails or is blocked for over an hour.
+3. **`research/loop`:** stays in this public repo, with its own CI job.
+4. **Rules in the browser:** compile `mighty` to WASM, or rely on server-computed values from Phase 2. Decide after Phase 2.
+
+Code fixes start only after the room redesign and shuffle fixes are deployed.
