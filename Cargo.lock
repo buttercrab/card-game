@@ -495,7 +495,6 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "server",
  "sha2",
  "sim",
  "thiserror",
@@ -553,7 +552,6 @@ dependencies = [
  "rand_chacha",
  "serde",
  "serde_json",
- "server",
  "sha2",
  "sim",
 ]

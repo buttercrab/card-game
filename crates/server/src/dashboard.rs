@@ -247,7 +247,8 @@ fn time(t: u64) -> String {
 
 /// A bot level as the stats record it, by its name at the table.
 fn level_name(level: &str) -> String {
-    serde_json::from_value::<crate::session::BotLevel>(serde_json::Value::from(level))
+    level
+        .parse::<mighty::bot::Level>()
         .map_or_else(|_| level.to_string(), |l| l.label().to_string())
 }
 

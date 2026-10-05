@@ -4,11 +4,12 @@
 //! server's own definitions.
 
 use crate::room::TableSettings;
-use crate::session::{BotLevel, MightyNotes, MightySettings};
+use crate::session::{MightyNotes, MightySettings};
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use engine::Turn;
+use mighty::bot::Level;
 use mighty::rules::{InvalidRules, Preset, Rules};
 use mighty::{Action, HandSummary, View};
 use serde::{Deserialize, Serialize};
@@ -196,7 +197,7 @@ pub enum SeatInfo {
     },
     Bot {
         name: String,
-        level: BotLevel,
+        level: Level,
     },
 }
 
@@ -358,8 +359,8 @@ pub enum ClientMsg {
     AddBot {
         seat: usize,
         #[serde(default)]
-        #[ts(as = "Option<BotLevel>", optional)]
-        level: BotLevel,
+        #[ts(as = "Option<Level>", optional)]
+        level: Level,
     },
     RemoveBot {
         seat: usize,

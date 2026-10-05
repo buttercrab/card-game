@@ -4,7 +4,8 @@
 //! `generated/catalog.ts`, so the client never keeps copies of its own.
 
 use crate::room::{NAME_MAX, REACTIONS, TURN_LIMITS};
-use crate::session::{BotLevel, FIRST_BID_GRACE};
+use crate::session::FIRST_BID_GRACE;
+use mighty::bot::Level;
 use mighty::rules::{Preset, Rules};
 use serde::Serialize;
 use ts_rs::TS;
@@ -40,7 +41,7 @@ pub struct PresetInfo {
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct BotLevelInfo {
-    pub id: BotLevel,
+    pub id: Level,
     /// Its name at the table.
     pub label: String,
 }
@@ -56,7 +57,7 @@ pub struct Catalog {
     /// From weakest to strongest.
     pub bot_levels: Vec<BotLevelInfo>,
     /// The level a bot sits down at unless asked for another.
-    pub default_bot_level: BotLevel,
+    pub default_bot_level: Level,
     /// The turn limits a table may choose, in seconds; 0 is none.
     pub turn_limits: Vec<u32>,
     /// The quick reactions a seat may send; anything else is refused.
@@ -87,14 +88,14 @@ pub fn catalog() -> Catalog {
             })
             .collect(),
         default_preset: DEFAULT_PRESET,
-        bot_levels: BotLevel::ALL
+        bot_levels: Level::ALL
             .iter()
             .map(|&id| BotLevelInfo {
                 id,
                 label: id.label().to_string(),
             })
             .collect(),
-        default_bot_level: BotLevel::default(),
+        default_bot_level: Level::default(),
         turn_limits: TURN_LIMITS.to_vec(),
         reactions: REACTIONS.iter().map(|r| r.to_string()).collect(),
         name_max: NAME_MAX,

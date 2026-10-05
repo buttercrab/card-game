@@ -9,7 +9,7 @@
 
 use engine::{Bot, RandomBot, Seat};
 use mighty::Mighty;
-use mighty::bot::{Clumsy, SimpleBot};
+use mighty::bot::{Clumsy, Level, SimpleBot};
 use mighty::search::{Reading, Sampler, SearchBot};
 use std::str::FromStr;
 use std::time::Duration;
@@ -57,23 +57,19 @@ impl FromStr for Spec {
         if let Some(rest) = name.strip_prefix("hybrid:") {
             return hybrid(rest, settings);
         }
-        // The table's levels, as the server builds them. 고수 thinks
-        // until a time budget runs out there; here it deals a fixed 200
-        // times instead, so runs reproduce.
-        let mut policy = SimpleBot::default();
-        let (name, temper, mut slips) = match name {
-            "easy" => {
-                policy = Clumsy::easy(policy).inner;
-                ("simple", true, Some(EASY_SLIPS))
-            }
-            "normal" => ("simple", true, None),
-            "hard" => ("search:200:1:0", true, None),
-            _ => (name, false, None),
-        };
-        let which = match name {
-            "random" => Which::Random,
-            "simple" => Which::Simple,
-            _ if name == "search" || name.starts_with("search:") => Which::Search,
+        // The table's levels (`hard` or `고수`), as mighty::bot::Level
+        // defines them: 고수 without a clock, so runs reproduce.
+        let level = name.parse::<Level>().ok();
+        let mut policy = level.map_or_else(SimpleBot::default, Level::policy);
+        let mut slips = level.and_then(Level::slips);
+        let base_search = level.and_then(Level::search).unwrap_or_default();
+        let temper = level.is_some();
+        let which = match (level, name) {
+            (Some(level), _) if level.search().is_some() => Which::Search,
+            (Some(_), _) => Which::Simple,
+            (None, "random") => Which::Random,
+            (None, "simple") => Which::Simple,
+            (None, _) if name == "search" || name.starts_with("search:") => Which::Search,
             _ => return Err(format!("unknown bot {s:?}")),
         };
         if which == Which::Random && !settings.is_empty() {
@@ -114,7 +110,7 @@ impl FromStr for Spec {
                     reading,
                     threads: search_threads,
                     endgame,
-                    ..SearchBot::default()
+                    ..base_search
                 };
                 let mut parts = name.split(':').skip(1);
                 if let Some(samples) = parts.next() {
@@ -560,14 +556,47 @@ mod tests {
 
     #[test]
     fn levels_are_the_tables_bots() {
-        assert!(matches!(spec("easy").kind, Kind::Clumsy(_, s) if s == EASY_SLIPS));
+        assert!(matches!(spec("easy").kind, Kind::Clumsy(p, s) if s == EASY_SLIPS && p == Level::Easy.policy()));
         assert!(matches!(spec("normal").kind, Kind::Simple(_)));
         let Kind::Search(hard) = spec("hard").kind else {
             panic!("hard searches")
         };
+        assert_eq!(Some(hard), Level::Hard.search());
         assert_eq!((hard.samples, hard.confidence, hard.budget), (200, 1.0, None));
-        assert!(["easy", "normal", "hard"].iter().all(|s| spec(s).temper));
+        assert!(["easy", "normal", "hard", "고수"].iter().all(|s| spec(s).temper));
         assert!(!spec("search:200:1:0").temper);
+    }
+
+    /// A level by name plays as the level builds itself, seat by seat.
+    #[test]
+    fn levels_build_as_mighty_defines_them() {
+        use engine::{Game, Turn, Viewer};
+        use rand::SeedableRng;
+        use rand::seq::IndexedRandom;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(5);
+        let rules = mighty::rules::Preset::Gshs.rules();
+        let mut state = Mighty::new_game(&mighty::Options { rules, first_bidder: 0 }).unwrap();
+        let mut asked = 0;
+        loop {
+            let action = match Mighty::turn(&state) {
+                Turn::Over => break,
+                Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                Turn::Seat(seat) => {
+                    let view = Mighty::view(&state, Viewer::Seat(seat));
+                    let legal = Mighty::legal_actions(&state);
+                    for level in [Level::Easy, Level::Normal] {
+                        let ask = |mut bot: Box<dyn Bot<Mighty> + Send>| {
+                            bot.act(&view, &legal, &mut rand_chacha::ChaCha8Rng::seed_from_u64(asked))
+                        };
+                        assert_eq!(ask(spec(level.name()).build(seat)), ask(level.build(seat, None)));
+                    }
+                    asked += 1;
+                    legal.choose(&mut rng).unwrap().clone()
+                }
+            };
+            Mighty::apply(&mut state, action).unwrap();
+        }
+        assert!(asked > 20);
     }
 
     #[test]

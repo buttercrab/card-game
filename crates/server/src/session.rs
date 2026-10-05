@@ -4,11 +4,10 @@
 use crate::protocol::ServerError;
 use engine::{Bot, Game, Viewer};
 use mighty::Mighty;
-use mighty::bot::{Clumsy, tempered};
+use mighty::bot::Level;
 use mighty::card::Card;
 use mighty::explain::Refusal;
 use mighty::rules::{Contract, Preset, Rules};
-use mighty::search::SearchBot;
 use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -49,7 +48,7 @@ pub trait SessionGame:
     /// think for about `think` (zero for its own default) on `threads`
     /// threads. Bots differ a little in temperament so a table of bots
     /// does not play as one; a seated bot keeps its own when it moves.
-    fn bot(level: BotLevel, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
+    fn bot(level: Level, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
 
     /// A finished hand in brief, for the session's story.
     type Summary: Clone + Serialize + DeserializeOwned + Send + 'static;
@@ -91,7 +90,7 @@ pub trait SessionGame:
     /// which. The room asks once each deal, and plays the answer after a
     /// short pause if it is still allowed then. None by default.
     fn bot_out_of_turn(
-        _level: BotLevel,
+        _level: Level,
         _seat: usize,
         _state: &Self::State,
         _rng: &mut dyn RngCore,
@@ -139,32 +138,6 @@ pub enum Decision {
 /// With `misdeal.ask_first`, the first bid waits this long after the deal,
 /// so a fast bid never beats a 딜미스 to the table.
 pub const FIRST_BID_GRACE: Duration = Duration::from_secs(2);
-
-/// How well a seated bot plays.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(rename_all = "lowercase")]
-pub enum BotLevel {
-    /// Plays sensibly but often slips when choosing a card.
-    Easy,
-    /// The rule-of-thumb bot.
-    Normal,
-    /// Searches sampled deals; the strongest.
-    #[default]
-    Hard,
-}
-
-impl BotLevel {
-    pub const ALL: [BotLevel; 3] = [BotLevel::Easy, BotLevel::Normal, BotLevel::Hard];
-
-    /// The level's name at the table.
-    pub fn label(self) -> &'static str {
-        match self {
-            BotLevel::Easy => "초보",
-            BotLevel::Normal => "보통",
-            BotLevel::Hard => "고수",
-        }
-    }
-}
 
 /// What a Mighty table says beyond the view, on the seat's turn.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
@@ -289,26 +262,10 @@ impl SessionGame for Mighty {
         mighty::Options { rules, first_bidder }
     }
 
-    fn bot(level: BotLevel, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
-        // Bolder or more careful bidders.
-        let policy = tempered(temper);
-        match level {
-            BotLevel::Easy => Box::new(Clumsy::easy(policy)),
-            BotLevel::Normal => Box::new(policy),
-            // More sampled deals keep helping a little (2000 beat 200 by about
-            // a third of a point per hand), so deal until the time is up.
-            BotLevel::Hard if !think.is_zero() => Box::new(SearchBot {
-                samples: 5000 * threads.max(1),
-                budget: Some(think),
-                threads,
-                policy,
-                ..SearchBot::default()
-            }),
-            BotLevel::Hard => Box::new(SearchBot {
-                policy,
-                ..SearchBot::default()
-            }),
-        }
+    /// Its own default is a second: tables always think against a clock.
+    fn bot(level: Level, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
+        let think = if think.is_zero() { Duration::from_secs(1) } else { think };
+        level.build_on(temper, Some(think), threads)
     }
 
     fn summary(state: &mighty::State) -> Option<mighty::HandSummary> {
@@ -358,7 +315,7 @@ impl SessionGame for Mighty {
     /// to bid. Every level decides as 보통 does: the 고수 bot's search
     /// plays the seat whose turn it is, which this seat is not.
     fn bot_out_of_turn(
-        _level: BotLevel,
+        _level: Level,
         seat: usize,
         state: &mighty::State,
         rng: &mut dyn RngCore,
@@ -368,7 +325,7 @@ impl SessionGame for Mighty {
             return None;
         }
         let view = Mighty::view(state, Viewer::Seat(seat));
-        let choice = Self::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &state.bids_as(seat), rng);
+        let choice = Self::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &state.bids_as(seat), rng);
         (choice == misdeal).then_some(misdeal)
     }
 
@@ -418,7 +375,7 @@ mod tests {
                         };
                         assert!(expected.contains(&decision), "{decision:?} for {:?}", view.phase);
                         seen.push(decision);
-                        Mighty::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
+                        Mighty::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
                     }
                 };
                 Mighty::apply(&mut state, action).unwrap();
@@ -477,7 +434,7 @@ mod tests {
                                 _ => assert!(change.is_none()),
                             }
                         }
-                        Mighty::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
+                        Mighty::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
                     }
                 };
                 Mighty::apply(&mut state, action).unwrap();

@@ -62,7 +62,8 @@ last_chance_min: number | null,
 raise_on_exchange: boolean, };
 
 /**
- * How well a seated bot plays.
+ * How well a bot plays: the levels players pick at the table. Defined
+ * once here for the server, the environment, `sim` and the evals alike.
  */
 export type BotLevel = "easy" | "normal" | "hard";
 

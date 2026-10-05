@@ -6,9 +6,10 @@ use crate::bots::RemoteBots;
 use crate::protocol::{
     ClientMsg, ClockInfo, ErrorCode, RoomMsg, SeatInfo, SeatsMoved, ServerError, ServerMsg, StateMsg,
 };
-use crate::session::{BotLevel, Decision, SessionGame};
+use crate::session::{Decision, SessionGame};
 use crate::stats::{Event, Hand, Stats};
 use engine::{Turn, Viewer};
+use mighty::bot::Level;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
@@ -31,7 +32,7 @@ const REMOTE_GRACE: Duration = Duration::from_secs(2);
 /// s, discards and the friend call 3 to 4 s, a lead about 2 s, an obvious
 /// follow about 0.6 s, with [`JITTER`] on top. The 고수 bot spends most
 /// of it thinking; 초보 and 보통 are a little quicker.
-fn pace(level: BotLevel, decision: Decision) -> f32 {
+fn pace(level: Level, decision: Decision) -> f32 {
     let base = match decision {
         Decision::Obvious => 0.6,
         Decision::Follow => 1.2,
@@ -40,9 +41,9 @@ fn pace(level: BotLevel, decision: Decision) -> f32 {
         Decision::Plan => 3.5,
     };
     let level = match level {
-        BotLevel::Easy => 0.75,
-        BotLevel::Normal => 0.85,
-        BotLevel::Hard => 1.0,
+        Level::Easy => 0.75,
+        Level::Normal => 0.85,
+        Level::Hard => 1.0,
     };
     base * level
 }
@@ -185,7 +186,7 @@ enum Occupant {
     },
     Bot {
         #[serde(default)]
-        level: BotLevel,
+        level: Level,
         /// Given when the bot sits down; see [`BOT_NAMES`]. Rooms saved
         /// before bots had names get the seat's name when restored.
         #[serde(default)]
@@ -677,7 +678,7 @@ impl<G: SessionGame> Room<G> {
         }
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game);
-        let action = G::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut self.rng);
+        let action = G::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut self.rng);
         let logged = log_action(&action);
         let Ok(entry) = serde_json::to_value(&action) else {
             return;
@@ -809,7 +810,7 @@ impl<G: SessionGame> Room<G> {
                 }
                 self.seats[seat] = if mid_hand {
                     Occupant::Bot {
-                        level: BotLevel::default(),
+                        level: Level::default(),
                         name: self.new_bot_name(seat),
                     }
                 } else {
@@ -961,11 +962,8 @@ impl<G: SessionGame> Room<G> {
                 let (seed, version) = (self.rng.random::<u64>(), self.version);
                 tokio::task::spawn_blocking(move || {
                     let _permit = permit;
-                    let action = G::bot(BotLevel::Hard, seat, HINT_THINK, 1).act(
-                        &view,
-                        &legal,
-                        &mut StdRng::seed_from_u64(seed),
-                    );
+                    let action =
+                        G::bot(Level::Hard, seat, HINT_THINK, 1).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
                     let msg = Msg::<G>::Hint { version, action };
                     let _ = tx.send(serde_json::to_string(&msg).expect("messages serialize"));
                 });
@@ -1461,7 +1459,7 @@ mod tests {
     #[test]
     fn a_shuffle_moves_everyone_at_the_table() {
         let bot = |name: &str| Occupant::Bot {
-            level: BotLevel::Easy,
+            level: Level::Easy,
             name: name.into(),
         };
         let names = |r: &Room<Mighty>| {
@@ -1542,7 +1540,7 @@ mod tests {
         // Seat 1 was left empty (its bot removed): a new bot starts at 0.
         let add = |seat| ClientMsg::AddBot {
             seat,
-            level: BotLevel::Easy,
+            level: Level::Easy,
         };
         room.on_message(1, add(1)).unwrap();
         assert_eq!(room.scores[1], 0);

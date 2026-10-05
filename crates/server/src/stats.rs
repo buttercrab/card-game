@@ -6,7 +6,7 @@
 //! apart only by a salted hash of the id their browser already keeps to
 //! reclaim a seat, so the log can count who came back but not who they are.
 
-use crate::session::BotLevel;
+use mighty::bot::Level;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -76,7 +76,7 @@ pub enum Event {
         table: String,
         seat: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        bot: Option<BotLevel>,
+        bot: Option<Level>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         player: Option<String>,
     },
@@ -548,7 +548,7 @@ mod tests {
                 event: Event::SeatFilled {
                     table: "a".into(),
                     seat: 1,
-                    bot: Some(BotLevel::Hard),
+                    bot: Some(Level::Hard),
                     player: None,
                 },
             },
