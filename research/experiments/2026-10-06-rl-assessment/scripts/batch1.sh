@@ -6,11 +6,11 @@ LAB=$PWD/target/release/lab
 A=$HOME/card-game-artifacts/assess-2026-10-06
 D=$A/dmc-v2-final
 O=$A/results/normal
-mkdir -p $O
+mkdir -p "$O"
 N=10000
 run() { # name spec
-  if [ ! -s $O/$1.jsonl ] || [ $(wc -l < $O/$1.jsonl) -lt $N ]; then
-    nice -n 10 $LAB --threads 5 --out $O/$1.jsonl declare --deals $N --bot "$2" --field normal 2>/dev/null
+  if [ ! -s "$O"/"$1".jsonl ] || [ "$(wc -l < "$O"/"$1".jsonl)" -lt "$N" ]; then
+    nice -n 10 "$LAB" --threads 5 --out "$O"/"$1".jsonl declare --deals $N --bot "$2" --field normal 2>/dev/null
   fi
   echo "$1 done $(date +%T)"
 }
