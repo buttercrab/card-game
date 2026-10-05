@@ -1,0 +1,287 @@
+<script lang="ts">
+  // A small card of choices for one seat, between hands, hung from the seat
+  // that was tapped: a bot's level, swapping seats, sending someone to
+  // watch, standing up, filling an empty seat or sitting in it.
+  import { onMount, tick } from 'svelte';
+  import Icon from './Icon.svelte';
+  import { layer } from './layers';
+  import { botName } from './names';
+  import type { BotLevel, SeatInfo } from './types';
+
+  let {
+    seat,
+    info,
+    me,
+    anchor,
+    name = $bindable(''),
+    onclose,
+    onlevel,
+    onswap,
+    onmovehere,
+    onclearbot,
+    onkick,
+    onrelieve,
+    onstand,
+    onsit,
+    oninvite,
+  }: {
+    seat: number;
+    info: SeatInfo;
+    /** Your seat, or null when watching. */
+    me: number | null;
+    /** The seat's box on screen, to hang the card from. */
+    anchor: DOMRect;
+    /** The name a watcher sits down with. */
+    name?: string;
+    onclose: () => void;
+    /** Seat a bot of this level here, or change the bot's level. */
+    onlevel: (level: BotLevel) => void;
+    /** Start swapping this seat with another. */
+    onswap: () => void;
+    /** Move yourself to this empty seat. */
+    onmovehere: () => void;
+    onclearbot: () => void;
+    onkick: () => void;
+    /** A player who dropped: a bot takes the seat. */
+    onrelieve: () => void;
+    onstand: () => void;
+    onsit: (name: string) => void;
+    oninvite: () => void;
+  } = $props();
+
+  const LEVEL: Record<BotLevel, string> = { easy: '초보', normal: '보통', hard: '고수' };
+  const LEVELS: BotLevel[] = ['easy', 'normal', 'hard'];
+  const seated = $derived(me !== null);
+  const mine = $derived(me === seat);
+  const title = $derived(
+    info.kind === 'empty' ? `${seat + 1}번 자리` : info.kind === 'bot' ? botName(seat) : mine ? `${info.name} (나)` : info.name,
+  );
+  const sub = $derived(
+    info.kind === 'empty'
+      ? '빈 자리'
+      : info.kind === 'bot'
+        ? `봇 · ${LEVEL[info.level ?? 'hard']}`
+        : !info.connected
+          ? '연결 끊김'
+          : info.away
+            ? '자리 비움'
+            : null,
+  );
+  /** Sending a player to watch waits for a yes. */
+  let kicking = $state(false);
+
+  // Hung under the seat when it fits, else over it; never off the screen.
+  let card = $state<HTMLElement>();
+  let pos = $state<{ left: number; top: number } | null>(null);
+  function place() {
+    if (!card) return;
+    const w = card.offsetWidth;
+    const h = card.offsetHeight;
+    const gap = 6;
+    const below = anchor.bottom + gap;
+    const top = below + h <= innerHeight - 8 ? below : Math.max(8, anchor.top - gap - h);
+    const left = Math.min(Math.max(8, anchor.left + anchor.width / 2 - w / 2), innerWidth - w - 8);
+    pos = { left, top };
+  }
+  $effect(() => {
+    void kicking;
+    void anchor;
+    void tick().then(place);
+  });
+
+  let field = $state<HTMLInputElement>();
+  onMount(() => {
+    const unlayer = layer(onclose);
+    // A newcomer's first seat: straight to the name.
+    if (field && !name.trim()) field.focus();
+    else card?.focus({ preventScroll: true });
+    return unlayer;
+  });
+
+  function sit(event: SubmitEvent) {
+    event.preventDefault();
+    if (name.trim()) onsit(name.trim());
+  }
+</script>
+
+<svelte:window onresize={place} onkeydown={(e) => e.key === 'Escape' && onclose()} />
+
+<!-- Anywhere else closes it, as a tap beside a real popover would. -->
+<button class="scrim" aria-label="닫기" tabindex="-1" onclick={onclose}></button>
+<div
+  class="pop-card"
+  role="dialog"
+  aria-label="{title} 자리"
+  tabindex="-1"
+  bind:this={card}
+  style:left="{pos?.left ?? -9999}px"
+  style:top="{pos?.top ?? 0}px"
+>
+  <p class="head"><strong>{title}</strong>{#if sub}<span class="muted"> · {sub}</span>{/if}</p>
+
+  {#if kicking && info.kind === 'human'}
+    <p class="ask"><strong>{info.name}</strong> 님을 구경하는 자리로 옮길까요? 다시 앉을 수 있어요.</p>
+    <div class="row">
+      <button onclick={() => (kicking = false)}>취소</button>
+      <button class="danger" onclick={onkick}>내보내기</button>
+    </div>
+  {:else if !seated}
+    <!-- Watching: an empty seat, or a bot's between hands, is yours to take. -->
+    <form class="sit" onsubmit={sit}>
+      <input bind:this={field} bind:value={name} placeholder="이름" aria-label="이름" maxlength="24" autocomplete="nickname" />
+      <button type="submit" disabled={!name.trim()}>{info.kind === 'bot' ? '대신 앉기' : '앉기'}</button>
+    </form>
+    {#if info.kind === 'empty'}
+      <button class="item" onclick={oninvite}><Icon name="invite" />친구 초대하기</button>
+    {/if}
+  {:else if info.kind === 'bot'}
+    <span class="levels" role="radiogroup" aria-label="{title} 실력">
+      {#each LEVELS as l (l)}
+        <button role="radio" aria-checked={(info.level ?? 'hard') === l} onclick={() => (info.level ?? 'hard') !== l && onlevel(l)}>{LEVEL[l]}</button>
+      {/each}
+    </span>
+    <button class="item" onclick={onswap}><Icon name="swap" />자리 바꾸기</button>
+    <button class="item" onclick={onclearbot}><Icon name="leave" />비우기</button>
+  {:else if info.kind === 'empty'}
+    <span class="label">봇 앉히기</span>
+    <span class="levels add" role="group" aria-label="봇 앉히기">
+      {#each LEVELS as l (l)}
+        <button onclick={() => onlevel(l)} aria-label="{LEVEL[l]} 봇 앉히기">{LEVEL[l]}</button>
+      {/each}
+    </span>
+    <button class="item" onclick={oninvite}><Icon name="invite" />친구 초대하기</button>
+    <button class="item" onclick={onmovehere}><Icon name="swap" />내가 여기로 옮기기</button>
+  {:else if mine}
+    <button class="item" onclick={onswap}><Icon name="swap" />자리 바꾸기</button>
+    <button class="item" onclick={onstand}><Icon name="leave" />일어나서 구경하기</button>
+  {:else}
+    <button class="item" onclick={onswap}><Icon name="swap" />자리 바꾸기</button>
+    {#if !info.connected}<button class="item" onclick={onrelieve}><Icon name="bot" />봇에게 맡기기</button>{/if}
+    <button class="item danger" onclick={() => (kicking = true)}><Icon name="leave" />내보내기</button>
+  {/if}
+</div>
+
+<style>
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    min-height: 0;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    cursor: default;
+  }
+  .scrim:active:not(:disabled) {
+    transform: none;
+  }
+  /* Card paper on the table: a hairline and the hard, faint lip every
+     object on the table has; nothing blurred. */
+  .pop-card {
+    position: fixed;
+    z-index: 41;
+    display: grid;
+    gap: 6px;
+    width: min(240px, calc(100vw - 16px));
+    padding: 10px;
+    border-radius: 16px;
+    background: var(--raised);
+    border: 1px solid var(--raised-line);
+    box-shadow: 0 3px 0 var(--raised-line);
+    animation: pop-in var(--dur-quick) var(--ease-standard) both;
+  }
+  .pop-card:focus {
+    outline: none;
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+  .head {
+    margin: 0 2px 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+  }
+  .muted {
+    color: var(--ink-muted);
+    font-size: 13px;
+  }
+  .label {
+    margin: 2px 2px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-muted);
+  }
+  .ask {
+    margin: 0 2px;
+    font-size: 14px;
+    word-break: keep-all;
+  }
+  .item {
+    justify-content: flex-start;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 15px;
+    text-align: left;
+  }
+  .danger {
+    color: var(--danger);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  /* The level as three chips in a well, as on the sheets: ink when chosen. */
+  .levels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--table);
+  }
+  .levels button {
+    min-height: 40px;
+    padding: 2px 0;
+    border-radius: 999px;
+    background: none;
+    box-shadow: none;
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .levels button[aria-checked='true'] {
+    background: var(--ink);
+    color: var(--table);
+  }
+  /* Adding a bot: each level is its own button, on card paper. */
+  .levels.add {
+    gap: 6px;
+    padding: 0;
+    background: none;
+  }
+  .levels.add button {
+    border-radius: 12px;
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow: 0 3px 0 var(--btn-lip);
+  }
+  .sit {
+    display: flex;
+    gap: 6px;
+  }
+  .sit input {
+    flex: 1;
+    min-width: 0;
+  }
+  .sit button {
+    flex: none;
+  }
+</style>

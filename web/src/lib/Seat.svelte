@@ -41,6 +41,8 @@
     mood = null,
     clock = null,
     away = false,
+    empty = false,
+    score = null,
   }: {
     name: string;
     bot?: boolean;
@@ -74,6 +76,10 @@
     clock?: { deadline: number; total: number } | null;
     /** Its turn ran out and a bot played it (자리 비움). */
     away?: boolean;
+    /** Nobody sits here yet (between hands): a dashed outline waits. */
+    empty?: boolean;
+    /** The running total, shown between hands. */
+    score?: number | null;
   } = $props();
 
 
@@ -99,9 +105,13 @@
   });
 </script>
 
-<div class="seat" bind:this={el} class:turn class:dim class:reveal aria-current={turn ? 'true' : undefined}>
+<div class="seat" bind:this={el} class:turn class:dim class:reveal class:empty aria-current={turn ? 'true' : undefined}>
   <!-- On its turn the name tag lights up in plum. -->
   <div class="stand">
+    {#if empty}
+      <!-- The dashed outline of a figure waiting to be filled. -->
+      <svg class="outline" viewBox="0 0 120 110" aria-hidden="true"><path d="M20 108 Q22 76 60 72 Q98 76 100 108" /><circle cx="60" cy="48" r="20" /></svg>
+    {:else}
     <PlayerFigure
       {team}
       {trumpSuit}
@@ -112,6 +122,7 @@
       {mood}
       {offline}
     />
+    {/if}
     {#if clock}<TurnRing deadline={clock.deadline} total={clock.total} />{/if}
     <!-- A bid or 패스, beside the figure, clear of the neighbours. -->
     {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
@@ -124,6 +135,7 @@
       {#key points}<span class="points bump">{points}점</span>{/key}
     {/if}
     {#if away}<span class="away">자리 비움</span>{/if}
+    {#if score !== null && !empty}<span class="score" class:neg={score < 0} title="누적 점수" aria-label="누적 {score}점">{score > 0 ? '+' : ''}{score}</span>{/if}
   </div>
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
@@ -189,6 +201,35 @@
   }
   .seat.dim {
     opacity: 0.6;
+  }
+  /* An empty seat: an outline the size of a figure, and a muted name. */
+  .outline {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    fill: none;
+    stroke: var(--ink-muted);
+    stroke-width: 4;
+    stroke-dasharray: 8 7;
+    stroke-linecap: round;
+  }
+  .seat.empty .name {
+    font-weight: 500;
+  }
+  /* The running total: tabular, quiet, red below zero. */
+  .score {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--table);
+    box-shadow: 0 0 0 1px var(--line);
+    font-family: var(--font-display);
+    font-weight: 800;
+    color: var(--ink);
+    line-height: 18px;
+  }
+  .score.neg {
+    color: var(--danger);
   }
   .name-row {
     display: flex;

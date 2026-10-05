@@ -85,6 +85,10 @@ export class RoomClient {
   /** The turn timer, with its deadline on this page's clock (performance.now()). */
   clock = $state<{ seat: number; deadline: number; total: number } | null>(null);
 
+  /** Called as seats are about to move, while the table still shows them
+   * where they were; `order[s]` is where seat `s` goes (null: unknown). */
+  onmove: ((order: number[] | null) => void) | null = null;
+
   #id: string;
   #ws: WebSocket | null = null;
   #closed = false;
@@ -174,12 +178,20 @@ export class RoomClient {
         this.seat = null;
         this.#forget();
         break;
-      case 'seats_moved':
+      case 'seats_moved': {
+        // The table on screen notes where each seat is before it changes:
+        // it slides them to their new places. `order[s]` is where seat `s` went.
+        const n = this.room?.seats.length ?? 0;
+        const order =
+          msg.order ??
+          (msg.seats ? Array.from({ length: n }, (_, s) => (s === msg.seats![0] ? msg.seats![1] : s === msg.seats![1] ? msg.seats![0] : s)) : null);
+        this.onmove?.(order);
         // The table on screen was drawn for the old seats; the next hand
         // (or the room) draws afresh.
         this.game = null;
         this.notice(msg.how === 'shuffle' ? '자리를 섞었어요' : '자리를 바꿨어요');
         break;
+      }
       case 'reaction': {
         const id = ++this.#reactionId;
         this.reactions[msg.seat] = { text: msg.text, id };

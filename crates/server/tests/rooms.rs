@@ -739,7 +739,11 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     let declarer_was = before["seats"][declarer].clone();
 
     send(&mut b, json!({ "type": "shuffle_seats" })).await;
-    next_where(&mut a, "seats_moved", |m| m["how"] == "shuffle").await;
+    let news = next_where(&mut a, "seats_moved", |m| m["how"] == "shuffle").await;
+    // B hears where everyone went before its own new seat, so its table can
+    // slide each seat from where it was.
+    let b_news = next(&mut b, "seats_moved").await;
+    let b_welcome = next(&mut b, "welcome").await;
     let after = next_where(&mut watcher, "room", |r| {
         r["hands_played"] == 1 && r["showing"] == false
     })
@@ -755,9 +759,11 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
         assert_eq!(after["seats"][moved_declarer]["name"], declarer_was["name"]);
     }
     assert_eq!(after["hands_played"], 1);
+    assert_eq!(news["order"][a_was], a_seat, "the news says where each seat went");
+    assert_eq!(b_news, news);
 
     // Each tab learns its new seat, and the token still finds it.
-    assert_eq!(next(&mut b, "welcome").await["seat"].as_u64().unwrap() as usize, b_seat);
+    assert_eq!(b_welcome["seat"].as_u64().unwrap() as usize, b_seat);
     drop(b);
     next_where(&mut watcher, "room", |r| r["seats"][b_seat]["connected"] == false).await;
     let mut again = connect(addr, &room).await;
@@ -817,8 +823,9 @@ async fn shuffling_every_hand_reseats_before_the_deal() {
     send(&mut a, json!({ "type": "set_table", "shuffle": true })).await;
     next_where(&mut a, "room", |r| r["table"]["shuffle"] == true).await;
     send(&mut a, json!({ "type": "start" })).await;
-    let welcome = next(&mut a, "welcome").await;
+    // Where the seats went comes first, then this tab's new seat.
     next(&mut a, "seats_moved").await;
+    let welcome = next(&mut a, "welcome").await;
     let state = next(&mut a, "state").await;
     assert_eq!(
         state["view"]["viewer"]["Seat"], welcome["seat"],

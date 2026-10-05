@@ -712,8 +712,10 @@ impl<G: SessionGame> Room<G> {
     /// Moves whoever sits at each seat `s` to `new_seat[s]`, with their
     /// score, their past hands and their connections, so the scores follow
     /// the players. The last hand's table is put away: it no longer
-    /// matches who sits where.
-    fn reseat(&mut self, new_seat: &[usize]) {
+    /// matches who sits where. Everyone hears `news` first, so a table on
+    /// screen can note where each seat was before its own seat changes.
+    fn reseat(&mut self, new_seat: &[usize], news: &Value) {
+        self.tell_all(news);
         fn moved<T>(items: Vec<T>, new_seat: &[usize]) -> Vec<T> {
             let mut slots: Vec<Option<T>> = items.iter().map(|_| None).collect();
             for (s, item) in items.into_iter().enumerate() {
@@ -762,8 +764,9 @@ impl<G: SessionGame> Room<G> {
                 break;
             }
         }
-        self.reseat(&order);
-        self.tell_all(&json!({ "type": "seats_moved", "how": "shuffle" }));
+        // `order[s]`: where the seat `s` went, so tables can slide each one there.
+        let news = json!({ "type": "seats_moved", "how": "shuffle", "order": order });
+        self.reseat(&order, &news);
     }
 
     fn tell_all(&self, message: &Value) {
@@ -836,8 +839,8 @@ impl<G: SessionGame> Room<G> {
                         s => s,
                     })
                     .collect();
-                self.reseat(&new_seat);
-                self.tell_all(&json!({ "type": "seats_moved", "how": "swap", "seats": [a, b] }));
+                let news = json!({ "type": "seats_moved", "how": "swap", "seats": [a, b] });
+                self.reseat(&new_seat, &news);
                 Ok(())
             }
             ClientMsg::ClearSeat { seat } => {
