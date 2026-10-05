@@ -5,8 +5,7 @@ mod common;
 
 use common::*;
 use serde_json::{Value, json};
-use server::AppState;
-use std::time::Duration;
+use server::{AppState, Config};
 
 const INDEX: &str = r#"<!doctype html>
 <html lang="ko">
@@ -35,7 +34,11 @@ fn web_dir() -> tempfile::TempDir {
 #[tokio::test]
 async fn app_routes_are_found_and_other_paths_are_404() {
     let dir = web_dir();
-    let addr = serve_web(AppState::new(Duration::ZERO), Some(dir.path().to_path_buf())).await;
+    let addr = serve(AppState::new(Config {
+        web: Some(dir.path().to_path_buf()),
+        ..config()
+    }))
+    .await;
 
     for path in [
         "/",
@@ -87,8 +90,12 @@ async fn app_routes_are_found_and_other_paths_are_404() {
 #[tokio::test]
 async fn a_share_link_preview_names_the_rules_and_empty_seats() {
     let dir = web_dir();
-    let state = AppState::new(Duration::ZERO).with_beacon("tok123".into());
-    let addr = serve_web(state, Some(dir.path().to_path_buf())).await;
+    let state = AppState::new(Config {
+        beacon: Some("tok123".into()),
+        web: Some(dir.path().to_path_buf()),
+        ..config()
+    });
+    let addr = serve(state).await;
     let r = request(
         addr,
         "POST",
@@ -119,7 +126,7 @@ async fn a_share_link_preview_names_the_rules_and_empty_seats() {
 
 #[tokio::test]
 async fn robots_and_sitemap_are_served() {
-    let addr = serve(AppState::new(Duration::ZERO)).await;
+    let addr = serve(AppState::new(config())).await;
     let robots = get(addr, "/robots.txt").await;
     assert_eq!(robots.status, 200);
     assert!(robots.body.contains("Disallow: /api/"));
@@ -136,11 +143,15 @@ async fn robots_and_sitemap_are_served() {
 
 #[tokio::test]
 async fn the_stats_page_is_private() {
-    let off = serve(AppState::new(Duration::ZERO)).await;
+    let off = serve(AppState::new(config())).await;
     assert_eq!(get(off, "/stats").await.status, 404, "no token, no page");
     assert_eq!(get(off, "/api/stats").await.status, 404);
 
-    let addr = serve(AppState::new(Duration::ZERO).with_stats_token("s3cret".into())).await;
+    let addr = serve(AppState::new(Config {
+        stats_token: Some("s3cret".into()),
+        ..config()
+    }))
+    .await;
     assert_eq!(get(addr, "/stats").await.status, 401);
     assert_eq!(get(addr, "/stats?token=wrong").await.status, 401);
     let login = get(addr, "/stats?token=s3cret").await;
@@ -169,7 +180,7 @@ async fn the_stats_page_is_private() {
 
 #[tokio::test]
 async fn tables_and_hands_are_counted() {
-    let state = AppState::new(Duration::ZERO);
+    let state = AppState::new(config());
     let stats = state.stats();
     let addr = serve(state).await;
     let r = request(
@@ -194,7 +205,10 @@ async fn tables_and_hands_are_counted() {
 async fn a_new_client_error_is_saved_for_an_issue_once() {
     let data = temp_dir();
     let data = data.path();
-    let state = AppState::new(Duration::ZERO).with_data(data.to_path_buf());
+    let state = AppState::new(Config {
+        data: Some(data.to_path_buf()),
+        ..config()
+    });
     let stats = state.stats();
     let addr = serve(state).await;
     let error = |n: u32| {
@@ -233,7 +247,7 @@ async fn a_new_client_error_is_saved_for_an_issue_once() {
 
 #[tokio::test]
 async fn too_many_requests_from_one_client_are_refused() {
-    let addr = serve(AppState::new(Duration::ZERO)).await;
+    let addr = serve(AppState::new(config())).await;
     let body = json!({ "preset": "gshs" }).to_string();
     let from = |ip: &'static str| [ip];
     for _ in 0..10 {

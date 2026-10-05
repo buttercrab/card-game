@@ -4,6 +4,7 @@
 pub mod bots;
 pub mod catalog;
 pub mod codegen;
+pub mod config;
 pub mod dashboard;
 pub mod errors;
 pub mod limit;
@@ -19,6 +20,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+pub use config::{Config, IDLE_MINUTES};
 use futures_util::{SinkExt, StreamExt};
 use limit::{ClientIp, Limits, too_many};
 use mighty::Mighty;
@@ -26,115 +28,92 @@ use mighty::rules::{Preset, Rules};
 use protocol::ClientMsg;
 use protocol::{CreateRoom, CreatedRoom, ErrorCode, ServerError};
 use rand::Rng;
-use room::{Command, ConnId, Room};
+use room::{BotConfig, Command, ConnId, Room, RoomEnv};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use session::{MightySettings, SessionGame};
 use stats::{Event, Stats};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-type Registry = Arc<Mutex<HashMap<String, UnboundedSender<Command>>>>;
+/// The open tables, by id.
+#[derive(Default)]
+struct Rooms {
+    open: Mutex<HashMap<String, UnboundedSender<Command>>>,
+    /// The next table connection's id.
+    next_conn: AtomicU64,
+}
 
+impl Rooms {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, UnboundedSender<Command>>> {
+        self.open.lock().expect("room registry poisoned")
+    }
+}
+
+/// What every request handler shares: the server's settings, its tables,
+/// what the tables share ([`RoomEnv`]), the rate limits and the stats.
 #[derive(Clone)]
 pub struct AppState {
-    rooms: Registry,
-    next_conn: Arc<AtomicU64>,
-    bot_delay: Duration,
-    /// Most a 고수 bot may think per move, if less than its share of the delay.
-    bot_think: Option<Duration>,
-    max_rooms: usize,
-    /// A room with nobody connected for this long closes.
-    idle: Duration,
-    /// Where rooms are saved so they survive a restart, if anywhere.
-    data: Option<PathBuf>,
-    /// A machine that thinks for bots, if one has dialled in.
-    remote: Arc<bots::RemoteBots>,
-    /// The secret a bot worker must present; without one, none may connect.
-    bot_token: Option<String>,
-    /// When recent problem reports arrived, to cap them per hour.
-    reports: Arc<Mutex<Vec<std::time::Instant>>>,
-    /// When new client errors were last filed as issues, to cap them per hour.
-    error_issues: Arc<Mutex<Vec<std::time::Instant>>>,
-    stats: Arc<Stats>,
-    /// The secret that opens `/stats`; without one, it does not exist.
-    stats_token: Option<String>,
+    config: Arc<Config>,
+    rooms: Arc<Rooms>,
+    env: Arc<RoomEnv>,
     limits: Arc<Limits>,
-    /// The built web client, if served.
-    web: Option<PathBuf>,
-    /// The site's own address, for canonical links and the sitemap.
-    site_url: String,
-    /// Cloudflare Web Analytics token, if pages should load its beacon.
-    beacon: Option<String>,
-    /// How long a second of a table's turn limit lasts (shorter in tests).
-    turn_second: Duration,
+    stats: Arc<Stats>,
 }
 
 impl AppState {
-    pub fn new(bot_delay: Duration) -> AppState {
-        AppState {
-            rooms: Arc::default(),
-            next_conn: Arc::default(),
-            bot_delay,
-            bot_think: None,
-            max_rooms: 500,
-            idle: Duration::from_secs(IDLE_MINUTES * 60),
-            data: None,
-            reports: Arc::default(),
-            error_issues: Arc::default(),
-            remote: Arc::default(),
-            bot_token: None,
-            stats: Arc::new(Stats::in_memory()),
-            stats_token: None,
-            limits: Arc::default(),
-            web: None,
-            site_url: site::SITE_URL.to_string(),
-            beacon: None,
+    /// A server as `config` sets it up. With a data directory, the stats
+    /// log is kept there (see [`AppState::restore_rooms`] for the tables).
+    pub fn new(config: Config) -> AppState {
+        let stats = match &config.data {
+            Some(dir) => Stats::open(dir, config.stats_salt.clone()).unwrap_or_else(|e| {
+                tracing::error!(dir = %dir.display(), "could not open the stats log, keeping it in memory: {e}");
+                Stats::in_memory()
+            }),
+            None => Stats::in_memory(),
+        };
+        let stats = Arc::new(stats);
+        let remote = Arc::new(bots::RemoteBots::default());
+        // From now on, tables thinking for themselves are warned about.
+        if config.bot_token.is_some() {
+            remote.expect_worker();
+        }
+        let env = RoomEnv {
+            bots: BotConfig {
+                delay: config.bot_delay(),
+                think_cap: config.bot_think(),
+            },
+            idle: config.idle(),
             turn_second: Duration::from_secs(1),
+            remote,
+            stats: stats.clone(),
+            data: config.data.clone(),
+        };
+        AppState {
+            config: Arc::new(config),
+            rooms: Arc::default(),
+            env: Arc::new(env),
+            limits: Arc::default(),
+            stats,
         }
     }
 
-    /// Opens `/stats` and `/api/stats` to whoever presents `token`.
-    pub fn with_stats_token(self, token: String) -> AppState {
-        AppState {
-            stats_token: Some(token),
-            ..self
-        }
-    }
-
-    /// Adds the Cloudflare Web Analytics beacon with this token to every page.
-    pub fn with_beacon(self, token: String) -> AppState {
-        AppState {
-            beacon: Some(token),
-            ..self
-        }
-    }
-
-    /// Where the site is served, for canonical links; [`site::SITE_URL`] by default.
-    pub fn with_site_url(self, url: String) -> AppState {
-        AppState {
-            site_url: url.trim_end_matches('/').to_string(),
-            ..self
-        }
+    pub fn config(&self) -> &Config {
+        &self.config
     }
 
     /// Makes a turn limit's seconds last `second` instead, so a test need
     /// not wait out real turns.
     pub fn with_turn_second(self, second: Duration) -> AppState {
-        AppState {
+        let env = RoomEnv {
             turn_second: second,
-            ..self
-        }
-    }
-
-    /// Replaces the rate limits, say to loosen them for a test.
-    pub fn with_rate_limits(self, limits: Limits) -> AppState {
+            ..(*self.env).clone()
+        };
         AppState {
-            limits: Arc::new(limits),
+            env: Arc::new(env),
             ..self
         }
     }
@@ -144,51 +123,16 @@ impl AppState {
         self.stats.clone()
     }
 
-    /// Accepts bot workers that present `token`; see [`bots`]. From then
-    /// on, tables thinking for themselves are warned about.
-    pub fn with_bot_token(self, token: String) -> AppState {
-        self.remote.expect_worker();
-        AppState {
-            bot_token: Some(token),
-            ..self
-        }
-    }
-
     /// The connection to a bot worker, if one dials in.
     pub fn remote_bots(&self) -> Arc<bots::RemoteBots> {
-        self.remote.clone()
-    }
-
-    /// Caps bot thinking per move, for a server short on CPU.
-    pub fn with_bot_think(self, think: Duration) -> AppState {
-        AppState {
-            bot_think: Some(think),
-            ..self
-        }
-    }
-
-    /// Saves every room under `dir` as it changes (see
-    /// [`AppState::restore_rooms`]) and keeps the stats log there.
-    pub fn with_data(self, dir: PathBuf) -> AppState {
-        let stats = match Stats::open(&dir) {
-            Ok(stats) => Arc::new(stats),
-            Err(e) => {
-                tracing::error!(dir = %dir.display(), "could not open the stats log, keeping it in memory: {e}");
-                self.stats.clone()
-            }
-        };
-        AppState {
-            data: Some(dir),
-            stats,
-            ..self
-        }
+        self.env.remote.clone()
     }
 
     /// Reopens the rooms saved under the data directory, returning how many.
     /// A file that no longer loads (say, after an incompatible rules change)
     /// is set aside as `.bad` rather than deleted.
     pub fn restore_rooms(&self) -> std::io::Result<usize> {
-        let Some(dir) = &self.data else { return Ok(0) };
+        let Some(dir) = &self.config.data else { return Ok(0) };
         std::fs::create_dir_all(dir)?;
         let mut restored = 0;
         for entry in std::fs::read_dir(dir)? {
@@ -199,17 +143,11 @@ impl AppState {
             let loaded = std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|text| serde_json::from_str(&text).map_err(|e| e.to_string()))
-                .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.bot_delay));
+                .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.env.clone()));
             match loaded {
-                Ok(mut room) => {
-                    room.use_turn_second(self.turn_second);
-                    if let Some(think) = self.bot_think {
-                        room.limit_think(think);
-                    }
-                    room.use_remote(self.remote.clone());
-                    room.use_stats(self.stats.clone());
+                Ok(room) => {
                     let id = room.id().to_string();
-                    let mut rooms = self.rooms.lock().expect("room registry poisoned");
+                    let mut rooms = self.rooms.lock();
                     self.spawn_room(&mut rooms, id, room);
                     restored += 1;
                 }
@@ -227,13 +165,7 @@ impl AppState {
     /// did within `wait`. For a restart: connections drop, and clients
     /// reconnect to the next server with their seat tokens.
     pub async fn shutdown(&self, wait: Duration) -> usize {
-        let rooms: Vec<_> = self
-            .rooms
-            .lock()
-            .expect("room registry poisoned")
-            .values()
-            .cloned()
-            .collect();
+        let rooms: Vec<_> = self.rooms.lock().values().cloned().collect();
         let mut pending = Vec::new();
         for room in rooms {
             let (done, rx) = tokio::sync::oneshot::channel();
@@ -250,24 +182,15 @@ impl AppState {
 
     /// How many rooms are open now.
     pub fn open_rooms(&self) -> usize {
-        self.rooms.lock().expect("room registry poisoned").len()
+        self.rooms.lock().len()
     }
 
     /// The server's live state, for `/stats`.
     pub fn server_status(&self) -> dashboard::ServerStatus {
         dashboard::ServerStatus {
             rooms: self.open_rooms(),
-            max_rooms: self.max_rooms,
-            worker: self.remote.status(),
-        }
-    }
-
-    /// At most `max_rooms` open at once; each closes after `idle` with nobody connected.
-    pub fn with_limits(self, max_rooms: usize, idle: Duration) -> AppState {
-        AppState {
-            max_rooms,
-            idle,
-            ..self
+            max_rooms: self.config.max_rooms,
+            worker: self.env.remote.status(),
         }
     }
 
@@ -276,8 +199,8 @@ impl AppState {
     pub fn create_room<G: SessionGame>(&self, mut settings: G::Settings) -> Option<String> {
         const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
         G::freeze(&mut settings);
-        let mut rooms = self.rooms.lock().expect("room registry poisoned");
-        if rooms.len() >= self.max_rooms {
+        let mut rooms = self.rooms.lock();
+        if rooms.len() >= self.config.max_rooms {
             return None;
         }
         let mut rng = rand::rng();
@@ -289,17 +212,11 @@ impl AppState {
                 break id;
             }
         };
-        let mut room = Room::<G>::new(id.clone(), settings.clone(), self.bot_delay);
-        room.use_turn_second(self.turn_second);
-        if let Some(think) = self.bot_think {
-            room.limit_think(think);
-        }
-        room.use_remote(self.remote.clone());
-        room.use_stats(self.stats.clone());
         self.stats.record(Event::TableCreated {
             table: id.clone(),
             preset: G::preset_id(&settings).to_string(),
         });
+        let room = Room::<G>::new(id.clone(), settings, self.env.clone());
         self.spawn_room(&mut rooms, id.clone(), room);
         Some(id)
     }
@@ -311,18 +228,17 @@ impl AppState {
         room: Room<G>,
     ) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let save = self.data.as_ref().map(|dir| dir.join(format!("{id}.json")));
-        let (registry, key, idle, me) = (self.rooms.clone(), id.clone(), self.idle, tx.downgrade());
+        let (registry, key, me) = (self.rooms.clone(), id.clone(), tx.downgrade());
         tokio::spawn(async move {
-            room.run(me, rx, idle, save).await;
-            registry.lock().expect("room registry poisoned").remove(&key);
+            room.run(me, rx).await;
+            registry.lock().remove(&key);
             tracing::info!(room = key, "room closed");
         });
         rooms.insert(id, tx);
     }
 
     fn room(&self, id: &str) -> Option<UnboundedSender<Command>> {
-        self.rooms.lock().expect("room registry poisoned").get(id).cloned()
+        self.rooms.lock().get(id).cloned()
     }
 }
 
@@ -333,9 +249,8 @@ fn body_limit(max: usize) -> tower_http::limit::RequestBodyLimitLayer {
     tower_http::limit::RequestBodyLimitLayer::new(max)
 }
 
-/// The API under `/api`, plus the built web client from `web_dir` if given.
-pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
-    let state = AppState { web: web_dir, ..state };
+/// The API under `/api`, plus the built web client from [`Config::web`] if given.
+pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/version", get(version))
@@ -364,7 +279,7 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
 /// compares it with `main`. The repository is public, so none of it is a
 /// secret.
 async fn version(State(app): State<AppState>) -> Response {
-    let worker = app.remote.status();
+    let worker = app.env.remote.status();
     let body = json!({
         "commit": bots::commit(),
         "version": env!("CARGO_PKG_VERSION"),
@@ -387,7 +302,7 @@ async fn bot_worker(State(app): State<AppState>, headers: axum::http::HeaderMap,
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
-    let allowed = match (&app.bot_token, presented) {
+    let allowed = match (&app.config.bot_token, presented) {
         (Some(token), Some(given)) => constant_time_eq(token.as_bytes(), given.as_bytes()),
         _ => false,
     };
@@ -396,7 +311,7 @@ async fn bot_worker(State(app): State<AppState>, headers: axum::http::HeaderMap,
     }
     ws.max_message_size(limit::WS_MAX_MESSAGE)
         .max_frame_size(limit::WS_MAX_MESSAGE)
-        .on_upgrade(move |socket| async move { app.remote.serve(socket).await })
+        .on_upgrade(move |socket| async move { app.env.remote.serve(socket).await })
 }
 
 /// Compares secrets without leaking how much of them matched.
@@ -452,7 +367,7 @@ async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: 
     match app.create_room::<Mighty>(settings) {
         Some(id) => Json(CreatedRoom { id }).into_response(),
         None => {
-            tracing::warn!(max = app.max_rooms, "refused a table: too many are open");
+            tracing::warn!(max = app.config.max_rooms, "refused a table: too many are open");
             ServerError::new(ErrorCode::TooManyTables).respond(StatusCode::SERVICE_UNAVAILABLE)
         }
     }
@@ -474,11 +389,6 @@ struct Report {
 pub const REPORT_DAYS: u64 = 14;
 /// The longest report kept, in characters.
 pub const REPORT_MAX: usize = 2000;
-/// A table with nobody connected closes after this many minutes, unless
-/// the server is told otherwise.
-pub const IDLE_MINUTES: u64 = 30;
-/// Reports accepted at most this often, from everyone.
-const REPORTS_PER_HOUR: usize = 30;
 /// The largest report body: [`REPORT_MAX`] characters of text and the client's description.
 const REPORT_BODY: usize = 32 * 1024;
 
@@ -492,13 +402,8 @@ async fn report(State(app): State<AppState>, ClientIp(ip): ClientIp, Json(r): Js
     if text.is_empty() {
         return ServerError::new(ErrorCode::EmptyReport).respond(StatusCode::BAD_REQUEST);
     }
-    {
-        let mut recent = app.reports.lock().expect("report times poisoned");
-        recent.retain(|t| t.elapsed() < Duration::from_secs(3600));
-        if recent.len() >= REPORTS_PER_HOUR {
-            return ServerError::new(ErrorCode::TooManyReports).respond(StatusCode::TOO_MANY_REQUESTS);
-        }
-        recent.push(std::time::Instant::now());
+    if !app.limits.report_files.take() {
+        return ServerError::new(ErrorCode::TooManyReports).respond(StatusCode::TOO_MANY_REQUESTS);
     }
     let room_id = r.room.filter(|id| id.len() <= 12);
     let mut room = Value::Null;
@@ -524,7 +429,7 @@ async fn report(State(app): State<AppState>, ClientIp(ip): ClientIp, Json(r): Js
         "room": room,
     });
     tracing::warn!(report = %report, "problem report");
-    if let Some(dir) = &app.data {
+    if let Some(dir) = &app.config.data {
         let dir = dir.join("reports");
         let name = format!("{now}-{:06x}.json", rand::rng().random::<u32>() & 0xff_ffff);
         let saved = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join(name), report.to_string()));
@@ -567,7 +472,7 @@ async fn connect(
     let Some(room) = app.room(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let conn = app.next_conn.fetch_add(1, Ordering::Relaxed);
+    let conn = app.rooms.next_conn.fetch_add(1, Ordering::Relaxed);
     ws.max_message_size(limit::WS_MAX_MESSAGE)
         .max_frame_size(limit::WS_MAX_MESSAGE)
         .on_upgrade(move |socket| serve_connection(socket, room, conn))

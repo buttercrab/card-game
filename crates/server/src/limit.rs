@@ -9,7 +9,7 @@ use axum::response::Response;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 /// Up to `burst` at once, refilled at `per_minute`.
@@ -133,12 +133,50 @@ pub fn ws_hints() -> ConnBucket {
     ConnBucket::new(12, 4)
 }
 
+/// At most `max` in any hour, from everyone together.
+pub struct HourlyCap {
+    max: usize,
+    times: Mutex<Vec<Instant>>,
+}
+
+impl HourlyCap {
+    pub fn new(max: usize) -> HourlyCap {
+        HourlyCap {
+            max,
+            times: Mutex::default(),
+        }
+    }
+
+    /// Takes one of the hour's places if one is left.
+    pub fn take(&self) -> bool {
+        let now = Instant::now();
+        let mut times = self.times.lock().expect("hourly cap poisoned");
+        times.retain(|t| now.saturating_duration_since(*t) < Duration::from_secs(3600));
+        if times.len() >= self.max {
+            return false;
+        }
+        times.push(now);
+        true
+    }
+}
+
+/// Problem reports saved at most this often, from everyone.
+pub const REPORTS_PER_HOUR: usize = 30;
+
+/// New client errors filed as issues at most this often, so a flood of
+/// made-up errors cannot flood the issue tracker.
+pub const ISSUES_PER_HOUR: usize = 5;
+
 /// The limits the server applies.
 pub struct Limits {
     pub tables: Limiter,
     pub reports: Limiter,
     pub errors: Limiter,
     pub sockets: Limiter,
+    /// Problem reports saved, from everyone.
+    pub report_files: HourlyCap,
+    /// New client errors saved for an issue, from everyone.
+    pub error_issues: HourlyCap,
 }
 
 impl Default for Limits {
@@ -149,6 +187,8 @@ impl Default for Limits {
             errors: Limiter::new(30, 30),
             // A client reconnects on its own after a drop, so leave room.
             sockets: Limiter::new(60, 60),
+            report_files: HourlyCap::new(REPORTS_PER_HOUR),
+            error_issues: HourlyCap::new(ISSUES_PER_HOUR),
         }
     }
 }

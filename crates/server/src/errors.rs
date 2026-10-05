@@ -15,17 +15,12 @@ use rand::Rng;
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::time::{Duration, Instant};
 
 /// The most kept of any one field, in bytes.
 const FIELD_CAP: usize = 4096;
 
 /// A group seen again after this long counts as new.
 const QUIET: u64 = 86_400;
-
-/// New groups filed as issues at most this often, so a flood of made-up
-/// errors cannot flood the issue tracker.
-const ISSUES_PER_HOUR: usize = 5;
 
 #[derive(Deserialize)]
 pub struct ClientError {
@@ -180,14 +175,9 @@ pub async fn client_error(State(app): State<AppState>, ClientIp(ip): ClientIp, J
     if !new {
         return StatusCode::NO_CONTENT.into_response();
     }
-    {
-        let mut filed = app.error_issues.lock().expect("error issue times poisoned");
-        filed.retain(|t| t.elapsed() < Duration::from_secs(3600));
-        if filed.len() >= ISSUES_PER_HOUR {
-            tracing::warn!(group, "new client error, not filed: too many this hour");
-            return StatusCode::NO_CONTENT.into_response();
-        }
-        filed.push(Instant::now());
+    if !app.limits.error_issues.take() {
+        tracing::warn!(group, "new client error, not filed: too many this hour");
+        return StatusCode::NO_CONTENT.into_response();
     }
     let error = json!({
         "time": t,
@@ -202,7 +192,7 @@ pub async fn client_error(State(app): State<AppState>, ClientIp(ip): ClientIp, J
         "version": version,
     });
     tracing::warn!(error = %error, "new client error");
-    if let Some(dir) = &app.data {
+    if let Some(dir) = &app.config.data {
         let dir = dir.join("errors");
         let name = format!("{t}-{group}-{:04x}.json", rand::rng().random::<u16>());
         let saved = std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(dir.join(name), error.to_string()));

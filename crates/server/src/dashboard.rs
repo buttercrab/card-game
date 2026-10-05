@@ -65,7 +65,7 @@ fn access(token: Option<&str>, uri: &Uri, headers: &HeaderMap) -> Access {
 
 /// Checks access; on success returns `None` and the caller answers.
 fn gate(app: &AppState, uri: &Uri, headers: &HeaderMap) -> Option<Response> {
-    match access(app.stats_token.as_deref(), uri, headers) {
+    match access(app.config.stats_token.as_deref(), uri, headers) {
         Access::Off => Some(StatusCode::NOT_FOUND.into_response()),
         Access::Denied => Some((StatusCode::UNAUTHORIZED, "통계를 보려면 토큰이 필요해요.").into_response()),
         Access::Remember(value) => {
@@ -172,6 +172,7 @@ pub async fn stats_page(State(app): State<AppState>, uri: Uri, headers: HeaderMa
         return denied;
     }
     let reports = app
+        .config
         .data
         .as_deref()
         .map(|dir| recent_reports(&dir.join("reports")))
@@ -230,7 +231,7 @@ pub async fn report_file(
         return denied;
     }
     // Only names the server itself writes, so no path can leave the folder.
-    let (Some(dir), Some(_)) = (app.data.as_deref(), report_name(&file)) else {
+    let (Some(dir), Some(_)) = (app.config.data.as_deref(), report_name(&file)) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     match std::fs::read(dir.join("reports").join(&file)) {

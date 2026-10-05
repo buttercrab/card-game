@@ -4,14 +4,14 @@ mod common;
 
 use common::*;
 use serde_json::{Value, json};
-use server::AppState;
+use server::{AppState, Config};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio_tungstenite::connect_async;
 
 #[tokio::test]
 async fn one_player_and_four_bots_finish_a_hand() {
-    let state = AppState::new(Duration::ZERO);
+    let state = AppState::new(config());
     let stats = state.stats();
     let addr = serve(state).await;
     let room = create_room(addr, "gshs").await;
@@ -225,7 +225,11 @@ async fn unknown_rooms_are_not_found() {
 
 #[tokio::test]
 async fn idle_rooms_close_and_the_room_count_is_capped() {
-    let state = AppState::new(Duration::ZERO).with_limits(2, Duration::from_millis(200));
+    let state = AppState::new(Config {
+        max_rooms: 2,
+        idle_minutes: IDLE_200MS,
+        ..config()
+    });
     let open = state.clone();
     let addr = serve(state).await;
 
@@ -259,7 +263,10 @@ async fn idle_rooms_close_and_the_room_count_is_capped() {
 async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     let dir = temp_dir();
     let start = |dir: std::path::PathBuf| async move {
-        let state = AppState::new(Duration::ZERO).with_data(dir);
+        let state = AppState::new(Config {
+            data: Some(dir),
+            ..config()
+        });
         let restored = state.restore_rooms().unwrap();
         (serve(state).await, restored)
     };
@@ -405,7 +412,10 @@ async fn reactions_reach_the_table_and_unknown_ones_are_refused() {
 async fn a_report_saves_the_room_without_seat_tokens() {
     let dir = temp_dir();
     let dir = dir.path();
-    let state = AppState::new(Duration::ZERO).with_data(dir.to_path_buf());
+    let state = AppState::new(Config {
+        data: Some(dir.to_path_buf()),
+        ..config()
+    });
     let addr = serve(state).await;
 
     let room = create_room(addr, "gshs").await;
@@ -507,7 +517,10 @@ async fn bots_default_to_hard_and_their_level_can_change() {
 
 #[tokio::test]
 async fn a_bot_worker_thinks_for_the_room() {
-    let state = AppState::new(Duration::ZERO).with_bot_token("secret".into());
+    let state = AppState::new(Config {
+        bot_token: Some("secret".into()),
+        ..config()
+    });
     let remote = state.remote_bots();
     let addr = serve(state).await;
 
@@ -544,7 +557,11 @@ async fn a_bot_worker_thinks_for_the_room() {
 
 #[tokio::test]
 async fn a_hand_left_unfinished_when_the_table_closes_counts_as_abandoned() {
-    let state = AppState::new(Duration::from_millis(50)).with_limits(10, Duration::from_millis(200));
+    let state = AppState::new(Config {
+        bot_delay_ms: 50,
+        idle_minutes: IDLE_200MS,
+        ..config()
+    });
     let stats = state.stats();
     let addr = serve(state).await;
 
@@ -696,7 +713,7 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
 /// A server whose turn-limit seconds last 10 ms, so a 20-second turn runs
 /// out in a fifth of a second.
 async fn spawn_quick_clock_server() -> SocketAddr {
-    serve(AppState::new(Duration::ZERO).with_turn_second(Duration::from_millis(10))).await
+    serve(AppState::new(config()).with_turn_second(Duration::from_millis(10))).await
 }
 
 #[tokio::test]
@@ -900,13 +917,14 @@ fn only_the_current_snapshot_shape_restores() {
     use mighty::Mighty;
     use server::room::Room;
     use server::session::MightySettings;
-    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), Duration::ZERO);
+    let env = std::sync::Arc::new(server::room::RoomEnv::new(Duration::ZERO));
+    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), env.clone());
     let mut snapshot = room.snapshot();
     snapshot["table"]["shuffle_next"] = json!(true);
-    let restored = Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).unwrap();
+    let restored = Room::<Mighty>::restore(snapshot.clone(), env.clone()).unwrap();
     assert_eq!(restored.snapshot(), snapshot);
     snapshot.as_object_mut().unwrap().remove("table");
-    assert!(Room::<Mighty>::restore(snapshot, Duration::ZERO).is_err());
+    assert!(Room::<Mighty>::restore(snapshot, env).is_err());
 }
 
 /// Each seat's name (a person's or a bot's), and a bot's level, by seat.

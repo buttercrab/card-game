@@ -157,11 +157,11 @@ impl Stats {
         }
     }
 
-    /// Opens (or starts) the log under `dir`. The salt comes from
-    /// `STATS_SALT` if set, else from `<dir>/stats-salt`, made on first use.
-    pub fn open(dir: &Path) -> std::io::Result<Stats> {
+    /// Opens (or starts) the log under `dir`. The salt is `salt` if given
+    /// (`STATS_SALT`), else the one in `<dir>/stats-salt`, made on first use.
+    pub fn open(dir: &Path, salt: Option<String>) -> std::io::Result<Stats> {
         std::fs::create_dir_all(dir)?;
-        let salt = match std::env::var("STATS_SALT").ok().filter(|s| !s.is_empty()) {
+        let salt = match salt.filter(|s| !s.is_empty()) {
             Some(salt) => salt,
             None => {
                 let path = dir.join("stats-salt");
@@ -701,7 +701,7 @@ mod tests {
     fn the_log_survives_a_restart() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
-        let stats = Stats::open(dir).unwrap();
+        let stats = Stats::open(dir, None).unwrap();
         let player = stats.player("token");
         stats.record(Event::HandStarted {
             hand: hand("a", "gshs", 1),
@@ -721,7 +721,7 @@ mod tests {
             .write_all(b"{\"t\":1,\"type\":\"from_the_future\"}\nnot json\n")
             .unwrap();
 
-        let stats = Stats::open(dir).unwrap();
+        let stats = Stats::open(dir, None).unwrap();
         assert_eq!(stats.player("token"), player, "the salt is kept");
         assert!(stats.error_last_seen("g").is_some());
         let s = stats.summary(now());

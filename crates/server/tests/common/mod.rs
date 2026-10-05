@@ -7,10 +7,9 @@
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use server::{AppState, router};
+use server::{AppState, Config, router};
 use std::future::Future;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -22,23 +21,32 @@ pub type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 /// How long anything a test waits for may take before it fails.
 pub const DEADLINE: Duration = Duration::from_secs(10);
 
-/// Serves the API on a free local port.
-pub async fn serve(state: AppState) -> SocketAddr {
-    serve_web(state, None).await
+/// A server's settings for a test: bots move at once, no web client, and
+/// nothing else set.
+pub fn config() -> Config {
+    Config {
+        bot_delay_ms: 0,
+        web: None,
+        ..Config::default()
+    }
 }
 
-/// Serves the API, and the built client in `web` if given.
-pub async fn serve_web(state: AppState, web: Option<PathBuf>) -> SocketAddr {
+/// An idle time of 200 ms, in the minutes [`Config::idle_minutes`] takes.
+pub const IDLE_200MS: f64 = 0.2 / 60.0;
+
+/// Serves the API (and the built client, if the config names one) on a
+/// free local port.
+pub async fn serve(state: AppState) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let app = router(state, web);
+    let app = router(state);
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     addr
 }
 
 /// A server with no bot delay and nothing else set.
 pub async fn spawn_server() -> SocketAddr {
-    serve(AppState::new(Duration::ZERO)).await
+    serve(AppState::new(config())).await
 }
 
 pub struct Reply {

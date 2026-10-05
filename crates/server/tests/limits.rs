@@ -6,14 +6,18 @@ mod common;
 use common::*;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use server::AppState;
+use server::{AppState, Config};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::test]
 async fn a_full_server_refuses_a_table_with_a_code() {
-    let addr = serve(AppState::new(Duration::ZERO).with_limits(1, Duration::from_secs(60))).await;
+    let addr = serve(AppState::new(Config {
+        max_rooms: 1,
+        ..config()
+    }))
+    .await;
     create_room(addr, "gshs").await;
     let (status, body) = http(addr, "POST", "/api/rooms", "{}").await;
     assert_eq!(status, 503);
@@ -22,7 +26,7 @@ async fn a_full_server_refuses_a_table_with_a_code() {
 
 #[tokio::test]
 async fn oversized_bodies_are_refused() {
-    let addr = serve(AppState::new(Duration::ZERO)).await;
+    let addr = serve(AppState::new(config())).await;
     let big = json!({ "text": "x".repeat(100_000) }).to_string();
     assert_eq!(http(addr, "POST", "/api/reports", &big).await.0, 413);
     assert_eq!(http(addr, "POST", "/api/rooms", &big).await.0, 413);
@@ -30,7 +34,7 @@ async fn oversized_bodies_are_refused() {
 
 #[tokio::test]
 async fn an_oversized_websocket_message_closes_the_connection() {
-    let addr = serve(AppState::new(Duration::ZERO)).await;
+    let addr = serve(AppState::new(config())).await;
     let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
     let name = "x".repeat(server::limit::WS_MAX_MESSAGE + 1);
@@ -74,7 +78,7 @@ async fn a_dealt_table(addr: SocketAddr) -> (Vec<Socket>, usize) {
 
 #[tokio::test]
 async fn hints_wait_for_a_free_search_and_are_rate_limited() {
-    let addr = serve(AppState::new(Duration::ZERO)).await;
+    let addr = serve(AppState::new(config())).await;
     let (mut players, mover) = a_dealt_table(addr).await;
     let ws = &mut players[mover];
 
@@ -99,7 +103,10 @@ async fn hints_wait_for_a_free_search_and_are_rate_limited() {
 async fn a_stopping_server_saves_its_tables_and_the_next_restores_them() {
     let dir = temp_dir();
     let dir = dir.path();
-    let state = AppState::new(Duration::ZERO).with_data(dir.to_path_buf());
+    let state = AppState::new(Config {
+        data: Some(dir.to_path_buf()),
+        ..config()
+    });
     let addr = serve(state.clone()).await;
     let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
@@ -118,7 +125,10 @@ async fn a_stopping_server_saves_its_tables_and_the_next_restores_them() {
     // The room has ended by now (`shutdown` waited for it), and kept its file.
     assert!(file.exists(), "a shutdown keeps the file");
 
-    let next_server = AppState::new(Duration::ZERO).with_data(dir.to_path_buf());
+    let next_server = AppState::new(Config {
+        data: Some(dir.to_path_buf()),
+        ..config()
+    });
     assert_eq!(next_server.restore_rooms().unwrap(), 1);
     let addr = serve(next_server).await;
     let mut ws = connect(addr, &room).await;
@@ -128,9 +138,11 @@ async fn a_stopping_server_saves_its_tables_and_the_next_restores_them() {
 
 #[tokio::test]
 async fn the_stats_show_the_bot_worker_link() {
-    let state = AppState::new(Duration::ZERO)
-        .with_stats_token("secret".into())
-        .with_bot_token("bots".into());
+    let state = AppState::new(Config {
+        stats_token: Some("secret".into()),
+        bot_token: Some("bots".into()),
+        ..config()
+    });
     let remote = state.remote_bots();
     let addr = serve(state).await;
     let stats = |addr| async move {

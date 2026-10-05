@@ -90,6 +90,46 @@ pub struct TableSettings {
 /// which is the name's place in this list.
 pub const BOT_NAMES: [&str; 7] = ["두부", "모과", "호두", "보리", "단추", "콩떡", "소금"];
 
+/// How bots pace and think, server-wide.
+#[derive(Debug, Clone)]
+pub struct BotConfig {
+    /// The unit of a bot's move time; see [`pace`].
+    pub delay: Duration,
+    /// The most a 고수 bot may think here, if limited (a small server). A
+    /// bot worker is not held to it.
+    pub think_cap: Option<Duration>,
+}
+
+/// What every room on a server shares, handed to each when it opens.
+#[derive(Clone)]
+pub struct RoomEnv {
+    pub bots: BotConfig,
+    /// A room with nobody connected for this long closes.
+    pub idle: Duration,
+    /// How long a second of a table's turn limit lasts.
+    pub turn_second: Duration,
+    /// Another machine that thinks for bots, when one is connected.
+    pub remote: Arc<RemoteBots>,
+    pub stats: Arc<Stats>,
+    /// Where rooms are saved so they survive a restart, if anywhere.
+    pub data: Option<PathBuf>,
+}
+
+impl RoomEnv {
+    /// Rooms with bots that move at `delay`, and nothing else: no worker,
+    /// stats in memory, nothing saved.
+    pub fn new(delay: Duration) -> RoomEnv {
+        RoomEnv {
+            bots: BotConfig { delay, think_cap: None },
+            idle: Duration::from_secs(crate::IDLE_MINUTES * 60),
+            turn_second: Duration::from_secs(1),
+            remote: Arc::default(),
+            stats: Arc::new(Stats::in_memory()),
+            data: None,
+        }
+    }
+}
+
 /// The running turn timer: when `seat` must have acted on hand `version`.
 struct Clock {
     version: u64,
@@ -233,18 +273,13 @@ pub struct Room<G: SessionGame> {
     /// kept have fewer of them than `history`.
     hands: Vec<G::Summary>,
     rng: StdRng,
-    /// The unit of a bot's move time; see [`pace`].
-    bot_delay: Duration,
-    /// The most a 고수 bot may think on this server, if limited.
-    think_cap: Option<Duration>,
-    /// Another machine that thinks for bots, when one is connected.
-    remote: Option<Arc<RemoteBots>>,
+    /// What every room on the server shares.
+    env: Arc<RoomEnv>,
     /// Bumped whenever the hand changes, so a bot's stale move is dropped.
     version: u64,
     thinking: bool,
     /// Weak so the room still ends when every other sender is gone.
     me: Option<WeakUnboundedSender<Command>>,
-    stats: Option<Arc<Stats>>,
     /// When the current hand was dealt, in Unix seconds, if known.
     hand_started: Option<u64>,
     /// When the cards last landed, for [`SessionGame::grace`]; unknown
@@ -258,8 +293,6 @@ pub struct Room<G: SessionGame> {
     /// their player does something.
     away: Vec<bool>,
     clock: Option<Clock>,
-    /// How long a second of the turn limit lasts; shorter in tests.
-    second: Duration,
     /// How many seats on the opening seat is from where the hand number
     /// alone puts it: moving seats moves the rotation with the players.
     rotation: usize,
@@ -279,7 +312,7 @@ impl<G: SessionGame> Room<G> {
         (self.hands.len() == hand as usize).then(|| self.hands.last()).flatten()
     }
 
-    pub fn new(id: String, settings: G::Settings, bot_delay: Duration) -> Room<G> {
+    pub fn new(id: String, settings: G::Settings, env: Arc<RoomEnv>) -> Room<G> {
         let n = G::seats(&settings);
         Room {
             id,
@@ -294,33 +327,23 @@ impl<G: SessionGame> Room<G> {
             history: Vec::new(),
             hands: Vec::new(),
             rng: StdRng::from_os_rng(),
-            bot_delay,
-            think_cap: None,
-            remote: None,
+            env,
             version: 0,
             thinking: false,
             me: None,
-            stats: None,
             hand_started: None,
             dealt_at: None,
             deals: 0,
             table: TableSettings::default(),
             away: vec![false; n],
             clock: None,
-            second: Duration::from_secs(1),
             rotation: 0,
         }
     }
 
     /// Notes what happens here in the stats log; see [`crate::stats`].
-    pub fn use_stats(&mut self, stats: Arc<Stats>) {
-        self.stats = Some(stats);
-    }
-
     fn record(&self, event: Event) {
-        if let Some(stats) = &self.stats {
-            stats.record(event);
-        }
+        self.env.stats.record(event);
     }
 
     /// The current hand's table and seats, for the stats.
@@ -342,39 +365,19 @@ impl<G: SessionGame> Room<G> {
         self.hand_started.map(|t| crate::stats::now().saturating_sub(t))
     }
 
-    /// Caps how long a 고수 bot thinks here, for small servers. A bot worker
-    /// is not held to it.
-    pub fn limit_think(&mut self, think: Duration) {
-        self.think_cap = Some(think);
-    }
-
-    /// Makes the turn limit's seconds last `second` instead, for tests.
-    pub fn use_turn_second(&mut self, second: Duration) {
-        self.second = second;
-    }
-
-    /// Lets bots think on a connected worker; see [`crate::bots`].
-    pub fn use_remote(&mut self, remote: Arc<RemoteBots>) {
-        self.remote = Some(remote);
-    }
-
     pub fn id(&self) -> &str {
         &self.id
     }
 
     /// `me` must send to `rx`; bots use it to report their moves. Returns
-    /// once nobody has been connected for `idle`.
+    /// once nobody has been connected for the server's idle time.
     ///
-    /// With `save`, the room is written there after every change and the
-    /// file removed when the room closes.
-    pub async fn run(
-        mut self,
-        me: WeakUnboundedSender<Command>,
-        mut rx: UnboundedReceiver<Command>,
-        idle: Duration,
-        save: Option<PathBuf>,
-    ) {
+    /// With a data directory, the room is written there after every change
+    /// and the file removed when the room closes.
+    pub async fn run(mut self, me: WeakUnboundedSender<Command>, mut rx: UnboundedReceiver<Command>) {
         self.me = Some(me);
+        let idle = self.env.idle;
+        let save = self.env.data.as_ref().map(|dir| dir.join(format!("{}.json", self.id)));
         // A restored room may have a bot to act.
         self.think();
         self.arm_clock();
@@ -472,7 +475,7 @@ impl<G: SessionGame> Room<G> {
     }
 
     /// Rebuilds a room from [`Room::snapshot`] by replaying its hand.
-    pub fn restore(snapshot: Value, bot_delay: Duration) -> Result<Room<G>, String> {
+    pub fn restore(snapshot: Value, env: Arc<RoomEnv>) -> Result<Room<G>, String> {
         #[derive(Deserialize)]
         struct SavedHand {
             number: u32,
@@ -499,7 +502,7 @@ impl<G: SessionGame> Room<G> {
         if s.format != SNAPSHOT_FORMAT || s.game != G::NAME {
             return Err(format!("not a {} room in format {SNAPSHOT_FORMAT}", G::NAME));
         }
-        let mut room = Room::new(s.id, s.settings, bot_delay);
+        let mut room = Room::new(s.id, s.settings, env);
         if s.seats.len() != room.seats.len() || s.scores.len() != room.seats.len() {
             return Err("seat count does not match the settings".into());
         }
@@ -628,12 +631,12 @@ impl<G: SessionGame> Room<G> {
             return;
         }
         let Some(game) = self.game.as_ref() else { return };
-        let mut full = self.second * limit;
+        let mut full = self.env.turn_second * limit;
         if G::long_decision(&G::legal_actions(game)) {
             full *= 2;
         }
         let total = if away {
-            (self.second * AWAY_SECS).min(full)
+            (self.env.turn_second * AWAY_SECS).min(full)
         } else {
             full
         };
@@ -1094,10 +1097,10 @@ impl<G: SessionGame> Room<G> {
         // The browser's own id if it sends one, else the seat's token, which
         // the browser keeps for this table.
         let device = device.filter(|d| !d.is_empty() && d.len() <= 128);
-        let player = match (&self.stats, device) {
-            (Some(stats), Some(device)) => Some(stats.player(&device)),
-            (Some(stats), None) => player.or_else(|| Some(stats.player(&token))),
-            (None, _) => player,
+        let stats = &self.env.stats;
+        let player = match device {
+            Some(device) => Some(stats.player(&device)),
+            None => player.or_else(|| Some(stats.player(&token))),
         };
         if reclaimed.is_none() {
             self.record(Event::SeatFilled {
@@ -1177,7 +1180,11 @@ impl<G: SessionGame> Room<G> {
         // People take a moment, longer for a real choice, and every move
         // varies a little.
         let jitter = self.rng.random_range(JITTER);
-        let delay = self.bot_delay.mul_f32(pace(level, G::decision(&view, &legal)) * jitter);
+        let delay = self
+            .env
+            .bots
+            .delay
+            .mul_f32(pace(level, G::decision(&view, &legal)) * jitter);
         // A move that must wait after the deal waits a little past it.
         let grace = legal.iter().map(|a| G::grace(game, a)).max().unwrap_or_default();
         let waited = self.dealt_at.map_or(grace, |t| t.elapsed());
@@ -1187,9 +1194,9 @@ impl<G: SessionGame> Room<G> {
         };
         // Bots wait out the delay anyway so people can follow along; spend
         // most of it thinking, leaving a little for the move to travel.
-        let think = delay.mul_f32(0.8).min(self.bot_delay.mul_f32(THINK));
-        let local_think = self.think_cap.map_or(think, |cap| think.min(cap));
-        let remote = self.remote.clone().filter(|r| r.available());
+        let think = delay.mul_f32(0.8).min(self.env.bots.delay.mul_f32(THINK));
+        let local_think = self.env.bots.think_cap.map_or(think, |cap| think.min(cap));
+        let remote = Some(self.env.remote.clone()).filter(|r| r.available());
         let job = remote.as_ref().map(|_| {
             json!({
                 "level": level, "seat": seat, "temper": temper, "seed": seed,
@@ -1285,7 +1292,7 @@ impl<G: SessionGame> Room<G> {
             let Some(action) = G::bot_out_of_turn(level, seat, game, &mut self.rng) else {
                 continue;
             };
-            let pause = self.bot_delay.mul_f32(self.rng.random_range(1.0..1.5));
+            let pause = self.env.bots.delay.mul_f32(self.rng.random_range(1.0..1.5));
             let (tx, deal) = (tx.clone(), self.deals);
             tokio::spawn(async move {
                 tokio::time::sleep(pause).await;
@@ -1430,7 +1437,11 @@ mod tests {
     use mighty::rules::Preset;
 
     fn room() -> Room<Mighty> {
-        Room::new("t".into(), MightySettings::new(Preset::Gshs), Duration::ZERO)
+        Room::new(
+            "t".into(),
+            MightySettings::new(Preset::Gshs),
+            Arc::new(RoomEnv::new(Duration::ZERO)),
+        )
     }
 
     /// Empty seats trading places is no shuffle, nor is one that leaves
@@ -1486,7 +1497,7 @@ mod tests {
         room.reseat(&[4, 3, 2, 1, 0], moved(&[4, 3, 2, 1, 0]));
         assert_eq!(opener(&room), 4);
         // Saved and restored, it stays.
-        let restored = Room::<Mighty>::restore(room.snapshot(), Duration::ZERO).unwrap();
+        let restored = Room::<Mighty>::restore(room.snapshot(), room.env.clone()).unwrap();
         assert_eq!(opener(&restored), 4);
     }
 

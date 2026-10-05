@@ -16,7 +16,7 @@ infer = { path = "crates/infer" }
 server = { path = "crates/server" }
 sim = { path = "crates/sim" }
 axum = { version = "0.8", features = ["ws"] }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 flate2 = "1"
 futures-util = "0.3"
 rand = "0.9"

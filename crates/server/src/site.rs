@@ -275,7 +275,7 @@ pub fn status(page: &Page) -> StatusCode {
 /// app's page for the path. API paths and missing build files are plain 404s.
 pub async fn fallback(State(app): State<AppState>, req: Request) -> Response {
     let path = req.uri().path().to_string();
-    let Some(dir) = app.web.clone() else {
+    let Some(dir) = app.config.web.clone() else {
         return StatusCode::NOT_FOUND.into_response();
     };
     if path.starts_with("/api/") || path == "/api" || path.starts_with("/internal/") {
@@ -306,8 +306,8 @@ pub async fn fallback(State(app): State<AppState>, req: Request) -> Response {
     let html = render(
         &template,
         &meta(&page, &path, table.as_ref()),
-        &app.site_url,
-        app.beacon.as_deref(),
+        &app.config.site_url,
+        app.config.beacon.as_deref(),
     );
     let mut response = (status(&page), html).into_response();
     let headers = response.headers_mut();
@@ -337,7 +337,7 @@ impl AppState {
 pub async fn robots_txt(State(app): State<AppState>) -> Response {
     (
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-        robots(&app.site_url),
+        robots(&app.config.site_url),
     )
         .into_response()
 }
@@ -345,7 +345,7 @@ pub async fn robots_txt(State(app): State<AppState>) -> Response {
 pub async fn sitemap_xml(State(app): State<AppState>) -> Response {
     (
         [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
-        sitemap(&app.site_url),
+        sitemap(&app.config.site_url),
     )
         .into_response()
 }
