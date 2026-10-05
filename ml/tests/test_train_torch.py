@@ -2,19 +2,24 @@
 
 import dataclasses
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
 
-pytest.importorskip("torch")
+torch = pytest.importorskip("torch")
 
-from cardgame_ml.data.shards import Dataset
-from cardgame_ml.train.batching import Split, batches, every_row, steps_per_epoch
-from cardgame_ml.train.belief import evaluate, load, train
-from cardgame_ml.train.config import BeliefTrainConfig, SplitConfig, from_mapping
-from cardgame_ml.train.sessions import ConfigChangedError
+from cardgame_ml.data.shards import Dataset  # noqa: E402
+from cardgame_ml.export.__main__ import POSITIONS, ExportError, export_run  # noqa: E402
+from cardgame_ml.models.io import WrongKindError, load_belief, load_q  # noqa: E402
+from cardgame_ml.runs import RunDir  # noqa: E402
+from cardgame_ml.train.batching import Split, batches, every_row, steps_per_epoch  # noqa: E402
+from cardgame_ml.train.belief import evaluate, train  # noqa: E402
+from cardgame_ml.train.config import BeliefTrainConfig, SplitConfig, from_mapping  # noqa: E402
+from cardgame_ml.train.score import score  # noqa: E402
+from cardgame_ml.train.sessions import ConfigChangedError  # noqa: E402
 
 
 def test_the_split_is_by_game_and_batches_cover_it(dataset: Dataset) -> None:
@@ -61,7 +66,8 @@ def test_a_tiny_run_learns_and_writes_its_files(
     assert report.to_json()["all"]["model"]["cards"] > 0
     described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     assert described["encoding"] == "mighty-3"
-    trained = load(tmp_path)
+    assert described["kind"] == "belief"
+    trained = load_belief(RunDir(tmp_path))
     assert trained.parameter_count() == described["parameters"]
     # Better than the count baseline on the games it saw, at least.
     fitted = evaluate(trained, dataset, every_row).to_json()["all"]
@@ -89,3 +95,38 @@ def test_a_resume_keeps_the_record_and_refuses_another_config(
     assert (start["session"], start["commit"], start["seed"]) == (2, "b" * 40, config.seed)
     described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     assert [s["commit"] for s in described["sessions"]] == ["a" * 40, "b" * 40]
+
+
+def test_a_belief_run_is_scored_and_exported_by_its_kind(
+    dataset: Dataset,
+    train_config: dict[str, Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``train.score`` and ``export`` on a run in the artifact store, as
+    the loop's steps run them."""
+    pytest.importorskip("onnx")
+    store = tmp_path / "store"
+    monkeypatch.setenv("CARDGAME_ARTIFACTS", str(store))
+    shutil.copytree(dataset.root, store / "selfplay" / "tiny")
+    config = from_mapping(BeliefTrainConfig, train_config, "test")
+    run = RunDir.named(config.name)
+    train(config, dataset, run.path, lambda _: None)
+
+    cpu = torch.device("cpu")
+    own = score(run, dataset, "selfplay/tiny", cpu)
+    assert own["decisions"] == "validation games"
+    games = sum(s.games for s in dataset.shards)
+    val = Split.draw(games, config.split).val_rows
+    assert own["count"] == sum(int(val(dataset.load(i, ["game"])).sum()) for i in range(3))
+    other = score(run, dataset, "selfplay/another", cpu)
+    assert (other["decisions"], other["count"]) == ("every decision", dataset.decisions)
+    assert own["scores"]["all"]["model"]["cards"] > 0
+
+    assert export_run(run) == run.path / "model.onnx"
+    parity = json.loads((run.path / "parity.json").read_text(encoding="utf-8"))
+    assert len(parity["observations"]) == POSITIONS
+    with pytest.raises(ExportError, match="Q networks"):
+        export_run(run, Path("model.pt"), tmp_path / "out")
+    with pytest.raises(WrongKindError):
+        load_q(run)

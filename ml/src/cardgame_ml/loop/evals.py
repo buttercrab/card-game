@@ -10,11 +10,11 @@ names the same file by a relative path and the same SHA-256, and only
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
-from cardgame_ml._json import as_object
+from cardgame_ml import schema
 
 SCHEMA = "eval-results/1"
 FRESH_SEED_STRIDE = 10_000_000
@@ -39,20 +39,6 @@ class Estimate:
     def high(self) -> float:
         return self.mean + self.ci95
 
-    def to_json(self) -> dict[str, float | int]:
-        return {"mean": self.mean, "ci95": self.ci95, "n": self.n}
-
-    @classmethod
-    def from_json(cls, value: object) -> "Estimate | None":
-        if value is None:
-            return None
-        obj = as_object(value, "estimate")
-        return cls(
-            float(cast(float, obj["mean"])),
-            float(cast(float, obj["ci95"])),
-            int(cast(int, obj["n"])),
-        )
-
     def minus(self, other: "Estimate") -> "Estimate":
         """The difference of two independent estimates."""
         return Estimate(
@@ -67,20 +53,68 @@ class Estimate:
 class Summary:
     """A summary of a part: the bot, the baseline, their difference."""
 
-    bot: Estimate | None
-    baseline: Estimate | None
-    diff: Estimate | None
+    bot: Estimate | None = None
+    baseline: Estimate | None = None
+    diff: Estimate | None = None
 
-    @classmethod
-    def from_json(cls, value: object) -> "Summary | None":
-        if value is None:
-            return None
-        obj = as_object(value, "summary")
-        return cls(
-            Estimate.from_json(obj.get("bot")),
-            Estimate.from_json(obj.get("baseline")),
-            Estimate.from_json(obj.get("diff")),
-        )
+
+# What the loop reads of ``eval-results/1`` (``eval`` writes more: the
+# machine, each rung and table, the command line), read with unknown keys
+# ignored.
+
+
+@dataclass(frozen=True)
+class _Suite:
+    name: str
+    quick: bool
+
+
+@dataclass(frozen=True)
+class _Run:
+    wall_seconds: float
+    threads: int
+
+
+@dataclass(frozen=True)
+class _Ladder:
+    rating: Summary | None = None
+
+
+@dataclass(frozen=True)
+class _Average:
+    average: Summary | None = None
+
+
+@dataclass(frozen=True)
+class _Think:
+    median_ms: float
+    p99_ms: float
+
+
+@dataclass(frozen=True)
+class _Cost:
+    bot: _Think
+
+
+@dataclass(frozen=True)
+class _Puzzles:
+    passed: int
+    scored: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Results:
+    schema: Literal["eval-results/1"]
+    suite: _Suite
+    bot: str
+    baseline: str | None = None
+    run: _Run
+    ladder: _Ladder | None = None
+    presets: _Average | None = None
+    heldout: _Average | None = None
+    matches: tuple[Summary, ...] | None = None
+    cost: _Cost | None = None
+    puzzles: _Puzzles | None = None
 
 
 @dataclass(frozen=True)
@@ -119,52 +153,31 @@ class EvalResult:
 
     @classmethod
     def from_json(cls, data: object, where: str = "results") -> "EvalResult":
-        obj = as_object(data, where)
-        if obj.get("schema") != SCHEMA:
-            raise ValueError(f"{where}: not {SCHEMA}")
-        suite = as_object(obj["suite"], "suite")
-        run = as_object(obj["run"], "run")
-
-        def part(name: str, key: str) -> Summary | None:
-            value = obj.get(name)
-            return None if value is None else Summary.from_json(as_object(value, name)[key])
-
-        median = p99 = None
-        if obj.get("cost") is not None:
-            think = as_object(as_object(obj["cost"], "cost")["bot"], "cost.bot")
-            median = float(cast(float, think["median_ms"]))
-            p99 = float(cast(float, think["p99_ms"]))
-        puzzles = None
-        if obj.get("puzzles") is not None:
-            p = as_object(obj["puzzles"], "puzzles")
-            puzzles = (int(cast(int, p["passed"])), int(cast(int, p["scored"])))
-        baseline = obj.get("baseline")
+        r = schema.read(_Results, data, where, unknown="ignore")
         return cls(
-            suite=str(suite["name"]),
-            quick=bool(suite["quick"]),
-            bot=str(obj["bot"]),
-            baseline=None if baseline is None else str(baseline),
-            ladder=part("ladder", "rating"),
-            presets=part("presets", "average"),
-            heldout=part("heldout", "average"),
-            think_median_ms=median,
-            think_p99_ms=p99,
-            puzzles=puzzles,
-            wall_seconds=float(cast(float, run["wall_seconds"])),
-            threads=int(cast(int, run["threads"])),
-            matches=_pooled(obj.get("matches")),
+            suite=r.suite.name,
+            quick=r.suite.quick,
+            bot=r.bot,
+            baseline=r.baseline,
+            ladder=r.ladder.rating if r.ladder else None,
+            presets=r.presets.average if r.presets else None,
+            heldout=r.heldout.average if r.heldout else None,
+            think_median_ms=r.cost.bot.median_ms if r.cost else None,
+            think_p99_ms=r.cost.bot.p99_ms if r.cost else None,
+            puzzles=(r.puzzles.passed, r.puzzles.scored) if r.puzzles else None,
+            wall_seconds=r.run.wall_seconds,
+            threads=r.run.threads,
+            matches=_pooled(r.matches or ()),
         )
 
 
-def _pooled(value: object) -> Summary | None:
+def _pooled(tables: tuple[Summary, ...]) -> Summary | None:
     """Tables pooled by deals: the mean of every deal, and the interval of
     independent tables combined (``sqrt(sum (ci_i n_i)^2) / sum n_i``)."""
-    if not isinstance(value, list) or not value:
+    if not tables:
         return None
-    tables = [as_object(t, "match") for t in cast(list[object], value)]
 
-    def pool(key: str) -> Estimate | None:
-        found = [Estimate.from_json(t.get(key)) for t in tables]
+    def pool(found: list[Estimate | None]) -> Estimate | None:
         estimates = [e for e in found if e is not None]
         if len(estimates) != len(tables):
             return None
@@ -173,7 +186,11 @@ def _pooled(value: object) -> Summary | None:
         ci = math.sqrt(sum((e.ci95 * e.n) ** 2 for e in estimates)) / n
         return Estimate(mean, ci, n)
 
-    return Summary(pool("bot"), pool("baseline"), pool("diff"))
+    return Summary(
+        pool([t.bot for t in tables]),
+        pool([t.baseline for t in tables]),
+        pool([t.diff for t in tables]),
+    )
 
 
 @dataclass(frozen=True)
@@ -185,23 +202,16 @@ class Comparison:
     paired: bool
     """Measured deal by deal (the parent's bot as the suite's baseline),
     rather than as the difference of two separate measurements."""
+    beats: bool = field(init=False)
+    """Better beyond the 95% interval (written for readers of the record,
+    derived when read back)."""
 
-    @property
-    def beats(self) -> bool:
-        """Better beyond the 95% interval."""
-        return self.diff.low > 0
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "beats", self.diff.low > 0)
 
     @property
     def loses(self) -> bool:
         return self.diff.high < 0
-
-    def to_json(self) -> dict[str, object]:
-        return {
-            "metric": self.metric,
-            "diff": self.diff.to_json(),
-            "paired": self.paired,
-            "beats": self.beats,
-        }
 
 
 def compare(
@@ -248,6 +258,18 @@ def suite_argument(suite: str, scoreboard: str) -> str:
     return suite if suite == scoreboard else f"research/loop/suites/{suite}"
 
 
+@dataclass(frozen=True)
+class _SuiteFile:
+    suite: str
+    game: str
+
+
+@dataclass(frozen=True)
+class _SuitePart:
+    seed: int
+    file: str | None = None
+
+
 def fresh_suite(source: dict[str, object], name: str, k: int, source_dir: str) -> dict[str, object]:
     """Suite ``source`` (a parsed ``suite.json``) on fresh deals: every
     table's seed moved by ``k`` strides, files named relative to the new
@@ -256,11 +278,12 @@ def fresh_suite(source: dict[str, object], name: str, k: int, source_dir: str) -
     if k < 1:
         raise ValueError("a fresh-deal suite moves the seeds: k >= 1")
     shift = k * FRESH_SEED_STRIDE
+    head = schema.read(_SuiteFile, source, "suite.json", unknown="ignore")
     out: dict[str, object] = {
         "suite": name,
-        "game": source["game"],
+        "game": head.game,
         "about": (
-            f"Suite {source['suite']} on fresh deals (seeds + {shift}), for confirming a win; "
+            f"Suite {head.suite} on fresh deals (seeds + {shift}), for confirming a win; "
             "generated by the experiment loop. Not a scoreboard."
         ),
     }
@@ -268,9 +291,10 @@ def fresh_suite(source: dict[str, object], name: str, k: int, source_dir: str) -
         value = source.get(part)
         if value is None:
             continue
-        table = dict(as_object(value, part))
-        table["seed"] = int(cast(int, table["seed"])) + shift
-        if "file" in table:
-            table["file"] = f"{source_dir}/{table['file']}"
+        typed = schema.read(_SuitePart, value, f"suite.json: {part}", unknown="ignore")
+        table = dict(cast(dict[str, object], value))
+        table["seed"] = typed.seed + shift
+        if typed.file is not None:
+            table["file"] = f"{source_dir}/{typed.file}"
         out[part] = table
     return out

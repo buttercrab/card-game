@@ -23,13 +23,14 @@ stopped itself.
 # pyright: reportUnknownMemberType=false
 
 import contextlib
+import multiprocessing.queues
 import queue
 import signal
 import time
 import traceback
 from dataclasses import dataclass, field
 from multiprocessing.synchronize import Event, Lock
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -47,6 +48,9 @@ from cardgame_ml.train.dmc.policy import (
     choose,
     legal_values,
 )
+
+if TYPE_CHECKING:
+    from multiprocessing.sharedctypes import Synchronized
 
 
 @dataclass
@@ -138,9 +142,9 @@ def run(  # noqa: PLR0913, PLR0917
     spec_json: dict[str, object],
     exclude: str,
     shared: dict[str, torch.Tensor],
-    version: Any,  # a multiprocessing Value("q")
+    version: "Synchronized[int]",
     lock: Lock,
-    out: "queue.Queue[Report | Failure]",
+    out: "multiprocessing.queues.Queue[Report | Failure]",
     stop: Event,
     seed: int,
 ) -> None:
@@ -164,9 +168,9 @@ def _play(  # noqa: PLR0913, PLR0917
     spec_json: dict[str, object],
     exclude: str,
     shared: dict[str, torch.Tensor],
-    version: Any,
+    version: "Synchronized[int]",
     lock: Lock,
-    out: "queue.Queue[Report | Failure]",
+    out: "multiprocessing.queues.Queue[Report | Failure]",
     stop: Event,
     seed: int,
 ) -> None:
@@ -186,7 +190,7 @@ def _play(  # noqa: PLR0913, PLR0917
     rng = np.random.default_rng(seed)
     exploration = Exploration(a.epsilon, a.temperature, a.runner_up)
     hands = Hands(a.envs)
-    starts = ExploringStarts(a.envs, bid_mask(spec.actions), a.declare, a.declare_temperature)
+    starts = ExploringStarts(a.envs, _bids(spec, a.declare), a.declare, a.declare_temperature)
     device = torch.device("cpu")
     step = env.reset()
     pending: list[Decisions] = []
@@ -238,3 +242,8 @@ def _play(  # noqa: PLR0913, PLR0917
         pending, count, finished, steps, forced = [], 0, 0, 0, 0
         model_s = env_s = 0.0
         wall, cpu = now, now_cpu
+
+
+def _bids(spec: EncodingSpec, declare: float) -> NDArray[np.bool_]:
+    """The spec's bids, read from its names only when exploring starts are on."""
+    return bid_mask(spec.actions) if declare > 0 else np.zeros(len(spec.actions), np.bool_)

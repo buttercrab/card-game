@@ -6,34 +6,32 @@ once an epoch, in an order drawn from the run's seed; every
 ``eval_every`` steps and at the end of each epoch the model is scored on
 the validation games against the count baseline (``train.metrics``).
 
-A run writes into its directory: ``config.json`` (the config, the spec,
-the parameter count, and its ``sessions``: each one's commit, config
-hash and seed, see ``train.sessions``), ``log.jsonl`` (one line per
-logged step and per evaluation), ``checkpoint.pt`` after each epoch (to
-resume from; written whole or not at all) and, at the end, ``model.pt``
-(the weights) and ``metrics.json`` (the last evaluation). A resume with
-another config than the run's is refused before anything is written,
-unless the caller accepts it (``allow_config_change``). :func:`load`
-reads a run's model back.
+A run writes into its directory (``runs.RunDir``): ``config.json`` (its
+kind, the config, the spec, the parameter count, and its ``sessions``:
+each one's commit, config hash and seed, see ``train.sessions``),
+``log.jsonl`` (one line per logged step and per evaluation),
+``checkpoint.pt`` after each epoch (to resume from; written whole or not
+at all) and, at the end, ``model.pt`` (the weights) and ``metrics.json``
+(the last evaluation). A resume with another config than the run's is
+refused before anything is written, unless the caller accepts it
+(``allow_config_change``). ``models.io.load_belief`` reads a run's model
+back.
 """
 
 # PyTorch leaves a few parameters unannotated (manual_seed's seed,
 # Tensor.backward's, Optimizer.step's closure), which strict mode reports.
 # pyright: reportUnknownMemberType=false
 
-import json
 import math
 import time
-from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import torch
 
 from cardgame_ml.data.shards import Batch, Dataset
-from cardgame_ml.data.spec import EncodingSpec
+from cardgame_ml.manifest import Session
 from cardgame_ml.models.belief import (
     BeliefModel,
     card_losses,
@@ -41,22 +39,16 @@ from cardgame_ml.models.belief import (
     log_probs,
     uniform_log_probs,
 )
-from cardgame_ml.models.config import BeliefConfig
-from cardgame_ml.train.batching import Rows, Split, batches, prefetch, steps_per_epoch, to_inputs
+from cardgame_ml.models.inputs import observation, to_tensors
+from cardgame_ml.runs import Described, ModelKind, RunDir
+from cardgame_ml.runtime import Log, device_for, write_json
+from cardgame_ml.train.batching import Rows, Split, batches, prefetch, steps_per_epoch
 from cardgame_ml.train.config import BeliefTrainConfig
-from cardgame_ml.train.metrics import Report, phases
-from cardgame_ml.train.sessions import check_resume, recorded_sessions, session, write_json
-
-type Log = Callable[[dict[str, Any]], None]
+from cardgame_ml.train.metrics import Report, phase_columns, phases
+from cardgame_ml.train.sessions import check_resume, session
 
 LOG_EVERY = 100
 """Steps between training-loss lines in the log."""
-
-
-def device_for(name: str) -> torch.device:
-    if name == "auto":
-        return torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    return torch.device(name)
 
 
 def evaluate(model: BeliefModel, dataset: Dataset, rows: Rows, batch_size: int = 1024) -> Report:
@@ -69,7 +61,7 @@ def evaluate(model: BeliefModel, dataset: Dataset, rows: Rows, batch_size: int =
         for batch in prefetch(batches(dataset, rows, batch_size, seed=None)):
             targets = torch.as_tensor(batch["belief"], device=device)
             counts = class_counts(targets, classes)
-            logits = model(*to_inputs(batch, device))
+            logits = model(*to_tensors(observation(batch), device))
             ours = card_losses(log_probs(logits, counts), targets)
             base = card_losses(uniform_log_probs(counts, logits.shape[1]), targets)
             report.add(
@@ -107,6 +99,8 @@ def train(  # noqa: PLR0913, PLR0915
     config (unless ``allow_config_change``)."""
     if dataset.eval_only:
         raise ValueError(f"{dataset.name} is for evaluation only, never for training")
+    phase_columns(dataset.spec)
+    run = RunDir(out)
     out.mkdir(parents=True, exist_ok=True)
     device = device_for(config.device)
     torch.manual_seed(config.seed)
@@ -122,28 +116,35 @@ def train(  # noqa: PLR0913, PLR0915
     total *= config.optim.epochs
 
     step, first_epoch = 0, 0
-    checkpoint = out / "checkpoint.pt"
-    sessions: list[dict[str, Any]] = []
+    sessions: tuple[Session, ...] = ()
     changed: list[str] = []
-    if checkpoint.exists():
+    if run.checkpoint.exists():
         # Checked before anything is written: a refused resume leaves the run as it was.
-        described = json.loads((out / "config.json").read_text(encoding="utf-8"))
+        described = run.described()
         current = {**asdict(config), "dataset": dataset.name}
-        recorded = {**described["config"], "dataset": described.get("dataset")}
+        recorded = {**described.config, "dataset": described.dataset}
         changed = check_resume(out, recorded, current, allow_change=allow_config_change)
-        sessions = recorded_sessions(described)
-        state = torch.load(checkpoint, map_location=device, weights_only=True)
+        sessions = described.sessions
+        state = torch.load(run.checkpoint, map_location=device, weights_only=True)
         model.load_state_dict(state["model"])
         optimizer.load_state_dict(state["optimizer"])
         step, first_epoch = int(state["step"]), int(state["epoch"])
         log({"event": "resume", "step": step, "epoch": first_epoch})
     # A run from before sessions were recorded had at least one already.
-    number = max(len(sessions), int(checkpoint.exists())) + 1
+    number = max(len(sessions), int(run.checkpoint.exists())) + 1
     entry = session(number, commit, dirty, asdict(config), config.seed, changed)
-    write_json(
-        out / "config.json", _describe(config, dataset, model) | {"sessions": [*sessions, entry]}
+    run.describe(
+        Described(
+            kind=ModelKind.BELIEF,
+            config=asdict(config),
+            encoding=dataset.encoding,
+            spec=dataset.spec.to_json(),
+            parameters=model.parameter_count(),
+            dataset=dataset.name,
+            sessions=(*sessions, entry),
+        )
     )
-    log({"event": "start", "device": str(device), "steps": total, **entry})
+    log({"event": "start", "device": str(device), "steps": total, **entry.to_json()})
 
     def validate(epoch: int) -> Report:
         report = evaluate(model, dataset, split.val_rows)
@@ -182,9 +183,10 @@ def train(  # noqa: PLR0913, PLR0915
         report = validate(epoch + 1)
         state = {"model": model.state_dict(), "optimizer": optimizer.state_dict()}
         # Whole or not at all: a crash mid-write keeps the last checkpoint.
-        torch.save({**state, "step": step, "epoch": epoch + 1}, checkpoint.with_suffix(".tmp"))
-        checkpoint.with_suffix(".tmp").replace(checkpoint)
-    torch.save(model.state_dict(), out / "model.pt")
+        tmp = run.checkpoint.with_suffix(".tmp")
+        torch.save({**state, "step": step, "epoch": epoch + 1}, tmp)
+        tmp.replace(run.checkpoint)
+    torch.save(model.state_dict(), run.model)
     write_json(out / "metrics.json", {"step": step, "val": report.to_json()})
     return report
 
@@ -195,7 +197,7 @@ def _step(
     """One optimisation step on ``batch``: each hidden card's loss."""
     device = next(model.parameters()).device
     targets = torch.as_tensor(batch["belief"], device=device)
-    logits = model(*to_inputs(batch, device))
+    logits = model(*to_tensors(observation(batch), device))
     counts = class_counts(targets, logits.shape[-1])
     losses, _ = card_losses(log_probs(logits, counts), targets)
     optimizer.zero_grad(set_to_none=True)
@@ -203,23 +205,3 @@ def _step(
     torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
     optimizer.step()
     return losses
-
-
-def _describe(config: BeliefTrainConfig, dataset: Dataset, model: BeliefModel) -> dict[str, Any]:
-    return {
-        "config": asdict(config),
-        "dataset": dataset.name,
-        "encoding": dataset.encoding,
-        "spec": dataset.spec.to_json(),
-        "parameters": model.parameter_count(),
-    }
-
-
-def load(run: Path, device: torch.device | None = None) -> BeliefModel:
-    """The trained model in run directory ``run``, in eval mode."""
-    described = json.loads((run / "config.json").read_text(encoding="utf-8"))
-    spec = EncodingSpec.from_json(described["spec"])
-    model = BeliefModel(spec, BeliefConfig(**described["config"]["model"]))
-    device = device or torch.device("cpu")
-    model.load_state_dict(torch.load(run / "model.pt", map_location=device, weights_only=True))
-    return model.to(device).eval()

@@ -158,7 +158,7 @@ def test_the_buffer_keeps_the_latest_and_restores_events(spec: EncodingSpec) -> 
     assert all(a[1] <= b[0] for a, b in itertools.pairwise(spans))
 
 
-def test_the_report_reads_the_curve_off_the_log() -> None:
+def test_the_report_reads_the_curve_off_the_log(tmp_path: Path) -> None:
     def train(decisions: int, explained: float, rate: float) -> dict[str, Any]:
         phase = {"decisions": decisions, "mse": 0.5, "explained": explained}
         return {"event": "train", "phases": {"bidding": phase}, "throughput": {"hands": rate}}
@@ -176,8 +176,16 @@ def test_the_report_reads_the_curve_off_the_log() -> None:
 
     log = [point(0, -9.0), train(10, 0.2, 1.0), train(30, 0.6, 3.0), point(100, 1.5)]
     points = report.curve(log)
-    assert [p["hands"] for p in points] == [0, 100]
-    assert points[1]["throughput"] == {"hands": 2.0}
-    assert points[1]["phases"]["bidding"]["explained"] == pytest.approx(0.5)
+    assert [p.hands for p in points] == [0, 100]
+    assert points[1].throughput == {"hands": 2.0}
+    assert points[1].phases["bidding"].explained == pytest.approx(0.5)
     text = report.table(points)
     assert "| 100 | 6,000 | 1.00 | +1.50 ± 0.50 |" in text
+    # The report the loop reads back: the curve and the network's size.
+    start = {"event": "start", "session": 1, "parameters": 1234}
+    written = report.report("tiny", [start, *log])
+    assert written.parameters == 1234
+    assert [s["event"] for s in written.sessions] == ["start"]
+    path = tmp_path / report.CURVE_FILE
+    written.write(path)
+    assert report.CurveReport.load(path) == written

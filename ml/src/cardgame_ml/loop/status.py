@@ -14,7 +14,7 @@ from cardgame_ml.loop.daily import due
 from cardgame_ml.loop.layout import Layout
 from cardgame_ml.loop.policy import Policy
 from cardgame_ml.loop.queue import read_queue, waiting_for
-from cardgame_ml.loop.records import Records, parse_stamp
+from cardgame_ml.loop.records import Records, StepStatus, parse_stamp
 from cardgame_ml.loop.scheduler import Usage, holder
 
 
@@ -26,8 +26,9 @@ def status(  # noqa: PLR0913
     loads: dict[str, float | None],
     other_training: list[str],
     researcher_not_due: Callable[[datetime], str | None] | None = None,
+    records: Records | None = None,
 ) -> str:
-    records = Records(layout.experiments, layout.live)
+    records = records or Records(layout.experiments, layout.live)
     active = records.active()
     runs = records.by_id()
     lines = [f"runner: {holder(layout.lock) or 'not running'}"]
@@ -60,7 +61,7 @@ def status(  # noqa: PLR0913
         f"{r.id}:{s.step.name}"
         for r in active
         for s in r.steps
-        if s.status == "running" and s.step.gpu
+        if s.status == StepStatus.RUNNING and s.step.gpu
     ]
     lines.append(f"GPU: {', '.join(gpu_runs) or 'free'}")
     for other in other_training:

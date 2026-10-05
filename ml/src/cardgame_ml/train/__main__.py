@@ -11,14 +11,14 @@ record the change).
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from cardgame_ml import runs
 from cardgame_ml.data.shards import Dataset
 from cardgame_ml.provenance import Checkout
+from cardgame_ml.runs import RunDir
+from cardgame_ml.runtime import jsonl_log
 from cardgame_ml.store import artifact_store
 from cardgame_ml.train.belief import train
 from cardgame_ml.train.config import BeliefTrainConfig
@@ -40,22 +40,14 @@ def main() -> None:
     checkout.require_clean(args.allow_dirty)
     config = BeliefTrainConfig.load(args.config)
     dataset = Dataset.open(artifact_store() / config.dataset)
-    out = runs.run_dir(config.name)
-    print(f"training {config.name} into {out}", file=sys.stderr)
-    out.mkdir(parents=True, exist_ok=True)
-    with (out / "log.jsonl").open("a", encoding="utf-8") as log_file:
-
-        def log(entry: dict[str, Any]) -> None:
-            line = json.dumps(entry, ensure_ascii=False)
-            log_file.write(line + "\n")
-            log_file.flush()
-            print(line, file=sys.stderr)
-
+    run = RunDir.named(config.name)
+    print(f"training {config.name} into {run.path}", file=sys.stderr)
+    with jsonl_log(run.log) as log:
         try:
             train(
                 config,
                 dataset,
-                out,
+                run.path,
                 log,
                 commit=checkout.commit,
                 dirty=checkout.dirty,
@@ -64,7 +56,7 @@ def main() -> None:
         except ConfigChangedError as e:
             raise SystemExit(str(e)) from None
     manifest = runs.record(
-        out,
+        run,
         checkout,
         checkout.relative(args.config),
         (config.seed, config.split.seed),

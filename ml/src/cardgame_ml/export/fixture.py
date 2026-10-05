@@ -16,7 +16,6 @@ it when the model's architecture changes.
 
 import argparse
 import dataclasses
-import json
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +28,7 @@ from cardgame_ml.export.onnx import write, write_q
 from cardgame_ml.models.belief import BeliefModel
 from cardgame_ml.models.config import BeliefConfig, QConfig, TrunkConfig
 from cardgame_ml.models.q import QModel
+from cardgame_ml.runs import Described, ModelKind, RunDir
 
 CONFIG = BeliefConfig(width=16, heads=2, layers=2, feedforward=32, dropout=0.0)
 Q_CONFIG = QConfig(TrunkConfig(width=16, heads=2, layers=2, feedforward=32), 32, 2)
@@ -67,13 +67,15 @@ def belief_fixture(out: Path, batch: Batch, spec: EncodingSpec) -> None:
     torch.nn.init.normal_(model.head.weight, std=0.5)
     model.eval()
     torch.save(model.state_dict(), out / "model.pt")
-    described = {
-        "config": {"model": CONFIG.__dict__},
-        "encoding": spec.version,
-        "spec": spec.to_json(),
-        "parameters": model.parameter_count(),
-    }
-    (out / "config.json").write_text(json.dumps(described, indent=2) + "\n", encoding="utf-8")
+    RunDir(out).describe(
+        Described(
+            kind=ModelKind.BELIEF,
+            config={"model": dataclasses.asdict(CONFIG)},
+            encoding=spec.version,
+            spec=spec.to_json(),
+            parameters=model.parameter_count(),
+        )
+    )
     write(model, batch, batch, out)
 
 
@@ -86,14 +88,16 @@ def q_fixture(out: Path, batch: Batch, spec: EncodingSpec) -> None:
             torch.nn.init.normal_(layer.weight, std=0.3)
     model.eval()
     torch.save(model.state_dict(), out / "model.pt")
-    described = {
-        "config": {"model": dataclasses.asdict(Q_CONFIG)},
-        "encoding": spec.version,
-        "spec": spec.to_json(),
-        "parameters": model.parameter_count(),
-        "reward_scale": Q_REWARD_SCALE,
-    }
-    (out / "config.json").write_text(json.dumps(described, indent=2) + "\n", encoding="utf-8")
+    RunDir(out).describe(
+        Described(
+            kind=ModelKind.DMC,
+            config={"model": dataclasses.asdict(Q_CONFIG)},
+            encoding=spec.version,
+            spec=spec.to_json(),
+            parameters=model.parameter_count(),
+            reward_scale=Q_REWARD_SCALE,
+        )
+    )
     write_q(model, batch, batch, Q_REWARD_SCALE, out)
 
 

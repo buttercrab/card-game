@@ -12,16 +12,17 @@ run's outside ``budget`` is refused; ``--allow-config-change`` accepts it
 """
 
 import argparse
-import json
 import signal
 import sys
 from pathlib import Path
-from typing import Any
 
 from cardgame_ml import runs
+from cardgame_ml.models.io import EncodingMismatchError
 from cardgame_ml.provenance import Checkout
+from cardgame_ml.runs import RunDir
+from cardgame_ml.runtime import jsonl_log
 from cardgame_ml.train.dmc.config import DmcConfig
-from cardgame_ml.train.dmc.learner import ActorError, EncodingMismatchError, train
+from cardgame_ml.train.dmc.learner import ActorError, train
 from cardgame_ml.train.sessions import ConfigChangedError
 
 
@@ -46,22 +47,14 @@ def main() -> None:
     exclude = checkout.root / config.exclude
     if not exclude.is_file():
         raise SystemExit(f"exclude: {exclude} does not exist")
-    out = runs.run_dir(config.name)
-    out.mkdir(parents=True, exist_ok=True)
-    print(f"training {config.name} into {out}", file=sys.stderr)
+    run = RunDir.named(config.name)
+    print(f"training {config.name} into {run.path}", file=sys.stderr)
     signal.signal(signal.SIGTERM, _terminate)
-    with (out / "log.jsonl").open("a", encoding="utf-8") as log_file:
-
-        def log(entry: dict[str, Any]) -> None:
-            line = json.dumps(entry, ensure_ascii=False)
-            log_file.write(line + "\n")
-            log_file.flush()
-            print(line, file=sys.stderr)
-
+    with jsonl_log(run.log) as log:
         try:
             progress = train(
                 config,
-                out,
+                run.path,
                 exclude,
                 log,
                 commit=checkout.commit,
@@ -79,13 +72,9 @@ def main() -> None:
             log({"event": "failed", "error": str(e)})
             raise SystemExit(f"failed: {e} (the log has its traceback)") from None
     print(f"done: {progress.hands} hands, {progress.step} steps", file=sys.stderr)
-    manifest = runs.record(
-        out,
-        checkout,
-        checkout.relative(args.config),
-        (config.seed, config.curve.seed),
-        json.loads((out / "config.json").read_text(encoding="utf-8"))["encoding"],
-    )
+    seeds = (config.seed, config.curve.seed)
+    encoding = run.described().encoding
+    manifest = runs.record(run, checkout, checkout.relative(args.config), seeds, encoding)
     print(f"manifest: {manifest}", file=sys.stderr)
 
 

@@ -3,13 +3,14 @@ decisions, pick the best (or, with probability ε, a random legal one)."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
 
+from cardgame_ml.models.inputs import observation, to_tensors
 from cardgame_ml.models.q import QModel
+from cardgame_ml.models.trunk import INPUTS
 
 
 def legal_actions(legal: NDArray[np.bool_]) -> tuple[NDArray[np.int64], NDArray[np.bool_]]:
@@ -24,25 +25,8 @@ def legal_actions(legal: NDArray[np.bool_]) -> tuple[NDArray[np.int64], NDArray[
     return np.where(valid, order, order[:, :1]), valid
 
 
-type Observations = Mapping[str, Any]
+type Observations = Mapping[str, object]
 """A step's arrays (``cardgame_env.Step``) or a batch with the same keys."""
-
-OBSERVATION_KEYS = ("global", "cards", "events", "event_cards", "events_len", "legal")
-"""What a network reads of a step to play."""
-
-
-def observation_tensors(step: Observations, device: torch.device) -> tuple[torch.Tensor, ...]:
-    """The trunk's inputs from a step's arrays, events cut to the longest
-    sequence in it."""
-    events_len = np.asarray(step["events_len"], np.int64)
-    longest = max(int(events_len.max()), 1)
-    return (
-        torch.as_tensor(np.asarray(step["global"], np.float32), device=device),
-        torch.as_tensor(np.asarray(step["cards"], np.float32), device=device),
-        torch.as_tensor(np.asarray(step["events"], np.float32)[:, :longest], device=device),
-        torch.as_tensor(np.asarray(step["event_cards"], np.int64)[:, :longest], device=device),
-        torch.as_tensor(events_len, device=device),
-    )
 
 
 def legal_values(
@@ -59,11 +43,11 @@ def legal_values(
     for rows in np.array_split(order, min(groups, len(order))):
         if not len(rows):
             continue
-        part = {key: np.asarray(step[key])[rows] for key in OBSERVATION_KEYS}
+        part = observation({key: np.asarray(step[key])[rows] for key in INPUTS})
         k = max(int(valid[rows].sum(axis=1).max()), 1)
         with torch.inference_mode():
             q = model(
-                *observation_tensors(part, device),
+                *to_tensors(part, device),
                 torch.as_tensor(actions[rows, :k], device=device),
             )
         values[rows, :k] = q.float().cpu().numpy()
@@ -128,9 +112,20 @@ BID_PREFIX = "bid "
 "bid ♠13"); passing and the misdeal are not bids."""
 
 
+class NoBidsError(ValueError):
+    """A spec without bids, for exploring starts that force one."""
+
+
 def bid_mask(actions: Sequence[str]) -> NDArray[np.bool_]:
-    """Which of a spec's actions (by name) are bids."""
-    return np.array([name.startswith(BID_PREFIX) for name in actions], np.bool_)
+    """Which of a spec's actions (by name) are bids; a spec that names
+    none is refused (exploring starts would silently do nothing)."""
+    mask = np.array([name.startswith(BID_PREFIX) for name in actions], np.bool_)
+    if not mask.any():
+        raise NoBidsError(
+            f"no action is named {BID_PREFIX!r}…: exploring starts (actors.declare) "
+            "need the game's bids; set declare = 0 for a game without them"
+        )
+    return mask
 
 
 def choose_bid(
@@ -173,9 +168,10 @@ class ExploringStarts:
         if self.share <= 0:
             return 0
         may_bid = (np.asarray(step["legal"], np.bool_) & self.bids).any(axis=1)
+        seats = np.asarray(step["seat"])
         rows: list[int] = []
         for i in np.flatnonzero(may_bid).tolist():
-            seat = int(step["seat"][i])
+            seat = int(seats[i])
             if seat in self.seen[i]:
                 continue
             self.seen[i].add(seat)

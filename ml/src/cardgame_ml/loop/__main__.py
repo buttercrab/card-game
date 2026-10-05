@@ -29,7 +29,7 @@ from cardgame_ml.loop.queue import read_queue
 from cardgame_ml.loop.records import Records, now_utc
 from cardgame_ml.loop.researcher import Researcher, command
 from cardgame_ml.loop.safety import name as safe_name
-from cardgame_ml.loop.scheduler import Hook, Runner, other_training
+from cardgame_ml.loop.scheduler import Hook, Runner, other_training, own_groups
 from cardgame_ml.loop.status import status
 from cardgame_ml.loop.validate import Known, check_file
 
@@ -102,15 +102,18 @@ def main() -> None:  # noqa: PLR0912, PLR0915
             name: (None if args.no_remote and host.host.ssh else host.load())
             for name, host in hosts.items()
         }
+        records = Records(layout.experiments, layout.live)
         researcher = Researcher(layout, policy, Git(repo))
+        researcher.records = records
         print(
             status(
                 layout,
                 policy,
                 now,
                 loads=loads,
-                other_training=other_training(_own_groups(layout)),
+                other_training=other_training(own_groups(records.active(), policy)),
                 researcher_not_due=researcher.not_due,
+                records=records,
             )
         )
     elif args.command == "report":
@@ -181,20 +184,10 @@ def _daily_hook(runner: Runner, now: datetime) -> bool:
     day = due(runner.layout, runner.policy, now)
     if day is None or runner.calling():  # the leaderboard waits for the call's check
         return False
-    write_leaderboard(runner.layout, runner.policy)
-    write_daily(runner.layout, runner.policy, day)
+    write_leaderboard(runner.layout, runner.policy, runner.records)
+    write_daily(runner.layout, runner.policy, day, runner.records)
     runner.say(f"daily report for {day} written")
     return True
-
-
-def _own_groups(layout: Layout) -> set[int]:
-    records = Records(layout.experiments, layout.live)
-    return {
-        s.pid
-        for r in records.active()
-        for s in r.steps
-        if s.status == "running" and s.pid is not None and s.step.host == "mac"
-    }
 
 
 if __name__ == "__main__":

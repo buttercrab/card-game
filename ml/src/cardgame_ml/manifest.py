@@ -41,16 +41,9 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path, PurePosixPath
-from typing import cast
 
-from cardgame_ml._json import (
-    JsonError,
-    as_object,
-    get,
-    get_int,
-    get_list,
-    get_str,
-)
+from cardgame_ml import schema
+from cardgame_ml.schema import SchemaError
 
 KINDS = ("self-play", "weights", "eval", "other")
 """What a manifest may describe."""
@@ -84,39 +77,12 @@ class Session:
 
     @classmethod
     def from_json(cls, value: object) -> "Session":
-        obj = as_object(value, "session")
-        commit = get(obj, "commit")
-        if commit is not None and not isinstance(commit, str):
-            raise JsonError("session commit: expected a string or null")
-        dirty = get(obj, "dirty")
-        if not isinstance(dirty, bool):
-            raise JsonError("session dirty: expected a boolean")
-        changed = obj.get("config_changed", [])
-        if not isinstance(changed, list) or not all(
-            isinstance(c, str) for c in cast(list[object], changed)
-        ):
-            raise JsonError("session config_changed: expected a list of strings")
-        return cls(
-            session=get_int(obj, "session"),
-            commit=commit,
-            dirty=dirty,
-            config_sha256=get_str(obj, "config_sha256"),
-            seed=get_int(obj, "seed"),
-            started=get_str(obj, "started"),
-            config_changed=tuple(cast(list[str], changed)),
-        )
+        return schema.read(cls, value, "session")
 
     def to_json(self) -> dict[str, object]:
-        out: dict[str, object] = {
-            "session": self.session,
-            "commit": self.commit,
-            "dirty": self.dirty,
-            "config_sha256": self.config_sha256,
-            "seed": self.seed,
-            "started": self.started,
-        }
-        if self.config_changed:
-            out["config_changed"] = list(self.config_changed)
+        out = schema.table(self)
+        if not self.config_changed:
+            del out["config_changed"]
         return out
 
 
@@ -141,36 +107,8 @@ class Manifest:
     @classmethod
     def from_json(cls, value: object) -> "Manifest":
         try:
-            obj = as_object(value, "manifest")
-            encoding = get(obj, "encoding")
-            if encoding is not None and not isinstance(encoding, str):
-                raise JsonError("encoding: expected a string or null")
-            seeds = get_list(obj, "seeds")
-            if not all(isinstance(s, int) and not isinstance(s, bool) for s in seeds):
-                raise JsonError("seeds: expected a list of integers")
-            sessions = obj.get("sessions", [])
-            if not isinstance(sessions, list):
-                raise JsonError("sessions: expected a list")
-            exported_at = obj.get("exported_at")
-            if exported_at is not None and not isinstance(exported_at, str):
-                raise JsonError("exported_at: expected a string or null")
-            return cls(
-                name=get_str(obj, "name"),
-                kind=get_str(obj, "kind"),
-                created=date.fromisoformat(get_str(obj, "created")),
-                commit=get_str(obj, "commit"),
-                config=get_str(obj, "config"),
-                seeds=tuple(cast(list[int], seeds)),
-                encoding=encoding,
-                artifacts=tuple(
-                    _artifact(as_object(a, "artifact")) for a in get_list(obj, "artifacts")
-                ),
-                sessions=tuple(Session.from_json(s) for s in cast(list[object], sessions)),
-                exported_at=exported_at,
-            )
-        except ManifestError:
-            raise
-        except ValueError as e:  # a JsonError, or a date that is not ISO
+            return schema.read(cls, value, "manifest")
+        except SchemaError as e:
             raise ManifestError(str(e)) from e
 
     @classmethod
@@ -178,20 +116,7 @@ class Manifest:
         return cls.from_json(json.loads(path.read_text(encoding="utf-8")))
 
     def to_json(self) -> dict[str, object]:
-        return {
-            "name": self.name,
-            "kind": self.kind,
-            "created": self.created.isoformat(),
-            "commit": self.commit,
-            "config": self.config,
-            "seeds": list(self.seeds),
-            "encoding": self.encoding,
-            "artifacts": [
-                {"path": a.path, "bytes": a.bytes, "sha256": a.sha256} for a in self.artifacts
-            ],
-            "sessions": [s.to_json() for s in self.sessions],
-            "exported_at": self.exported_at,
-        }
+        return schema.table(self) | {"sessions": [s.to_json() for s in self.sessions]}
 
     def verify(self, root: Path) -> None:
         """Checks every artifact under ``root`` has the recorded size and hash."""
@@ -204,12 +129,6 @@ class Manifest:
                 raise ManifestError(f"{artifact.path}: {size} bytes, expected {artifact.bytes}")
             if sha256_file(path) != artifact.sha256:
                 raise ManifestError(f"{artifact.path}: SHA-256 does not match")
-
-
-def _artifact(obj: dict[str, object]) -> Artifact:
-    return Artifact(
-        path=get_str(obj, "path"), bytes=get_int(obj, "bytes"), sha256=get_str(obj, "sha256")
-    )
 
 
 def _provenance_problems(m: Manifest) -> list[str]:

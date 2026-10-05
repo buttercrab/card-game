@@ -14,22 +14,27 @@ the viewer already knows.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from cardgame_ml._json import JsonError, as_object, get_int, get_str, get_str_tuple
+from cardgame_ml import schema
+from cardgame_ml.schema import named
 
 
 @dataclass(frozen=True)
 class EncodingSpec:
     version: str
-    global_features: tuple[str, ...]
+    global_features: tuple[str, ...] = field(metadata=named("global"))
     cards: tuple[str, ...]
     card_features: tuple[str, ...]
     max_events: int
     event_features: tuple[str, ...]
     actions: tuple[str, ...]
     belief_classes: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.max_events < 0:
+            raise ValueError("max_events: must not be negative")
 
     @property
     def shapes(self) -> dict[str, tuple[int, ...]]:
@@ -45,33 +50,11 @@ class EncodingSpec:
     @classmethod
     def from_json(cls, value: object) -> "EncodingSpec":
         """Reads the JSON form of Rust's ``engine::Spec``."""
-        obj = as_object(value, "spec")
-        spec = cls(
-            version=get_str(obj, "version"),
-            global_features=get_str_tuple(obj, "global"),
-            cards=get_str_tuple(obj, "cards"),
-            card_features=get_str_tuple(obj, "card_features"),
-            max_events=get_int(obj, "max_events"),
-            event_features=get_str_tuple(obj, "event_features"),
-            actions=get_str_tuple(obj, "actions"),
-            belief_classes=get_str_tuple(obj, "belief_classes"),
-        )
-        if spec.max_events < 0:
-            raise JsonError("max_events: must not be negative")
-        return spec
+        return schema.read(cls, value, "spec", defaults=False)
 
     def to_json(self) -> dict[str, object]:
         """The JSON form Rust's ``engine::Spec`` reads."""
-        return {
-            "version": self.version,
-            "global": list(self.global_features),
-            "cards": list(self.cards),
-            "card_features": list(self.card_features),
-            "max_events": self.max_events,
-            "event_features": list(self.event_features),
-            "actions": list(self.actions),
-            "belief_classes": list(self.belief_classes),
-        }
+        return schema.table(self)
 
     @classmethod
     def load(cls, path: Path) -> "EncodingSpec":

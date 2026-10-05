@@ -1,5 +1,5 @@
 """Batches for training and evaluation: a split of a dataset by game,
-rows grouped by sequence length, tensors made ahead on a thread."""
+rows grouped by sequence length, batches cut ahead on a thread."""
 
 import queue
 import threading
@@ -7,9 +7,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 import numpy as np
-import torch
 from numpy.typing import NDArray
-from torch import Tensor
 
 from cardgame_ml.data.shards import Batch, Dataset, Shard
 from cardgame_ml.models.belief import INPUTS
@@ -88,20 +86,6 @@ def steps_per_epoch(dataset: Dataset, rows: Rows, batch_size: int) -> int:
     return sum(
         int(rows(dataset.load(i, ["game"])).sum()) // batch_size for i in range(len(dataset.shards))
     )
-
-
-def to_inputs(batch: Batch, device: torch.device) -> tuple[Tensor, ...]:
-    """A belief model's inputs from a batch, in ``INPUTS`` order, events
-    cut to the longest sequence in it."""
-    longest = max(int(batch["events_len"].max()), 1)
-    arrays = {
-        "global": batch["global"],
-        "cards": batch["cards"],
-        "events": batch["events"][:, :longest],
-        "event_cards": batch["event_cards"][:, :longest].astype(np.int64),
-        "events_len": batch["events_len"].astype(np.int64),
-    }
-    return tuple(torch.as_tensor(arrays[k], device=device) for k in INPUTS)
 
 
 @dataclass(frozen=True)

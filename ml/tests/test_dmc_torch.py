@@ -19,26 +19,27 @@ from cardgame_env import Env  # noqa: E402
 from cardgame_ml.data.spec import EncodingSpec  # noqa: E402
 from cardgame_ml.export.onnx import observations  # noqa: E402
 from cardgame_ml.models.config import QConfig, TrunkConfig  # noqa: E402
+from cardgame_ml.models.inputs import observation, to_tensors  # noqa: E402
+from cardgame_ml.models.io import EncodingMismatchError, load_q  # noqa: E402
 from cardgame_ml.models.q import QModel  # noqa: E402
+from cardgame_ml.runs import ModelKind, RunDir  # noqa: E402
 from cardgame_ml.train.config import from_mapping  # noqa: E402
 from cardgame_ml.train.dmc import actor  # noqa: E402
 from cardgame_ml.train.dmc.actor import Hands  # noqa: E402
 from cardgame_ml.train.dmc.config import DmcConfig  # noqa: E402
 from cardgame_ml.train.dmc.learner import (  # noqa: E402
     ActorError,
-    EncodingMismatchError,
-    load,
     train,
 )
 from cardgame_ml.train.dmc.policy import (  # noqa: E402
     GREEDY,
     Exploration,
     ExploringStarts,
+    NoBidsError,
     bid_mask,
     choose,
     legal_actions,
     legal_values,
-    observation_tensors,
 )
 from cardgame_ml.train.sessions import ConfigChangedError  # noqa: E402
 
@@ -94,7 +95,7 @@ def test_a_value_depends_only_on_its_action(env: Env, spec: EncodingSpec) -> Non
     expected = np.arange(values.shape[1], dtype=np.int64)[None, :] < counts[:, None]
     assert np.array_equal(np.isfinite(values), expected)
     with torch.no_grad():
-        first = m(*observation_tensors(step, CPU), torch.as_tensor(actions[:, :1]))
+        first = m(*to_tensors(observation(step), CPU), torch.as_tensor(actions[:, :1]))
     assert np.allclose(first.numpy()[:, 0], values[:, 0], atol=1e-5)
 
 
@@ -158,7 +159,7 @@ def test_hands_label_every_decision_with_its_seats_payoff(spec: EncodingSpec) ->
 
 def test_pytorch_gives_the_q_fixtures_values(repo: Path) -> None:
     fixture = repo / "crates" / "infer" / "tests" / "tiny-q"
-    m = load(fixture)
+    m = load_q(RunDir(fixture))
     parity = json.loads((fixture / "parity.json").read_text(encoding="utf-8"))
     rows = parity["observations"]
     n = len(rows)
@@ -224,7 +225,7 @@ def test_a_tiny_run_plays_learns_and_resumes(repo: Path, tmp_path: Path) -> None
     assert any(line["event"] == "train" and "throughput" in line for line in lines)
     described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
     assert described["reward_scale"] == config.reward_scale
-    trained = load(tmp_path)
+    trained = load_q(RunDir(tmp_path))
     assert trained.parameter_count() == described["parameters"]
     start = next(line for line in lines if line["event"] == "start")
     assert (start["session"], start["commit"], start["seed"]) == (1, "a" * 40, config.seed)
@@ -299,13 +300,13 @@ def test_a_model_of_another_encoding_is_refused(repo: Path, tmp_path: Path) -> N
     """Weights trained on an older encoding neither load nor resume: they
     would not fit, or would mean something else."""
     fixture = repo / "crates" / "infer" / "tests" / "tiny-q"
-    assert load(fixture).parameter_count() > 0
+    assert load_q(RunDir(fixture)).parameter_count() > 0
     described = json.loads((fixture / "config.json").read_text(encoding="utf-8"))
     described["spec"]["version"] = "mighty-0"
     (tmp_path / "config.json").write_text(json.dumps(described), encoding="utf-8")
     (tmp_path / "model.pt").write_bytes((fixture / "model.pt").read_bytes())
     with pytest.raises(EncodingMismatchError, match="mighty-0"):
-        load(tmp_path)
+        load_q(RunDir(tmp_path))
     (tmp_path / "checkpoint.pt").write_bytes(b"never read")
     config = tiny_config(repo)
     with pytest.raises(EncodingMismatchError, match="mighty-0"):
@@ -343,3 +344,47 @@ def test_exploring_starts_bid_once_per_seat_and_hand() -> None:
     off = ExploringStarts(2, bids, share=0.0, temperature=0.0)
     chosen = np.array([0, 4])
     assert off.apply(step, actions, values, chosen, rng) == 0
+    # A game whose actions name no bid: refused, not silently never explored.
+    with pytest.raises(NoBidsError, match="declare = 0"):
+        bid_mask(["fold", "raise 2", "show ♠A"])
+
+
+def test_a_run_stopped_mid_session_resumes_where_it_was(repo: Path, tmp_path: Path) -> None:
+    """Stopped while learning (Ctrl-C, SIGTERM), a session checkpoints on
+    the way out and writes no model; the next one resumes from there."""
+    config = tiny_config(repo)
+    config = dataclasses.replace(
+        config,
+        budget=dataclasses.replace(config.budget, hands=10**6),
+        curve=dataclasses.replace(config.curve, every_hands=10**6),
+    )
+    exclude = repo / config.exclude
+    seen: list[dict[str, Any]] = []
+
+    def stop_once_learning(entry: dict[str, Any]) -> None:
+        seen.append(entry)
+        if entry["event"] == "train" and entry["step"] > 0:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        train(config, tmp_path, exclude, stop_once_learning, commit="a" * 40)
+    stopped = seen[-1]
+    assert not (tmp_path / "model.pt").exists()
+    assert (tmp_path / "checkpoint.pt").exists()
+    assert all(entry["event"] != "end" for entry in seen)
+    # Resumed with a budget it has already spent: it picks up the counts,
+    # measures the curve, writes the model and ends.
+    spent = dataclasses.replace(config, budget=dataclasses.replace(config.budget, hands=1))
+    again: list[dict[str, Any]] = []
+    progress = train(spent, tmp_path, exclude, again.append, commit="b" * 40)
+    resume = again[0]
+    assert resume["event"] == "resume"
+    assert resume["step"] >= stopped["step"] > 0
+    assert resume["hands"] >= stopped["hands"]
+    assert progress.sessions == 2
+    assert progress.step == resume["step"]
+    assert (tmp_path / "model.pt").exists()
+    assert again[-1]["event"] == "end"
+    described = RunDir(tmp_path).described()
+    assert described.kind == ModelKind.DMC
+    assert [(s.session, s.commit) for s in described.sessions] == [(1, "a" * 40), (2, "b" * 40)]

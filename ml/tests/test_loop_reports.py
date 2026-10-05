@@ -19,15 +19,15 @@ from loopkit import (
 )
 
 from cardgame_ml.loop.daily import compute_on, day_span, due, write_daily
-from cardgame_ml.loop.evals import Estimate, EvalResult, compare
+from cardgame_ml.loop.evals import Comparison, Estimate, EvalResult, compare
 from cardgame_ml.loop.executors import HostExecutor
 from cardgame_ml.loop.layout import Layout
 from cardgame_ml.loop.leaderboard import rows, write_leaderboard
 from cardgame_ml.loop.policy import Policy
-from cardgame_ml.loop.records import Records, RunRecord, StepRecord, stamp
+from cardgame_ml.loop.records import Records, RunRecord, RunStatus, StepRecord, StepStatus, stamp
 from cardgame_ml.loop.scheduler import Runner
 from cardgame_ml.loop.status import status
-from cardgame_ml.loop.steps import Step
+from cardgame_ml.loop.steps import Role, Step
 from cardgame_ml.loop.svg import Series, chart
 
 
@@ -77,14 +77,14 @@ def finished(layout: Layout, run_id: str, rating: float, *, hands: int | None = 
     steps = [
         StepRecord(
             Step("train", (), "mac", 12, gpu=True),
-            "done",
+            StepStatus.DONE,
             1,
             stamp(start),
             stamp(start + timedelta(hours=5)),
         ),
         StepRecord(
-            Step("eval-hard", (), "home", 6),
-            "done",
+            Step("eval-hard", (), "home", 6, role=Role.EVAL, baseline="hard"),
+            StepStatus.DONE,
             1,
             stamp(start + timedelta(hours=5)),
             stamp(start + timedelta(hours=8)),
@@ -105,15 +105,10 @@ def finished(layout: Layout, run_id: str, rating: float, *, hands: int | None = 
         wall_hours=20.0,
         gpu=True,
         steps=steps,
-        status="succeeded",
+        status=RunStatus.SUCCEEDED,
         ended=stamp(start + timedelta(hours=8)),
         params={"optim.lr": 0.001},
-        comparison={
-            "metric": "ladder",
-            "diff": {"mean": 0.5, "ci95": 0.2, "n": 1},
-            "paired": True,
-            "beats": True,
-        },
+        comparison=Comparison("ladder", Estimate(0.5, 0.2, 1), paired=True),
         candidate=True,
     )
     records.save(run)
@@ -121,6 +116,7 @@ def finished(layout: Layout, run_id: str, rating: float, *, hands: int | None = 
     if hands:
         curve = {
             "run": run_id,
+            "parameters": 600000,
             "sessions": [{"event": "start", "parameters": 600000}],
             "curve": [
                 {
@@ -132,6 +128,8 @@ def finished(layout: Layout, run_id: str, rating: float, *, hands: int | None = 
                         "easy": {"mean": h / 1e6, "ci95": 1.0, "n": 2000},
                         "normal": {"mean": h / 2e6, "ci95": 1.0, "n": 2000},
                     },
+                    "throughput": {},
+                    "phases": {},
                 }
                 for h in (hands // 2, hands)
             ],

@@ -16,8 +16,9 @@ from cardgame_ml.models.belief import (  # noqa: E402
     log_probs,
     uniform_log_probs,
 )
+from cardgame_ml.models.inputs import observation, to_tensors  # noqa: E402
 from cardgame_ml.train.batching import batches as split_batches  # noqa: E402
-from cardgame_ml.train.batching import every_row, to_inputs  # noqa: E402
+from cardgame_ml.train.batching import every_row  # noqa: E402
 
 TINY = BeliefConfig(width=16, heads=2, layers=1, feedforward=32, dropout=0.0)
 
@@ -33,7 +34,7 @@ def model(dataset: Dataset, seed: int = 0) -> BeliefModel:
 
 
 def test_logits_have_a_row_per_card_and_a_column_per_class(dataset: Dataset, batch: Batch) -> None:
-    logits = model(dataset)(*to_inputs(batch, torch.device("cpu")))
+    logits = model(dataset)(*to_tensors(observation(batch), torch.device("cpu")))
     spec = dataset.spec
     assert logits.shape == (len(batch["belief"]), len(spec.cards), len(spec.belief_classes))
     assert torch.isfinite(logits).all()
@@ -44,7 +45,7 @@ def test_padding_events_change_nothing(dataset: Dataset, batch: Batch) -> None:
     with garbage past each decision's own, give the same logits."""
     m = model(dataset, seed=1)
     with torch.no_grad():
-        cut = m(*to_inputs(batch, torch.device("cpu")))
+        cut = m(*to_tensors(observation(batch), torch.device("cpu")))
         noisy = dict(batch)
         past = np.arange(dataset.spec.max_events)[None, :] >= batch["events_len"][:, None]
         noisy["events"] = batch["events"] + np.float32(5) * past[..., None]
@@ -71,7 +72,7 @@ def test_a_fresh_model_is_the_count_baseline(dataset: Dataset, batch: Batch) -> 
     distribution is the count baseline's exactly."""
     targets = torch.as_tensor(batch["belief"])
     counts = class_counts(targets, 9)
-    logits = model(dataset)(*to_inputs(batch, torch.device("cpu")))
+    logits = model(dataset)(*to_tensors(observation(batch), torch.device("cpu")))
     ours = log_probs(logits, counts)
     base = uniform_log_probs(counts, logits.shape[1])
     assert torch.equal(ours, base)

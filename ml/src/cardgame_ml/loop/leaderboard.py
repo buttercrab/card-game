@@ -22,9 +22,9 @@ from cardgame_ml.loop import svg
 from cardgame_ml.loop.evals import Estimate, EvalResult
 from cardgame_ml.loop.layout import Layout
 from cardgame_ml.loop.policy import Policy
-from cardgame_ml.loop.promotion import eval_results
+from cardgame_ml.loop.promotion import cost_of, result_of
 from cardgame_ml.loop.records import Records, RunRecord
-from cardgame_ml.loop.summary import compute
+from cardgame_ml.loop.summary import compute, curve_report, varied
 
 SCHEMA = "loop-leaderboard/1"
 
@@ -56,29 +56,16 @@ class Row:
         return asdict(self)
 
 
-def curve(folder: Path) -> dict[str, Any] | None:
-    path = folder / "results" / "curve" / "curve.json"
-    if not path.is_file():
-        return None
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def row(record: RunRecord, folder: Path, baseline: str) -> Row:
-    results = eval_results(folder)
-    scored = results.get(f"eval-{baseline}")
-    cost = results.get("cost")
-    learned = curve(folder)
+    scored = result_of(record, folder, baseline)
+    timed = cost_of(record, folder) or scored
+    learned = curve_report(folder)
     hands = parameters = None
-    if learned:
-        points: list[dict[str, Any]] = learned.get("curve") or []
-        hands = points[-1]["hands"] if points else None
-        sessions: list[dict[str, Any]] = learned.get("sessions") or []
-        starts = [s for s in sessions if s.get("event") == "start"]
-        parameters = starts[0].get("parameters") if starts else None
+    if learned is not None:
+        hands = learned.curve[-1].hands if learned.curve else None
+        parameters = learned.parameters
     used = compute(record)
-    timed = cost or scored
-    comparison = record.comparison or {}
-    diff = comparison.get("diff")
+    comparison = record.comparison
     return Row(
         id=record.id,
         folder=record.folder,
@@ -96,8 +83,8 @@ def row(record: RunRecord, folder: Path, baseline: str) -> Row:
         heldout_vs_hard=_get(scored, "heldout", "diff"),
         think_median_ms=timed.think_median_ms if timed else None,
         think_p99_ms=timed.think_p99_ms if timed else None,
-        vs_parent=Estimate.from_json(diff) if diff is not None else None,
-        beats_parent=bool(comparison.get("beats")),
+        vs_parent=comparison.diff if comparison else None,
+        beats_parent=comparison.beats if comparison else False,
         confirmed=record.confirmed,
     )
 
@@ -136,8 +123,8 @@ def reference_rows(layout: Layout, policy: Policy) -> list[Row]:
     return rows
 
 
-def rows(layout: Layout, policy: Policy) -> list[Row]:
-    records = Records(layout.experiments, layout.live)
+def rows(layout: Layout, policy: Policy, records: Records | None = None) -> list[Row]:
+    records = records or Records(layout.experiments, layout.live)
     out = [
         row(r, records.folder(r), policy.protocol.baseline) for r in records.all()
     ] + reference_rows(layout, policy)
@@ -177,22 +164,23 @@ def markdown(table: list[Row], policy: Policy) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_leaderboard(layout: Layout, policy: Policy) -> list[Path]:
-    """Writes the leaderboard and the plots; returns what it wrote."""
-    table = rows(layout, policy)
+def write_leaderboard(layout: Layout, policy: Policy, records: Records | None = None) -> list[Path]:
+    """Writes the leaderboard and the plots (from ``records``, the runner's
+    when it calls); returns what it wrote."""
+    records = records or Records(layout.experiments, layout.live)
+    table = rows(layout, policy, records)
     layout.loop.mkdir(parents=True, exist_ok=True)
     written = [layout.loop / "leaderboard.md", layout.loop / "leaderboard.json"]
     written[0].write_text(markdown(table, policy), encoding="utf-8")
     data = {"schema": SCHEMA, "rows": [r.to_json() for r in table]}
     written[1].write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    written += write_plots(layout, policy, table)
+    written += write_plots(layout, policy, table, records)
     return written
 
 
-def write_plots(layout: Layout, policy: Policy, table: list[Row]) -> list[Path]:
+def write_plots(layout: Layout, policy: Policy, table: list[Row], records: Records) -> list[Path]:
     plots = layout.plots
     plots.mkdir(parents=True, exist_ok=True)
-    records = Records(layout.experiments, layout.live)
     runs = [r for r in table if not r.reference]
     scaling = io.StringIO()
     w = csv.writer(scaling, lineterminator="\n")
@@ -232,28 +220,26 @@ def write_plots(layout: Layout, policy: Policy, table: list[Row]) -> list[Path]:
     c.writerow(["run", "hands", "hours", "opponent", "mean", "ci95"])
     by_opponent: dict[str, list[svg.Series]] = {o: [] for o in policy.protocol.curve.opponents}
     for record in records.all():
-        learned = curve(records.folder(record))
-        if not learned:
+        learned = curve_report(records.folder(record))
+        if learned is None:
             continue
-        points: list[dict[str, Any]] = learned.get("curve") or []
         for opponent, series in by_opponent.items():
             line = [
-                (float(p["hands"]), float(p["scores"][opponent]["mean"]))
-                for p in points
-                if opponent in p["scores"]
+                (float(p.hands), p.scores[opponent].mean)
+                for p in learned.curve
+                if opponent in p.scores
             ]
             series.append(svg.Series(record.id, line))
-        for p in points:
-            scores: dict[str, dict[str, float]] = p["scores"]
-            for opponent, score in scores.items():
+        for p in learned.curve:
+            for opponent, score in p.scores.items():
                 c.writerow(
                     [
                         record.id,
-                        p["hands"],
-                        round(p["seconds"] / 3600, 3),
+                        p.hands,
+                        round(p.seconds / 3600, 3),
                         opponent,
-                        score["mean"],
-                        score["ci95"],
+                        score.mean,
+                        score.ci95,
                     ]
                 )
     written: list[Path] = []
@@ -323,7 +309,5 @@ def _count(n: int | None) -> str:
 
 
 def _params(params: dict[str, object]) -> str:
-    if not params:
-        return "-"
-    text = ", ".join(f"{k}={v}" for k, v in params.items())
+    text = ", ".join(varied(params, "=")) or "-"
     return text if len(text) <= 60 else text[:57] + "…"  # noqa: PLR2004
