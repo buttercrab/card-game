@@ -6,9 +6,12 @@ use eval::run::{Request, run};
 use eval::suite::{Loaded, Part};
 use mighty::Mighty;
 
-/// A small suite with cheap bots, written to a scratch folder.
+/// A small suite with cheap bots, written to a scratch folder of its own:
+/// tests run in parallel in one process, so the process id alone is shared.
 fn suite() -> Loaded {
-    let dir = std::env::temp_dir().join(format!("eval-reproduce-{}", std::process::id()));
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("eval-reproduce-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let suite = r#"{
         "suite": "tiny",
