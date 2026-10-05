@@ -8,6 +8,7 @@
   // sets it apart from 기본, worked out from the rule data (ruleFields.ts).
   import { PRESET_RULES, PRESETS, presetTitle } from './catalog';
   import { traits } from './ruleFields';
+  import SuitText from './SuitText.svelte';
   import { customName, type CustomSet } from './rulesets';
   import type { Rules } from './types';
 
@@ -47,7 +48,7 @@
         {:else if info.shown.length === 0}
           <span class="muted">{empty}</span>
         {:else}
-          {#each info.shown as t, i (t)}{#if i > 0}<span class="sep" aria-hidden="true">{' · '}</span>{/if}<span class="t">{t}</span>{/each}
+          {#each info.shown as t, i (t)}{#if i > 0}<span class="sep" aria-hidden="true">{' · '}</span>{/if}<span class="t"><SuitText text={t} /></span>{/each}
           {#if info.more}<span class="more">외 {info.more}개</span>{/if}
         {/if}
       </span>
@@ -86,13 +87,8 @@
     gap: 10px;
     min-height: 48px;
     padding: 8px 12px;
-    border-radius: 0;
-    background: transparent;
     color: var(--ink);
-    box-shadow: none;
     text-align: left;
-    font-weight: 400;
-    animation: none;
   }
   .row + .row {
     border-top: 1px solid var(--line);
@@ -102,9 +98,6 @@
   }
   .row:last-child {
     border-radius: 0 0 12px 12px;
-  }
-  .row:active:not(:disabled) {
-    transform: none;
   }
   .row[aria-checked='true'] {
     position: relative;

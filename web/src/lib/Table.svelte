@@ -11,9 +11,14 @@
   import PlayerFigure from './PlayerFigure.svelte';
   import Reactions from './Reactions.svelte';
   import ShareCard from './ShareCard.svelte';
-  import Seat, { TEAM_LABEL, subject, type Team } from './Seat.svelte';
+  import Seat from './Seat.svelte';
+  import SuitText from './SuitText.svelte';
+  import Badge, { type Team } from './ui/Badge.svelte';
+  import Bubble from './ui/Bubble.svelte';
+  import Button from './ui/Button.svelte';
+  import Chip from './ui/Chip.svelte';
   import Callout from './Callout.svelte';
-  import SuitIcon from './SuitIcon.svelte';
+  import SuitIcon, { SUIT_NAME } from './SuitIcon.svelte';
   import { actionLabel, cardLabel, contractLabel, friendCallLabel, isPoint, kittyCount, leadLabel, mightyCard, sameCard, sealOf } from './cards';
   import { savedName, type RoomClient } from './client.svelte';
   import SeatMenu from './SeatMenu.svelte';
@@ -1245,9 +1250,9 @@
   <!-- 상황판: everything about the hand on one line. -->
   {#snippet hintTools()}
     {#if client.hint && myTurn}
-      <span class="hint-text pop" role="status"><Icon name="hint" /> 봇이라면 <strong>{actionLabel(client.hint, seatName)}</strong></span>
+      <span class="hint-text pop" role="status"><Icon name="hint" /> 봇이라면 <strong><SuitText text={actionLabel(client.hint, seatName)} /></strong></span>
     {:else if settings.hints && liveTurn}
-      <button class="hint-btn" aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}><Icon name="hint" /></button>
+      <Button variant="icon" raised aria-label="봇이라면 뭘 할지 보기" onclick={() => client.askHint()}><Icon name="hint" /></Button>
     {/if}
   {/snippet}
   {#snippet seatTap(seat: number)}
@@ -1288,7 +1293,7 @@
   <div class="status" aria-live="polite">
     {#if bidding}
       {#if bidding.best}
-        <span class="item">최고 공약 <strong class="contract">{contractLabel(bidding.best[1])}</strong></span>
+        <span class="item">최고 공약 <strong class="contract"><SuitText text={contractLabel(bidding.best[1])} /></strong></span>
         <span class="item muted">{seatName(bidding.best[0])}</span>
       {:else}
         <span class="item">공약 없음</span>
@@ -1298,17 +1303,17 @@
       <span class="item">
         공약
         <strong class="contract">
-          {#if contract.trump}<SuitIcon suit={contract.trump} class="trump-icon suit-{contract.trump}" />{:else}노기루다{/if}
+          {#if contract.trump}<SuitIcon suit={contract.trump} size="16px" label={SUIT_NAME[contract.trump]} />{:else}노기루다{/if}
           {contract.count}
         </strong>
       </span>
-      {#if callLabel}<span class="item">프렌드 <strong>{callLabel}</strong></span>{/if}
+      {#if callLabel}<span class="item">프렌드 <strong><SuitText text={callLabel} /></strong></span>{/if}
       {#if play}<span class="item">라운드 <strong>{trickNo}/{view.rules.hand_size}</strong></span>{/if}
       {#if play || done}
         <span class="item meter">
           <span class="meter-label">여당 {#key teamPoints}<strong class="bump">{teamPoints}/{contract.count}</strong>{/key}</span>
           {@render ticks()}
-          {#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}
+          {#each tags as t (t.text)}<Badge kind="tag" tone={t.tone} class="pop">{t.text}</Badge>{/each}
         </span>
       {/if}
     {:else if idle && room}
@@ -1326,8 +1331,8 @@
   </div>
   <!-- Always there, at a fixed height, so the felt below never moves. -->
   <div class="event">
-    {#if event && !done}{#key event}<p class="fade-up" aria-live="polite">{event}</p>{/key}{/if}
-    {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite">{tip}</p>{/key}{/if}
+    {#if event && !done}{#key event}<p class="fade-up" aria-live="polite"><SuitText text={event} /></p>{/key}{/if}
+    {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite"><SuitText text={tip} /></p>{/key}{/if}
   </div>
 
   <!-- Desktop: the hand at a glance, on stacked paper beside the felt. -->
@@ -1342,7 +1347,7 @@
           {#if bidding.best}
             {@const best = bidding.best[1]}
             <span class="glyph-box">
-              {#if best.trump}<SuitIcon suit={best.trump} class="suit-{best.trump}" />{:else}<span class="nt">노</span>{/if}
+              {#if best.trump}<SuitIcon suit={best.trump} size="30px" label={SUIT_NAME[best.trump]} />{:else}<span class="nt">노</span>{/if}
             </span>
             <span class="big-num">{best.count}</span>
             <span class="big-sub">최고 공약<br /><strong>{seatName(bidding.best[0])}</strong></span>
@@ -1353,7 +1358,7 @@
       {:else if contract}
         <div class="big-contract">
           <span class="glyph-box">
-            {#if contract.trump}<SuitIcon suit={contract.trump} class="suit-{contract.trump}" />{:else}<span class="nt">노</span>{/if}
+            {#if contract.trump}<SuitIcon suit={contract.trump} size="30px" label={SUIT_NAME[contract.trump]} />{:else}<span class="nt">노</span>{/if}
           </span>
           <span class="big-num">{contract.count}</span>
           <dl class="facts">
@@ -1365,7 +1370,7 @@
                   {#if friend === null && !noFriend && call && typeof call === 'object' && 'Card' in call}
                     <Card card={call.Card} size="mini" width={22} seal={seal(call.Card)} {twoJokers} />
                   {/if}
-                  <span class="clip">{callLabel}</span>
+                  <span class="clip"><SuitText text={callLabel} /></span>
                 </dd>
               </div>
             {/if}
@@ -1379,7 +1384,7 @@
             </span>
             {@render ticks()}
             {#if tags.length}
-              <span class="side-tags">{#each tags as t (t.text)}<span class="tag-chip {t.tone} pop">{t.text}</span>{/each}</span>
+              <span class="side-tags">{#each tags as t (t.text)}<Badge kind="tag" tone={t.tone} class="pop">{t.text}</Badge>{/each}</span>
             {/if}
           </div>
         {/if}
@@ -1410,7 +1415,7 @@
             </span>
             <span class="who-cell">
               <span class="row-name">{s === me ? myName : vacant && idle ? '빈 자리' : seatName(s)}</span>
-              {#if t}<span class="team mini-team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}
+              {#if t}<Badge team={t} size="sm" />{/if}
             </span>
             <span class="num hand-pts">{play || done ? points(s) : '–'}</span>
             <span class="num total" class:neg={(room?.scores[s] ?? 0) < 0}>{vacant && idle ? '–' : (room?.scores[s] ?? 0)}</span>
@@ -1470,10 +1475,10 @@
             <!-- An empty seat says how to fill it, right there. -->
             <span class="seat-acts">
               {#if me !== null}
-                <button class="seat-act" onclick={() => client.addBot(s)} aria-label="{s + 1}번 자리에 봇 앉히기">+ 봇</button>
-                <button class="seat-act" onclick={oninvite} aria-label="친구 초대하기">초대</button>
+                <button class="chip sm seat-act" onclick={() => client.addBot(s)} aria-label="{s + 1}번 자리에 봇 앉히기">+ 봇</button>
+                <button class="chip sm seat-act" onclick={oninvite} aria-label="친구 초대하기">초대</button>
               {:else}
-                <button class="seat-act" onclick={(e) => sitAt(s, e)} aria-label="{s + 1}번 자리에 앉기">앉기</button>
+                <button class="chip sm seat-act" onclick={(e) => sitAt(s, e)} aria-label="{s + 1}번 자리에 앉기">앉기</button>
               {/if}
             </span>
           {/if}
@@ -1521,7 +1526,7 @@
         <div class="sheet thrown-in fade-up" role="status" aria-label="딜미스로 보여 준 패">
           <div class="thrown-head">
             <p class="thrown-title"><span class="who-name">{seatName(thrownIn.seat)}</span> 딜미스</p>
-            <button class="close" onclick={() => (thrownIn = null)}>닫기</button>
+            <button class="btn icon close" aria-label="닫기" onclick={() => (thrownIn = null)}><Icon name="close" size="16px" /></button>
           </div>
           <div class="thrown-cards">
             {#each [thrownIn.hand.slice(0, Math.ceil(thrownIn.hand.length / 2)), thrownIn.hand.slice(Math.ceil(thrownIn.hand.length / 2))] as row, r (r)}
@@ -1538,10 +1543,10 @@
         <div class="centre">
           {#if swapFrom !== null}
             <p class="centre-note">바꿀 자리를 누르세요</p>
-            <button onclick={() => (swapFrom = null)}>취소</button>
+            <Button onclick={() => (swapFrom = null)}>취소</Button>
           {:else if me !== null}
             {#if full}
-              <button class="primary go" onclick={() => client.start()}>{room.hands_played === 0 ? '시작' : '다음 판'}</button>
+              <button class="btn primary go" onclick={() => client.start()}>{room.hands_played === 0 ? '시작' : '다음 판'}</button>
             {:else}
               <p class="centre-note">빈 자리 <strong>{emptySeats}</strong>개 · 봇이나 친구로 채우면 시작해요</p>
             {/if}
@@ -1550,12 +1555,12 @@
               {#if room.table.shuffle}
                 <!-- 매 판 자리 섞기 is on: 섞기 is already as on as it gets; the
                      setting itself is under 설정. -->
-                <button class="tool on" aria-pressed="true" aria-label="섞기: 매 판 자리 섞기 켜짐 (설정에서 바꿔요)" onclick={onmenu}>
+                <button class="btn tool on" aria-pressed="true" aria-label="섞기: 매 판 자리 섞기 켜짐 (설정에서 바꿔요)" onclick={onmenu}>
                   <Icon name="shuffle" size="22px" /><span>섞기</span>
                 </button>
               {:else}
                 <button
-                  class="tool"
+                  class="btn tool"
                   class:on={shuffleNext}
                   aria-pressed={shuffleNext}
                   aria-label={shuffleNext ? '섞기 취소: 자리 그대로 시작해요' : '섞기: 다음 판 시작할 때 자리를 섞어요'}
@@ -1564,7 +1569,7 @@
                   <Icon name="shuffle" size="22px" /><span>섞기</span>
                 </button>
               {/if}
-              <button class="tool" onclick={onmenu}><Icon name="sliders" size="22px" /><span>설정</span></button>
+              <button class="btn tool" onclick={onmenu}><Icon name="sliders" size="22px" /><span>설정</span></button>
             </div>
           {:else}
             <p class="centre-note">
@@ -1600,7 +1605,7 @@
         <!-- Folds the result down to look at the table; the middle of the
              table then offers the next hand and brings the result back. -->
         <button
-          class="fold"
+          class="btn ghost fold"
           onclick={(e) => {
             e.stopPropagation();
             folded = true;
@@ -1636,7 +1641,7 @@
                 {@const t = team(s)}
                 <tr class:me={s === me}>
                   <td class="who">{seatName(s)}</td>
-                  <td class="role">{#if t}<span class="team {t === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[t]}</span>{/if}</td>
+                  <td class="role">{#if t}<Badge team={t} />{/if}</td>
                   <td class="num">
                     {points(s)}
                   </td>
@@ -1672,9 +1677,9 @@
                 <Reactions onreact={(text) => client.react(text)} />
               </span>
             {/if}
-            {#if done.tricks.length}<button onclick={() => (replay = true)}>다시 보기</button>{/if}
-            {#if room}<button onclick={() => (sharing = true)}>결과 카드</button>{/if}
-            {#if me !== null}<button class="primary" disabled={!seated || !full} onclick={() => client.start()}>다음 판</button>{/if}
+            {#if done.tricks.length}<button class="btn" onclick={() => (replay = true)}>다시 보기</button>{/if}
+            {#if room}<button class="btn" onclick={() => (sharing = true)}>결과 카드</button>{/if}
+            {#if me !== null}<button class="btn primary" disabled={!seated || !full} onclick={() => client.start()}>다음 판</button>{/if}
           </div>
         </div>
       </div>
@@ -1692,9 +1697,9 @@
           {#if variants}
             <div class="variants">
               {#each variants as v, i (i)}
-                <button class="chip" onclick={() => act({ Play: v })}>{variantLabel(v)}</button>
+                <Chip onclick={() => act({ Play: v })}><SuitText text={variantLabel(v)} /></Chip>
               {/each}
-              <button class="ghost" onclick={() => (variants = null)}>취소</button>
+              <Button variant="ghost" onclick={() => (variants = null)}>취소</Button>
             </div>
           {:else if bidding}
             <BidPanel {legal} {lastChance} wait={bidWait} onact={act} />
@@ -1714,7 +1719,7 @@
           {/if}
         </div>
       {:else if refusal}
-        <p class="prompt pill refusal" role="alert">{refusal}</p>
+        <p class="prompt pill refusal" role="alert"><SuitText text={refusal} /></p>
       {:else if myTurn && play}
         <p class="prompt pill">
           <strong>내 차례</strong> ·
@@ -1724,7 +1729,7 @@
         <!-- Optional, so secondary: plum stays for your turn. -->
         <div class="aside-act">
           {#if waiting}<p class="prompt caption">{waiting.pre}<span class="who-name">{waiting.name}</span>{waiting.post}…</p>{/if}
-          <button onclick={() => act('Misdeal')} title="패가 약하면 차례가 아니어도 다시 나눌 수 있어요">딜미스</button>
+          <button class="btn" onclick={() => act('Misdeal')} title="패가 약하면 차례가 아니어도 다시 나눌 수 있어요">딜미스</button>
         </div>
       {:else if waiting && !done}
         <p class="prompt caption">{waiting.pre}<span class="who-name">{waiting.name}</span>{waiting.post}…</p>
@@ -1736,9 +1741,7 @@
     <div class="tray" class:reveal={revealed === me} bind:this={tray}>
       {#if client.reactions?.[me]}
         {@const mine = client.reactions[me]}
-        {#key mine.id}
-          <span class="my-reaction" class:emoji={/^\p{Extended_Pictographic}/u.test(mine.text)}>{mine.text}</span>
-        {/key}
+        {#key mine.id}<Bubble text={mine.text} />{/key}
       {/if}
       {#if seatCues[me]?.text}{#key seatCues[me].id}<Callout text={seatCues[me].text!} below={false} />{/key}{/if}
       <!-- Desktop: your own seat at the tray's left, your tools at its right. -->
@@ -1766,10 +1769,10 @@
         <Reactions onreact={(text) => client.react(text)} />
       </div>
       <div class="me-row">
-        {#if team(me)}{#key team(me)}<span class="team pop {team(me) === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team(me)!]}</span>{/key}
-        {:else if secretFriend}<span class="team secret pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요">프렌드</span>{/if}
+        {#if team(me)}{#key team(me)}<Badge team={team(me)} class="pop" />{/key}
+        {:else if secretFriend}<Badge secret class="pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요" />{/if}
         {#if points(me) > 0}
-          <span class="my-points">{points(me)}점</span>
+          <Badge>{points(me)}점</Badge>
         {/if}
       </div>
       <!-- Always drawn, even empty, so the tray keeps its height. -->
@@ -1971,30 +1974,6 @@
     }
   }
 
-  /* The point cards one seat took, on card paper beside its seat. */
-  /* The points in the result table and on your tray open the same cards;
-     they keep looking like text, with a hairline to say they open. */
-  .tag-chip {
-    padding: 1px 8px;
-    border-radius: var(--r-pill);
-    font-size: var(--text-caption);
-    font-weight: 700;
-    white-space: nowrap;
-    border: 1.5px solid var(--ink-muted);
-    color: var(--ink-muted);
-  }
-  .tag-chip.accent {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-  .tag-chip.danger {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-  .tag-chip.gold {
-    border-color: var(--gold);
-    color: var(--gold);
-  }
   .event p {
     margin: 0;
     overflow: hidden;
@@ -2035,13 +2014,6 @@
   .react-status {
     align-items: center;
     gap: 6px;
-  }
-  .hint-btn {
-    min-height: 40px;
-    min-width: 40px;
-    padding: 0;
-    border-radius: var(--r-pill);
-    font-size: 18px;
   }
   .hint-text {
     padding: 6px 12px;
@@ -2084,19 +2056,6 @@
     align-items: center;
     gap: 3px;
     font-size: var(--text-title);
-  }
-  .status :global(.trump-icon) {
-    width: 16px;
-    height: 16px;
-  }
-  .status :global(.suit-Heart) {
-    color: var(--suit-heart);
-  }
-  .status :global(.suit-Diamond) {
-    color: var(--suit-diamond);
-  }
-  .status :global(.suit-Club) {
-    color: var(--suit-club);
   }
   .event {
     text-align: center;
@@ -2286,12 +2245,6 @@
     box-shadow: var(--lip);
     z-index: 2;
   }
-  /* Sheet buttons that only close: secondary, and small. */
-  .sheet .close {
-    min-height: 32px;
-    padding: 4px 12px;
-    font-size: 14px;
-  }
   /* The hand thrown in: two rows of five where the trick would be, so it
      sits between the seats instead of over them. */
   .thrown-in {
@@ -2313,10 +2266,16 @@
     align-items: center;
     gap: 8px;
   }
+  /* Drawn small in the head's corner; still a 44px target. */
   .thrown-in .close {
-    min-height: 26px;
-    padding: 2px 10px;
-    font-size: var(--text-label);
+    min-width: 28px;
+    min-height: 28px;
+    margin: -4px -2px -4px 0;
+  }
+  .thrown-in .close::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
   }
   .thrown-title {
     margin: 0 0 0 4px;
@@ -2441,7 +2400,7 @@
     .result-foot {
       padding: 4px 14px 8px;
     }
-    .result-foot button {
+    .result-foot .btn {
       min-height: 40px;
     }
   }
@@ -2542,7 +2501,7 @@
       flex-wrap: nowrap;
       gap: 6px;
     }
-    .result-foot .next > button:not(.primary) {
+    .result-foot .next > .btn:not(.primary) {
       padding-inline: 12px;
     }
     .result-foot .next .primary {
@@ -2572,7 +2531,6 @@
   .award .kicker {
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.08em;
     color: var(--gold);
   }
   .award strong {
@@ -2678,29 +2636,6 @@
   .neg {
     color: var(--danger);
   }
-  .team {
-    display: inline-block;
-    padding: 1px 8px;
-    border-radius: var(--r-pill);
-    font-size: var(--text-caption);
-    font-weight: 600;
-    line-height: 18px;
-  }
-  .team.declarer {
-    background: var(--team-declarer);
-    color: var(--on-team-declarer);
-  }
-  .team.defense {
-    background: var(--team-defense);
-    color: var(--on-team-defense);
-  }
-  /* The 프렌드 only you know about (see Seat.svelte). */
-  .team.secret {
-    color: var(--ink);
-    background: var(--table);
-    box-shadow: inset 0 0 0 1.5px var(--team-declarer);
-  }
-
   /* The action strip: one fixed slot whose content follows the phase. It
      has no panel of its own, and nothing in it takes room: controls rise
      from it over the felt's foot, on the table's own paper so the seats
@@ -2769,7 +2704,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .aside-act button {
+  .aside-act .btn {
     flex: none;
     min-width: 88px;
   }
@@ -2790,11 +2725,11 @@
     flex: 1 1 auto;
     min-width: 120px;
   }
-  .next > button:not(.primary) {
+  .next > .btn:not(.primary) {
     flex: none;
   }
   /* A label never breaks; on a narrow phone the primary wraps to its own row. */
-  .next > button {
+  .next > .btn {
     white-space: nowrap;
   }
   .foot-react {
@@ -2808,59 +2743,9 @@
     outline: 3px solid transparent;
     outline-offset: -3px;
     transition: outline-color var(--dur-quick) var(--ease-standard);
-  }
-  /* Your own reaction rises over your hand, as others' rise over their seats. */
-  /* Your reaction rises at the tray's left, over your own seat, clear of
-     the turn pill and the round note in the middle. */
-  .my-reaction {
-    position: absolute;
-    left: 64px;
-    top: 0;
-    z-index: 6;
-    padding: 4px 12px;
-    border-radius: var(--r-panel);
-    background: var(--card);
-    color: var(--card-ink);
-    border: 1px solid var(--card-edge);
-    box-shadow: var(--lip);
-    font-size: var(--text-body);
-    font-weight: 700;
-    white-space: nowrap;
-    pointer-events: none;
-    transform: translate(-50%, -100%);
-    animation: my-reaction 2.8s var(--ease-standard) both;
-  }
-  .my-reaction.emoji {
-    padding: 2px 8px;
-    font-size: 28px;
-  }
-  @keyframes my-reaction {
-    0% {
-      opacity: 0;
-      transform: translate(-50%, -40%) scale(0.6);
-    }
-    12%,
-    82% {
-      opacity: 1;
-      transform: translate(-50%, -100%) scale(1);
-    }
-    100% {
-      opacity: 0;
-      transform: translate(-50%, -130%);
-    }
-  }
-  :global(:root[data-motion='reduced']) .my-reaction {
-    animation-name: my-reaction-fade;
-  }
-  @keyframes my-reaction-fade {
-    0%,
-    100% {
-      opacity: 0;
-    }
-    12%,
-    82% {
-      opacity: 1;
-    }
+    /* Your reaction rises at the tray's left, over your own seat, clear of
+       the turn pill and the round note in the middle. */
+    --bubble-x: 64px;
   }
   /* Only the hand's container (its direct child), never the cards, which
      also carry a "hand" size class. */
@@ -2882,15 +2767,6 @@
     height: 20px;
     font-size: var(--text-label);
     font-weight: 600;
-  }
-  /* Your points: the same pill as on every seat. */
-  .my-points {
-    padding: 0 6px;
-    border-radius: var(--r-pill);
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-    line-height: 18px;
-    box-shadow: 0 0 0 1px var(--line);
   }
   .spectating {
     padding: 16px;
@@ -3064,19 +2940,6 @@
     height: 34px;
     color: var(--ink);
   }
-  .glyph-box :global(svg) {
-    width: 30px;
-    height: 30px;
-  }
-  .glyph-box :global(.suit-Heart) {
-    color: var(--suit-heart);
-  }
-  .glyph-box :global(.suit-Diamond) {
-    color: var(--suit-diamond);
-  }
-  .glyph-box :global(.suit-Club) {
-    color: var(--suit-club);
-  }
   .nt {
     font-size: 18px;
     font-weight: 800;
@@ -3232,12 +3095,6 @@
     white-space: nowrap;
     font-weight: 600;
   }
-  .mini-team {
-    flex: none;
-    padding: 0 6px;
-    font-size: 11px;
-    line-height: 16px;
-  }
   .score-rows .num {
     text-align: right;
     font-family: var(--font-display);
@@ -3354,14 +3211,9 @@
     position: absolute;
     inset: -4px;
     z-index: 3;
-    min-height: 0;
-    padding: 0;
     border-radius: var(--r-panel);
-    background: transparent;
-    box-shadow: none;
   }
-  .seat-tap:active:not(:disabled) {
-    transform: none;
+  .seat-tap:active {
     background: color-mix(in srgb, var(--ink) 6%, transparent);
   }
   @media (hover: hover) {
@@ -3392,19 +3244,9 @@
     margin-top: 4px;
   }
   .seat-act {
-    position: relative;
-    min-height: 34px;
-    padding: 4px 10px;
-    border-radius: var(--r-pill);
+    padding-inline: 10px;
     font-size: var(--text-label);
     white-space: nowrap;
-    box-shadow: 0 2px 0 var(--btn-lip);
-  }
-  /* A 44px target around a small chip. */
-  .seat-act::before {
-    content: '';
-    position: absolute;
-    inset: -5px -2px;
   }
   .centre {
     position: absolute;
@@ -3478,6 +3320,7 @@
     font-weight: 600;
   }
   .rules-chip {
+    position: relative;
     min-height: 32px;
     max-width: 100%;
     padding: 4px 12px;
@@ -3485,10 +3328,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     border-radius: var(--r-pill);
-    background: transparent;
     box-shadow: inset 0 0 0 1.5px var(--line);
-    color: var(--ink);
     font-size: 14px;
+    font-weight: 600;
+    line-height: 22px;
   }
   .side-rules {
     margin-top: 8px;
@@ -3508,13 +3351,15 @@
     visibility: hidden;
   }
   .strip .unfold {
+    display: inline-flex;
+    align-items: center;
     gap: 6px;
     min-height: 40px;
     padding: 6px 16px;
     font-weight: 600;
     color: var(--card-ink);
   }
-  .strip .unfold:active:not(:disabled) {
+  .strip .unfold:active {
     transform: translate(-50%, calc(50% + 2px)) scale(0.97);
   }
   /* The result folds down to show the table. */
@@ -3522,11 +3367,8 @@
     flex: none;
     align-self: center;
     gap: 4px;
-    min-height: 40px;
     margin-top: 2px;
     padding: 4px 14px;
-    background: transparent;
-    box-shadow: none;
     color: var(--ink-muted);
     font-size: var(--text-label);
   }

@@ -2,6 +2,8 @@
   // The rules of one preset in plain Korean, written from the server's
   // actual rule values so the book can never disagree with the game.
   import Card from './Card.svelte';
+  import SuitIcon from './SuitIcon.svelte';
+  import SuitText from './SuitText.svelte';
   import { cardLabel, jokers, kittyCount, rankLabel } from './cards';
   import { CATALOG, isPreset, presetRules, presetTitle } from './catalog';
   import type { Card as CardT, CardPolicy, Contract, Examples, Rules, TrickPolicy } from './types';
@@ -248,7 +250,7 @@
     <div class="failed" role="alert">
       <p class="muted">‘{preset}’라는 규칙은 없어요. 주소를 다시 확인해 주세요.</p>
       <div class="failed-actions">
-        {#if standalone}<a class="home" href="/">홈으로</a>{/if}
+        {#if standalone}<a class="btn" href="/">홈으로</a>{/if}
       </div>
     </div>
   {:else}
@@ -272,10 +274,10 @@
     <section>
       <h2>카드 나누기</h2>
       <p>
-        {deckText(r)}에 조커 {jokers(r).length}장을 더해 {r.players}명에게 {r.hand_size}장씩 나누고, 남은 {kitty(r)}장은
+        <SuitText text={deckText(r)} />에 조커 {jokers(r).length}장을 더해 {r.players}명에게 {r.hand_size}장씩 나누고, 남은 {kitty(r)}장은
         키티로 엎어 둬요.
       </p>
-      {#each misdealText(r) as line (line)}<p>{line}</p>{/each}
+      {#each misdealText(r) as line (line)}<p><SuitText text={line} /></p>{/each}
     </section>
 
     <section>
@@ -349,7 +351,7 @@
       <p>프렌드를 정하는 방법:</p>
       <ul>
         {#each friendWays(r) as way (way)}
-          <li>{way}</li>
+          <li><SuitText text={way} /></li>
         {/each}
       </ul>
     </section>
@@ -360,12 +362,12 @@
       <ol class="ladder">
         <li>
           <span class="cards" aria-hidden="true"><Card card={n('Spade', 14)} size="mini" seal="mighty" /></span>
-          <span><strong>마이티</strong> ♠A. 기루다가 ♠이면 ♦A가 마이티예요.</span>
+          <span><strong>마이티</strong> <SuitText text="♠A. 기루다가 ♠이면 ♦A가 마이티예요." /></span>
         </li>
         {#if twoJokers}
           <li>
             <span class="cards" aria-hidden="true"><Card card={{ Joker: 'Black' }} size="mini" seal="joker" /></span>
-            <span><strong>기루다 색 조커</strong> 기루다가 ♠♣이면 흑조커, ♥♦이면 홍조커. 노기루다면 처음 낸 색의 조커.</span>
+            <span><strong>기루다 색 조커</strong> <SuitText text="기루다가 ♠♣이면 흑조커, ♥♦이면 홍조커. 노기루다면 처음 낸 색의 조커." /></span>
           </li>
         {:else}
           <li>
@@ -417,9 +419,11 @@
       <ul>
         {#each r.joker_call.calls as [call, fallback], i (i)}
           <li>
-            {cardLabel(call)}{#if JSON.stringify(call) !== JSON.stringify(fallback)}(기루다가 {cardLabel(call).slice(0, 1)}이면 {cardLabel(
-                fallback,
-              )}){/if} 카드로 라운드를 시작하면서 조커콜을 하면, {twoJokers ? cardLabel(jokers(r)[i]) : '조커'}를 가진 사람은
+            <SuitText text={cardLabel(call)} />{#if JSON.stringify(call) !== JSON.stringify(fallback)}(기루다가 <SuitText
+                text={cardLabel(call).slice(0, 1)}
+              />이면 <SuitText text={cardLabel(fallback)} />){/if} 카드로 라운드를 시작하면서 조커콜을 하면, {twoJokers
+              ? cardLabel(jokers(r)[i])
+              : '조커'}를 가진 사람은
             그 조커를 내야 해요.
           </li>
         {/each}
@@ -437,7 +441,7 @@
         <h2>첫 라운드와 마지막 라운드</h2>
         <ul>
           {#each roundLimits(r) as row (row.who + row.round)}
-            <li><strong>{row.round}</strong>에 {row.who}{row.who === '조커콜' ? '은' : '는'} {row.text}.</li>
+            <li><strong>{row.round}</strong>에 {row.who}{row.who === '조커콜' ? '은' : '는'} <SuitText text={row.text} />.</li>
           {/each}
         </ul>
       </section>
@@ -448,7 +452,7 @@
       <ul>
         <li>여당이 공약 이상을 가져오면 <strong>{formula}</strong>{note}만큼 얻어요.</li>
         {#each scoringLines(r) as line (line)}
-          <li>{line}</li>
+          <li><SuitText text={line} /></li>
         {/each}
         <li>
           그 점수를 야당은 한 사람마다 내고, 프렌드는 한 몫을 받고, 주공은 야당 수만큼 받아서 프렌드 몫을 뺀 만큼 가져요.
@@ -459,7 +463,7 @@
         {@const { made, failed: lost, contract: bid } = examples}
         {@const opponents = r.players - (examples.alone ? 1 : 2)}
         <p class="example">
-          예: ♠ {bid.count} 공약에 {made.value.team_points}점을 가져오면 한 몫이 {made.value.value}점. 야당 {opponents}명이
+          예: <SuitIcon suit="Spade" inline label="스페이드" /> {bid.count} 공약에 {made.value.team_points}점을 가져오면 한 몫이 {made.value.value}점. 야당 {opponents}명이
           {signed(made.payoffs[r.players - 1])}씩,
           {#if !examples.alone}프렌드 {signed(made.payoffs[1])},{/if} 주공 {signed(made.payoffs[0])}.
           {lost.value.team_points}점에 그치면 한 몫이 {signed(lost.value.value)}점이에요.
@@ -573,20 +577,6 @@
   }
   .failed-actions:empty {
     display: none;
-  }
-  /* 홈으로 is a link dressed as the plain button. */
-  .home {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding: 10px 16px;
-    border-radius: var(--r-control);
-    background: var(--btn);
-    color: var(--ink);
-    box-shadow: 0 3px 0 var(--btn-lip);
-    font-size: var(--text-body);
-    font-weight: 600;
-    text-decoration: none;
   }
   .example {
     padding: 10px 14px;

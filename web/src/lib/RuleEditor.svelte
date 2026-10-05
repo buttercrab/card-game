@@ -10,7 +10,12 @@
   import { isPreset, presetRules, presetTitle } from './catalog';
   import { GROUPS, RULE_FIELDS, differences, getPath, problems, same, say, setField, shown, traits, type Field } from './ruleFields';
   import { customName, loadCustom, saveCustom, type CustomSet } from './rulesets';
+  import SuitText from './SuitText.svelte';
   import type { Card, Rules } from './types';
+  import Button from './ui/Button.svelte';
+  import Segmented from './ui/Segmented.svelte';
+  import Sheet from './ui/Sheet.svelte';
+  import Switch from './ui/Switch.svelte';
 
   let {
     preset,
@@ -103,21 +108,18 @@
     if (base) draft = structuredClone($state.snapshot(base) as Rules);
   }
 
-  let dialog: HTMLDialogElement;
-  $effect(() => {
-    dialog.showModal();
-  });
+  let dialog = $state<HTMLDialogElement>();
 
   function save() {
     if (!draft || issues.length) return;
     const out = changed.length ? ($state.snapshot(draft) as Rules) : null;
     const saved = out ? saveCustom({ id: from || undefined, name, base: baseId, rules: out }) : null;
     onsave(baseId, out, saved);
-    dialog.close();
+    dialog?.close();
   }
 
   function jump(path: string) {
-    dialog.querySelector(`[data-path="${path}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    dialog?.querySelector(`[data-path="${path}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
   const INLINE = new Set(['toggle', 'stepper', 'maybe']);
@@ -125,36 +127,28 @@
 
 {#snippet stepper(value: number, min: number, max: number, onset: (v: number) => void, label: string, signed = false)}
   <span class="stepper" role="group" aria-label={label}>
-    <button type="button" onclick={() => onset(value - 1)} disabled={value <= min} aria-label="{label} 줄이기">−</button>
+    <button class="btn" type="button" onclick={() => onset(value - 1)} disabled={value <= min} aria-label="{label} 줄이기">−</button>
     <output>{signed && value > 0 ? `+${value}` : value < 0 ? `−${-value}` : value}</output>
-    <button type="button" onclick={() => onset(value + 1)} disabled={value >= max} aria-label="{label} 늘리기">+</button>
+    <button class="btn" type="button" onclick={() => onset(value + 1)} disabled={value >= max} aria-label="{label} 늘리기">+</button>
   </span>
 {/snippet}
 
 {#snippet segment(options: { value: unknown; label: string }[], value: unknown, onset: (v: unknown) => void, label: string, stack = false)}
-  <span class="segment" class:stack role="radiogroup" aria-label={label}>
-    {#each options as o (o.label)}
-      <button type="button" role="radio" aria-checked={same(o.value, value)} onclick={() => onset(o.value)}>{o.label}</button>
-    {/each}
-  </span>
+  <Segmented {options} {value} onchange={onset} {label} {stack} {same} />
 {/snippet}
 
 {#snippet control(f: Field, r: Rules)}
   {@const v = getPath(r, f.path)}
   {@const c = f.control}
   {#if c.kind === 'toggle'}
-    <button type="button" class="switch" role="switch" aria-checked={!!v} aria-label={f.label} onclick={() => set(f, !v)}>
-      <span class="word">{v ? c.on : c.off}</span><span class="track" aria-hidden="true"><span class="knob"></span></span>
-    </button>
+    <Switch checked={!!v} label={f.label} word={v ? c.on : c.off} onchange={(on) => set(f, on)} />
   {:else if c.kind === 'stepper'}
     {@render stepper(v, c.min, c.max, (x) => set(f, x), f.label, c.signed)}
   {:else if c.kind === 'segment'}
     {@render segment(c.options, v, (x) => set(f, x), f.label, c.stack)}
   {:else if c.kind === 'maybe'}
     <!-- The switch; its number's stepper goes under the label (see below). -->
-    <button type="button" class="switch" role="switch" aria-checked={v !== null} aria-label={f.label} onclick={() => set(f, v === null ? c.start : null)}>
-      <span class="word">{v === null ? c.off : c.on(v)}</span><span class="track" aria-hidden="true"><span class="knob"></span></span>
-    </button>
+    <Switch checked={v !== null} label={f.label} word={v === null ? c.off : c.on(v)} onchange={(on) => set(f, on ? c.start : null)} />
   {:else if c.kind === 'rounds'}
     <div class="rounds">
       {#each [['first', '첫 라운드'], ['last', '마지막 라운드']] as [which, word] (which)}
@@ -181,7 +175,7 @@
           aria-pressed={i >= 0}
           onclick={() => set(f, i >= 0 ? list.filter((_, j) => j !== i) : [...list, [card, 0]])}
         >
-          <svg class="check" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5 L5 9 L9.5 3.5" /></svg>{cardLabel(card)}
+          <svg class="check" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5 L5 9 L9.5 3.5" /></svg><SuitText text={cardLabel(card)} />
         </button>
       {/each}
     </div>
@@ -189,7 +183,7 @@
       <div class="cardvalues">
         {#each list as [card, value], i (cardLabel(card))}
           <div class="cv">
-            <span>{cardLabel(card)} 한 장의 값</span>
+            <span><SuitText text={cardLabel(card)} /> 한 장의 값</span>
             {@render stepper(
               value,
               c.min,
@@ -205,9 +199,7 @@
   {/if}
 {/snippet}
 
-<dialog class="sheet editor" bind:this={dialog} onclose={onclose} aria-labelledby="editor-title">
-  <div class="sheet-body">
-    <h2 id="editor-title">우리 규칙 만들기</h2>
+<Sheet title="우리 규칙 만들기" size="large" bind:dialog {onclose}>
     <p class="lead muted">아는 규칙에서 시작해 다른 것만 바꾸세요. {note}</p>
 
     <div class="start">
@@ -217,14 +209,14 @@
           <strong>{startName}</strong>
           {#if from}<span class="muted small-note">{baseName} 바탕</span>{/if}
         </span>
-        <button type="button" class="ghost small" aria-expanded={picking} onclick={() => (picking = !picking)}>
+        <button type="button" class="btn ghost sm" aria-expanded={picking} onclick={() => (picking = !picking)}>
           {picking ? '접기' : '다른 규칙에서 시작'}
         </button>
       </div>
       {#if picking}
         <PresetPicker selected={from ? `custom:${from}` : baseId} {customs} onselect={choose} label="시작할 규칙" />
       {:else if startTraits.length && !from}
-        <p class="start-traits">{startTraits.join(' · ')}</p>
+        <p class="start-traits"><SuitText text={startTraits.join(' · ')} /></p>
       {/if}
     </div>
 
@@ -279,8 +271,8 @@
                 {/if}
                 {#if isChanged}
                   <div class="was">
-                    <span>{baseName}: {say(f, b)}</span>
-                    <button type="button" class="ghost reset" onclick={() => reset(f)} aria-label="{f.label} 되돌리기">되돌리기</button>
+                    <span>{baseName}: <SuitText text={say(f, b)} /></span>
+                    <button type="button" class="btn ghost sm reset" onclick={() => reset(f)} aria-label="{f.label} 되돌리기">되돌리기</button>
                   </div>
                 {/if}
                 {#each bad as p (p.message)}
@@ -300,32 +292,18 @@
         </label>
       </section>
     {/if}
-  </div>
-  <div class="sheet-foot">
-    <button type="button" class="ghost" disabled={!changed.length} onclick={resetAll}>모두 되돌리기</button>
-    <button type="button" onclick={() => dialog.close()}>취소</button>
-    <button type="button" class="primary" disabled={!draft || issues.length > 0} onclick={save}>{applyLabel}</button>
-  </div>
-</dialog>
+  
+  {#snippet footer(close)}
+    <Button variant="ghost" disabled={!changed.length} onclick={resetAll}>모두 되돌리기</Button>
+    <Button onclick={close}>취소</Button>
+    <Button variant="primary" disabled={!draft || issues.length > 0} onclick={save}>{applyLabel}</Button>
+  {/snippet}
+</Sheet>
 
 <style>
-  .editor {
-    width: min(100% - 32px, 560px);
-    max-height: min(100dvh - 32px, 900px);
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-headline);
-  }
   .lead {
-    margin: 4px 0 0;
+    margin: -8px 0 0;
     font-size: 14px;
-  }
-  .small {
-    min-height: 36px;
-    padding: 4px 10px;
-    font-size: 14px;
-    color: var(--ink-muted);
   }
   .start {
     display: grid;
@@ -338,8 +316,9 @@
     justify-content: space-between;
     gap: 8px;
   }
-  .start-line .small {
+  .start-line .btn {
     margin-right: -10px;
+    color: var(--ink-muted);
   }
   .start-text {
     display: flex;
@@ -384,6 +363,7 @@
     gap: 4px;
   }
   .tag {
+    position: relative;
     min-height: 28px;
     padding: 2px 10px;
     border-radius: var(--r-pill);
@@ -392,8 +372,11 @@
     font-size: var(--text-caption);
     font-weight: 600;
   }
-  .tag:active:not(:disabled) {
-    transform: none;
+  /* A 44px target round the small tag. */
+  .tag::before {
+    content: '';
+    position: absolute;
+    inset: -8px -2px;
   }
   .group {
     display: grid;
@@ -458,9 +441,7 @@
     color: var(--ink-muted);
   }
   .reset {
-    min-height: 32px;
     margin-right: -10px;
-    padding: 2px 10px;
     font-size: var(--text-label);
     color: var(--ink);
     text-decoration: underline;
@@ -476,61 +457,14 @@
     background: var(--danger);
   }
 
-  /* Switch: ink when on, a word beside it so the state reads without colour. */
-  .switch {
-    flex: none;
-    gap: 8px;
-    min-height: 40px;
-    padding: 0 0 0 6px;
-    background: transparent;
-    box-shadow: none;
-    font-size: var(--text-label);
-    font-weight: 600;
-    color: var(--ink-muted);
-  }
-  .switch:active:not(:disabled) {
-    transform: none;
-  }
-  .switch[aria-checked='true'] {
-    color: var(--ink);
-  }
-  .track {
-    position: relative;
-    width: 42px;
-    height: 26px;
-    border-radius: var(--r-pill);
-    background: var(--off);
-    box-shadow: inset 0 0 0 1.5px var(--ink-muted);
-    transition: background-color var(--dur-quick) var(--ease-standard);
-  }
-  .knob {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--ink-muted);
-    transition: transform var(--dur-quick) var(--ease-standard);
-  }
-  .switch[aria-checked='true'] .track {
-    background: var(--ink);
-    box-shadow: none;
-  }
-  .switch[aria-checked='true'] .knob {
-    background: var(--table);
-    transform: translateX(16px);
-  }
-
   .stepper {
     flex: none;
     display: inline-flex;
     align-items: center;
     gap: 4px;
   }
-  .stepper button {
-    min-width: 40px;
-    min-height: 36px;
+  .stepper .btn {
+    min-width: 44px;
     padding: 0;
     font-size: 18px;
   }
@@ -542,46 +476,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Segments: one strip of choices; the chosen one is ink. */
-  .segment {
-    display: grid;
-    grid-auto-columns: minmax(0, 1fr);
-    grid-auto-flow: column;
-    gap: 2px;
-    padding: 2px;
-    border-radius: var(--r-control);
-    background: color-mix(in srgb, var(--ink) 8%, transparent);
-  }
-  /* Long choices, such as a scoring formula, one per line. */
-  .segment.stack {
-    grid-auto-flow: row;
-  }
-  .segment.stack button {
-    padding: 6px 10px;
-  }
   .maybe {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 12px;
-  }
-  .segment button {
-    min-height: 36px;
-    padding: 4px 6px;
-    border-radius: 10px;
-    background: transparent;
-    box-shadow: none;
-    color: var(--ink-muted);
-    font-size: var(--text-label);
-    line-height: 1.25;
-    word-break: keep-all;
-  }
-  .segment button[aria-checked='true'] {
-    background: var(--ink);
-    color: var(--table);
-  }
-  .segment button:active:not(:disabled) {
-    transform: none;
   }
   .rounds {
     display: grid;
@@ -603,14 +502,23 @@
     gap: 6px;
   }
   .way {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     min-height: 36px;
+    font-weight: 600;
     padding: 6px 12px;
     border-radius: var(--r-pill);
     background: transparent;
     color: var(--ink-muted);
     box-shadow: inset 0 0 0 1px var(--line);
     font-size: 14px;
-    animation: none;
+  }
+  .way::before {
+    content: '';
+    position: absolute;
+    inset: -4px -2px;
   }
   .way[aria-pressed='true'] {
     background: var(--btn);

@@ -14,7 +14,10 @@
     | 'swap'
     | 'bot'
     | 'result'
-    | 'fold';
+    | 'fold'
+    | 'close'
+    | 'prev'
+    | 'next';
 </script>
 
 <script lang="ts">
@@ -121,6 +124,14 @@
       {:else if name === 'fold'}
         <!-- A chevron pointing down: put it away. -->
         <path d="M6 9.5 l6 6 6 -6" />
+      {:else if name === 'close'}
+        <!-- Two strokes crossing. -->
+        <path d="M6.5 6.5 l11 11" />
+        <path d="M17.5 6.5 l-11 11" />
+      {:else if name === 'prev'}
+        <path d="M14.5 6 l-6 6 6 6" />
+      {:else if name === 'next'}
+        <path d="M9.5 6 l6 6 -6 6" />
       {/if}
     </g>
   {/if}

@@ -6,7 +6,7 @@
 <section class="missing">
   <h1>페이지를 찾을 수 없어요</h1>
   <p class="muted">주소가 바뀌었거나 없는 페이지예요. 주소를 다시 확인해 주세요.</p>
-  <a class="home" href="/">처음으로</a>
+  <a class="btn" href="/">처음으로</a>
 </section>
 
 <style>
@@ -27,19 +27,5 @@
     margin: 0 0 8px;
     max-width: 24em;
     text-wrap: balance;
-  }
-  /* 처음으로 is a link dressed as the plain button, like the rulebook's. */
-  .home {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding: 10px 16px;
-    border-radius: var(--r-control);
-    background: var(--btn);
-    color: var(--ink);
-    box-shadow: 0 3px 0 var(--btn-lip);
-    font-size: var(--text-body);
-    font-weight: 600;
-    text-decoration: none;
   }
 </style>

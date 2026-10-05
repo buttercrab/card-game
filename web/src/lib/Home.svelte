@@ -14,6 +14,7 @@
   import { CATALOG, isPreset, presetTitle } from './catalog';
   import { customName, loadCustom, type CustomSet } from './rulesets';
   import { responseError } from './errorText';
+  import Button from './ui/Button.svelte';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
@@ -119,11 +120,11 @@
     </div>
     <PresetPicker selected={choice} {customs} onselect={(c) => (choice = c)} />
     <div class="rule-tools">
-      <button class="ghost small" onclick={() => (showRules = true)}>규칙 보기</button>
-      <button class="ghost small" onclick={() => (comparing = true)}>비교</button>
-      <button class="ghost small" onclick={() => (editing = true)}>고쳐서 쓰기</button>
+      <button class="btn ghost sm" onclick={() => (showRules = true)}>규칙 보기</button>
+      <button class="btn ghost sm" onclick={() => (comparing = true)}>비교</button>
+      <button class="btn ghost sm" onclick={() => (editing = true)}>고쳐서 쓰기</button>
     </div>
-    <button class="primary" onclick={() => create()} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</button>
+    <Button variant="primary" onclick={() => create()} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</Button>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </section>
 
@@ -136,16 +137,16 @@
     <h2>테이블 들어가기</h2>
     <form onsubmit={join}>
       <input bind:value={code} placeholder="테이블 코드나 링크" aria-label="테이블 코드나 링크" />
-      <button type="submit" disabled={!code.trim()}>들어가기</button>
+      <Button type="submit" disabled={!code.trim()}>들어가기</Button>
     </form>
   </section>
 
   <InstallHint />
   <footer>
     <div class="tools">
-      <button class="ghost small" onclick={() => (showStats = true)}>내 기록</button>
-      <button class="ghost small" onclick={() => (showSettings = true)}>설정</button>
-      <button class="ghost small" onclick={() => (reporting = true)}>문제 신고</button>
+      <button class="btn ghost sm" onclick={() => (showStats = true)}>내 기록</button>
+      <button class="btn ghost sm" onclick={() => (showSettings = true)}>설정</button>
+      <button class="btn ghost sm" onclick={() => (reporting = true)}>문제 신고</button>
     </div>
     <SiteLinks />
   </footer>
@@ -239,10 +240,7 @@
     border-radius: var(--r-panel);
     background: var(--panel);
   }
-  .small {
-    min-height: 36px;
-    padding: 4px 10px;
-    font-size: 14px;
+  .sm {
     color: var(--ink-muted);
   }
   /* A quiet panel, not a cream slab: the page's one bright button is the
@@ -257,6 +255,8 @@
     background: var(--panel);
     color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--line);
+    font-size: var(--text-body);
+    line-height: 1.35;
     text-align: left;
   }
   @media (hover: hover) {

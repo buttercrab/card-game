@@ -8,6 +8,8 @@
   import { PATHS } from './SuitIcon.svelte';
   import { FIXED, SUIT_INK, THEME } from './tokens';
   import type { HandSummary, RoomMsg, Suit } from './types';
+  import Button from './ui/Button.svelte';
+  import Sheet from './ui/Sheet.svelte';
 
   let { room, onclose }: { room: RoomMsg; onclose: () => void } = $props();
 
@@ -268,7 +270,7 @@
       area.value = text;
       area.style.position = 'fixed';
       area.style.opacity = '0';
-      dialog.append(area);
+      (dialog ?? document.body).append(area);
       area.select();
       const ok = document.execCommand('copy');
       area.remove();
@@ -282,9 +284,8 @@
     copied = setTimeout(() => status === '복사했어요' && (status = null), 2000);
   }
 
-  let dialog: HTMLDialogElement;
+  let dialog = $state<HTMLDialogElement>();
   $effect(() => {
-    dialog.showModal();
     void draw();
     return () => {
       clearTimeout(copied);
@@ -293,28 +294,21 @@
   });
 </script>
 
-<dialog class="sheet share" bind:this={dialog} onclose={onclose} aria-labelledby="share-title">
-  <div class="sheet-body">
-    <h2 id="share-title">결과 카드</h2>
-    {#if url}
-      <img src={url} alt="마이티 {room.hands_played}판 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
-    {:else}
-      <p class="muted">그리는 중…</p>
-    {/if}
-    <p class="muted status" role="status">{status ?? ''}</p>
-  </div>
-  <form method="dialog" class="sheet-foot">
-    <button class="ghost">닫기</button>
-    <button type="button" onclick={copyText}>텍스트 복사</button>
-    <button type="button" class="primary" disabled={!url} onclick={share}>공유하기</button>
-  </form>
-</dialog>
+<Sheet title="결과 카드" bind:dialog {onclose}>
+  {#if url}
+    <img src={url} alt="마이티 {room.hands_played}판 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
+  {:else}
+    <p class="muted">그리는 중…</p>
+  {/if}
+  <p class="muted status" role="status">{status ?? ''}</p>
+  {#snippet footer(close)}
+    <Button variant="ghost" onclick={close}>닫기</Button>
+    <Button onclick={copyText}>텍스트 복사</Button>
+    <Button variant="primary" disabled={!url} onclick={share}>공유하기</Button>
+  {/snippet}
+</Sheet>
 
 <style>
-  h2 {
-    margin: 0 0 12px;
-    font-size: var(--text-headline);
-  }
   img {
     display: block;
     width: 100%;

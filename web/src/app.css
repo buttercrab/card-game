@@ -1,3 +1,7 @@
+/* Cascade layers: the button reset, then the primitives' looks; every
+   component's own styles sit above both. */
+@layer reset, primitives;
+
 /* Tokens from docs/DESIGN.md. Each colour is written once, as
    light-dark(light, dark): the theme follows the system, or a data-theme
    attribute (DeckPreview shows both themes side by side). A custom
@@ -164,100 +168,242 @@ body {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
+/* A button is unstyled until it says what it is: `.btn` (lib/Button.svelte)
+   or `.chip` (lib/Chip.svelte), or a component's own look. */
+@layer reset {
+  button {
+    appearance: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
 }
 
-/* Buttons are flat objects with a hard lip (docs/DESIGN.md, Elevation & Depth).
-   Pressing moves the button down onto its lip. */
-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 10px 16px;
-  border: none;
-  border-radius: var(--r-control);
-  background: var(--btn);
-  color: var(--ink);
-  box-shadow: 0 3px 0 var(--btn-lip);
-  font-size: var(--text-body);
-  font-weight: 600;
-  line-height: 1.2;
-  cursor: pointer;
-  transition:
-    transform 180ms var(--ease-settle),
-    box-shadow var(--dur-quick) var(--ease-standard),
-    background-color var(--dur-quick) var(--ease-standard);
-  -webkit-tap-highlight-color: transparent;
-}
+/* The primitives' looks. A layer below components' own styles, so a
+   component can always adjust one in place without fighting specificity. */
+@layer primitives {
+  /* Buttons are flat objects with a hard lip (docs/DESIGN.md, Elevation &
+     Depth); pressing moves the button down onto its lip and squeezes it a
+     little, and release springs back. */
+  .btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 10px 16px;
+    border-radius: var(--r-control);
+    background: var(--btn);
+    color: var(--ink);
+    box-shadow: 0 3px 0 var(--btn-lip);
+    font-size: var(--text-body);
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    transition:
+      transform 180ms var(--ease-settle),
+      box-shadow var(--dur-quick) var(--ease-standard),
+      background-color var(--dur-quick) var(--ease-standard);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(3px) scale(0.97);
+    box-shadow: 0 0 0 transparent;
+    transition-duration: 90ms;
+  }
+  .btn:disabled {
+    opacity: 0.4;
+    box-shadow: none;
+  }
+  .btn.primary {
+    --suit-tone: currentColor;
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: 0 3px 0 var(--accent-deep);
+  }
+  /* Plum means "act now"; a primary that cannot act yet goes neutral. */
+  .btn.primary:disabled {
+    opacity: 1;
+    background: var(--off);
+    color: var(--ink-muted);
+  }
+  .btn.danger {
+    color: var(--danger);
+  }
+  .btn.ghost,
+  .btn.icon {
+    background: transparent;
+    box-shadow: none;
+  }
+  .btn.ghost:active:not(:disabled),
+  .btn.icon:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  /* A drawn icon alone, in a round 44px target. */
+  .btn.icon {
+    min-width: 44px;
+    padding: 0;
+    border-radius: var(--r-pill);
+  }
+  /* On card paper with its lip, as the table's small round tools. */
+  .btn.icon.raised {
+    background: var(--btn);
+    box-shadow: 0 3px 0 var(--btn-lip);
+  }
+  /* A row of a menu: as wide as its list, its icon and words at the start. */
+  .btn.wide {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 12px;
+    padding-inline: 14px;
+    text-align: left;
+  }
+  /* Small: drawn 36px tall, still a 44px target. */
+  .btn.sm {
+    min-height: 36px;
+    padding: 4px 10px;
+    font-size: 14px;
+  }
+  .btn.sm::before,
+  .chip::before {
+    content: '';
+    position: absolute;
+    inset: -4px -2px;
+  }
 
-/* Pressing pushes the button down onto its lip and squeezes it a little;
-   release springs back (Emil Kowalski's 0.97, M3's fast spring). */
-button:active:not(:disabled) {
-  transform: translateY(3px) scale(0.97);
-  box-shadow: 0 0 0 transparent;
-  transition-duration: 90ms;
-}
+  /* A choice on a pill; chosen, it fills with ink. */
+  .chip {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 8px 14px;
+    border-radius: var(--r-pill);
+    background: var(--btn);
+    color: var(--ink);
+    box-shadow: 0 3px 0 var(--btn-lip);
+    font-size: var(--text-body);
+    font-weight: 600;
+    line-height: 1.2;
+    transition: transform 180ms var(--ease-settle);
+  }
+  .chip:active:not(:disabled) {
+    transform: translateY(2px) scale(0.97);
+    box-shadow: 0 1px 0 var(--btn-lip);
+    transition-duration: 90ms;
+  }
+  .chip[aria-checked='true'],
+  .chip[aria-pressed='true'] {
+    /* Suits on a chosen chip take its colour. */
+    --suit-tone: currentColor;
+    background: var(--ink);
+    color: var(--table);
+    box-shadow: 0 3px 0 var(--chip-lip);
+    /* A chip pulses as it is chosen (Wordle's tile pop). */
+    --pulse: 1.08;
+    animation: pulse 180ms var(--ease-settle);
+  }
+  .chip.sm {
+    min-height: 34px;
+    padding: 4px 12px;
+    font-size: 14px;
+    box-shadow: 0 2px 0 var(--btn-lip);
+  }
+  .chip.sm[aria-checked='true'] {
+    box-shadow: 0 2px 0 var(--chip-lip);
+  }
+  .chip.sm::before {
+    inset: -5px -2px;
+  }
 
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-  box-shadow: none;
+  /* Sheets (lib/Sheet.svelte): a raised surface with a hairline, over a
+     scrim, and one footer pattern: a ghost action at the left edge, then
+     the plain and primary buttons at the right. The footer sticks to the
+     bottom of a sheet taller than the window. */
+  dialog.sheet {
+    --pad: 20px;
+    /* Hairlines one step up, so they still show on the raised surface. */
+    --line: var(--raised-line);
+    width: min(100% - 32px, 420px);
+    max-height: calc(100dvh - 32px);
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--r-panel);
+    background: var(--raised);
+    color: var(--ink);
+    overflow: hidden;
+  }
+  dialog.sheet.small {
+    width: min(100% - 32px, 400px);
+  }
+  dialog.sheet.large {
+    width: min(100% - 32px, 560px);
+    max-height: min(100dvh - 32px, 880px);
+  }
+  dialog.sheet[open] {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  dialog.sheet::backdrop {
+    background: var(--scrim);
+  }
+  .sheet-body {
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--pad) var(--pad) 16px;
+    scrollbar-width: thin;
+  }
+  .sheet-title {
+    margin: 0 0 12px;
+    font-size: var(--text-headline);
+  }
+  .sheet-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 0;
+    padding: 12px var(--pad);
+    border-top: 1px solid var(--line);
+    background: var(--raised);
+  }
+  /* The ghost's label lines up with the text above it. */
+  .sheet-foot > .ghost:first-child {
+    margin-inline-start: -16px;
+    margin-inline-end: auto;
+    color: var(--ink-muted);
+  }
+  .sheet-foot .primary {
+    min-width: 108px;
+  }
+  @media (max-width: 380px) {
+    dialog.sheet {
+      --pad: 16px;
+    }
+  }
 }
-
-button.primary {
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: 0 3px 0 var(--accent-deep);
-}
-/* Plum means "act now"; a primary that cannot act yet goes neutral. */
-button.primary:disabled {
-  opacity: 1;
-  box-shadow: none;
-  background: var(--off);
-  color: var(--ink-muted);
-}
-
-button.ghost {
-  background: transparent;
-  color: var(--ink);
-  box-shadow: none;
-}
-
-button.chip {
-  min-height: 40px;
-  padding: 8px 14px;
-  border-radius: var(--r-pill);
-  font-size: var(--text-body);
-  flex: none;
-}
-
-button.chip[aria-checked='true'],
-button.chip[aria-pressed='true'] {
-  background: var(--ink);
-  color: var(--table);
-  box-shadow: 0 3px 0 var(--chip-lip);
-  /* A chip pulses as it is chosen (Wordle's tile pop). */
-  --pulse: 1.08;
-  animation: pulse 180ms var(--ease-settle);
-}
-/* Choices in the action strip cascade in as the panel appears. */
-.strip .chips > button {
-  animation: fade-up 220ms var(--ease-standard) both;
-}
-.strip .chips > button:nth-child(2) { animation-delay: 25ms; }
-.strip .chips > button:nth-child(3) { animation-delay: 50ms; }
-.strip .chips > button:nth-child(4) { animation-delay: 75ms; }
-.strip .chips > button:nth-child(5) { animation-delay: 100ms; }
-.strip .chips > button:nth-child(6) { animation-delay: 125ms; }
-.strip .chips > button:nth-child(7) { animation-delay: 150ms; }
-.strip .chips > button:nth-child(n + 8) { animation-delay: 175ms; }
 
 input,
 select,
@@ -277,7 +423,7 @@ textarea {
   opacity: 1;
 }
 
-/* Checkboxes, sliders and focus rings are ink: plum is kept for "act now". */
+/* Sliders and focus rings are ink: plum is kept for "act now". */
 input[type='checkbox'],
 input[type='radio'],
 input[type='range'] {
@@ -288,69 +434,36 @@ input[type='range'] {
   outline: 3px solid var(--ink);
   outline-offset: 2px;
 }
+/* A sheet opened on its title (Sheet.svelte) draws no ring round it. */
+.sheet-title:focus {
+  outline: none;
+}
 
 .muted {
   color: var(--ink-muted);
 }
 
-/* Sheets (dialogs) share one look: a raised surface with a hairline, over a
-   scrim, and one footer pattern: a ghost action at the left edge, then the
-   plain and primary buttons at the right. The footer sticks to the bottom
-   of a sheet taller than the window. */
-dialog.sheet {
-  --pad: 20px;
-  /* Hairlines one step up, so they still show on the raised surface. */
-  --line: var(--raised-line);
-  width: min(100% - 32px, 420px);
-  max-height: calc(100dvh - 32px);
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-panel);
-  background: var(--raised);
-  color: var(--ink);
+/* Read by screen readers, not drawn. */
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-dialog.sheet[open] {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+
+/* Choices in the action strip cascade in as the panel appears. */
+.strip .chips > .chip {
+  animation: fade-up 220ms var(--ease-standard) both;
 }
-dialog.sheet::backdrop {
-  background: var(--scrim);
-}
-.sheet-body {
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--pad) var(--pad) 16px;
-  scrollbar-width: thin;
-}
-.sheet-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin: 0;
-  padding: 12px var(--pad);
-  border-top: 1px solid var(--line);
-  background: var(--raised);
-}
-/* The ghost's label lines up with the text above it. */
-.sheet-foot > .ghost:first-child,
-.sheet-foot > .lead {
-  margin-inline-start: -16px;
-  margin-inline-end: auto;
-  color: var(--ink-muted);
-}
-.sheet-foot > .lead > .ghost {
-  color: var(--ink-muted);
-}
-.sheet-foot .primary {
-  min-width: 108px;
-}
-@media (max-width: 380px) {
-  dialog.sheet {
-    --pad: 16px;
-  }
-}
+.strip .chips > .chip:nth-child(2) { animation-delay: 25ms; }
+.strip .chips > .chip:nth-child(3) { animation-delay: 50ms; }
+.strip .chips > .chip:nth-child(4) { animation-delay: 75ms; }
+.strip .chips > .chip:nth-child(5) { animation-delay: 100ms; }
+.strip .chips > .chip:nth-child(6) { animation-delay: 125ms; }
+.strip .chips > .chip:nth-child(7) { animation-delay: 150ms; }
+.strip .chips > .chip:nth-child(n + 8) { animation-delay: 175ms; }
 
 /* Two-colour deck: diamonds red and clubs black everywhere suits appear. */
 :root[data-four-color='false'] {
@@ -425,10 +538,10 @@ dialog.sheet::backdrop {
 
 /* Reduced: entrances fade in place; swells and movement are dropped, and
    transitions keep only their colour and opacity. */
-:root[data-motion='reduced'] :is(.pop, .fade-up, .strip .chips > button) {
+:root[data-motion='reduced'] :is(.pop, .fade-up, .strip .chips > .chip) {
   animation-name: fade;
 }
-:root[data-motion='reduced'] :is(.bump, button.chip[aria-checked='true'], button.chip[aria-pressed='true']) {
+:root[data-motion='reduced'] :is(.bump, .chip[aria-checked='true'], .chip[aria-pressed='true']) {
   animation: none;
 }
 :root[data-motion='reduced'] *,

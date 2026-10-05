@@ -4,6 +4,8 @@
   import Card from './Card.svelte';
   import { cardLabel, contractLabel, friendCallLabel, mightyCard, sameCard, sealOf, SUITS, trumpLabel } from './cards';
   import { scrollFade } from './scrollFade';
+  import SuitText from './SuitText.svelte';
+  import Chip from './ui/Chip.svelte';
   import type { Action, Card as CardT, Contract, ContractChange, FriendCall, Rules, Suit } from './types';
 
   let {
@@ -139,17 +141,15 @@
   <div class="panel">
     <div class="chips" role="radiogroup" aria-label="프렌드">
       {#each shortcuts as s (JSON.stringify(s.call))}
-        <button
-          class="chip"
-          role="radio"
-          aria-checked={chosenCall !== null && sameCall(chosenCall, s.call)}
+        <Chip
+          checked={chosenCall !== null && sameCall(chosenCall, s.call)}
           onclick={() => {
             call = s.call;
             picking = false;
-          }}>{s.label}</button
+          }}>{s.label}</Chip
         >
       {/each}
-      <button class="chip" aria-pressed={picking} onclick={() => (picking = !picking)}>다른 카드…</button>
+      <Chip pressed={picking} onclick={() => (picking = !picking)}>다른 카드…</Chip>
     </div>
     {#if picking}
       <div class="picker">
@@ -183,20 +183,20 @@
         {#if otherCalls.length > 0}
           <div class="chips">
             {#each otherCalls as c (JSON.stringify(c))}
-              <button class="chip" role="radio" aria-checked={chosenCall !== null && sameCall(chosenCall, c)} onclick={() => (call = c)}>
-                {friendCallLabel(c, seatName, twoJokers)}
-              </button>
+              <Chip checked={chosenCall !== null && sameCall(chosenCall, c)} onclick={() => (call = c)}>
+                <SuitText text={friendCallLabel(c, seatName, twoJokers)} />
+              </Chip>
             {/each}
           </div>
         {/if}
       </div>
     {/if}
     <div class="actions">
-      <button class="primary" disabled={!chosenCall} onclick={() => chosenCall && onact({ CallFriend: chosenCall })}>
+      <button class="btn primary" disabled={!chosenCall} onclick={() => chosenCall && onact({ CallFriend: chosenCall })}>
         {#if chosenCall && typeof chosenCall === 'object' && 'Card' in chosenCall && sameCard(chosenCall.Card, mighty)}
-          프렌드 마이티 <span class="sub">({cardLabel(mighty)})</span>
+          프렌드 마이티 <span class="sub">(<SuitText text={cardLabel(mighty)} />)</span>
         {:else}
-          프렌드 {chosenCall ? friendCallLabel(chosenCall, seatName, twoJokers) : ''}
+          프렌드 <SuitText text={chosenCall ? friendCallLabel(chosenCall, seatName, twoJokers) : ''} />
         {/if}
         {#if callsMine}<span class="sub">(내 카드)</span>{/if}
       </button>
@@ -210,7 +210,7 @@
       <!-- While a contract change is chosen, its button is the one to press. -->
       <button
         class:primary={!confirm}
-        class="discard-btn"
+        class="btn discard-btn"
         class:ready={chosen === toDiscard && !confirm}
         disabled={chosen !== toDiscard}
         onclick={ondiscard}>버리기</button
@@ -220,17 +220,15 @@
       <div class="chips change" use:scrollFade role="radiogroup" aria-label="기루다 변경">
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
-          <button
-            class="chip"
-            role="radio"
-            aria-checked={t === picked}
+          <Chip
+            checked={t === picked}
             onclick={() => {
               target = t === picked ? undefined : t;
               selected = null;
             }}
           >
-            {trumpLabel(t)} {changedCount(t)}
-          </button>
+            <SuitText text="{trumpLabel(t)} {changedCount(t)}" />
+          </Chip>
         {/each}
       </div>
     {:else if trumpChanges.length > 0}
@@ -238,9 +236,9 @@
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
           {@const action = { ChangeTrump: t }}
-          <button class="chip" role="radio" aria-checked={!!choice && same(choice, action)} onclick={() => select(action)}>
-            {trumpLabel(t)} {changedCount(t)}
-          </button>
+          <Chip checked={!!choice && same(choice, action)} onclick={() => select(action)}>
+            <SuitText text="{trumpLabel(t)} {changedCount(t)}" />
+          </Chip>
         {/each}
       </div>
     {/if}
@@ -249,14 +247,14 @@
         <span class="muted">{picked === contract.trump ? '공약 올리기' : `${trumpLabel(picked)}로 바꾸기`}</span>
         {#each offers as o (JSON.stringify(o.action))}
           <button class="chip num" role="radio" aria-checked={!!choice && same(choice, o.action)} onclick={() => select(o.action)}>
-            {contractLabel(o.contract)}
+            <SuitText text={contractLabel(o.contract)} />
           </button>
         {/each}
       </div>
     {/if}
     {#if confirm && choice}
       <div class="actions">
-        <button class="primary confirm" onclick={() => onact(choice)}>{confirm}</button>
+        <button class="btn primary confirm" onclick={() => onact(choice)}><SuitText text={confirm} /></button>
       </div>
     {/if}
   </div>

@@ -3,6 +3,9 @@
   // install prompt; iOS Safari has none, so it gets the Share-menu steps.
   // Hidden once installed or dismissed.
 
+  import Icon from './Icon.svelte';
+  import Button from './ui/Button.svelte';
+
   interface InstallPrompt extends Event {
     prompt(): Promise<void>;
   }
@@ -59,8 +62,8 @@
         <span class="muted">공유 버튼 → ‘홈 화면에 추가’를 누르면 앱처럼 열려요</span>
       {/if}
     </p>
-    {#if prompt}<button class="primary" onclick={install}>추가</button>{/if}
-    <button class="close" onclick={dismiss} aria-label="닫기">✕</button>
+    {#if prompt}<Button variant="primary" onclick={install}>추가</Button>{/if}
+    <button class="btn icon close" onclick={dismiss} aria-label="닫기"><Icon name="close" size="20px" /></button>
   </aside>
 {/if}
 
@@ -90,17 +93,9 @@
   .muted {
     font-size: var(--text-label);
   }
-  .primary {
-    min-height: 40px;
-    padding: 0 16px;
-  }
+  /* The close sits in the panel's corner, its target past the edge. */
   .close {
-    min-height: 40px;
-    min-width: 40px;
-    padding: 0;
-    border: none;
-    background: none;
-    box-shadow: none;
+    margin: -8px -4px -8px 0;
     color: var(--ink-muted);
   }
 </style>

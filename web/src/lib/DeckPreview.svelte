@@ -4,6 +4,7 @@
   import Card from './Card.svelte';
   import BackArt from './CardBack.svelte';
   import LeadTag from './LeadTag.svelte';
+  import SuitText from './SuitText.svelte';
   import { sealOf, SUITS } from './cards';
   import { settings } from './settings.svelte';
   import type { Card as CardT, Rules, Suit } from './types';
@@ -50,10 +51,10 @@
       기루다
       <select bind:value={trumpChoice}>
         <option value="">노기루다</option>
-        <option value="Spade">♠</option>
-        <option value="Diamond">♦</option>
-        <option value="Heart">♥</option>
-        <option value="Club">♣</option>
+        <option value="Spade">스페이드</option>
+        <option value="Diamond">다이아몬드</option>
+        <option value="Heart">하트</option>
+        <option value="Club">클로버</option>
       </select>
     </label>
   </header>
@@ -105,9 +106,9 @@
           <figure><Card card={deck[40]} kitty /><figcaption>키티</figcaption></figure>
           <figure><Card card={deck[52]} powerless seal="joker" /><figcaption>효력 없음</figcaption></figure>
           <figure><Card /><figcaption>뒷면</figcaption></figure>
-          <figure><span class="tagged"><Card card={{ Joker: 'Red' }} seal="joker" /><LeadTag lead={{ Suit: 'Diamond' }} /></span><figcaption>조커 선 ♦</figcaption></figure>
+          <figure><span class="tagged"><Card card={{ Joker: 'Red' }} seal="joker" /><LeadTag lead={{ Suit: 'Diamond' }} /></span><figcaption><SuitText text="조커 선 ♦" /></figcaption></figure>
           <figure><span class="tagged"><Card card={{ Joker: 'Red' }} seal="joker" /><LeadTag lead={{ Color: 'Red' }} /></span><figcaption>조커 선 빨강</figcaption></figure>
-          <figure><span class="tagged"><Card card={{ Joker: 'Black' }} seal="joker" /><LeadTag lead={{ Suit: 'Club' }} /></span><figcaption>조커 선 ♣</figcaption></figure>
+          <figure><span class="tagged"><Card card={{ Joker: 'Black' }} seal="joker" /><LeadTag lead={{ Suit: 'Club' }} /></span><figcaption><SuitText text="조커 선 ♣" /></figcaption></figure>
         </div>
 
         <h3>뒷면</h3>

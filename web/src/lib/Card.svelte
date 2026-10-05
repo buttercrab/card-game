@@ -1,10 +1,10 @@
 <script lang="ts" module>
-  import type { Card, Suit } from './types';
+  import type { Card } from './types';
   import type { Seal } from './cards';
+  import { SUIT_NAME } from './SuitIcon.svelte';
 
   export type CardSize = 'hand' | 'trick' | 'mini';
 
-  const SUIT_NAME: Record<Suit, string> = { Spade: '스페이드', Diamond: '다이아몬드', Heart: '하트', Club: '클로버' };
   const RANK: Record<number, string> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
   const SEAL_NAME: Record<Seal, string> = { mighty: '마이티', joker: '조커', call: '조커콜' };
 
@@ -222,6 +222,9 @@
     border-radius: 8px;
     background: var(--card);
     color: var(--ink-on-card);
+    /* Every suit drawn on the card takes the card's ink, which follows the
+       four-colour setting. */
+    --suit-tone: currentColor;
     box-shadow: var(--shadow-card);
     font-family: var(--font-display);
     font-variant-numeric: tabular-nums;
@@ -543,7 +546,7 @@
     cursor: default;
   }
   button.card:focus-visible {
-    outline: 3px solid var(--accent);
+    outline: 3px solid var(--ink);
     outline-offset: 2px;
   }
   @media (hover: hover) {

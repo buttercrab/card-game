@@ -23,7 +23,6 @@
     color: var(--table);
     font-size: var(--text-caption);
     font-weight: 800;
-    letter-spacing: 0.02em;
     white-space: nowrap;
     pointer-events: none;
     transform: translateX(-50%);

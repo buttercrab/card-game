@@ -1,6 +1,7 @@
 <script lang="ts">
   // 소개: what the site is, Mighty in a paragraph, and who made what.
   import Doc from './Doc.svelte';
+  import SuitText from './SuitText.svelte';
   import { CATALOG, LEVEL_LABEL, PRESETS } from './catalog';
 </script>
 
@@ -22,12 +23,12 @@
     <h2>마이티란?</h2>
     <p>
       다섯 명이 열 장씩 들고 하는 카드 게임이에요. 가장 높은 공약을 부른 사람이 주공이 되어 카드 한 장으로 프렌드를
-      부르고, 둘이 여당이 되어 야당 셋과 점수 카드 20장을 두고 겨뤄요. 마이티(♠A)와 조커가 판을 뒤집어요.
+      부르고, 둘이 여당이 되어 야당 셋과 점수 카드 20장을 두고 겨뤄요. 마이티(<SuitText text="♠A" />)와 조커가 판을 뒤집어요.
     </p>
     <p>처음이라면 <a href="/#learn">1분 설명을 보고 봇이랑 연습해</a> 보세요. 규칙마다 자세한 규칙책도 있어요.</p>
     <ul class="books" aria-label="규칙책">
       {#each PRESETS as p (p.id)}
-        <li><a href="/rules/{p.id}">{p.title}</a></li>
+        <li><a class="chip" href="/rules/{p.id}">{p.title}</a></li>
       {/each}
     </ul>
   </section>
@@ -60,18 +61,8 @@
     padding: 4px 0 0;
     list-style: none;
   }
-  /* Each book is a plain chip that leads to its page. */
+  /* Each book is a chip that leads to its page, not underlined text. */
   .books a {
-    display: inline-flex;
-    align-items: center;
-    min-height: 40px;
-    padding: 8px 14px;
-    border-radius: var(--r-pill);
-    background: var(--btn);
-    color: var(--ink);
-    box-shadow: 0 3px 0 var(--btn-lip);
-    font-size: var(--text-body);
-    font-weight: 600;
     text-decoration: none;
   }
 </style>
