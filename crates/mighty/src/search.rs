@@ -320,7 +320,9 @@ fn exchange_candidates(view: &View, legal: &[Action]) -> Vec<Action> {
     calls.extend([FriendCall::FirstTrick, FriendCall::Alone]);
     let out: Vec<Action> = calls
         .into_iter()
-        .filter(|c| !matches!(c, FriendCall::Card(card) if view.hand.contains(card)))
+        .filter(|c| {
+            !matches!(c, FriendCall::Card(card) if view.hand.contains(card) || crate::bot::discarded(view).contains(card))
+        })
         .map(Action::CallFriend)
         .filter(|a| legal.contains(a))
         .collect();
@@ -356,15 +358,15 @@ fn bid_candidates(legal: &[Action]) -> Vec<Action> {
 }
 
 /// Plays `action` in `world`, then plays the hand out with simple bots,
-/// the last `endgame` tricks solved, redealing if the hand is thrown in.
+/// the last `endgame` tricks solved; a hand thrown in scores 0.
 fn rollout(policy: SimpleBot, endgame: usize, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
     let mut state = world.clone();
     state.step(me, action.clone());
     finish(policy, endgame, state, me, rng)
 }
 
-/// Plays `state` to the end of the hand with `policy` in every seat,
-/// redealing if the hand is thrown in: `me`'s payoff. Public for
+/// Plays `state` to the end of the hand with `policy` in every seat:
+/// `me`'s payoff, 0 if the hand is thrown in. Public for
 /// experiments (`sim`'s `lab`), which use it as a perfect-information
 /// player and as an oracle.
 pub fn playout(policy: SimpleBot, state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
@@ -374,14 +376,12 @@ pub fn playout(policy: SimpleBot, state: State, me: Seat, rng: &mut dyn RngCore)
 /// [`playout`], solving the last `endgame` tricks exactly once the sides
 /// are settled.
 pub fn finish(mut policy: SimpleBot, endgame: usize, mut state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
-    // Redeals could in principle repeat forever; give up and call it even.
-    for _ in 0..2000 {
+    loop {
         match state.turn() {
             Turn::Over => return state.payoffs().map_or(0, |p| p[me]),
-            Turn::Chance => {
-                let deal = state.sample_deal(rng);
-                state.apply(deal).expect("a sampled deal is legal");
-            }
+            // A redeal: the new hand is worth the same to every seat before
+            // its cards are seen, so 0. Playing it out only added noise.
+            Turn::Chance => return 0,
             Turn::Seat(seat) => {
                 if endgame > 0
                     && let Some(payoffs) = crate::endgame::solve(&state, endgame)
@@ -395,7 +395,6 @@ pub fn finish(mut policy: SimpleBot, endgame: usize, mut state: State, me: Seat,
             }
         }
     }
-    0
 }
 
 /// A full state that `view` cannot tell apart from the real one: the
@@ -587,7 +586,8 @@ impl Dealer {
         };
         let mut hand: Vec<Card> = crate::bot::cards(hands[*seat]).collect();
         hand.extend(played);
-        policy.estimate(&self.template.rules, &hand, contract.trump) >= f32::from(contract.count)
+        let rules = &self.template.rules;
+        policy.estimate(rules, &hand, contract.trump) >= policy.needed(rules, *contract)
     }
 
     /// One world, dealt at random.

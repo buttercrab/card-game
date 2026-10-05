@@ -4,12 +4,14 @@
 
 use crate::Mighty;
 use crate::card::{ACE, Card, Color, DeckKind, Suit};
-use crate::rules::{CardPolicy, Rules};
+use crate::rules::{CardPolicy, Contract, Rules};
+use crate::state::hand_value;
 use crate::state::{Action, FriendCall};
 use crate::trick::{self, Lead, Played, TrickContext};
 use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Viewer};
-use rand::RngCore;
+use rand::seq::IndexedRandom;
+use rand::{Rng, RngCore};
 
 /// The weights and thresholds behind the rules. The defaults were tuned
 /// with `sim --baseline`, one weight at a time against the previous best;
@@ -52,15 +54,31 @@ pub struct SimpleBot {
     /// power on the last one, instead of holding it to be wasted there.
     pub plan_last_trick: bool,
     /// Call a joker only when the joker that card calls is still out and
-    /// not the friend, rather than when any joker is. Off keeps the old
-    /// play; on measured even (+0.01 ± 0.02 a hand, simple bots, gshs).
+    /// not the friend, rather than when any joker is. Measured even alone
+    /// (+0.01 ± 0.02 a hand, simple bots, gshs); on since the 2026-10-05
+    /// bot fixes, with `spare_declarer_joker`.
     pub aim_joker_call: bool,
+    /// With `aim_joker_call`, the declarer's friend calls a joker only
+    /// once the declarer has shown it lacks that joker (by calling it as
+    /// the friend), instead of killing the declarer's own joker.
+    pub spare_declarer_joker: bool,
+    /// Call a misdeal only on a hand whose best estimate is below the
+    /// minimum bid; off calls one whenever the rules allow.
+    pub misdeal_below_min: bool,
+    /// Points of estimate per unit of log-odds of making a contract: how
+    /// far a hand must clear a bid when the rules make failing cost more
+    /// than making pays ([`SimpleBot::needed`]). 0 bids at the estimate
+    /// whatever the scoring.
+    pub bid_spread: f32,
+    /// Points more than the estimate needs before bidding at all: the
+    /// table's 초보 is more careful.
+    pub bid_caution: f32,
 }
 
 impl Default for SimpleBot {
     fn default() -> SimpleBot {
         SimpleBot {
-            bid_base: 6.5,
+            bid_base: 6.0,
             bid_trump: 1.25,
             bid_trump_honor: 1.25,
             bid_mighty: 1.0,
@@ -77,8 +95,74 @@ impl Default for SimpleBot {
             lead_mighty: -100,
             defend_trump: -100,
             plan_last_trick: true,
-            aim_joker_call: false,
+            aim_joker_call: true,
+            spare_declarer_joker: true,
+            misdeal_below_min: true,
+            bid_spread: 1.9,
+            bid_caution: 0.0,
         }
+    }
+}
+
+/// Bid boldness by seat, added to `bid_base`, so a table of bots does not
+/// bid as one. Halved on 2026-10-05: the bolder seats overbid under
+/// scoring G.
+pub const TEMPER: [f32; 8] = [0.0, 0.2, -0.2, 0.1, -0.1, 0.15, -0.15, 0.05];
+
+/// The simple bot with `seat`'s temper, as the table seats it.
+pub fn tempered(seat: usize) -> SimpleBot {
+    let mut bot = SimpleBot::default();
+    bot.bid_base += TEMPER[seat % TEMPER.len()];
+    bot
+}
+
+/// How often the table's 초보 slips when playing a card.
+pub const EASY_SLIPS: f64 = 0.35;
+
+/// How many points more carefully the table's 초보 bids.
+pub const EASY_CAUTION: f32 = 1.0;
+
+/// The simple bot, slipping to a random card this often when it plays
+/// one: the table's 초보. A slip picks among the cheap cards (never the
+/// mighty, a joker or a joker call) and the card the simple bot chose, so
+/// it gives a trick away now and then but never throws a big card.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Clumsy {
+    pub inner: SimpleBot,
+    pub slips: f64,
+}
+
+impl Clumsy {
+    /// The table's 초보 on top of `inner`: slipping [`EASY_SLIPS`] of the
+    /// time and bidding [`EASY_CAUTION`] points more carefully.
+    pub fn easy(mut inner: SimpleBot) -> Clumsy {
+        inner.bid_caution += EASY_CAUTION;
+        Clumsy {
+            inner,
+            slips: EASY_SLIPS,
+        }
+    }
+}
+
+impl Bot<Mighty> for Clumsy {
+    fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
+        let choice = self.inner.decide(view, legal);
+        let PhaseView::Play { contract, .. } = &view.phase else {
+            return choice;
+        };
+        if legal.len() == 1 || !rng.random_bool(self.slips) {
+            return choice;
+        }
+        let mighty = view.rules.mighty(contract.trump);
+        let cheap: Vec<&Action> = legal
+            .iter()
+            .filter(|a| match a {
+                Action::Play { card, call_joker, .. } => !call_joker && !card.is_joker() && *card != mighty,
+                _ => false,
+            })
+            .chain(std::iter::once(&choice))
+            .collect();
+        cheap.choose(rng).map_or_else(|| choice.clone(), |a| (*a).clone())
     }
 }
 
@@ -126,8 +210,38 @@ impl SimpleBot {
             + self.bid_king * kings
     }
 
+    /// The estimate a hand needs to bid `contract`: the count, and more
+    /// when the rules make a failed contract cost more than a made one
+    /// pays. Making it by one and failing by two are taken as typical;
+    /// the share of hands that must make it to break even is then
+    /// `lost / (won + lost)`, and with make rates rising by about one
+    /// unit of log-odds per `bid_spread` points of estimate (measured on
+    /// simple bots, 경기과고 and 기본), the hand must clear the bid by
+    /// `bid_spread` × those odds' log. Scorings that pay more for making
+    /// than failing costs (기본's, web-mighty's) need nothing extra: the
+    /// estimate already makes about half its bids.
+    pub fn needed(&self, rules: &Rules, contract: Contract) -> f32 {
+        let count = f32::from(contract.count) + self.bid_caution;
+        if self.bid_spread <= 0.0 {
+            return count;
+        }
+        let won = hand_value(rules, contract, false, (contract.count + 1).min(20)) as f32;
+        let lost = -hand_value(rules, contract, false, contract.count.saturating_sub(2)) as f32;
+        if won <= 0.0 || lost <= 0.0 {
+            return count;
+        }
+        count + (self.bid_spread * (lost / won).ln()).max(0.0)
+    }
+
     fn bid(&self, view: &View, legal: &[Action]) -> Option<Action> {
-        if legal.contains(&Action::Misdeal) {
+        let estimate = |trump: Option<Suit>| self.estimate(&view.rules, &view.hand, trump);
+        let trump = Suit::ALL
+            .into_iter()
+            .map(Some)
+            .max_by(|&a, &b| estimate(a).total_cmp(&estimate(b)))?;
+        if legal.contains(&Action::Misdeal)
+            && (!self.misdeal_below_min || estimate(trump) < f32::from(view.rules.bidding.min))
+        {
             return Some(Action::Misdeal);
         }
         let cheapest = |trump: Option<Suit>| {
@@ -139,13 +253,10 @@ impl SimpleBot {
                 })
                 .min_by_key(|c| c.count)
         };
-        let estimate = |trump: Option<Suit>| self.estimate(&view.rules, &view.hand, trump);
-        let trump = Suit::ALL
-            .into_iter()
-            .map(Some)
-            .max_by(|&a, &b| estimate(a).total_cmp(&estimate(b)))?;
         match cheapest(trump) {
-            Some(c) if f32::from(c.count) <= estimate(trump) || !legal.contains(&Action::Pass) => Some(Action::Bid(c)),
+            Some(c) if self.needed(&view.rules, c) <= estimate(trump) || !legal.contains(&Action::Pass) => {
+                Some(Action::Bid(c))
+            }
             _ => Some(Action::Pass),
         }
     }
@@ -186,10 +297,22 @@ impl SimpleBot {
         ]
         .into_iter()
         .flatten()
-        .filter(|c| !view.hand.contains(c))
+        .filter(|c| !view.hand.contains(c) && !discarded(view).contains(c))
         .map(FriendCall::Card)
         .chain([FriendCall::FirstTrick]);
         wanted.map(Action::CallFriend).find(|a| legal.contains(a))
+    }
+}
+
+/// The declarer's own discards, as it sees them while exchanging: calling
+/// one of them as the friend would call nobody.
+pub(crate) fn discarded(view: &View) -> &[Card] {
+    match &view.phase {
+        PhaseView::Exchange {
+            discards: Some(discards),
+            ..
+        } => discards,
+        _ => &[],
     }
 }
 
@@ -249,6 +372,9 @@ struct Table<'a> {
     attacking: bool,
     /// The card the declarer called, while its holder is unknown.
     called: Option<Card>,
+    /// Jokers, as [`bit`]s, the declarer may hold and its friend so must
+    /// not call ([`SimpleBot::spare_declarer_joker`]).
+    spared: u64,
 }
 
 impl Table<'_> {
@@ -407,6 +533,16 @@ fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
             FriendCall::Card(c) if friend.is_none() => Some(*c),
             _ => None,
         },
+        // Calling a card shows the declarer lacks it; nothing else does.
+        spared: if bot.spare_declarer_joker && attacking && me != *declarer {
+            let shown = match call {
+                FriendCall::Card(c) => bit(*c),
+                _ => 0,
+            };
+            view.rules.deck.jokers().iter().fold(0, |m, &j| m | bit(j)) & !shown
+        } else {
+            0
+        },
     };
 
     match lead {
@@ -452,7 +588,8 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
                 .find(|&j| rules.joker_call_card(j, t.trump) == Some(card));
             let out = target.is_some_and(|j| t.unseen & bit(j) != 0);
             let ours = t.attacking && t.called.is_some() && t.called == target;
-            return if out && !ours { 300 } else { -50 };
+            let spared = target.is_some_and(|j| t.spared & bit(j) != 0);
+            return if out && !ours && !spared { 300 } else { -50 };
         }
         if card.is_joker() {
             // Save the joker for a trick worth taking, unless it cannot wait.

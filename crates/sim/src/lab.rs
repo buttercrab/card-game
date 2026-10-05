@@ -716,6 +716,8 @@ pub struct ExchangeResult {
 
 /// How the declarer exchanges in an experiment.
 #[derive(Debug, Clone, Copy)]
+// A handful exist per run; staying `Copy` matters more than their size.
+#[allow(clippy::large_enum_variant)]
 pub enum Exchanger {
     /// The recorded bot's discards, and a bot's friend call.
     Bot(Actor),

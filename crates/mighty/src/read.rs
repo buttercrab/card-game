@@ -154,6 +154,16 @@ impl Reading {
     ) -> f64 {
         let estimate = |trump: Suit| f64::from(policy.estimate(rules, hand, Some(trump)));
         let cheapest = best.map_or(rules.bidding.min, |b| rules.bidding.min.max(rules.bid_value(b) + 1));
+        // What the policy's estimate must reach to bid `count` in a suit.
+        let needed = |count: u8| {
+            f64::from(policy.needed(
+                rules,
+                Contract {
+                    trump: Some(Suit::Spade),
+                    count,
+                },
+            ))
+        };
         let forced = best.is_none() && !rules.bidding.first_bidder_may_pass;
         if cheapest > rules.bidding.max || forced {
             return 0.0;
@@ -161,12 +171,12 @@ impl Reading {
         match made {
             None => {
                 let top = Suit::ALL.map(estimate).into_iter().fold(f64::NEG_INFINITY, f64::max);
-                log_sigmoid((f64::from(cheapest) - top) / self.bid_scale)
+                log_sigmoid((needed(cheapest) - top) / self.bid_scale)
             }
             Some(Contract {
                 trump: Some(trump),
                 count,
-            }) => log_sigmoid((estimate(trump) - f64::from(count)) / self.bid_scale),
+            }) => log_sigmoid((estimate(trump) - needed(count)) / self.bid_scale),
             Some(_) => 0.0,
         }
     }

@@ -5,11 +5,9 @@
 //! belief model (needs the `belief` feature). See `sim --help`.
 
 use engine::{Bot, RandomBot, Seat};
-use mighty::bot::SimpleBot;
+use mighty::Mighty;
+use mighty::bot::{Clumsy, SimpleBot};
 use mighty::search::{Reading, Sampler, SearchBot};
-use mighty::{Action, Mighty, View};
-use rand::RngCore;
-use rand::seq::IndexedRandom;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -26,17 +24,13 @@ pub struct Spec {
 pub enum Kind {
     Random,
     Simple(SimpleBot),
-    /// The simple bot, playing a random card this often.
+    /// The simple bot, slipping to a random cheap card this often
+    /// ([`Clumsy`]); the table's 초보 also bids more carefully.
     Clumsy(SimpleBot, f64),
     Search(SearchBot),
 }
 
-/// The server's bid boldness by seat, added to the simple bot's
-/// `bid_base` (`server::session`), so a table of bots does not bid as one.
-pub const TEMPER: [f32; 8] = [0.0, 0.4, -0.4, 0.2, -0.2, 0.3, -0.3, 0.1];
-
-/// How often the table's 초보 picks a random card.
-pub const EASY_SLIPS: f64 = 0.35;
+pub use mighty::bot::{EASY_SLIPS, TEMPER};
 
 impl FromStr for Spec {
     type Err = String;
@@ -49,14 +43,17 @@ impl FromStr for Spec {
         // The table's levels, as the server builds them. 고수 thinks
         // until a time budget runs out there; here it deals a fixed 200
         // times instead, so runs reproduce.
+        let mut policy = SimpleBot::default();
         let (name, temper, mut slips) = match name {
-            "easy" => ("simple", true, Some(EASY_SLIPS)),
+            "easy" => {
+                policy = Clumsy::easy(policy).inner;
+                ("simple", true, Some(EASY_SLIPS))
+            }
             "normal" => ("simple", true, None),
             "hard" => ("search:200:1:0", true, None),
             _ => (name, false, None),
         };
         let search = name.starts_with("search");
-        let mut policy = SimpleBot::default();
         let mut reading = Reading::default();
         let mut search_threads = 1;
         let mut endgame = 0;
@@ -199,25 +196,6 @@ impl Spec {
     }
 }
 
-/// A simple bot that, when playing a card, picks one at random this often:
-/// the table's 초보.
-#[derive(Debug, Clone, Copy)]
-pub struct Clumsy {
-    pub inner: SimpleBot,
-    pub slips: f64,
-}
-
-impl Bot<Mighty> for Clumsy {
-    fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
-        let playing = legal.iter().all(|a| matches!(a, Action::Play { .. }));
-        if playing && rand::Rng::random_bool(rng, self.slips) {
-            legal.choose(rng).expect("a bot acts only with legal actions").clone()
-        } else {
-            self.inner.act(view, legal, rng)
-        }
-    }
-}
-
 /// Sets one of the simple bot's weights by name, for tuning from the
 /// command line.
 fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String> {
@@ -244,6 +222,10 @@ fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<(), String>
         "defend_trump" => bot.defend_trump = int()?,
         "plan_last_trick" => bot.plan_last_trick = value.parse().map_err(|_| bad())?,
         "aim_joker_call" => bot.aim_joker_call = value.parse().map_err(|_| bad())?,
+        "spare_declarer_joker" => bot.spare_declarer_joker = value.parse().map_err(|_| bad())?,
+        "misdeal_below_min" => bot.misdeal_below_min = value.parse().map_err(|_| bad())?,
+        "bid_spread" => bot.bid_spread = float()?,
+        "bid_caution" => bot.bid_caution = float()?,
         _ => return Err(format!("unknown weight {key:?}")),
     }
     Ok(())
