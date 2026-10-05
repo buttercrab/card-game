@@ -448,6 +448,10 @@ pub fn check(s: &str) -> Result<Check, String> {
                 None => fixed(bot.samples),
             },
         ),
+        Kind::Phased(_) => (
+            "phased",
+            "each phase by its own bot: reproducible when every part is".to_string(),
+        ),
         #[cfg(feature = "dmc")]
         Kind::Dmc(_) | Kind::Hybrid(_) => unreachable!("read above"),
     };
