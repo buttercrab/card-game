@@ -1,6 +1,7 @@
 import { CATALOG } from './catalog';
 import { errorText } from './errorText';
 import { sound } from './sound';
+import type { TableClient } from './tableClient';
 import { Toasts } from './toast.svelte';
 import type { Action, BotLevel, ClientMsg, Preset, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
@@ -45,7 +46,7 @@ export function savedName(): string {
 }
 
 /** A live connection to one room. Reconnects and reclaims its seat on its own. */
-export class RoomClient {
+export class RoomClient implements TableClient {
   room = $state<RoomMsg | null>(null);
   game = $state<StateMsg | null>(null);
   seat = $state<number | null>(null);
@@ -60,6 +61,8 @@ export class RoomClient {
   hint = $state<Action | null>(null);
   /** The turn timer, with its deadline on this page's clock (performance.now()). */
   clock = $state<{ seat: number; deadline: number; total: number } | null>(null);
+  /** Finished hands here go into this browser's record (내 기록). */
+  readonly keepsRecord = true;
 
   /** Called as seats are about to move, while the table still shows them
    * where they were; `order[s]` is where seat `s` goes. */

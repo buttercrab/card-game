@@ -23,6 +23,7 @@
     onturn,
     onshuffle,
     onleave,
+    leaving = $bindable(false),
   }: {
     room: RoomMsg;
     seated: boolean;
@@ -40,6 +41,8 @@
     onshuffle: (on: boolean) => void;
     /** Leave the table for the home page. */
     onleave: () => void;
+    /** Leaving mid-hand asks first (a bot plays your seat from then on): asking. */
+    leaving?: boolean;
   } = $props();
 
   const inHand = $derived(room.in_hand);
@@ -48,8 +51,6 @@
   const turnSecs = $derived(room.table.turn_secs);
   const shuffle = $derived(room.table.shuffle);
   const TURNS = CATALOG.turn_limits.map((secs) => ({ value: secs, label: secs === 0 ? '끔' : `${secs}초` }));
-  /** Leaving mid-hand asks first: a bot plays your seat from then on. */
-  let leaving = $state(false);
 
   function leave() {
     if (seated && inHand && !leaving) leaving = true;

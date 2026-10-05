@@ -16,6 +16,7 @@
     me,
     anchor,
     name = $bindable(''),
+    kicking = $bindable(false),
     onclose,
     onlevel,
     onswap,
@@ -35,6 +36,8 @@
     anchor: () => DOMRect;
     /** The name a watcher sits down with. */
     name?: string;
+    /** Sending a player to watch waits for a yes: asking. */
+    kicking?: boolean;
     onclose: () => void;
     /** Seat a bot of this level here, or change the bot's level. */
     onlevel: (level: BotLevel) => void;
@@ -70,8 +73,6 @@
             : null,
   );
   const LEVELS = CATALOG.bot_levels.map((l) => ({ value: l.id, label: l.label }));
-  /** Sending a player to watch waits for a yes. */
-  let kicking = $state(false);
 
   let field = $state<HTMLInputElement>();
 

@@ -16,9 +16,10 @@
   // (나가기 mid-hand, asking first).
   import Room from './Room.svelte';
   import Table from './Table.svelte';
-  import type { RoomClient } from './client.svelte';
   import { CATALOG, presetRules } from './catalog';
   import { settled } from './motion';
+  import { FakeClient } from './preview/fakeClient.svelte';
+  import { TableUi } from './table/ui.svelte';
   import type { Bid, Card, ContractChange, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
 
   const which = new URLSearchParams(location.search).get('state') ?? 'play';
@@ -337,37 +338,31 @@
     game.view.hand = [];
     game.legal = [];
   }
-  const noop = () => {};
-  const client = $state({
+  const client = new FakeClient({
     room,
     // The exchange opens on the bidding, so the table sees which cards came from the kitty.
     game: idle ? null : game,
     seat: which === 'spectate' || watching ? null : 0,
-    onmove: null,
-    toasts: { current: null },
-    status: 'open',
     clock:
       which === 'timer' || which === 'spectate'
         ? { seat: 3, deadline: performance.now() + 13000, total: 20000 }
         : which === 'mytimer'
           ? { seat: 0, deadline: performance.now() + 4800, total: 20000 }
           : null,
-    act: noop,
-    start: noop,
-    react: noop,
-    notice: noop,
-    close: noop,
-    join: noop,
-    leave: noop,
-    addBot: noop,
-    removeBot: noop,
-    setRules: noop,
-    setTable: noop,
-    shuffleNext: noop,
-    swapSeats: noop,
-    clearSeat: noop,
-    askHint: noop,
     reactions: { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
+  });
+
+  // What is open, as a player would have opened it: a seat's choices (and,
+  // for some, the next question in them), a swap begun, the result folded,
+  // the menu (and its question before leaving mid-hand).
+  const SEAT_MENUS: Record<string, number> = { seatbot: 1, seatperson: 2, seatkick: 2, seatme: 0, seatempty: 2, seatsit: 0, seatsitbot: 1 };
+  const ui = new TableUi({
+    seatMenu: SEAT_MENUS[which] ?? null,
+    kicking: which === 'seatkick',
+    swapFrom: which === 'swap' ? 1 : null,
+    folded: which === 'folded',
+    menu: which === 'menu' || which === 'leave',
+    leaving: which === 'leave',
   });
 
   /** The preview's scripted steps, which [`ready`] waits for. */
@@ -385,7 +380,6 @@
 
   if (which === 'misdeal') {
     // A new deal arrives after seat 3 threw in a weak hand.
-    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
     step(300, () => {
       const next = msg(phases.bidding, 'bidding', { Seat: 0 });
       next.view.redealt = {
@@ -397,27 +391,11 @@
   }
 
   if (key === 'exchange') {
-    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
     step(300, () => (client.game = msg(phases.exchange, 'exchange', { Seat: 0 })));
-  }
-
-  // The states that need a tap: done here, as a player would, once drawn.
-  const tapSeat = { seatbot: 1, seatperson: 2, seatkick: 2, seatme: 0, seatempty: 2, seatsit: 0, seatsitbot: 1, swap: 1 }[which];
-  if (tapSeat !== undefined || which === 'folded' || which === 'leave') {
-    const click = (selector: string) => document.querySelector<HTMLElement>(selector)?.click();
-    step(200, () => {
-      if (which === 'folded') click('.result .fold');
-      if (which === 'leave') click('dialog .leave');
-      if (tapSeat !== undefined) click(`[data-seat="${tapSeat}"] .seat-tap`);
-    });
-    const pick = (text: string) => [...document.querySelectorAll<HTMLElement>('.pop-card button')].find((b) => b.textContent?.includes(text))?.click();
-    if (which === 'swap') step(250, () => pick('자리 바꾸기'));
-    if (which === 'seatkick') step(250, () => pick('내보내기'));
   }
 
   if (which === 'sweep') {
     // Finish the trick so the table plays its sweep, holding the note on screen.
-    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
     step(300, () => {
       const done = [...trickPlays, { seat: 0, card: n('Club', 11), powered: true }];
       client.game = msg(playPhase([], [{ plays: done, lead: { Suit: 'Club' }, winner: 2 }]), 'play', { Seat: 2 });
@@ -443,7 +421,7 @@
     await Promise.all(steps);
     await frame();
     // The sweep holds on its winner; with motion off it goes straight past.
-    await (which === 'sweep' ? Promise.race([shown('.won-note'), settled()]) : settled());
+    await (which === 'sweep' ? Promise.race([shown('.note.won'), settled()]) : settled());
     await document.fonts.ready;
     // Entrances and transitions, not the endless loops or a clock's countdown.
     const short = () =>
@@ -464,12 +442,12 @@
 </script>
 
 {#if inRoom}
-  <Room id="preview" onleave={noop} preview={client as unknown as RoomClient} menu={which === 'menu' || which === 'leave'} />
+  <Room id="preview" onleave={() => {}} {client} {ui} />
 {:else}
   <div class="page">
     <!-- Where the room's header sits (Room.svelte), so the table gets the same height. -->
     <header class="mock" aria-hidden="true">← 미리보기 · {which}</header>
-    <Table client={client as unknown as RoomClient} />
+    <Table {client} {ui} />
   </div>
 {/if}
 

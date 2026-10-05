@@ -2,6 +2,8 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { CATALOG, isPreset, presetTitle } from './catalog';
   import { RoomClient, savedName } from './client.svelte';
+  import { TableUi } from './table/ui.svelte';
+  import type { TableClient } from './tableClient';
   import GameMenu from './GameMenu.svelte';
   import Icon from './Icon.svelte';
   import SuitText from './SuitText.svelte';
@@ -19,19 +21,21 @@
   let {
     id,
     onleave,
-    preview = null,
-    menu: menuAtStart = false,
+    client: given,
+    ui: givenUi,
   }: {
     id: string;
     /** Off the table, to the home page; the table's own history entry is gone by then. */
     onleave: () => void;
-    /** A made-up connection, for /preview. */
-    preview?: RoomClient | null;
-    /** Open with the menu showing (the preview). */
-    menu?: boolean;
+    /** The connection to the room; a live one to `id` by default. */
+    client?: TableClient;
+    /** What is open at the table. */
+    ui?: TableUi;
   } = $props();
 
-  const client = untrack(() => preview) ?? new RoomClient(untrack(() => id));
+  const client: TableClient = untrack(() => given) ?? new RoomClient(untrack(() => id));
+  const ui = untrack(() => givenUi) ?? new TableUi();
+
   // Off the page, nothing of the table keeps running: no socket, no
   // reconnect, no timer.
   onDestroy(() => {
@@ -41,7 +45,6 @@
   /** The client plays the error sound; notices are quiet. */
   const toast = $derived(client.toasts.current);
 
-  let showMenu = $state(untrack(() => menuAtStart));
   let showSettings = $state(false);
   let showRules = $state(false);
   let editRules = $state(false);
@@ -115,15 +118,17 @@
   // instead of quietly leaving mid-game. Only 나가기 leaves.
   let leaving = false;
   const mark = () => ({ ...(history.state ?? {}), table: id });
+  /** On the table's own address (not a page that draws one). */
+  const routed = () => location.pathname.replace(/\/$/, '') === `/r/${id}`;
   onMount(() => {
-    if (preview) return;
+    if (!routed()) return;
     // A reload lands on the entry already marked: no second one.
     if (history.state?.table !== id) history.pushState(mark(), '');
     const onpop = () => {
       if (leaving) return;
-      if (location.pathname.replace(/\/$/, '') !== `/r/${id}`) return;
+      if (!routed()) return;
       history.pushState(mark(), '');
-      if (!closeTop()) showMenu = true;
+      if (!closeTop()) ui.menu = true;
     };
     addEventListener('popstate', onpop);
     return () => removeEventListener('popstate', onpop);
@@ -135,8 +140,8 @@
     // Even while reconnecting (not seated just now): the seat's token is
     // forgotten, so the table never takes the seat back.
     client.leave();
-    showMenu = false;
-    if (!preview && history.state?.table === id) {
+    ui.closeMenu();
+    if (routed() && history.state?.table === id) {
       await new Promise<void>((done) => {
         addEventListener('popstate', () => done(), { once: true });
         history.back();
@@ -160,7 +165,7 @@
     </button>
     <span class="sr">{client.status === 'open' ? '연결됨' : client.status === 'closed' ? '연결 끊김' : '연결 중'}</span>
     {#if room?.watching}<span class="watching">구경 <span class="num">{room.watching}</span>명</span>{/if}
-    <button class="btn icon menu-btn" onclick={() => (showMenu = true)} aria-label="메뉴" aria-haspopup="dialog"><Icon name="menu" size="24px" /></button>
+    <button class="btn icon menu-btn" onclick={() => (ui.menu = true)} aria-label="메뉴" aria-haspopup="dialog"><Icon name="menu" size="24px" /></button>
   </header>
 
   {#if client.status === 'missing'}
@@ -196,8 +201,9 @@
 
     <Table
       {client}
+      {ui}
       {rulesName}
-      onmenu={() => (showMenu = true)}
+      onmenu={() => (ui.menu = true)}
       onrules={() => (showRules = true)}
       oninvite={doInvite}
     />
@@ -210,13 +216,14 @@
   {/if}
 </div>
 
-{#if showMenu && room}
+{#if ui.menu && room}
   <GameMenu
     {room}
     {seated}
     {rulesName}
     {invited}
-    onclose={() => (showMenu = false)}
+    bind:leaving={ui.leaving}
+    onclose={() => ui.closeMenu()}
     oninvite={doInvite}
     onrules={() => (showRules = true)}
     oneditrules={() => (editRules = true)}

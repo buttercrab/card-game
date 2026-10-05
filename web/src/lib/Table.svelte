@@ -10,7 +10,7 @@
   import BidPanel from './BidPanel.svelte';
   import { actionLabel, cardLabel, kittyCount, sameCard, sealOf } from './cards';
   import { CATALOG, presetRules } from './catalog';
-  import { savedName, type RoomClient } from './client.svelte';
+  import { savedName } from './client.svelte';
   import { later } from './clock';
   import ExchangePanel from './ExchangePanel.svelte';
   import HandReplay from './HandReplay.svelte';
@@ -37,18 +37,23 @@
   import Tools from './table/Tools.svelte';
   import Tray from './table/Tray.svelte';
   import { bidNote, callLabel as callLabelOf, handView, moodOf, tagsOf, trickNotes, trickNumber, waitingFor } from './table/view';
+  import { TableUi } from './table/ui.svelte';
+  import type { TableClient } from './tableClient';
   import type { Action, Card as CardT, PlayAction, StateMsg } from './types';
   import Button from './ui/Button.svelte';
   import Chip from './ui/Chip.svelte';
 
   let {
     client,
+    ui: givenUi,
     rulesName = '',
     onmenu,
     onrules,
     oninvite,
   }: {
-    client: RoomClient;
+    client: TableClient;
+    /** What is open at the table: the room page's own, shared with its menu. */
+    ui?: TableUi;
     /** The rules' name, for the table between hands. */
     rulesName?: string;
     /** Opens the table's menu (설정 between hands). */
@@ -56,6 +61,7 @@
     onrules?: () => void;
     oninvite?: () => void;
   } = $props();
+  const ui = untrack(() => givenUi) ?? new TableUi();
 
   // Between hands, with no hand on the table (the first one, or once the
   // seats moved), the table shows its seats on an empty state of its own.
@@ -358,7 +364,7 @@
    * earned achievements appear at the foot of the result. */
   let earned = $state<Achievement[]>([]);
   $effect(() => {
-    if (!done || me === null || !room || room.id === 'preview') return;
+    if (!done || me === null || !room || !client.keepsRecord) return;
     const role = me === done.declarer ? 'declarer' : me === done.friend ? 'friend' : 'defense';
     const declarerWon = done.team_points >= done.contract.count;
     const fresh = recordHand({
@@ -378,9 +384,9 @@
   });
 
   /** The result folded away, to look at the table. */
-  let folded = $state(false);
+  const folded = $derived(ui.folded);
   $effect(() => {
-    if (!done) folded = false;
+    if (!done) ui.folded = false;
   });
   let replay = $state(false);
   let sharing = $state(false);
@@ -422,29 +428,27 @@
   const shuffleNote = $derived(
     room?.table.shuffle ? '매 판 시작할 때 자리를 섞어요' : room?.table.shuffle_next ? '다음 판 시작할 때 자리를 섞어요' : null,
   );
-  /** The seat whose choices are open. */
-  let menuSeat = $state<number | null>(null);
-  /** Swapping: the seat chosen first; the next seat tapped trades with it. */
-  let swapFrom = $state<number | null>(null);
+  const menuSeat = $derived(ui.seatMenu);
+  const swapFrom = $derived(ui.swapFrom);
   /** The name a watcher sits down with. */
   let sitName = $state(savedName());
   $effect(() => {
     if (!between) {
-      menuSeat = null;
-      swapFrom = null;
+      ui.closeSeat();
+      ui.swapFrom = null;
     }
   });
 
   function openSeat(seat: number) {
     if (swapFrom !== null) {
       if (seat !== swapFrom) client.swapSeats(swapFrom, seat);
-      swapFrom = null;
+      ui.swapFrom = null;
       return;
     }
     const info = room?.seats[seat];
     // A watcher has nothing to choose at someone else's seat.
     if (!info || (me === null && info.kind === 'human')) return;
-    menuSeat = seat;
+    ui.seatMenu = seat;
   }
   /** One tap to sit for someone whose name is known; else the name first. */
   function sitAt(seat: number) {
@@ -473,8 +477,8 @@
       for (const a of section?.getAnimations({ subtree: true }) ?? []) if (a.id === 'seat-slide') a.finish();
       flip = { rects: seatBoxes(), order };
       if (motion.level === 'full') slidingUntil = performance.now() + slideMs() + 80;
-      menuSeat = null;
-      swapFrom = null;
+      ui.closeSeat();
+      ui.swapFrom = null;
       if (order) known = moveNames(known, order);
     };
     return () => {
@@ -627,7 +631,7 @@
       misdeal={misdealNow}
       folded={isFolded}
       onmisdeal={() => act('Misdeal')}
-      onunfold={() => (folded = false)}
+      onunfold={() => (ui.folded = false)}
       bind:controlsHeight
     />
   </div>
@@ -694,7 +698,7 @@
           onstart={() => client.start()}
           onshuffle={(on) => client.shuffleNext(on)}
           {onmenu}
-          oncancelswap={() => (swapFrom = null)}
+          oncancelswap={() => (ui.swapFrom = null)}
         />
       {/if}
     </Felt>
@@ -713,7 +717,7 @@
       {shuffleNote}
       fit={resultFit}
       bind:need={resultNeed}
-      onfold={() => (folded = true)}
+      onfold={() => (ui.folded = true)}
       onreplay={() => (replay = true)}
       onshare={() => (sharing = true)}
       onstart={() => client.start()}
@@ -790,20 +794,21 @@
   {/if}
   {#if menuSeat !== null && room?.seats[menuSeat]}
     {@const seat = menuSeat}
-    {@const close = () => (menuSeat = null)}
+    {@const close = () => ui.closeSeat()}
     <SeatMenu
       {seat}
       info={room.seats[seat]}
       {me}
       anchor={() => (seatEls.get(seat) ?? section ?? document.body).getBoundingClientRect()}
       bind:name={sitName}
+      bind:kicking={ui.kicking}
       onclose={close}
       onlevel={(level) => {
         client.addBot(seat, level);
         if (room?.seats[seat]?.kind !== 'bot') close();
       }}
       onswap={() => {
-        swapFrom = seat;
+        ui.swapFrom = seat;
         close();
       }}
       onmovehere={() => {
