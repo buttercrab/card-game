@@ -687,6 +687,19 @@ fn suit_index(suit: Suit) -> usize {
     Suit::ALL.iter().position(|&s| s == suit).expect("every suit is listed")
 }
 
+/// The moves [`SearchBot`] weighs for the seat to act in `view`, out of
+/// `legal`: the cheapest bids, the sensible discards and friend calls,
+/// every card (but a wasted joker); `legal` itself at any other decision.
+/// For searches that reuse its choice ([`crate::hybrid`]).
+pub fn candidates(view: &View, legal: &[Action]) -> Vec<Action> {
+    match (&view.viewer, &view.phase) {
+        (Viewer::Seat(_), PhaseView::Play { trick_no, .. }) => play_candidates(legal, *trick_no),
+        (Viewer::Seat(_), PhaseView::Bidding { .. }) => bid_candidates(legal),
+        (Viewer::Seat(_), PhaseView::Exchange { .. }) => exchange_candidates(view, legal),
+        _ => legal.to_vec(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

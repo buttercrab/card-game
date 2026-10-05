@@ -19,87 +19,33 @@ targets (:func:`class_counts`); the search's dealer knows them from the
 view, and deals each card to a place with room in proportion to ``room *
 exp(logit)``, which is its old uniform deal when the logits are zero.
 
-The model's inputs are an ``Env`` step's arrays, so a batch from
-``data.shards`` feeds it directly once moved to tensors, and the same
-graph exports to ONNX for ``crates/infer``.
+The trunk (``models.trunk``) is shared with the Q network; its inputs
+are an ``Env`` step's arrays, and the graph exports to ONNX for
+``crates/infer``.
 """
 
-import math
-
 import torch
-from torch import Tensor, nn
+from torch import Tensor
 from torch.nn import functional
 
 from cardgame_ml.data.spec import EncodingSpec
 from cardgame_ml.models.config import BeliefConfig
-
-INPUTS = ("global", "cards", "events", "event_cards", "events_len")
-"""What the model reads from a batch, in ``forward``'s order."""
+from cardgame_ml.models.trunk import INPUTS, TokenTrunk, init_weights
 
 __all__ = ["INPUTS", "BeliefConfig", "BeliefModel"]
 
 
-class Block(nn.Module):
-    """A pre-norm transformer layer: self-attention, then a feed-forward."""
-
-    def __init__(self, config: BeliefConfig) -> None:
-        super().__init__()
-        self.heads = config.heads
-        self.scale = 1 / math.sqrt(config.width // config.heads)
-        self.norm1 = nn.LayerNorm(config.width)
-        self.qkv = nn.Linear(config.width, 3 * config.width)
-        self.out = nn.Linear(config.width, config.width)
-        self.norm2 = nn.LayerNorm(config.width)
-        self.ff = nn.Sequential(
-            nn.Linear(config.width, config.feedforward),
-            nn.GELU(),
-            nn.Linear(config.feedforward, config.width),
-        )
-        self.drop = nn.Dropout(config.dropout)
-
-    def forward(self, x: Tensor, bias: Tensor) -> Tensor:
-        """``x`` is ``[batch, tokens, width]``; ``bias`` is ``[batch, 1, 1,
-        tokens]``, added to the attention scores (``-inf`` hides a token)."""
-        batch, tokens, width = x.shape
-        q, k, v = (
-            self.qkv(self.norm1(x))
-            .reshape(batch, tokens, 3, self.heads, width // self.heads)
-            .permute(2, 0, 3, 1, 4)
-            .unbind(0)
-        )
-        # Written out rather than scaled_dot_product_attention: it exports
-        # to plain ONNX operators that every runtime has.
-        scores = q @ k.transpose(-1, -2) * self.scale + bias
-        attended = (scores.softmax(-1) @ v).transpose(1, 2).reshape(batch, tokens, width)
-        x = x + self.drop(self.out(attended))
-        return x + self.drop(self.ff(self.norm2(x)))
-
-
-class BeliefModel(nn.Module):
-    """Observation in, ``[batch, cards, classes]`` logits out."""
+class BeliefModel(TokenTrunk):
+    """Observation in, ``[batch, cards, classes]`` logits out: the token
+    trunk (``models.trunk``) with a head on every card token."""
 
     def __init__(self, spec: EncodingSpec, config: BeliefConfig) -> None:
-        super().__init__()
-        self.spec = spec
+        super().__init__(spec, config)
         self.config = config
-        width = config.width
-        slots = len(spec.cards)
-        self.slots = slots
-        self.global_in = nn.Linear(len(spec.global_features), width)
-        self.card_in = nn.Linear(len(spec.card_features), width)
-        self.event_in = nn.Linear(len(spec.event_features), width)
-        # One identity per card slot, shared by its row and the events about
-        # it; the last stands for "no card".
-        self.identity = nn.Embedding(slots + 1, width)
-        self.position = nn.Embedding(max(spec.max_events, 1), width)
-        # Which kind of token: global, card, event.
-        self.kind = nn.Parameter(torch.zeros(3, width))
-        self.blocks = nn.ModuleList(Block(config) for _ in range(config.layers))
-        self.norm = nn.LayerNorm(width)
-        self.head = nn.Linear(width, len(spec.belief_classes))
-        self.apply(_init)
+        self.head = torch.nn.Linear(config.width, len(spec.belief_classes))
+        self.apply(init_weights)
         # Start at the count baseline: all logits zero.
-        nn.init.zeros_(self.head.weight)
+        torch.nn.init.zeros_(self.head.weight)
 
     def forward(
         self,
@@ -109,45 +55,10 @@ class BeliefModel(nn.Module):
         event_cards: Tensor,
         events_len: Tensor,
     ) -> Tensor:
-        """``global_`` ``[B, G]``, ``cards`` ``[B, S, F]``, ``events`` ``[B,
-        E, H]`` and ``event_cards`` ``[B, E]`` for any ``E`` up to the
-        spec's ``max_events`` (rows past ``events_len`` are ignored, so a
-        batch may be cut to its longest sequence), ``events_len`` ``[B]``.
-        Returns logits ``[B, S, classes]``."""
-        batch, length = events.shape[0], events.shape[1]
-        slots = torch.arange(self.slots, device=cards.device)
-        order = torch.arange(length, device=events.device)
-        # Events about no card (-1) take the last identity.
-        about = torch.where(event_cards < 0, self.slots, event_cards).long()
-        tokens = torch.cat(
-            (
-                (self.global_in(global_) + self.kind[0]).unsqueeze(1),
-                self.card_in(cards) + self.identity(slots) + self.kind[1],
-                self.event_in(events) + self.identity(about) + self.position(order) + self.kind[2],
-            ),
-            dim=1,
-        )
-        # Padding events are hidden from every token. Global and cards are
-        # always there, so no row of scores is all -inf.
-        padding = order.unsqueeze(0) >= events_len.unsqueeze(1)
-        fixed = torch.zeros(batch, 1 + self.slots, dtype=torch.bool, device=events.device)
-        hidden = torch.cat((fixed, padding), dim=1)
-        bias = torch.zeros(hidden.shape, device=events.device).masked_fill(hidden, -math.inf)
-        x = tokens
-        for block in self.blocks:
-            x = block(x, bias[:, None, None, :])
-        return self.head(self.norm(x[:, 1 : 1 + self.slots]))
-
-    def parameter_count(self) -> int:
-        return sum(p.numel() for p in self.parameters())
-
-
-def _init(module: nn.Module) -> None:
-    if isinstance(module, nn.Linear):
-        nn.init.normal_(module.weight, std=0.02)
-        nn.init.zeros_(module.bias)
-    elif isinstance(module, nn.Embedding):
-        nn.init.normal_(module.weight, std=0.02)
+        """The trunk's inputs (``TokenTrunk.tokens``); returns logits ``[B,
+        S, classes]``."""
+        x = self.tokens(global_, cards, events, event_cards, events_len)
+        return self.head(x[:, 1 : 1 + self.slots])
 
 
 def class_counts(targets: Tensor, classes: int) -> Tensor:

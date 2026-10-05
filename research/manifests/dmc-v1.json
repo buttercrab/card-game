@@ -1,0 +1,94 @@
+{
+  "artifacts": [
+    {
+      "bytes": 23584,
+      "path": "models/dmc-v1/config.json",
+      "sha256": "b37e17c8633114c044f277c41cda1348d199c831b5fef93849f369c5ad152f05"
+    },
+    {
+      "bytes": 143322,
+      "path": "models/dmc-v1/log.jsonl",
+      "sha256": "5faf3439eb2d5fa46ed70653471dab6a4edbfa9665e2cec3788a90f70f1faf35"
+    },
+    {
+      "bytes": 3292572,
+      "path": "models/dmc-v1/model.onnx",
+      "sha256": "6d9d41d4065d19337f1c8b510eb9dcc470fe274e9ba38d366840e5476a7330c8"
+    },
+    {
+      "bytes": 3064151,
+      "path": "models/dmc-v1/model.pt",
+      "sha256": "925e8962b669bf445f20b8b9d5034a3f57f8aa938bac6241a6f775a458824e43"
+    },
+    {
+      "bytes": 867721,
+      "path": "models/dmc-v1/parity.json",
+      "sha256": "cc53e3298c1f8225a99f2e834f38160af982d10482fb2eae3a4f2eab4a9b28d8"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000000000.pt",
+      "sha256": "826f3068c5a50b37f1ef110ddb5fa21322bddebd68c63e0362b3b0f58ce8c2f2"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000050017.pt",
+      "sha256": "c73f88e76cc6a83558b45acbc268561051b22014d54f2e169406f4d88638fdf5"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000100007.pt",
+      "sha256": "0914c24765c6caba8a3cb0d13a54ad4dd8eb2eefe1165d16c3134e75a20ec35c"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000150028.pt",
+      "sha256": "37aea36a890769477b53a9d9b431b90ee1b6a0441a9e9cc5ff6ee83f8c78a114"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000200089.pt",
+      "sha256": "8fa398c0ff466c8a96f3b1bd8891c68e05b0fb1aee4c5d2ac5b52036ab0312de"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000250069.pt",
+      "sha256": "5a2e73aa9c7514da21affa8bb2bc6877d49ddfec8b4ab6a34b9020d40475073a"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000300032.pt",
+      "sha256": "0667e4a31b95e354203a2aae6bccdaddbbdf5ed99ebf55eb2b850a310e383c6b"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000350055.pt",
+      "sha256": "f111562118887e35e16023af6ad5f13d15299cbf83e8d724a81fcef735864faf"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000400029.pt",
+      "sha256": "7a56e097c21719f2208d02449326efb1725edf63794dbe6125c043ebf60d990b"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000450042.pt",
+      "sha256": "dd0b1d408351efa3a7a24f47594f5e65c3e769c589ffd90a6f462e6295d5d6a1"
+    },
+    {
+      "bytes": 3068953,
+      "path": "models/dmc-v1/snapshots/hands-0000500004.pt",
+      "sha256": "8ce3d0ab2c5f0dd8b39bb3b43bfc49d3ffe22c6a562d15bb62bf21a97019cff9"
+    }
+  ],
+  "commit": "270d94fa59fc8f44af4ea92441baa0bbc8b3fdb9",
+  "config": "research/experiments/2026-10-05-dmc-v1/config.toml",
+  "created": "2026-10-05",
+  "encoding": "mighty-1",
+  "kind": "weights",
+  "name": "dmc-v1",
+  "seeds": [
+    20261005,
+    20261006
+  ]
+}

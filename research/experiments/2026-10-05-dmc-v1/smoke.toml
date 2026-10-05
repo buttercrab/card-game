@@ -1,0 +1,67 @@
+# DMC v1 smoke run: the whole loop (actors, buffer, learner, learning
+# curve, checkpoints, manifest) in a few minutes, with a small network.
+# Not a result; it checks the machinery before the main run (config.toml).
+#
+#   cd ml && nice -n 10 uv run python -m cardgame_ml.train.dmc \
+#       --config ../research/experiments/2026-10-05-dmc-v1/smoke.toml
+
+name = "dmc-v1-smoke"
+seed = 1
+device = "auto"
+rules = "varied"
+exclude = "research/evals/v1/heldout-rules.json"
+reward_scale = 0.025
+checkpoint_minutes = 1.0
+log_seconds = 15.0
+
+[budget]
+hands = 6000
+hours = 0.1
+
+[model]
+head_width = 128
+head_layers = 2
+
+[model.trunk]
+width = 64
+heads = 4
+layers = 2
+feedforward = 128
+dropout = 0.0
+
+[actors]
+processes = 2
+envs = 64
+threads = 2
+env_threads = 1
+groups = 4
+epsilon = 0.02
+# Two points (targets are points / 40).
+temperature = 0.05
+runner_up = 0.05
+# Exploring starts for the bidding came after v1 (v2); off is how it ran.
+declare = 0.0
+declare_temperature = 0.0
+refresh_every = 20
+chunk = 512
+
+[buffer]
+capacity = 20000
+min_fill = 2000
+window = 8
+replay_ratio = 2.0
+
+[optim]
+batch_size = 256
+lr = 0.0003
+weight_decay = 0.0
+warmup_steps = 50
+grad_clip = 1.0
+
+[curve]
+every_hands = 3000
+deals = 100
+rules = "gshs"
+opponents = ["easy", "normal"]
+seed = 7
+threads = 2

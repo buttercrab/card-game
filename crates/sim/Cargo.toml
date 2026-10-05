@@ -12,6 +12,8 @@ license.workspace = true
 # Off by default, so what depends on sim (the environment and its Python
 # bindings) builds without an inference runtime; eval turns it on.
 belief = ["dep:infer"]
+# `dmc:` bot specs, which play by a Q network (ONNX, through crates/infer).
+dmc = ["dep:infer"]
 
 [dependencies]
 clap.workspace = true

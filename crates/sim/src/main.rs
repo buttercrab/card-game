@@ -41,7 +41,13 @@ struct Args {
     /// bidding a little bolder or more carefully by seat as at the table.
     /// `belief:MODEL_DIR:SAMPLES` is `hard` at SAMPLES deals, dealing the
     /// unseen cards by the belief model in MODEL_DIR instead of reading
-    /// the table (built with `--features belief`).
+    /// the table (built with `--features belief`). `dmc:MODEL_DIR[:TEMP]`
+    /// plays by the Q network in MODEL_DIR, greedily or at a temperature
+    /// in points (built with `--features dmc`). `hybrid:MODEL_DIR:SAMPLES`
+    /// is `hard` at SAMPLES deals leaning on that Q network, by settings
+    /// `prior=K` (weigh the K moves it values most), `base=q` (its choice
+    /// is the one to beat) and `leaf=K` (value playouts by it after K more
+    /// tricks), e.g. `hybrid:DIR:100@prior=4,base=q,leaf=2`.
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.

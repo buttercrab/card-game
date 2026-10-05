@@ -1,0 +1,250 @@
+{
+ "run": "dmc-v1-attempt1",
+ "sessions": [
+  {
+   "event": "start",
+   "device": "mps",
+   "actors": 5,
+   "parameters": 695809,
+   "session": 1
+  }
+ ],
+ "curve": [
+  {
+   "hands": 0,
+   "decisions": 0,
+   "step": 0,
+   "seconds": 0,
+   "scores": {
+    "easy": {
+     "mean": -98.274,
+     "ci95": 1.019960844190129,
+     "n": 2000
+    },
+    "normal": {
+     "mean": -101.128,
+     "ci95": 0.9892840315401487,
+     "n": 2000
+    }
+   },
+   "throughput": {},
+   "phases": {}
+  },
+  {
+   "hands": 50005,
+   "decisions": 3287483,
+   "step": 4393,
+   "seconds": 1348,
+   "scores": {
+    "easy": {
+     "mean": -1.079,
+     "ci95": 0.2927332852193916,
+     "n": 2000
+    },
+    "normal": {
+     "mean": -1.804,
+     "ci95": 0.29933476510088,
+     "n": 2000
+    }
+   },
+   "throughput": {
+    "actor_cpu_cores": 3.442440340968858,
+    "actor_model_share": 0.9776453658012254,
+    "buffer": 197237.72727272726,
+    "decisions_per_s": 2451.722204126206,
+    "gpu_utilisation": 0.9563636363636363,
+    "hands_per_s": 37.28649729516763,
+    "learner_busy": 0.9249446222054547,
+    "learner_steps_per_s": 3.2834416509516644,
+    "load_average": 29.931685014204547,
+    "replay_ratio": 1.3622564266346482,
+    "samples_per_s": 3362.2442505745043,
+    "weights_lag": 0.19807999286488515
+   },
+   "phases": {
+    "bidding": {
+     "decisions": 1155682.0,
+     "mse": 0.6821644617231427,
+     "explained": 0.0917805838866194
+    },
+    "exchange": {
+     "decisions": 331845.0,
+     "mse": 1.386692742028705,
+     "explained": 0.4484997206302182
+    },
+    "early tricks": {
+     "decisions": 1527847.0,
+     "mse": 0.32083508772117314,
+     "explained": 0.7441543655802345
+    },
+    "late tricks": {
+     "decisions": 1434930.0,
+     "mse": 0.28665483631088495,
+     "explained": 0.7669955676345402
+    }
+   }
+  },
+  {
+   "hands": 100029,
+   "decisions": 6460876,
+   "step": 8309,
+   "seconds": 2645,
+   "scores": {
+    "easy": {
+     "mean": -0.845,
+     "ci95": 0.29757171916030933,
+     "n": 2000
+    },
+    "normal": {
+     "mean": -1.776,
+     "ci95": 0.3083297759941168,
+     "n": 2000
+    }
+   },
+   "throughput": {
+    "actor_cpu_cores": 3.353985253795823,
+    "actor_model_share": 0.9768176327928647,
+    "buffer": 200000.0,
+    "decisions_per_s": 2485.960530984548,
+    "gpu_utilisation": 0.9576190476190476,
+    "hands_per_s": 39.157327805564165,
+    "learner_busy": 0.9109956108613714,
+    "learner_steps_per_s": 3.051743549040761,
+    "load_average": 27.00981212797619,
+    "replay_ratio": 1.3293143080982541,
+    "samples_per_s": 3124.985394217739,
+    "weights_lag": 0.17589698676780452
+   },
+   "phases": {
+    "bidding": {
+     "decisions": 957246.0,
+     "mse": 0.27867769455128305,
+     "explained": 0.11126389598789488
+    },
+    "exchange": {
+     "decisions": 299968.0,
+     "mse": 0.23469425443141018,
+     "explained": 0.6114358583827347
+    },
+    "early tricks": {
+     "decisions": 1391928.0,
+     "mse": 0.05821501778917444,
+     "explained": 0.77381580247106
+    },
+    "late tricks": {
+     "decisions": 1302474.0,
+     "mse": 0.04942019554738952,
+     "explained": 0.8020719958451793
+    }
+   }
+  },
+  {
+   "hands": 150011,
+   "decisions": 9555275,
+   "step": 12317,
+   "seconds": 3959,
+   "scores": {
+    "easy": {
+     "mean": -0.9505,
+     "ci95": 0.30016010595081116,
+     "n": 2000
+    },
+    "normal": {
+     "mean": -1.8395,
+     "ci95": 0.3118804688101077,
+     "n": 2000
+    }
+   },
+   "throughput": {
+    "actor_cpu_cores": 3.1910192608321806,
+    "actor_model_share": 0.9774599769539954,
+    "buffer": 200000.0,
+    "decisions_per_s": 2368.1785596065074,
+    "gpu_utilisation": 0.959090909090909,
+    "hands_per_s": 38.25480468478042,
+    "learner_busy": 0.907198859496487,
+    "learner_steps_per_s": 3.0786655104123257,
+    "load_average": 26.623046875,
+    "replay_ratio": 1.3202449061509214,
+    "samples_per_s": 3152.5534826622215,
+    "weights_lag": 0.19660707301288502
+   },
+   "phases": {
+    "bidding": {
+     "decisions": 921509.0,
+     "mse": 0.2500951373474106,
+     "explained": 0.13818115029232145
+    },
+    "exchange": {
+     "decisions": 326410.0,
+     "mse": 0.20508945056399544,
+     "explained": 0.6238812569825177
+    },
+    "early tricks": {
+     "decisions": 1508010.0,
+     "mse": 0.05503257267649087,
+     "explained": 0.76814637758686
+    },
+    "late tricks": {
+     "decisions": 1414823.0,
+     "mse": 0.04272935112731416,
+     "explained": 0.8155981222008497
+    }
+   }
+  },
+  {
+   "hands": 200035,
+   "decisions": 12659911,
+   "step": 16335,
+   "seconds": 5282,
+   "scores": {
+    "easy": {
+     "mean": -0.887,
+     "ci95": 0.2950300992857208,
+     "n": 2000
+    },
+    "normal": {
+     "mean": -1.669,
+     "ci95": 0.3069699413682907,
+     "n": 2000
+    }
+   },
+   "throughput": {
+    "actor_cpu_cores": 3.2296320533907474,
+    "actor_model_share": 0.9777558182965409,
+    "buffer": 200000.0,
+    "decisions_per_s": 2343.3087568715887,
+    "gpu_utilisation": 0.9585714285714285,
+    "hands_per_s": 37.76690944166641,
+    "learner_busy": 0.9118970840330055,
+    "learner_steps_per_s": 3.0450663150675203,
+    "load_average": 29.921107700892858,
+    "replay_ratio": 1.3305418145689776,
+    "samples_per_s": 3118.147906629141,
+    "weights_lag": 0.18304298125802715
+   },
+   "phases": {
+    "bidding": {
+     "decisions": 872245.0,
+     "mse": 0.24216978294426308,
+     "explained": 0.13497429487435814
+    },
+    "exchange": {
+     "decisions": 310527.0,
+     "mse": 0.18705786871617644,
+     "explained": 0.6356092434181543
+    },
+    "early tricks": {
+     "decisions": 1424167.0,
+     "mse": 0.04998926222640147,
+     "explained": 0.7822689982040578
+    },
+    "late tricks": {
+     "decisions": 1336485.0,
+     "mse": 0.03463911845733047,
+     "explained": 0.8436548726101626
+    }
+   }
+  }
+ ]
+}

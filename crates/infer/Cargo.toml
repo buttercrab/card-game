@@ -9,13 +9,13 @@ license.workspace = true
 [dependencies]
 clap.workspace = true
 engine.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tract-onnx = "0.23"
 
 [dev-dependencies]
 mighty.workspace = true
-rand.workspace = true
 rand_chacha.workspace = true
 
 [lints]

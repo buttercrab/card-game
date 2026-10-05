@@ -14,7 +14,7 @@ from cardgame_ml.manifest import Manifest, artifacts
 from cardgame_ml.provenance import Checkout
 from cardgame_ml.store import artifact_store
 
-TRANSIENT = frozenset({"checkpoint.pt"})
+TRANSIENT = frozenset({"checkpoint.pt", "checkpoint.tmp"})
 """Files a run writes but does not keep: resuming state, not results."""
 
 
@@ -31,7 +31,7 @@ def record(
     store = artifact_store()
     paths = sorted(
         p.relative_to(store).as_posix()
-        for p in run.iterdir()
+        for p in run.rglob("*")
         if p.is_file() and p.name not in TRANSIENT
     )
     manifest = Manifest(

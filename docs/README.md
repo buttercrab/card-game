@@ -166,6 +166,57 @@ in `research/experiments/<date>-<id>/`, the leaderboard in
 `research/loop/leaderboard.md`, daily reports in `research/reports/`.
 `pause`, `resume` and `cancel <id>` steer it.
 
+### Train a self-play agent (DMC) and play it
+
+A run is a config in an experiment folder (see
+`research/experiments/2026-10-05-dmc-v1/config.toml`; `smoke.toml` there
+checks the whole loop in two minutes). From a clean checkout, in `ml/`
+with the torch extra:
+
+```sh
+nice -n 10 uv run python -m cardgame_ml.train.dmc --config ../research/experiments/<folder>/config.toml
+uv run python -m cardgame_ml.train.dmc.report --run <name> --out <curve.json>
+uv run python -m cardgame_ml.export --run <name>
+cargo run --release -p infer -- check ~/card-game-artifacts/models/<name>
+```
+
+Training starts actor processes that play self-play hands with CPU
+copies of the network (every seat, ε-greedy, rules from `rules` but
+never the held-out sets in `exclude`) while the learner fits
+`Q(observation, action)` to each seat's payoff on the GPU. It writes
+`models/<name>/` in the artifact store: `log.jsonl` (throughput every
+`log_seconds`, losses by phase of the hand, and the learning curve:
+the network against 초보 and 보통 on fixed deals every
+`curve.every_hands` hands, with a snapshot of the weights at each
+point), `checkpoint.pt` (Ctrl-C checkpoints; the same command resumes),
+then `model.pt` and the manifest. `report` turns the log into the
+curve's table. `export` writes `model.onnx` and `parity.json`
+(`--weights snapshots/<file> --out <dir>` exports a snapshot instead).
+
+The exported directory is a bot for `eval` and `sim` (built with
+`--features dmc`): `dmc:<model dir>` plays the legal action of highest
+value, `dmc:<model dir>:<temperature>` draws by `exp(value /
+temperature)`, the temperature in points (weaker levels). For example:
+
+```sh
+nice -n 10 target/release/eval run --suite v1 --bot dmc:$HOME/card-game-artifacts/models/<name> --out <dir>
+```
+
+`hybrid:<model dir>:<samples>` is 고수 at that many deals leaning on the
+network (`crates/mighty/src/hybrid.rs`): `@prior=K` weighs the K moves
+it values most instead of the search's candidates, `base=q` makes its
+choice the one a candidate must beat instead of the simple bot's, and
+`leaf=K` stops each playout K tricks on and takes the network's value
+there instead of playing to the end; search settings (`threads`,
+`read.*`, …) go alongside. With none, it is `hard` at that sample count.
+
+A network reads one encoding (`config.json`'s `spec`): `dmc:`, `export`,
+`load` and resuming a run all refuse one whose encoding is not this
+build's (dmc-v1 reads `mighty-1`), rather than load weights that would
+not fit or would mean something else. Retrain under a new name.
+
+Nothing of this reaches the server.
+
 ### Record an artifact kept outside git
 
 Write a manifest into `research/manifests/` (fields in its

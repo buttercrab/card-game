@@ -1,0 +1,95 @@
+# DMC v2: 경기과고 at five players, from self-play alone, with a bigger
+# network and exploring starts for the bidding. See README.md.
+#
+#   cd ml && nice -n 10 uv run python -m cardgame_ml.train.dmc \
+#       --config ../research/experiments/2026-10-05-dmc-v2/config.toml
+#
+# Weights go to models/dmc-v2/ in the artifact store, the manifest to
+# research/manifests/dmc-v2.json. Stopped, the same command resumes.
+#
+# From scratch, by the owner's rule (2026-10-05): random initial weights,
+# no imitation, no datasets, no warm start but this run's own
+# checkpoints; every seat of every training hand is the current network.
+# The built-in bots (초보, 보통, 고수) only measure it.
+
+name = "dmc-v2"
+seed = 20261007
+device = "auto"
+# The current rules and scoring (mighty-3, scoring G), one rule set.
+rules = "gshs/5"
+exclude = "research/evals/v1/heldout-rules.json"
+# Points / 40, as v1.
+reward_scale = 0.025
+checkpoint_minutes = 10.0
+log_seconds = 60.0
+
+# An overnight run.
+[budget]
+hands = 50000000
+hours = 11.0
+
+# 4.3M parameters (v1: 0.76M): width 256 and four layers. Four heads,
+# not eight: the attention's memory grows with heads x tokens^2 and the
+# Mac's learner thrashed at eight (0.03 steps/s at batch 1 024).
+[model]
+head_width = 512
+head_layers = 2
+
+[model.trunk]
+width = 256
+heads = 4
+layers = 4
+feedforward = 1024
+dropout = 0.0
+
+# Two actors of two PyTorch threads: about 2 500 decisions a second
+# between them, against the learner's ~1 100 samples a second, so the
+# replay ratio sits near its cap of 2 instead of v1's 0.8 (when the
+# learner, not the actors, is the bottleneck, more actors only make the
+# data staler). The cores left go to the curve's 고수 and the other
+# sessions on the Mac.
+[actors]
+processes = 2
+envs = 128
+threads = 2
+env_threads = 1
+groups = 4
+epsilon = 0.01
+# Two points (targets are points / 40).
+temperature = 0.05
+runner_up = 0.03
+# Exploring starts: each seat's first chance to bid, one time in 16, is a
+# bid drawn among the legal ones at four points' temperature; about a
+# quarter of hands (1 - (15/16)^5) start from at least one.
+declare = 0.0625
+declare_temperature = 0.1
+refresh_every = 10
+chunk = 2048
+
+# About 3 000 hands of decisions; float16 rows, about 4 GB.
+[buffer]
+capacity = 200000
+min_fill = 20000
+window = 8
+replay_ratio = 2.0
+
+# Batch 512: the MPS learner does as many samples a second at 256 or 512
+# as at 1 024 for this size, and more steps learn faster. Mixed precision
+# measured +5-10% only; not used.
+[optim]
+batch_size = 512
+lr = 0.0002
+weight_decay = 0.0
+warmup_steps = 1000
+grad_clip = 1.0
+
+# The learning curve: greedy, in one seat of 경기과고 against four 초보,
+# four 보통 (the same 2 000 deals each time) and four 고수 (300 of them:
+# 고수 takes ~0.1 s a decision). About every hour of the run.
+[curve]
+every_hands = 40000
+deals = 2000
+rules = "gshs/5"
+opponents = ["easy", "normal", "hard*300"]
+seed = 20261008
+threads = 6
