@@ -128,11 +128,75 @@ pub enum Event {
 pub struct Stats {
     salt: String,
     inner: Mutex<Inner>,
+    /// Appends to the log file, when there is one.
+    writer: Option<LogWriter>,
+}
+
+enum Line {
+    Record(String),
+    /// Answers once every line before it is written out.
+    Flush(std::sync::mpsc::Sender<()>),
+}
+
+/// A thread that appends lines to the log file through a buffer, flushed
+/// whenever it has nothing more queued, so recording an event never waits
+/// on the disk.
+struct LogWriter {
+    tx: Option<std::sync::mpsc::Sender<Line>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl LogWriter {
+    fn start(file: std::fs::File) -> std::io::Result<LogWriter> {
+        let (tx, rx) = std::sync::mpsc::channel::<Line>();
+        let thread = std::thread::Builder::new().name("stats-log".into()).spawn(move || {
+            let mut out = std::io::BufWriter::new(file);
+            let write = |line: Line, out: &mut std::io::BufWriter<std::fs::File>| match line {
+                Line::Record(text) => {
+                    if let Err(e) = writeln!(out, "{text}") {
+                        tracing::error!("could not write stats: {e}");
+                    }
+                }
+                Line::Flush(ack) => {
+                    let _ = out.flush();
+                    let _ = ack.send(());
+                }
+            };
+            while let Ok(line) = rx.recv() {
+                write(line, &mut out);
+                while let Ok(line) = rx.try_recv() {
+                    write(line, &mut out);
+                }
+                if let Err(e) = out.flush() {
+                    tracing::error!("could not write stats: {e}");
+                }
+            }
+        })?;
+        Ok(LogWriter {
+            tx: Some(tx),
+            thread: Some(thread),
+        })
+    }
+
+    fn send(&self, line: Line) {
+        if let Some(tx) = &self.tx {
+            let _ = tx.send(line);
+        }
+    }
+}
+
+impl Drop for LogWriter {
+    /// Writes out what is queued before the log closes.
+    fn drop(&mut self) {
+        drop(self.tx.take());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 #[derive(Default)]
 struct Inner {
-    file: Option<std::fs::File>,
     /// Records of the last [`KEEP_DAYS`], oldest first.
     recent: Vec<Record>,
     /// The day each player was first seen, over the whole log.
@@ -154,6 +218,7 @@ impl Stats {
         Stats {
             salt,
             inner: Mutex::default(),
+            writer: None,
         }
     }
 
@@ -175,7 +240,7 @@ impl Stats {
                 }
             }
         };
-        let stats = Stats::with_salt(salt);
+        let mut stats = Stats::with_salt(salt);
         let path = dir.join("stats.jsonl");
         let cutoff = now().saturating_sub(KEEP_DAYS * DAY);
         if let Ok(file) = std::fs::File::open(&path) {
@@ -192,8 +257,17 @@ impl Stats {
             }
         }
         let file = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
-        stats.inner.lock().expect("stats poisoned").file = Some(file);
+        stats.writer = Some(LogWriter::start(file)?);
         Ok(stats)
+    }
+
+    /// Waits until every event recorded so far is in the log file.
+    pub fn flush(&self) {
+        if let Some(writer) = &self.writer {
+            let (ack, done) = std::sync::mpsc::channel();
+            writer.send(Line::Flush(ack));
+            let _ = done.recv();
+        }
     }
 
     /// A player's id as the log keeps it: salted and hashed, never raw.
@@ -212,13 +286,10 @@ impl Stats {
 
     pub fn record_at(&self, t: u64, event: Event) {
         let record = Record { t, event };
-        let mut inner = self.inner.lock().expect("stats poisoned");
-        if let Some(file) = &mut inner.file {
-            let line = serde_json::to_string(&record).expect("records serialize");
-            if let Err(e) = writeln!(file, "{line}") {
-                tracing::error!("could not write stats: {e}");
-            }
+        if let Some(writer) = &self.writer {
+            writer.send(Line::Record(serde_json::to_string(&record).expect("records serialize")));
         }
+        let mut inner = self.inner.lock().expect("stats poisoned");
         inner.note(&record);
         // Drop what the dashboard no longer shows, now and then.
         if inner.recent.first().is_some_and(|r| r.t + (KEEP_DAYS + 1) * DAY < t) {

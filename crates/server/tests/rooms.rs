@@ -284,6 +284,7 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     send(&mut players[0].0, json!({ "type": "start" })).await;
     // Each move reaches everyone; whoever has legal actions makes the next one.
     let mut before = Value::Null;
+    let mut last = Value::Null;
     for step in 0..8 {
         let mut mover = None;
         for (i, (ws, _)) in players.iter_mut().enumerate() {
@@ -297,15 +298,23 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
             before = msg;
             break;
         }
+        last = json!({ "kind": "act", "seat": i, "action": msg["legal"][0] });
         send(&mut players[i].0, json!({ "type": "act", "action": msg["legal"][0] })).await;
     }
     let seat = before["turn"]["Seat"].as_u64().unwrap() as usize;
     let token = players[seat].1.clone();
-    // The room saves itself after each move, before it reads its next
-    // message: once it has answered one more, the file is up to date.
-    let other = (seat + 1) % players.len();
-    send(&mut players[other].0, json!({ "type": "act", "action": "Pass" })).await;
-    assert_eq!(next(&mut players[other].0, "error").await["code"], "not_your_turn");
+    // The room hands itself to its writer after each move; once the file
+    // holds the last move, it holds everything before it.
+    let file = dir.path().join(format!("{room}.json"));
+    eventually("the last move is saved", || async {
+        let saved: Value = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        let log = saved["hand"]["log"].as_array().cloned().unwrap_or_default();
+        log.iter().rev().find(|e| e["kind"] == "act") == Some(&last)
+    })
+    .await;
 
     // A second server reading the same directory picks the hand up where it was.
     let (addr, restored) = start(dir.path().to_path_buf()).await;
@@ -909,20 +918,20 @@ async fn shuffling_every_hand_reseats_before_the_deal() {
     );
 }
 
-/// A room saved by this server comes back as it was; one in an older
-/// shape (from before the last deploy but one, which tables never
-/// outlive) is refused, and the server sets its file aside.
+/// A room saved by this server comes back as it was; one missing part of
+/// its shape is refused, and the server sets its file aside (older
+/// formats are migrated: see `room::migrate_v1`).
 #[test]
-fn only_the_current_snapshot_shape_restores() {
+fn a_snapshot_restores_as_saved_and_a_broken_one_is_refused() {
     use mighty::Mighty;
     use server::room::Room;
     use server::session::MightySettings;
     let env = std::sync::Arc::new(server::room::RoomEnv::new(Duration::ZERO));
     let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), env.clone());
-    let mut snapshot = room.snapshot();
+    let mut snapshot = serde_json::to_value(room.snapshot()).unwrap();
     snapshot["table"]["shuffle_next"] = json!(true);
     let restored = Room::<Mighty>::restore(snapshot.clone(), env.clone()).unwrap();
-    assert_eq!(restored.snapshot(), snapshot);
+    assert_eq!(serde_json::to_value(restored.snapshot()).unwrap(), snapshot);
     snapshot.as_object_mut().unwrap().remove("table");
     assert!(Room::<Mighty>::restore(snapshot, env).is_err());
 }

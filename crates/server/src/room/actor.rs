@@ -3,6 +3,7 @@
 
 use super::bots::Internal;
 use super::seating::Conn;
+use super::snapshot::Persister;
 use super::view::Preview;
 use super::{ConnId, Msg, REACTIONS, Room, TURN_LIMITS, log_action};
 use crate::protocol::{ClientMsg, ErrorCode, ServerError};
@@ -70,6 +71,10 @@ impl<G: SessionGame> Room<G> {
     pub async fn run(mut self, mut rx: UnboundedReceiver<Command>) {
         let mut inbox = self.inbox.take().expect("a room runs once");
         let idle = self.env.idle;
+        if let Some(dir) = &self.env.data {
+            let path = dir.join(format!("{}.json", self.id));
+            self.persister = Some(Persister::start(self.id.clone(), path));
+        }
         // A restored room may have a bot to act.
         self.settle(Effects::NONE);
         let mut empty_since = Some(tokio::time::Instant::now());
@@ -85,7 +90,10 @@ impl<G: SessionGame> Room<G> {
             };
             let effects = match next {
                 Wake::Command(Command::Shutdown { done }) => {
-                    self.saver.save_now(&self.id, &self.snapshot());
+                    if let Some(persister) = &self.persister {
+                        persister.save(self.snapshot_text());
+                        persister.flush().await;
+                    }
                     let _ = done.send(());
                     return;
                 }
@@ -111,23 +119,35 @@ impl<G: SessionGame> Room<G> {
                 secs: self.hand_secs(),
             });
         }
-        self.saver.remove();
+        if let Some(persister) = self.persister.take() {
+            persister.remove().await;
+        }
     }
 
     /// After every wake: the hand plays its chance actions (and is booked
     /// when over), the turn timer follows whoever is to act, a bot starts
-    /// thinking if it is to act, and the room is saved and, if anything
-    /// changed, sent to everyone.
+    /// thinking if it is to act, and, if anything changed, the room is
+    /// handed to its persister and sent to everyone.
     fn settle(&mut self, effects: Effects) {
         let mut changed = effects.changed;
         changed |= self.advance();
         changed |= self.arm_clock();
         self.think();
-        let snapshot = self.snapshot();
-        self.saver.save(&self.id, &snapshot);
+        self.dirty |= changed;
+        if self.dirty
+            && let Some(persister) = &self.persister
+        {
+            persister.save(self.snapshot_text());
+            self.dirty = false;
+        }
         if changed {
             self.broadcast();
         }
+    }
+
+    /// The room as its file holds it.
+    fn snapshot_text(&self) -> String {
+        serde_json::to_string(&self.snapshot()).expect("snapshots serialize")
     }
 
     fn handle(&mut self, cmd: Command) -> Effects {

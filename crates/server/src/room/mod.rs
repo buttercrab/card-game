@@ -22,6 +22,7 @@ mod view;
 
 pub use actor::Command;
 pub use seating::{BOT_NAMES, NAME_MAX};
+pub use snapshot::{SnapshotV2, migrate_v1};
 pub use view::Preview;
 
 use crate::bots::RemoteBots;
@@ -143,18 +144,21 @@ pub struct Room<G: SessionGame> {
     internal: UnboundedSender<bots::Internal<G::Action>>,
     /// The other end, until [`Room::run`] takes it.
     inbox: Option<UnboundedReceiver<bots::Internal<G::Action>>>,
-    saver: snapshot::Saver,
+    /// The room's writer, while it runs with a data directory.
+    persister: Option<snapshot::Persister>,
+    /// Whether the room changed since it was last handed to the persister.
+    dirty: bool,
 }
 
 impl<G: SessionGame> Room<G> {
     pub fn new(id: String, settings: G::Settings, env: Arc<RoomEnv>) -> Room<G> {
         let n = G::seats(&settings);
-        let saver = snapshot::Saver::new(env.data.as_ref().map(|dir| dir.join(format!("{id}.json"))));
         let (internal, inbox) = tokio::sync::mpsc::unbounded_channel();
         Room {
             internal,
             inbox: Some(inbox),
-            saver,
+            persister: None,
+            dirty: true,
             id,
             settings,
             table: TableSettings::default(),

@@ -7,15 +7,42 @@ use crate::session::SessionGame;
 use crate::stats::Event;
 use engine::Turn;
 use rand::Rng;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::{Duration, Instant};
+
+/// One step of a hand, as its log keeps it: replaying the log from the
+/// hand's options gives back the hand exactly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(super) enum LogEntry<A> {
+    /// The deal, or whatever else chance decides.
+    Chance { action: A },
+    /// `seat`'s move on its turn.
+    Act { seat: usize, action: A },
+    /// `seat`'s move out of turn (a 딜미스).
+    OutOfTurn { seat: usize, action: A },
+}
+
+/// Plays `log` from `game`, its first state; says which entry failed.
+pub(super) fn replay<G: SessionGame>(game: &mut G::State, log: &[LogEntry<G::Action>]) -> Result<(), String> {
+    for (i, entry) in log.iter().enumerate() {
+        let applied = match entry {
+            LogEntry::Chance { action } if G::turn(game) == Turn::Chance => G::apply(game, action.clone()),
+            LogEntry::Act { seat, action } if G::turn(game) == Turn::Seat(*seat) => G::apply(game, action.clone()),
+            LogEntry::OutOfTurn { seat, action } => G::apply_out_of_turn(game, *seat, action.clone()),
+            _ => return Err(format!("action {i}: not whose turn it is")),
+        };
+        applied.map_err(|e| format!("action {i}: {e}"))?;
+    }
+    Ok(())
+}
 
 pub(super) struct Hand<G: SessionGame> {
     /// The current hand, or the last one once it is over.
     pub game: Option<G::State>,
-    /// Every action of `game` so far, deals included, so it can be replayed.
-    /// An out-of-turn action is logged as `{"out_of_turn": {seat, action}}`.
-    pub log: Vec<Value>,
+    /// Every step of `game` so far, deals included, so it can be replayed.
+    pub log: Vec<LogEntry<G::Action>>,
     /// The session hand number `game` was dealt as.
     pub number: u32,
     /// When the hand was dealt, in Unix seconds, if known.
@@ -93,9 +120,11 @@ impl<G: SessionGame> Hand<G> {
     /// Plays `action` for whoever is to act.
     pub fn apply(&mut self, action: G::Action) -> Result<(), String> {
         let game = self.game.as_mut().ok_or("no hand")?;
-        let entry = serde_json::to_value(&action).map_err(|e| e.to_string())?;
-        G::apply(game, action).map_err(|e| e.to_string())?;
-        self.log.push(entry);
+        let Turn::Seat(seat) = G::turn(game) else {
+            return Err("nobody is to act".into());
+        };
+        G::apply(game, action.clone()).map_err(|e| e.to_string())?;
+        self.log.push(LogEntry::Act { seat, action });
         self.version += 1;
         Ok(())
     }
@@ -103,9 +132,8 @@ impl<G: SessionGame> Hand<G> {
     /// Plays `seat`'s out-of-turn `action`.
     pub fn apply_out_of_turn(&mut self, seat: usize, action: G::Action) -> Result<(), String> {
         let game = self.game.as_mut().ok_or("no hand")?;
-        let entry = json!({ "out_of_turn": { "seat": seat, "action": action } });
-        G::apply_out_of_turn(game, seat, action).map_err(|e| e.to_string())?;
-        self.log.push(entry);
+        G::apply_out_of_turn(game, seat, action.clone()).map_err(|e| e.to_string())?;
+        self.log.push(LogEntry::OutOfTurn { seat, action });
         self.version += 1;
         Ok(())
     }
@@ -121,8 +149,8 @@ impl<G: SessionGame> Hand<G> {
         while G::turn(game) == Turn::Chance {
             let deal = G::sample_chance(game, rng);
             tracing::info!(room, action = %log_action(&deal), "deal");
-            self.log.push(serde_json::to_value(&deal).expect("actions serialize"));
-            G::apply(game, deal).expect("a sampled chance action is legal");
+            G::apply(game, deal.clone()).expect("a sampled chance action is legal");
+            self.log.push(LogEntry::Chance { action: deal });
             done.dealt = true;
         }
         if done.dealt {

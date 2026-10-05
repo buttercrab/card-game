@@ -174,10 +174,13 @@ impl AppState {
             }
         }
         let all = futures_util::future::join_all(pending);
-        match tokio::time::timeout(wait, all).await {
+        let saved = match tokio::time::timeout(wait, all).await {
             Ok(results) => results.into_iter().filter(Result::is_ok).count(),
             Err(_) => 0,
-        }
+        };
+        let stats = self.stats.clone();
+        let _ = tokio::task::spawn_blocking(move || stats.flush()).await;
+        saved
     }
 
     /// How many rooms are open now.
