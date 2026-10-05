@@ -20,6 +20,7 @@ Everything a group of friends notices in one evening. Play-test items first.
 - **Dropped phones:** the same mechanism also covers a dropped phone. A disconnected seat counts as 자리 비움 straight away, so the table never stalls (review: docs/product).
 
 ### 1.2 Faster 딜미스 (딜미스 빠르게)
+- **Owner, 2026-10-05:** a 딜미스 button from the moment the cards land, for anyone whose hand qualifies, instead of waiting for your turn to bid. It replaces the seat-by-seat asking round. In presets where 딜미스 must come before any bid, the window closes at the first bid, and the first bid waits a short moment after the deal so nobody loses the chance to a fast tap.
 - **Asking round** (presets with `misdeal.ask_first`):
   - A seat whose hand can't be thrown in answers 딜미스 아님 by itself after a short fixed pause. The pause is the same for every seat, so it gives nothing away.
   - Bots answer on that same pause, not at their thinking pace.
@@ -41,7 +42,7 @@ Everything a group of friends notices in one evening. Play-test items first.
 - **Where:** from the result sheet, a button returns to the room, without leaving the table.
 - **What you can do there:** change rules, swap bots and levels, shuffle seats, or invite someone.
 - **Next hand:** starts from the room, the same way the first one did.
-- **To confirm with the owner:** whether this is what 방으로 가기 meant.
+- **Owner, 2026-10-05:** yes. In the room between hands you can reorder seats (shuffle, or move someone), and add or remove players and bots.
 
 ### 1.6 Spectating (관전 고치기)
 1. Reproduce with a second browser first: watch a full hand, join while a hand is running, and watch with a full table.
@@ -51,7 +52,7 @@ Everything a group of friends notices in one evening. Play-test items first.
    - The empty hand tray takes space.
    - There is no list of who is watching.
    - The result sheet's buttons are meant for players.
-3. **To confirm with the owner:** what went wrong at the table.
+3. **Owner, 2026-10-05:** small UI problems, nothing structural.
 
 ### 1.7 Bots (review: bots)
 - Misdeal only below the minimum bid (also 1.2).
@@ -175,11 +176,14 @@ Each change is checked with a paired `sim --baseline` run before it ships.
 - A share sheet for the table link.
 - Shareable house-rule links.
 
+## Decided (owner, 2026-10-05)
+
+- 경기과고: a joker led on trick 1 may name trump. Keep as coded and say so in RULES.md.
+- 경기과고: 9 trumps plus the mighty may lead trump on trick 1. Keep as coded and say so in RULES.md.
+- A leader may call for a joker they hold themselves (a bluff). Keep it legal; bots stop doing it by accident (`aim_joker_call`).
+- 시간제한: 끔 / 20초 / 40초 / 60초, off by default.
+
 ## Waiting on the owner
 
-1. 경기과고: may a joker led on trick 1 name trump? Recommend no.
-2. 경기과고: may 9 trumps plus the mighty lead trump on trick 1?
-3. Remove the joker call when the leader holds that joker? Recommend yes.
-4. Home default preset 기본? Recommend yes.
-5. GitHub settings for wave 2.
-6. Play-test: what 방으로 가기 and 관전 meant (1.5, 1.6). Is 20/40/60 s right for 시간제한, and is the default off?
+1. Home default preset 기본 instead of 경기과고?
+2. GitHub settings for wave 2.
