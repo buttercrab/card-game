@@ -10,7 +10,6 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use mighty::rules::Preset;
-use serde_json::Value;
 use std::time::Duration;
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
@@ -325,11 +324,11 @@ impl AppState {
         let tx = self.room(id)?;
         let (reply, rx) = tokio::sync::oneshot::channel();
         tx.send(Command::Describe { reply }).ok()?;
-        let info: Value = tokio::time::timeout(Duration::from_secs(1), rx).await.ok()?.ok()?;
+        let info = tokio::time::timeout(Duration::from_secs(1), rx).await.ok()?.ok()?;
         Some(TableInfo {
-            preset: info["preset"].as_str().and_then(|p| p.parse().ok()),
-            custom: info["custom"].as_bool().unwrap_or(false),
-            empty: info["empty"].as_u64().unwrap_or(0) as usize,
+            preset: info.preset.parse().ok(),
+            custom: info.custom,
+            empty: info.empty,
         })
     }
 }
