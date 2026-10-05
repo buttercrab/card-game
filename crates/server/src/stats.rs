@@ -102,6 +102,10 @@ pub enum Event {
         #[serde(default)]
         secs: Option<u64>,
     },
+    /// A player's turn ran out and a bot played it for them.
+    TurnTimedOut {
+        table: String,
+    },
     Report {
         #[serde(default)]
         table: Option<String>,
@@ -303,6 +307,7 @@ pub struct Totals {
     pub hands_abandoned: u32,
     pub reports: u32,
     pub client_errors: u32,
+    pub turns_timed_out: u32,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -400,6 +405,7 @@ pub fn summarize(records: &[Record], first_seen: &HashMap<String, u64>, now: u64
                 s.totals.hands_abandoned += 1;
             }
             Event::Report { .. } => s.totals.reports += 1,
+            Event::TurnTimedOut { .. } => s.totals.turns_timed_out += 1,
             Event::ClientError {
                 group,
                 message,
@@ -607,6 +613,7 @@ mod tests {
                 hands_abandoned: 1,
                 reports: 1,
                 client_errors: 0,
+                turns_timed_out: 0,
             }
         );
         assert_eq!(s.hands_by_humans, BTreeMap::from([(1, 1), (2, 1)]));

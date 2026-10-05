@@ -14,9 +14,18 @@
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
 
-  let { id, onleave }: { id: string; onleave: () => void } = $props();
+  let {
+    id,
+    onleave,
+    preview = null,
+  }: {
+    id: string;
+    onleave: () => void;
+    /** A made-up connection, for /preview. */
+    preview?: RoomClient | null;
+  } = $props();
 
-  const client = new RoomClient(untrack(() => id));
+  const client = untrack(() => preview) ?? new RoomClient(untrack(() => id));
   $effect(() => {
     if (client.error) sound.error();
   });
@@ -28,7 +37,13 @@
   let showRules = $state(false);
   let editRules = $state(false);
   let reporting = $state(false);
-  let showSeats = $state(false);
+  /** Back in the room from the result (방으로 가기), until the next hand. */
+  let atRoom = $state(false);
+  /** Moving seats by tapping two of them, and the first one tapped. */
+  let moving = $state(false);
+  let picked = $state<number | null>(null);
+  /** A player about to be sent back to watching, awaiting a yes. */
+  let removing = $state<number | null>(null);
 
   const room = $derived(client.room);
   const seated = $derived(client.seat !== null);
@@ -85,8 +100,31 @@
   const changedTraits = $derived(custom && presetBase ? traits(custom, presetBase) : []);
 
   const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
-  const showTable = $derived(client.game !== null && (inHand || (room?.hands_played ?? 0) > 0));
-  const showLobby = $derived(!showTable || (!inHand && (showSeats || !seated)));
+  $effect(() => {
+    if (inHand) {
+      atRoom = false;
+      moving = false;
+      picked = null;
+      removing = null;
+    }
+  });
+  const showTable = $derived(client.game !== null && (inHand || (room?.hands_played ?? 0) > 0) && !(atRoom && !inHand));
+  const showLobby = $derived(!showTable);
+  const turnSecs = $derived(room?.table?.turn_secs ?? 0);
+  const TURN_CHOICES = [0, 20, 40, 60];
+
+  function pick(seat: number) {
+    if (picked === null) picked = seat;
+    else if (picked === seat) picked = null;
+    else {
+      client.swapSeats(picked, seat);
+      picked = null;
+    }
+  }
+  const removingName = $derived.by(() => {
+    const s = removing !== null ? room?.seats[removing] : null;
+    return s?.kind === 'human' ? s.name : null;
+  });
   const offline = $derived(
     room?.seats.flatMap((s, i) => (s.kind === 'human' && !s.connected ? [{ seat: i, name: s.name }] : [])) ?? [],
   );
@@ -112,7 +150,8 @@
   function take(event: SubmitEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    const seat = pending !== null && room?.seats[pending]?.kind === 'empty' ? pending : undefined;
+    const kind = pending !== null ? room?.seats[pending]?.kind : null;
+    const seat = pending !== null && (kind === 'empty' || (kind === 'bot' && !inHand)) ? pending : undefined;
     client.join(name.trim(), seat);
     pending = null;
     editingName = false;
@@ -137,9 +176,10 @@
       <span class="code">{id}</span>
       <span class="status" data-status={client.status} title={client.status === 'open' ? '연결됨' : '연결 중'} aria-hidden="true"></span>
       <span class="sr">{client.status === 'open' ? '연결됨' : client.status === 'closed' ? '연결 끊김' : '연결 중'}</span>
+      {#if room?.watching}<span class="watching">구경 <span class="num">{room.watching}</span>명</span>{/if}
     </div>
-    {#if showTable && !inHand && seated}
-      <button class="ghost small" aria-pressed={showSeats} onclick={() => (showSeats = !showSeats)}>자리</button>
+    {#if atRoom && !inHand && client.game}
+      <button class="ghost small" onclick={() => (atRoom = false)}>지난 판</button>
     {/if}
     <!-- In the lobby the rules sit by the seats instead. -->
     {#if !showLobby || !room}
@@ -174,7 +214,7 @@
     {/if}
 
     {#if showTable}
-      <Table {client} />
+      <Table {client} onroom={() => (atRoom = true)} />
     {/if}
 
     {#if showLobby}
@@ -204,15 +244,24 @@
           onsit={sitAt}
           onaddbot={(i, level) => client.addBot(i, level)}
           onremovebot={(i) => client.removeBot(i)}
+          onremoveplayer={(i) => (removing = i)}
+          swapping={moving}
+          {picked}
+          onpick={pick}
         >
           {#snippet centre()}
-            {#if seated && room.hands_played === 0}
-              <button class="primary start" disabled={!full} onclick={() => client.start()}>시작</button>
+            {#if seated && room.in_hand}
+              <span class="centre-note">판이 진행 중이에요</span>
+            {:else if seated && moving}
+              <span class="centre-note">{picked === null ? '옮길 자리를 누르세요' : '바꿀 자리를 누르세요'}</span>
+              <button class="start" onclick={() => ((moving = false), (picked = null))}>다 옮겼어요</button>
+            {:else if seated}
+              <button class="primary start" disabled={!full} onclick={() => client.start()}>{room.hands_played === 0 ? '시작' : '다음 판'}</button>
               <span class="count">
                 <span class="num">{filled}/{room.seats.length}</span>{#if !full}{' · '}빈 자리를 친구나 봇으로 채우면 시작할 수 있어요{/if}
               </span>
-            {:else if seated}
-              <span class="centre-note">{room.hands_played}판 끝</span>
+            {:else if full && !room.in_hand && room.seats.some((s) => s.kind === 'bot')}
+              <span class="centre-note">봇 자리를 눌러 대신 앉을 수 있어요</span>
             {:else if full}
               <span class="centre-note">자리가 다 찼어요</span>
             {:else if editingName && pending === null}
@@ -225,8 +274,62 @@
           {/snippet}
         </LobbyTable>
 
+        {#if removing !== null && removingName && seated && !inHand}
+          <div class="confirm" role="alertdialog" aria-labelledby="confirm-text">
+            <p id="confirm-text"><strong>{removingName}</strong> 님을 자리에서 뺄까요? 구경하는 자리로 옮겨요. 다시 앉을 수 있어요.</p>
+            <div class="confirm-buttons">
+              <button onclick={() => (removing = null)}>취소</button>
+              <button
+                class="danger"
+                onclick={() => {
+                  client.clearSeat(removing!);
+                  removing = null;
+                }}>빼기</button
+              >
+            </div>
+          </div>
+        {/if}
+
+        {#if seated && !inHand && !moving}
+          <!-- The table's own settings and seat moves, for anyone seated, between hands. -->
+          <div class="tools" role="group" aria-label="테이블 설정">
+            <div class="tool-row">
+              <span class="tool-label">턴 시간</span>
+              <span class="seg" role="radiogroup" aria-label="턴 시간">
+                {#each TURN_CHOICES as secs (secs)}
+                  <button role="radio" aria-checked={turnSecs === secs} onclick={() => turnSecs !== secs && client.setTable({ turn_secs: secs })}>
+                    {secs === 0 ? '끔' : `${secs}초`}
+                  </button>
+                {/each}
+              </span>
+            </div>
+            <div class="tool-row">
+              <span class="tool-label">자리</span>
+              <span class="tool-buttons">
+                <button class="tool" onclick={() => client.shuffleSeats()}>순서 섞기</button>
+                <button class="tool" onclick={() => ((moving = true), (picked = null), (removing = null))}>자리 옮기기</button>
+                <button
+                  class="tool check"
+                  role="switch"
+                  aria-checked={room.table?.shuffle ?? false}
+                  onclick={() => client.setTable({ shuffle: !(room.table?.shuffle ?? false) })}
+                >
+                  <span class="box" aria-hidden="true"></span>매 판 섞기
+                </button>
+              </span>
+            </div>
+            {#if turnSecs > 0}
+              <p class="tool-note">시간이 지나면 보통 봇이 대신 두고 자리 비움으로 표시해요. 버리기와 프렌드 부르기는 두 배예요.</p>
+            {/if}
+          </div>
+        {:else if !seated && (turnSecs > 0 || room.table?.shuffle)}
+          <p class="muted hint">
+            {#if turnSecs > 0}턴 시간 {turnSecs}초{/if}{#if turnSecs > 0 && room.table?.shuffle}{' · '}{/if}{#if room.table?.shuffle}매 판 자리를 섞어요{/if}
+          </p>
+        {/if}
+
         {#if !seated}
-          {#if full}
+          {#if full && (inHand || !room.seats.some((s) => s.kind === 'bot'))}
             <p class="muted hint">구경하는 중이에요.</p>
           {:else if editingName}
             <form onsubmit={take}>
@@ -328,9 +431,6 @@
     padding: 8px 10px;
     font-size: 14px;
     color: var(--ink-muted);
-  }
-  .small[aria-pressed='true'] {
-    color: var(--ink);
   }
   .title {
     flex: 1;
@@ -496,6 +596,121 @@
   }
   .changes-line:active:not(:disabled) {
     transform: none;
+  }
+  .watching {
+    flex: none;
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+  .watching .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .confirm {
+    display: grid;
+    gap: 10px;
+    justify-self: center;
+    width: 100%;
+    max-width: 480px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: var(--panel);
+    border: 2px solid var(--ink);
+  }
+  .confirm p {
+    margin: 0;
+    font-size: 15px;
+    word-break: keep-all;
+  }
+  .confirm-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .danger {
+    color: var(--danger);
+  }
+  .tools {
+    display: grid;
+    gap: 10px;
+    justify-self: center;
+    width: 100%;
+    max-width: 560px;
+    padding: 12px 16px;
+    border-radius: 16px;
+    background: var(--panel);
+  }
+  .tool-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 12px;
+  }
+  .tool-label {
+    flex: none;
+    width: 4.5em;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-muted);
+  }
+  .tool-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+  .tool {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+  /* A switch drawn as a box that fills with ink when on. */
+  .check {
+    gap: 8px;
+  }
+  .check .box {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 2px var(--ink-muted);
+  }
+  .check[aria-checked='true'] .box {
+    background: var(--ink);
+    box-shadow:
+      inset 0 0 0 2px var(--ink),
+      inset 0 0 0 4px var(--btn, var(--card));
+  }
+  .seg {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    flex: 1;
+    min-width: 200px;
+    max-width: 320px;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--table);
+  }
+  .seg button {
+    min-height: 40px;
+    padding: 2px 0;
+    border-radius: 999px;
+    background: none;
+    box-shadow: none;
+    color: var(--ink-muted);
+    font-size: 14px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .seg button[aria-checked='true'] {
+    background: var(--ink);
+    color: var(--table);
+  }
+  .tool-note {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink-muted);
+    word-break: keep-all;
   }
   .leave {
     justify-self: center;

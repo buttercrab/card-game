@@ -632,3 +632,214 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
         "it is not your turn"
     );
 }
+
+/// A server whose turn-limit seconds last 10 ms, so a 20-second turn runs
+/// out in a fifth of a second.
+async fn spawn_quick_clock_server() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = AppState::new(Duration::ZERO).with_turn_second(Duration::from_millis(10));
+    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+    addr
+}
+
+#[tokio::test]
+async fn a_turn_that_runs_out_is_played_for_the_seat_and_marks_it_away() {
+    let addr = spawn_quick_clock_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    join(&mut ws, "Jae", None).await;
+
+    // Only a listed limit is taken.
+    send(&mut ws, json!({ "type": "set_table", "turn_secs": 25 })).await;
+    next(&mut ws, "error").await;
+    send(&mut ws, json!({ "type": "set_table", "turn_secs": 20 })).await;
+    let msg = next_where(&mut ws, "room", |r| r["table"]["turn_secs"] == 20).await;
+    assert_eq!(msg["table"]["shuffle"], false);
+    assert!(msg["clock"].is_null(), "no hand, no clock");
+
+    for bot in 1..5 {
+        send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
+    }
+    send(&mut ws, json!({ "type": "start" })).await;
+    // Jae never acts: the clock runs on the server and a stand-in moves.
+    let clocked = next_where(&mut ws, "room", |r| r["clock"]["seat"] == 0).await;
+    assert!(clocked["clock"]["ms"].as_u64().unwrap() <= clocked["clock"]["total_ms"].as_u64().unwrap());
+    next_where(&mut ws, "room", |r| r["seats"][0]["away"] == true).await;
+    // Away, the next turns get five seconds' worth: 50 ms here.
+    let short = next_where(&mut ws, "room", |r| {
+        r["clock"]["seat"] == 0 && r["seats"][0]["away"] == true
+    })
+    .await;
+    assert_eq!(short["clock"]["total_ms"], 50);
+
+    // Anything the player does clears the mark.
+    send(&mut ws, json!({ "type": "react", "text": "미안" })).await;
+    next_where(&mut ws, "room", |r| r["seats"][0]["away"] == false).await;
+
+    // The hand finishes on its own, the stand-in playing every late turn.
+    let done = next_where(&mut ws, "room", |r| r["hands_played"] == 1).await;
+    assert_eq!(done["in_hand"], false);
+    assert!(done["clock"].is_null());
+}
+
+#[tokio::test]
+async fn a_dropped_player_counts_as_away_under_a_time_limit() {
+    let addr = spawn_quick_clock_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    join(&mut a, "A", None).await;
+    let mut b = connect(addr, &room).await;
+    join(&mut b, "B", None).await;
+    b.close(None).await.unwrap();
+    let r = next_where(&mut a, "room", |r| r["seats"][1]["connected"] == false).await;
+    assert_eq!(r["seats"][1]["away"], false, "without a limit nobody is away");
+    send(&mut a, json!({ "type": "set_table", "turn_secs": 60 })).await;
+    next_where(&mut a, "room", |r| r["seats"][1]["away"] == true).await;
+}
+
+#[tokio::test]
+async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
+    let addr = spawn_quick_clock_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    let (_, token_a) = join(&mut a, "A", None).await;
+    let mut b = connect(addr, &room).await;
+    let (_, token_b) = join(&mut b, "B", None).await;
+    let mut watcher = connect(addr, &room).await;
+    for bot in 2..5 {
+        send(&mut a, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
+    }
+    // Spectators may not move anyone.
+    send(&mut watcher, json!({ "type": "shuffle_seats" })).await;
+    next(&mut watcher, "error").await;
+
+    // A whole hand plays itself: both players let every turn run out.
+    send(&mut a, json!({ "type": "set_table", "turn_secs": 20 })).await;
+    send(&mut a, json!({ "type": "start" })).await;
+    // Seats stay put while a hand is on.
+    next_where(&mut b, "room", |r| r["in_hand"] == true).await;
+    send(&mut b, json!({ "type": "swap_seats", "a": 0, "b": 1 })).await;
+    assert_eq!(next(&mut b, "error").await["message"], "seats move only between hands");
+    let before = next_where(&mut a, "room", |r| r["hands_played"] == 1).await;
+    assert_eq!(before["showing"], true);
+    let score = |r: &Value, name: &str| -> (usize, i64) {
+        let seat = r["seats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|s| s["name"] == name)
+            .unwrap();
+        (seat, r["scores"][seat].as_i64().unwrap())
+    };
+    let (a_was, a_score) = score(&before, "A");
+    let (_, b_score) = score(&before, "B");
+    let a_hist = before["history"][0][a_was].clone();
+    let declarer = before["hands"][0]["declarer"].as_u64().unwrap() as usize;
+    let declarer_was = before["seats"][declarer].clone();
+
+    send(&mut b, json!({ "type": "shuffle_seats" })).await;
+    next_where(&mut a, "seats_moved", |m| m["how"] == "shuffle").await;
+    let after = next_where(&mut watcher, "room", |r| {
+        r["hands_played"] == 1 && r["showing"] == false
+    })
+    .await;
+    let (a_seat, a_after) = score(&after, "A");
+    let (b_seat, b_after) = score(&after, "B");
+    assert_eq!((a_after, b_after), (a_score, b_score), "scores follow the players");
+    assert_eq!(after["history"][0][a_seat], a_hist, "so does each hand's payoff");
+    let moved_declarer = after["hands"][0]["declarer"].as_u64().unwrap() as usize;
+    assert_eq!(after["seats"][moved_declarer]["kind"], declarer_was["kind"]);
+    // Bots are named by seat ("Bot 3"), so only a person keeps their name.
+    if declarer_was["kind"] == "human" {
+        assert_eq!(after["seats"][moved_declarer]["name"], declarer_was["name"]);
+    }
+    assert_eq!(after["hands_played"], 1);
+
+    // Each tab learns its new seat, and the token still finds it.
+    assert_eq!(next(&mut b, "welcome").await["seat"].as_u64().unwrap() as usize, b_seat);
+    drop(b);
+    next_where(&mut watcher, "room", |r| r["seats"][b_seat]["connected"] == false).await;
+    let mut again = connect(addr, &room).await;
+    let (seat, token) = join(&mut again, "B", Some(&token_b)).await;
+    assert_eq!((seat as usize, token), (b_seat, token_b.clone()));
+
+    // A swap moves two seats.
+    send(&mut again, json!({ "type": "swap_seats", "a": a_seat, "b": b_seat })).await;
+    assert_eq!(
+        next(&mut again, "welcome").await["seat"].as_u64().unwrap() as usize,
+        a_seat
+    );
+    let swapped = next_where(&mut again, "room", |r| r["seats"][b_seat]["name"] == "A").await;
+    assert_eq!(swapped["seats"][a_seat]["name"], "B");
+
+    // B sends A back to watching; A's tab is told, and its token no longer
+    // seats it anywhere.
+    send(&mut again, json!({ "type": "clear_seat", "seat": b_seat })).await;
+    next(&mut a, "unseated").await;
+    let cleared = next_where(&mut watcher, "room", |r| r["seats"][b_seat]["kind"] == "empty").await;
+    assert_eq!(cleared["watching"], 2, "A and the first watcher");
+    send(
+        &mut a,
+        json!({ "type": "join", "name": "A", "token": token_a, "reclaim": true }),
+    )
+    .await;
+    next(&mut a, "unseated").await;
+    // A may sit again by choice.
+    send(&mut a, json!({ "type": "join", "name": "A", "seat": b_seat })).await;
+    assert_eq!(next(&mut a, "welcome").await["seat"].as_u64().unwrap() as usize, b_seat);
+}
+
+#[tokio::test]
+async fn a_watcher_takes_a_bots_seat_between_hands() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    join(&mut a, "A", None).await;
+    for bot in 1..5 {
+        send(&mut a, json!({ "type": "add_bot", "seat": bot })).await;
+    }
+    next_where(&mut a, "room", |r| r["seats"][4]["kind"] == "bot").await;
+    let mut watcher = connect(addr, &room).await;
+    send(&mut watcher, json!({ "type": "join", "name": "W", "seat": 3 })).await;
+    assert_eq!(next(&mut watcher, "welcome").await["seat"], 3);
+}
+
+#[tokio::test]
+async fn shuffling_every_hand_reseats_before_the_deal() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut a = connect(addr, &room).await;
+    join(&mut a, "A", None).await;
+    for bot in 1..5 {
+        send(&mut a, json!({ "type": "add_bot", "seat": bot })).await;
+    }
+    send(&mut a, json!({ "type": "set_table", "shuffle": true })).await;
+    next_where(&mut a, "room", |r| r["table"]["shuffle"] == true).await;
+    send(&mut a, json!({ "type": "start" })).await;
+    let welcome = next(&mut a, "welcome").await;
+    next(&mut a, "seats_moved").await;
+    let state = next(&mut a, "state").await;
+    assert_eq!(
+        state["view"]["viewer"]["Seat"], welcome["seat"],
+        "dealt in the new seat"
+    );
+}
+
+#[test]
+fn rooms_saved_before_table_settings_still_restore() {
+    use mighty::Mighty;
+    use server::room::Room;
+    use server::session::MightySettings;
+    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), Duration::ZERO);
+    let mut snapshot = room.snapshot();
+    assert_eq!(snapshot["table"], json!({ "turn_secs": 0, "shuffle": false }));
+    snapshot.as_object_mut().unwrap().remove("table");
+    assert!(Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).is_ok());
+    snapshot["table"] = json!({ "turn_secs": 40, "shuffle": true });
+    let restored = Room::<Mighty>::restore(snapshot, Duration::ZERO).unwrap();
+    assert_eq!(
+        restored.snapshot()["table"],
+        json!({ "turn_secs": 40, "shuffle": true })
+    );
+}

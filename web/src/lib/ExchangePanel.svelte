@@ -104,6 +104,33 @@
     }
     return out;
   });
+
+  // Changing the contract is a big step: a chip only selects it (a second
+  // tap lets go), and the button under the chips says what it will do.
+  let selected = $state<Action | null>(null);
+  const same = (a: Action, b: Action) => JSON.stringify(a) === JSON.stringify(b);
+  const choice = $derived(selected && legal.some((a) => same(a, selected!)) ? selected : null);
+  function select(action: Action) {
+    selected = choice && same(choice, action) ? null : action;
+  }
+
+  /** 으로 or 로 after a number, as it is read: 16으로, 17로. */
+  function ro(count: number): string {
+    return [0, 3, 6].includes(count % 10) ? '으로' : '로';
+  }
+  const confirm = $derived.by(() => {
+    if (!choice || typeof choice !== 'object') return null;
+    if ('ChangeTrump' in choice) {
+      const t = choice.ChangeTrump;
+      const count = changedCount(t);
+      return `${trumpLabel(t)} ${count}${ro(count)} 바꾸기`;
+    }
+    if ('Raise' in choice) {
+      const c = choice.Raise;
+      return c.trump === contract.trump ? `${c.count}${ro(c.count)} 올리기` : `${contractLabel(c)}${ro(c.count)} 바꾸기`;
+    }
+    return null;
+  });
 </script>
 
 {#if calls.length > 0}
@@ -178,31 +205,56 @@
     <div class="discard">
       <span class="count">{#key chosen}<strong class="bump">{chosen}</strong>{/key}/{toDiscard}</span>
       <span class="muted">버릴 카드를 고르세요</span>
-      <button class="primary" class:ready={chosen === toDiscard} disabled={chosen !== toDiscard} onclick={ondiscard}>버리기</button>
+      <!-- While a contract change is chosen, its button is the one to press. -->
+      <button
+        class:primary={!confirm}
+        class="discard-btn"
+        class:ready={chosen === toDiscard && !confirm}
+        disabled={chosen !== toDiscard}
+        onclick={ondiscard}>버리기</button
+      >
     </div>
     {#if trumpChanges.length > 0 && raises.length > 0}
       <div class="chips change" role="radiogroup" aria-label="기루다 변경">
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
-          <button class="chip" role="radio" aria-checked={t === picked} onclick={() => (target = t === picked ? undefined : t)}>
+          <button
+            class="chip"
+            role="radio"
+            aria-checked={t === picked}
+            onclick={() => {
+              target = t === picked ? undefined : t;
+              selected = null;
+            }}
+          >
             {trumpLabel(t)} {changedCount(t)}
           </button>
         {/each}
       </div>
     {:else if trumpChanges.length > 0}
-      <div class="chips change">
+      <div class="chips change" role="radiogroup" aria-label="기루다 변경">
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
-          <button class="chip" onclick={() => onact({ ChangeTrump: t })}>{trumpLabel(t)} {changedCount(t)}</button>
+          {@const action = { ChangeTrump: t }}
+          <button class="chip" role="radio" aria-checked={!!choice && same(choice, action)} onclick={() => select(action)}>
+            {trumpLabel(t)} {changedCount(t)}
+          </button>
         {/each}
       </div>
     {/if}
     {#if offers.length > 0}
-      <div class="chips change">
+      <div class="chips change" role="radiogroup" aria-label={picked === contract.trump ? '공약 올리기' : '바꿀 공약'}>
         <span class="muted">{picked === contract.trump ? '공약 올리기' : `${trumpLabel(picked)}로 바꾸기`}</span>
         {#each offers as o (JSON.stringify(o.action))}
-          <button class="chip num" onclick={() => onact(o.action)}>{contractLabel(o.contract)}</button>
+          <button class="chip num" role="radio" aria-checked={!!choice && same(choice, o.action)} onclick={() => select(o.action)}>
+            {contractLabel(o.contract)}
+          </button>
         {/each}
+      </div>
+    {/if}
+    {#if confirm && choice}
+      <div class="actions">
+        <button class="primary confirm" onclick={() => onact(choice)}>{confirm}</button>
       </div>
     {/if}
   </div>

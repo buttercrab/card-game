@@ -26,7 +26,7 @@
   import { sound } from './sound';
   import type { Action, Card as CardT, Doubling, FriendCall, Lead, PhaseView, Played, PlayAction, Scoring, StateMsg, Suit, Trick } from './types';
 
-  let { client }: { client: RoomClient } = $props();
+  let { client, onroom }: { client: RoomClient; /** 방으로 가기: back to the room between hands. */ onroom?: () => void } = $props();
 
   /** What servers that send no scoring score by (Scoring::default). */
   const DEFAULT_SCORING: Scoring = {
@@ -1040,6 +1040,39 @@
     return { pre: '', name, post: ' 차례' };
   });
   const waitingFor = $derived(waiting ? waiting.pre + waiting.name + waiting.post : null);
+  // ---- Turn time limit ------------------------------------------------------
+  // The server keeps the clock; a seat shows it as a ring once the table has
+  // caught up with that turn. Your own turn shows only its last seconds.
+  function seatClock(seat: number) {
+    const c = client.clock;
+    return c && c.seat === seat && turn === seat && !done ? c : null;
+  }
+  const isAway = (seat: number) => {
+    const info = room?.seats[seat];
+    return info?.kind === 'human' && !!info.away;
+  };
+  const myClock = $derived(me !== null && myTurn ? seatClock(me) : null);
+  let secsLeft = $state<number | null>(null);
+  $effect(() => {
+    const c = myClock;
+    secsLeft = null;
+    if (!c) return;
+    const cancels: (() => void)[] = [];
+    const now = performance.now();
+    for (let k = 5; k >= 1; k--) {
+      const at = c.deadline - k * 1000 - now;
+      if (at <= -1000) continue;
+      cancels.push(
+        later(() => {
+          secsLeft = k;
+          sound.clock(k === 1);
+        }, Math.max(0, at)),
+      );
+    }
+    cancels.push(later(() => (secsLeft = null), Math.max(0, c.deadline - now)));
+    return () => cancels.forEach((cancel) => cancel());
+  });
+
   /** Controls that rise over the felt's foot: bids, the exchange, a joker's choices. */
   const controls = $derived(!!variants || (myTurn && (bidding !== null || exchange !== null)));
   let controlsHeight = $state(0);
@@ -1078,7 +1111,7 @@
   const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
 </script>
 
-<section class="table" class:mine={myTurn} class:nudge class:tips={settings.tips}>
+<section class="table" class:mine={myTurn} class:watching={me === null} class:nudge class:tips={settings.tips}>
   <!-- 상황판: everything about the hand on one line. -->
   {#snippet hintTools()}
     {#if client.hint && myTurn}
@@ -1256,6 +1289,8 @@
             trumpSuit={contract?.trump ?? null}
             lookAt={lookAt(r)}
             mood={mood(s)}
+            clock={seatClock(s)}
+            away={isAway(s)}
           />
         </div>
       {/each}
@@ -1396,6 +1431,8 @@
         </div>
         <div class="result-foot">
           {#if seated && !full}<p class="muted wait-seats">빈 자리를 채우면 다음 판을 시작할 수 있어요</p>{/if}
+          <!-- Back to the room: seats, bots and rules between hands; the next hand can start there too. -->
+          {#if onroom}<button class="ghost to-room" onclick={onroom}>{me === null ? '자리 보기' : '방으로 가기 · 자리와 규칙'}</button>{/if}
           <div class="next">
             {#if me !== null}
               <span class="foot-react">
@@ -1479,8 +1516,13 @@
           trumpSuit={contract?.trump ?? null}
           lookAt={lookAt(0)}
           mood={mood(me)}
+          away={isAway(me)}
         />
       </div>
+      {#if secsLeft !== null}
+        <!-- The last seconds of your turn, then a bot plays it for you. -->
+        <span class="countdown" role="timer" aria-live="polite" aria-label="{secsLeft}초 남음">{#key secsLeft}<span class="pop">{secsLeft}</span>{/key}</span>
+      {/if}
       <div class="tray-tools">
         {@render hintTools()}
         <Reactions onreact={(text) => client.react(text)} />
@@ -1510,7 +1552,8 @@
         hinted={client.hint && typeof client.hint === 'object' && 'Play' in client.hint && myTurn ? client.hint.Play.card : null}
       />
     </div>
-  {:else}
+  {:else if !done}
+    <!-- Watching: no hand, no strip; one line says whose turn it is. -->
     <p class="prompt muted spectating">구경하는 중{waitingFor ? ` · ${waitingFor}` : ''}</p>
   {/if}
   {#if sharing && room}
@@ -2471,6 +2514,13 @@
     display: inline-flex;
     flex: none;
   }
+  .to-room {
+    display: flex;
+    margin: 0 auto 4px;
+    min-height: 44px;
+    font-size: 14px;
+    color: var(--ink-muted);
+  }
 
   .tray {
     position: relative;
@@ -2572,6 +2622,44 @@
   }
   .spectating {
     padding: 16px;
+  }
+  /* Your last seconds: an ink disc on the tray's rim, by the turn ring. */
+  .countdown {
+    position: absolute;
+    right: 12px;
+    top: -18px;
+    z-index: 7;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--table);
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  /* Watching, nobody sits on the tray: the bottom seat sits at the felt's
+     foot, and the trick makes room for it. */
+  .watching .ring {
+    --cy: 50cqh;
+    --card-w: clamp(
+      36px,
+      min((100cqw - 2 * var(--seat-w) - 16px) / 3.55, (50cqh - var(--seat-h) - 40px) / 2.2),
+      var(--trick-max)
+    );
+  }
+  .watching .spot.pos-0 {
+    top: auto;
+    bottom: 0;
+    transform: translateX(-50%);
+  }
+  .watching .note.below {
+    top: auto;
+    bottom: calc(var(--seat-h) + 6px);
   }
 
   /* Desktop-only parts: the side panel, your seat and tools on the tray. */

@@ -232,7 +232,7 @@ export interface Bid {
 
 export type SeatInfo =
   | { kind: 'empty' }
-  | { kind: 'human'; name: string; connected: boolean }
+  | { kind: 'human'; name: string; connected: boolean; /** Its turn ran out and was played for it (자리 비움). */ away?: boolean }
   | { kind: 'bot'; name: string; level?: BotLevel };
 
 export interface RoomMsg {
@@ -249,6 +249,21 @@ export interface RoomMsg {
   /** Each finished hand in brief, in order. Older servers leave this out,
    * and rooms saved before it may hold fewer of these than `history`. */
   hands?: HandSummary[];
+  /** The table's own settings, apart from the rules. */
+  table?: TableSettings;
+  /** The running turn timer: the time left as of this message. */
+  clock?: { seat: number; ms: number; total_ms: number } | null;
+  /** How many connections watch without a seat. */
+  watching?: number;
+  /** Whether a hand, running or just over, is on the table. */
+  showing?: boolean;
+}
+
+export interface TableSettings {
+  /** Seconds per decision; 0 is no limit. */
+  turn_secs: number;
+  /** The seats are shuffled before every hand. */
+  shuffle: boolean;
 }
 
 /** A finished hand in brief, for the session's share card. */
@@ -282,6 +297,8 @@ export type ServerMsg =
   | RoomMsg
   | StateMsg
   | { type: 'welcome'; seat: number; token: string }
+  | { type: 'unseated' }
+  | { type: 'seats_moved'; how: 'shuffle' | 'swap'; seats?: [number, number] }
   | { type: 'reaction'; seat: number; text: string }
   | { type: 'hint'; version: number; action: Action }
   | { type: 'error'; message: string };

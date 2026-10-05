@@ -226,6 +226,10 @@ export const sound = {
     note(0, 659, { level: 0.12, length: 0.25 });
     note(0.11, 880, { level: 0.12, length: 0.4 });
   },
+  /** One of your turn's last seconds: a soft wooden tick, the last a step higher. */
+  clock(last = false) {
+    snap(0, { freq: last ? 2200 : 1600, length: 0.03, level: 0.16 });
+  },
   /** A bid or a pass. Each raise in a bidding war sounds a step higher. */
   bid(raise = 0) {
     snap(0, { freq: 3200, length: 0.03, level: 0.3 });
