@@ -7,10 +7,14 @@ once an epoch, in an order drawn from the run's seed; every
 the validation games against the count baseline (``train.metrics``).
 
 A run writes into its directory: ``config.json`` (the config, the spec,
-the parameter count), ``log.jsonl`` (one line per logged step and per
-evaluation), ``checkpoint.pt`` after each epoch (to resume from) and,
-at the end, ``model.pt`` (the weights) and ``metrics.json`` (the last
-evaluation). :func:`load` reads a run's model back.
+the parameter count, and its ``sessions``: each one's commit, config
+hash and seed, see ``train.sessions``), ``log.jsonl`` (one line per
+logged step and per evaluation), ``checkpoint.pt`` after each epoch (to
+resume from; written whole or not at all) and, at the end, ``model.pt``
+(the weights) and ``metrics.json`` (the last evaluation). A resume with
+another config than the run's is refused before anything is written,
+unless the caller accepts it (``allow_config_change``). :func:`load`
+reads a run's model back.
 """
 
 # PyTorch leaves a few parameters unannotated (manual_seed's seed,
@@ -41,6 +45,7 @@ from cardgame_ml.models.config import BeliefConfig
 from cardgame_ml.train.batching import Rows, Split, batches, prefetch, steps_per_epoch, to_inputs
 from cardgame_ml.train.config import BeliefTrainConfig
 from cardgame_ml.train.metrics import Report, phases
+from cardgame_ml.train.sessions import check_resume, recorded_sessions, session, write_json
 
 type Log = Callable[[dict[str, Any]], None]
 
@@ -85,9 +90,21 @@ def learning_rate(config: BeliefTrainConfig, step: int, total: int) -> float:
     return o.lr * (o.min_lr_ratio + (1 - o.min_lr_ratio) * cosine)
 
 
-def train(config: BeliefTrainConfig, dataset: Dataset, out: Path, log: Log) -> Report:
+def train(  # noqa: PLR0913, PLR0915
+    config: BeliefTrainConfig,
+    dataset: Dataset,
+    out: Path,
+    log: Log,
+    *,
+    commit: str | None = None,
+    dirty: bool = False,
+    allow_config_change: bool = False,
+) -> Report:
     """Trains a model by ``config`` into ``out``, resuming from its last
-    checkpoint if there is one. Returns the final validation report."""
+    checkpoint if there is one. Returns the final validation report.
+    ``commit`` and ``dirty``: the checkout this session runs, for the
+    record. Raises ``ConfigChangedError`` when resuming with another
+    config (unless ``allow_config_change``)."""
     if dataset.eval_only:
         raise ValueError(f"{dataset.name} is for evaluation only, never for training")
     out.mkdir(parents=True, exist_ok=True)
@@ -101,19 +118,32 @@ def train(config: BeliefTrainConfig, dataset: Dataset, out: Path, log: Log) -> R
         betas=(0.9, 0.95),
         weight_decay=config.optim.weight_decay,
     )
-    _write_json(out / "config.json", _describe(config, dataset, model))
     total = steps_per_epoch(dataset, split.train_rows, config.optim.batch_size)
     total *= config.optim.epochs
 
     step, first_epoch = 0, 0
     checkpoint = out / "checkpoint.pt"
+    sessions: list[dict[str, Any]] = []
+    changed: list[str] = []
     if checkpoint.exists():
+        # Checked before anything is written: a refused resume leaves the run as it was.
+        described = json.loads((out / "config.json").read_text(encoding="utf-8"))
+        current = {**asdict(config), "dataset": dataset.name}
+        recorded = {**described["config"], "dataset": described.get("dataset")}
+        changed = check_resume(out, recorded, current, allow_change=allow_config_change)
+        sessions = recorded_sessions(described)
         state = torch.load(checkpoint, map_location=device, weights_only=True)
         model.load_state_dict(state["model"])
         optimizer.load_state_dict(state["optimizer"])
         step, first_epoch = int(state["step"]), int(state["epoch"])
         log({"event": "resume", "step": step, "epoch": first_epoch})
-    log({"event": "start", "device": str(device), "steps": total})
+    # A run from before sessions were recorded had at least one already.
+    number = max(len(sessions), int(checkpoint.exists())) + 1
+    entry = session(number, commit, dirty, asdict(config), config.seed, changed)
+    write_json(
+        out / "config.json", _describe(config, dataset, model) | {"sessions": [*sessions, entry]}
+    )
+    log({"event": "start", "device": str(device), "steps": total, **entry})
 
     def validate(epoch: int) -> Report:
         report = evaluate(model, dataset, split.val_rows)
@@ -151,9 +181,11 @@ def train(config: BeliefTrainConfig, dataset: Dataset, out: Path, log: Log) -> R
                 report = validate(epoch)
         report = validate(epoch + 1)
         state = {"model": model.state_dict(), "optimizer": optimizer.state_dict()}
-        torch.save({**state, "step": step, "epoch": epoch + 1}, checkpoint)
+        # Whole or not at all: a crash mid-write keeps the last checkpoint.
+        torch.save({**state, "step": step, "epoch": epoch + 1}, checkpoint.with_suffix(".tmp"))
+        checkpoint.with_suffix(".tmp").replace(checkpoint)
     torch.save(model.state_dict(), out / "model.pt")
-    _write_json(out / "metrics.json", {"step": step, "val": report.to_json()})
+    write_json(out / "metrics.json", {"step": step, "val": report.to_json()})
     return report
 
 
@@ -181,10 +213,6 @@ def _describe(config: BeliefTrainConfig, dataset: Dataset, model: BeliefModel) -
         "spec": dataset.spec.to_json(),
         "parameters": model.parameter_count(),
     }
-
-
-def _write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def load(run: Path, device: torch.device | None = None) -> BeliefModel:
