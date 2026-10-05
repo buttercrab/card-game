@@ -12,8 +12,10 @@ import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
-from cardgame_ml._json import JsonError, as_object, get_str
+from cardgame_ml import schema
+from cardgame_ml.schema import SchemaError
 
 CARGO_EVAL = ("cargo", "run", "--release", "--locked", "--quiet", "-p", "eval", "--")
 """How the loop runs ``eval`` here: built from the checkout when stale,
@@ -65,18 +67,19 @@ def check_bot(
         raise BotCheckError(f"eval check-bot could not run: {e}") from e
     lines = done.stdout.strip().splitlines()
     try:
-        out = as_object(json.loads(lines[-1]), "eval check-bot") if lines else None
-    except (json.JSONDecodeError, JsonError):
-        out = None
-    if out is None:
+        parsed: object = json.loads(lines[-1]) if lines else None
+    except json.JSONDecodeError:
+        parsed = None
+    if not isinstance(parsed, dict):
         tail = (done.stderr or done.stdout).strip().splitlines()[-3:]
         raise BotCheckError(f"eval check-bot exited {done.returncode}: {' / '.join(tail)}")
+    out = cast(dict[str, object], parsed)
+    if "error" in out:
+        raise BotCheckError(str(out["error"]))
     try:
-        if "error" in out:
-            raise BotCheckError(get_str(out, "error"))
-        reproducible = out.get("reproducible")
-        if not isinstance(reproducible, bool) or done.returncode != 0:
-            raise BotCheckError(f"eval check-bot said {out} (exit {done.returncode})")
-        return BotCheck(get_str(out, "kind"), reproducible, get_str(out, "reason"))
-    except JsonError as e:
-        raise BotCheckError(f"eval check-bot: {e}") from e
+        checked = schema.read(BotCheck, out, "eval check-bot", unknown="ignore")
+    except SchemaError as e:
+        raise BotCheckError(f"eval check-bot said {out} (exit {done.returncode}): {e}") from e
+    if done.returncode != 0:
+        raise BotCheckError(f"eval check-bot said {out} (exit {done.returncode})")
+    return checked

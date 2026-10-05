@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from loopkit import DMC, EVAL, REPO, make_layout, spec, write
 
+from cardgame_ml import schema
 from cardgame_ml.loop import tomlw
 from cardgame_ml.loop.configs import get_path
 from cardgame_ml.loop.evals import FRESH_SEED_STRIDE, fresh_suite
@@ -17,6 +18,7 @@ from cardgame_ml.loop.methods import METHODS, Context
 from cardgame_ml.loop.policy import Policy
 from cardgame_ml.loop.queue import read_queue
 from cardgame_ml.loop.spec import SpecError, parse_spec
+from cardgame_ml.loop.steps import Role
 from cardgame_ml.loop.validate import Known, check, check_file
 
 NOBODY = Known(runs=(), queued=())
@@ -78,7 +80,7 @@ def test_a_spec_parses_and_writes_back() -> None:
         ({"evals": {"parts": ["ladder", "cost"]}}, "cost = true"),
         ({"evals": {"parts": ["ladders"]}}, "unknown parts"),
         ({"parent": "Not An Id"}, "parent"),
-        ({"budget": {"gpu": "yes"}}, "true or false"),
+        ({"budget": {"gpu": "yes"}}, "gpu: expected bool"),
         ({"config": {"set": {"optim.lr": 0.1}}}, "set overrides a base"),
     ],
 )
@@ -173,7 +175,7 @@ def test_dmc_plan(policy: Policy, layout: Layout) -> None:
     assert [s.name for s in plan.steps] == ["train", "curve", "export", "eval-hard"]
     train = plan.steps[0]
     assert train.gpu
-    assert train.resumable
+    assert train.role == Role.TRAIN
     assert train.clean
     assert train.host == "mac"
     assert plan.steps[-1].host == "home"
@@ -186,7 +188,7 @@ def test_dmc_plan(policy: Policy, layout: Layout) -> None:
     assert config["seed"] == 7
     assert get_path(config, "budget.hours") == 5.0
     assert get_path(config, "budget.hands") == 1000000
-    assert config["curve"] == policy.protocol.curve.to_table()
+    assert config["curve"] == schema.table(policy.protocol.curve)
     assert config["exclude"] == policy.exclude
 
 
