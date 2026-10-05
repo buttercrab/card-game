@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up the card game's data daily
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=15min
+# Catches up after the home server was off at the hour.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

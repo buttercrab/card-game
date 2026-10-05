@@ -3,19 +3,33 @@
 //! `server --bot-worker wss://<host>/internal/bots`, which dials in (so it
 //! needs no open port) and answers each move it is sent. If no worker is
 //! connected, or one is slow to answer, the room thinks for itself.
+//!
+//! The server pings its worker every [`HEARTBEAT`] and drops one silent for
+//! [`SILENCE`]; the worker likewise redials a server silent that long. The
+//! connection's state shows on `/stats`, and the server warns in its log
+//! when tables think for themselves although a worker is expected.
 
 use crate::session::{BotLevel, SessionGame};
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
+
+/// How often the server pings its worker.
+pub const HEARTBEAT: Duration = Duration::from_secs(15);
+
+/// A link with nothing heard for this long is dead.
+pub const SILENCE: Duration = Duration::from_secs(45);
+
+/// At most one fallback warning in the log this often.
+const WARN_EVERY: Duration = Duration::from_secs(300);
 
 /// The worker connected to this server, if any.
 #[derive(Default)]
@@ -23,6 +37,13 @@ pub struct RemoteBots {
     worker: Mutex<Option<Worker>>,
     next: AtomicU64,
     answered: AtomicU64,
+    /// Moves a room thought itself because no worker answered.
+    fallbacks: AtomicU64,
+    /// Whether this server takes a worker at all (it has a bot token).
+    expected: AtomicBool,
+    /// When a worker was last connected or last heard, in Unix seconds.
+    last_seen: AtomicU64,
+    warned: Mutex<Option<Instant>>,
 }
 
 struct Worker {
@@ -30,6 +51,24 @@ struct Worker {
     conn: u64,
     tx: mpsc::UnboundedSender<String>,
     pending: HashMap<u64, oneshot::Sender<Value>>,
+    /// When it connected, in Unix seconds.
+    since: u64,
+}
+
+/// The worker link, for `/stats`.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkerStatus {
+    /// Whether this server takes a worker (it has a bot token).
+    pub expected: bool,
+    pub connected: bool,
+    /// When the current worker connected, in Unix seconds.
+    pub since: Option<u64>,
+    /// When a worker was last heard, in Unix seconds.
+    pub last_seen: Option<u64>,
+    /// Moves workers sent back since the server started.
+    pub answered: u64,
+    /// Moves rooms thought themselves since, for want of a worker.
+    pub fallbacks: u64,
 }
 
 /// One move for a worker to think about.
@@ -47,6 +86,11 @@ struct Job {
 }
 
 impl RemoteBots {
+    /// Notes that a worker should be connected, so its absence is warned about.
+    pub fn expect_worker(&self) {
+        self.expected.store(true, Ordering::Relaxed);
+    }
+
     /// How many moves workers have sent back.
     pub fn answered(&self) -> u64 {
         self.answered.load(Ordering::Relaxed)
@@ -54,6 +98,42 @@ impl RemoteBots {
 
     pub fn connected(&self) -> bool {
         self.worker.lock().expect("worker poisoned").is_some()
+    }
+
+    /// Whether a worker can take a move now. When one is expected but
+    /// absent, counts the move as thought here and warns, now and then.
+    pub fn available(&self) -> bool {
+        let connected = self.connected();
+        if !connected && self.expected.load(Ordering::Relaxed) {
+            self.fell_back("no bot worker is connected");
+        }
+        connected
+    }
+
+    fn fell_back(&self, why: &str) {
+        let total = self.fallbacks.fetch_add(1, Ordering::Relaxed) + 1;
+        let mut warned = self.warned.lock().expect("warned poisoned");
+        if warned.is_none_or(|t| t.elapsed() >= WARN_EVERY) {
+            *warned = Some(Instant::now());
+            tracing::warn!(fallbacks = total, "{why}; tables think with in-process bots");
+        }
+    }
+
+    pub fn status(&self) -> WorkerStatus {
+        let since = self.worker.lock().expect("worker poisoned").as_ref().map(|w| w.since);
+        let last_seen = self.last_seen.load(Ordering::Relaxed);
+        WorkerStatus {
+            expected: self.expected.load(Ordering::Relaxed),
+            connected: since.is_some(),
+            since,
+            last_seen: (last_seen > 0).then_some(last_seen),
+            answered: self.answered(),
+            fallbacks: self.fallbacks.load(Ordering::Relaxed),
+        }
+    }
+
+    fn heard(&self) {
+        self.last_seen.store(crate::stats::now(), Ordering::Relaxed);
     }
 
     /// Asks the worker for a move, giving up after `wait`.
@@ -68,16 +148,17 @@ impl RemoteBots {
             worker.pending.insert(id, tx);
         }
         let answer = tokio::time::timeout(wait, rx).await.ok().and_then(Result::ok);
-        if answer.is_none()
-            && let Some(worker) = self.worker.lock().expect("worker poisoned").as_mut()
-        {
-            worker.pending.remove(&id);
+        if answer.is_none() {
+            if let Some(worker) = self.worker.lock().expect("worker poisoned").as_mut() {
+                worker.pending.remove(&id);
+            }
+            self.fell_back("the bot worker did not answer in time");
         }
         answer
     }
 
-    /// Serves one worker connection until it closes. A newer worker
-    /// replaces an older one.
+    /// Serves one worker connection until it closes or falls silent. A
+    /// newer worker replaces an older one.
     pub async fn serve(&self, socket: WebSocket) {
         let conn = self.next.fetch_add(1, Ordering::Relaxed);
         let (mut sink, mut stream) = socket.split();
@@ -86,21 +167,39 @@ impl RemoteBots {
             conn,
             tx,
             pending: HashMap::new(),
+            since: crate::stats::now(),
         });
+        self.heard();
         tracing::info!("bot worker connected");
         let mut writer = tokio::spawn(async move {
-            while let Some(text) = rx.recv().await {
-                if sink.send(Message::Text(text.into())).await.is_err() {
+            let mut beat = tokio::time::interval(HEARTBEAT);
+            loop {
+                let message = tokio::select! {
+                    text = rx.recv() => match text {
+                        Some(text) => Message::Text(text.into()),
+                        None => break,
+                    },
+                    _ = beat.tick() => Message::Ping(Default::default()),
+                };
+                if sink.send(message).await.is_err() {
                     break;
                 }
             }
         });
         loop {
             tokio::select! {
-                incoming = stream.next() => match incoming {
-                    Some(Ok(Message::Text(text))) => self.answer(&text),
-                    Some(Ok(Message::Close(_)) | Err(_)) | None => break,
-                    Some(Ok(_)) => {}
+                incoming = tokio::time::timeout(SILENCE, stream.next()) => match incoming {
+                    Err(_) => {
+                        tracing::warn!("bot worker went silent; dropping it");
+                        break;
+                    }
+                    Ok(Some(Ok(Message::Text(text)))) => {
+                        self.heard();
+                        self.answer(&text);
+                    }
+                    Ok(Some(Ok(Message::Close(_)) | Err(_)) | None) => break,
+                    // Pongs, mostly: the worker is alive.
+                    Ok(Some(Ok(_))) => self.heard(),
                 },
                 _ = &mut writer => break,
             }
@@ -126,8 +225,9 @@ impl RemoteBots {
     }
 }
 
-/// Runs a bot worker for `url` forever, reconnecting when the link drops.
-/// Each move gets the thinking time the room asks for, at most `think`.
+/// Runs a bot worker for `url` forever, reconnecting when the link drops
+/// or the server falls silent. Each move gets the thinking time the room
+/// asks for, at most `think`.
 pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Duration) {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::{Message, http::HeaderValue};
@@ -156,7 +256,8 @@ pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Durat
                         }
                     }
                 });
-                while let Some(Ok(message)) = stream.next().await {
+                // The server pings every HEARTBEAT; reading answers the pings.
+                while let Ok(Some(Ok(message))) = tokio::time::timeout(SILENCE, stream.next()).await {
                     let Message::Text(text) = message else { continue };
                     let Ok(job) = serde_json::from_str::<Job>(&text) else {
                         continue;

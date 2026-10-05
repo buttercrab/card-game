@@ -77,6 +77,11 @@ pub enum Command {
         seat: usize,
         action: Box<dyn Any + Send>,
     },
+    /// The server is stopping: save the room, keep its file, and end. `done`
+    /// answers once the snapshot is written.
+    Shutdown {
+        done: tokio::sync::oneshot::Sender<()>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -305,6 +310,11 @@ impl<G: SessionGame> Room<G> {
                 None => rx.recv().await,
             };
             let Some(cmd) = next else { break };
+            if let Command::Shutdown { done } = cmd {
+                self.save_for_restart(save.as_deref());
+                let _ = done.send(());
+                return;
+            }
             self.handle(cmd);
             self.think();
             if let Some(path) = &save {
@@ -330,6 +340,15 @@ impl<G: SessionGame> Room<G> {
         }
         if let Some(path) = &save {
             let _ = std::fs::remove_file(path);
+        }
+    }
+
+    /// Writes the room for the next server to restore; see [`Command::Shutdown`].
+    fn save_for_restart(&self, save: Option<&Path>) {
+        let Some(path) = save else { return };
+        let snapshot = serde_json::to_string(&self.snapshot()).expect("snapshots serialize");
+        if let Err(e) = write_atomic(path, &snapshot) {
+            tracing::error!(room = %self.id, "could not save the room for a restart: {e}");
         }
     }
 
@@ -467,6 +486,8 @@ impl<G: SessionGame> Room<G> {
                     return;
                 }
             }
+            // Handled by `run`, which ends the room.
+            Command::Shutdown { .. } => return,
         }
         self.broadcast();
     }
@@ -530,8 +551,9 @@ impl<G: SessionGame> Room<G> {
                 if self.in_hand() {
                     return Err("rules can change only between hands".into());
                 }
-                let settings: G::Settings =
+                let mut settings: G::Settings =
                     serde_json::from_value(settings).map_err(|e| format!("bad settings: {e}"))?;
+                G::freeze(&mut settings);
                 G::validate(&settings)?;
                 if G::seats(&settings) != self.seats.len() {
                     return Err("the number of players cannot change".into());
@@ -550,12 +572,15 @@ impl<G: SessionGame> Room<G> {
                 if c.hinted.is_some_and(|t| t.elapsed() < Duration::from_secs(1)) {
                     return Ok(());
                 }
+                // Searches are capped across the server; see `limit::HINTS`.
+                let permit = crate::limit::hint_permit().ok_or("hints are busy")?;
                 c.hinted = Some(Instant::now());
                 let tx = c.tx.clone();
                 let view = G::view(game, Viewer::Seat(seat));
                 let legal = G::legal_actions(game);
                 let (seed, version) = (self.rng.random::<u64>(), self.version);
                 tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
                     let action = G::bot(BotLevel::Hard, seat, HINT_THINK, 1).act(
                         &view,
                         &legal,
@@ -737,7 +762,7 @@ impl<G: SessionGame> Room<G> {
         // most of it thinking, leaving a little for the move to travel.
         let think = delay.mul_f32(0.8);
         let local_think = self.think_cap.map_or(think, |cap| think.min(cap));
-        let remote = self.remote.clone().filter(|r| r.connected());
+        let remote = self.remote.clone().filter(|r| r.available());
         let job = remote.as_ref().map(|_| {
             json!({
                 "level": level, "seat": seat, "seed": seed, "think_ms": think.as_millis() as u64,

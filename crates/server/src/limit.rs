@@ -1,4 +1,5 @@
-//! Per-client rate limits: in-memory token buckets keyed by IP address.
+//! Rate limits: in-memory token buckets keyed by IP address, the same per
+//! WebSocket connection, and a cap on hint searches running at once.
 
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::StatusCode;
@@ -8,6 +9,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Mutex;
 use std::time::Instant;
+use tokio::sync::{Semaphore, SemaphorePermit};
 
 /// Up to `burst` at once, refilled at `per_minute`.
 pub struct Limiter {
@@ -61,6 +63,73 @@ impl Limiter {
         let elapsed = now.saturating_duration_since(bucket.at).as_secs_f64();
         (bucket.tokens + elapsed * self.per_minute / 60.0).min(self.burst)
     }
+}
+
+/// One connection's own bucket: up to `burst` at once, refilled at `per_minute`.
+pub struct ConnBucket {
+    per_minute: f64,
+    burst: f64,
+    bucket: Bucket,
+}
+
+impl ConnBucket {
+    pub fn new(per_minute: u32, burst: u32) -> ConnBucket {
+        let burst = f64::from(burst.max(1));
+        ConnBucket {
+            per_minute: f64::from(per_minute),
+            burst,
+            bucket: Bucket {
+                tokens: burst,
+                at: Instant::now(),
+            },
+        }
+    }
+
+    /// Takes a token if one is left.
+    pub fn take(&mut self) -> bool {
+        self.take_at(Instant::now())
+    }
+
+    pub fn take_at(&mut self, now: Instant) -> bool {
+        let elapsed = now.saturating_duration_since(self.bucket.at).as_secs_f64();
+        self.bucket.tokens = (self.bucket.tokens + elapsed * self.per_minute / 60.0).min(self.burst);
+        self.bucket.at = now;
+        if self.bucket.tokens >= 1.0 {
+            self.bucket.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Hint searches (a 고수 bot thinking for a player) running at once, across
+/// the whole server: each keeps a CPU busy for most of a second, and the
+/// server has few.
+pub const HINT_SEARCHES: usize = 2;
+
+pub static HINTS: Semaphore = Semaphore::const_new(HINT_SEARCHES);
+
+/// A place for one hint search, or `None` while [`HINT_SEARCHES`] already run.
+pub fn hint_permit() -> Option<SemaphorePermit<'static>> {
+    HINTS.try_acquire().ok()
+}
+
+/// The largest WebSocket message or frame a client may send. Its biggest,
+/// a table's full rules, is a few kilobytes.
+pub const WS_MAX_MESSAGE: usize = 64 * 1024;
+
+/// What one table connection may send: a burst, then five messages a second.
+pub fn ws_messages() -> ConnBucket {
+    ConnBucket::new(300, 40)
+}
+
+/// A connection that sends this many messages past its limit is closed.
+pub const WS_FLOOD: u32 = 100;
+
+/// Hints one connection may ask for: a few in a row, then one every five seconds.
+pub fn ws_hints() -> ConnBucket {
+    ConnBucket::new(12, 4)
 }
 
 /// The limits the server applies.
@@ -147,6 +216,26 @@ mod tests {
         let later = t + Duration::from_secs(3600);
         assert!((0..3).all(|_| limiter.allow_at(a, later)));
         assert!(!limiter.allow_at(a, later));
+    }
+
+    #[test]
+    fn a_connection_bucket_allows_a_burst_then_refills() {
+        let mut bucket = ConnBucket::new(60, 2);
+        let t = Instant::now();
+        assert!(bucket.take_at(t) && bucket.take_at(t));
+        assert!(!bucket.take_at(t));
+        assert!(!bucket.take_at(t + Duration::from_millis(900)));
+        assert!(bucket.take_at(t + Duration::from_millis(1100)));
+    }
+
+    #[test]
+    fn hint_searches_are_capped_across_the_server() {
+        let held: Vec<_> = (0..HINT_SEARCHES)
+            .map(|_| hint_permit().expect("a free place"))
+            .collect();
+        assert!(hint_permit().is_none(), "every place is taken");
+        drop(held);
+        assert!(hint_permit().is_some());
     }
 
     #[test]

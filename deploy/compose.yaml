@@ -19,6 +19,9 @@ services:
     cap_drop:
       - ALL
     command: ["--bot-worker", "wss://cards.buttercrab.io/internal/bots"]
+    # Searches use every core but little memory; cap it anyway so a leak
+    # cannot take the home server down with it.
+    mem_limit: 2g
     env_file: ${HOME}/.config/card-game/bots.env
     environment:
       RUST_LOG: info

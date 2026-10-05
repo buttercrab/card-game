@@ -1,0 +1,6 @@
+[Unit]
+Description=Back up the card game's stats and tables from the Seoul server
+
+[Service]
+Type=oneshot
+ExecStart=%h/docker-compose/card-game/deploy/backup.sh

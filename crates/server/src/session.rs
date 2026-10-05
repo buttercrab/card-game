@@ -29,6 +29,12 @@ pub trait SessionGame:
     /// Checks settings a player proposes for the table.
     fn validate(settings: &Self::Settings) -> Result<(), String>;
 
+    /// Pins whatever the settings take from outside the room (a preset's
+    /// rules, say) as it is now, so the table keeps its rules for its whole
+    /// life even if a later version of the server changes the preset.
+    /// Settings pinned already stay as they are.
+    fn freeze(settings: &mut Self::Settings);
+
     /// Options for hand number `hand` (0-based) of a session; `last` is the
     /// hand before it in brief, when known.
     fn hand_options(settings: &Self::Settings, hand: u32, last: Option<&Self::Summary>) -> Self::Options;
@@ -73,20 +79,34 @@ pub struct MightySettings {
     /// The table's own rules, when its players changed the preset's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rules: Option<Rules>,
+    /// The preset's rules as they were when the table chose it; see
+    /// [`SessionGame::freeze`]. Without it, the preset's rules today.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset_rules: Option<Rules>,
 }
 
 impl MightySettings {
+    pub fn new(preset: Preset) -> MightySettings {
+        MightySettings {
+            preset,
+            rules: None,
+            preset_rules: None,
+        }
+    }
+
     pub fn rules(&self) -> Rules {
-        self.rules.clone().unwrap_or_else(|| self.preset.rules())
+        self.rules.clone().unwrap_or_else(|| self.base())
+    }
+
+    /// The preset's rules, as pinned for this table.
+    fn base(&self) -> Rules {
+        self.preset_rules.clone().unwrap_or_else(|| self.preset.rules())
     }
 }
 
 impl Default for MightySettings {
     fn default() -> MightySettings {
-        MightySettings {
-            preset: Preset::Gshs,
-            rules: None,
-        }
+        MightySettings::new(Preset::Gshs)
     }
 }
 
@@ -102,6 +122,12 @@ impl SessionGame for Mighty {
 
     fn validate(settings: &MightySettings) -> Result<(), String> {
         settings.rules().validate().map_err(|e| e.to_string())
+    }
+
+    fn freeze(settings: &mut MightySettings) {
+        if settings.preset_rules.is_none() {
+            settings.preset_rules = Some(settings.preset.rules());
+        }
     }
 
     /// The first bidder moves one seat to the left each hand, unless the
@@ -148,7 +174,7 @@ impl SessionGame for Mighty {
     }
 
     fn customized(settings: &MightySettings) -> bool {
-        settings.rules.as_ref().is_some_and(|r| *r != settings.preset.rules())
+        settings.rules.as_ref().is_some_and(|r| *r != settings.base())
     }
 
     fn outcome(state: &mighty::State) -> &'static str {

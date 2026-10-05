@@ -62,6 +62,14 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preset: practice ? 'default' : preset }),
       });
+      if (res.status === 503) {
+        error = '지금은 열린 테이블이 너무 많아요. 잠시 뒤에 다시 해 보세요.';
+        return;
+      }
+      if (res.status === 429) {
+        error = '테이블을 너무 자주 만들었어요. 잠시 뒤에 다시 해 보세요.';
+        return;
+      }
       if (!res.ok) throw new Error(String(res.status));
       const id: string = (await res.json()).id;
       if (!practice && chosen) setPending(id, chosen.base, chosen.rules);

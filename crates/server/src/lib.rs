@@ -128,8 +128,10 @@ impl AppState {
         self.stats.clone()
     }
 
-    /// Accepts bot workers that present `token`; see [`bots`].
+    /// Accepts bot workers that present `token`; see [`bots`]. From then
+    /// on, tables thinking for themselves are warned about.
     pub fn with_bot_token(self, token: String) -> AppState {
+        self.remote.expect_worker();
         AppState {
             bot_token: Some(token),
             ..self
@@ -181,6 +183,7 @@ impl AppState {
             let loaded = std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|text| serde_json::from_str(&text).map_err(|e| e.to_string()))
+                .map(freeze_saved::<Mighty>)
                 .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.bot_delay));
             match loaded {
                 Ok(mut room) => {
@@ -203,6 +206,46 @@ impl AppState {
         Ok(restored)
     }
 
+    /// Asks every room to save itself and end, keeping its file for the next
+    /// server to restore (see [`AppState::restore_rooms`]); returns how many
+    /// did within `wait`. For a restart: connections drop, and clients
+    /// reconnect to the next server with their seat tokens.
+    pub async fn shutdown(&self, wait: Duration) -> usize {
+        let rooms: Vec<_> = self
+            .rooms
+            .lock()
+            .expect("room registry poisoned")
+            .values()
+            .cloned()
+            .collect();
+        let mut pending = Vec::new();
+        for room in rooms {
+            let (done, rx) = tokio::sync::oneshot::channel();
+            if room.send(Command::Shutdown { done }).is_ok() {
+                pending.push(rx);
+            }
+        }
+        let all = futures_util::future::join_all(pending);
+        match tokio::time::timeout(wait, all).await {
+            Ok(results) => results.into_iter().filter(Result::is_ok).count(),
+            Err(_) => 0,
+        }
+    }
+
+    /// How many rooms are open now.
+    pub fn open_rooms(&self) -> usize {
+        self.rooms.lock().expect("room registry poisoned").len()
+    }
+
+    /// The server's live state, for `/stats`.
+    pub fn server_status(&self) -> dashboard::ServerStatus {
+        dashboard::ServerStatus {
+            rooms: self.open_rooms(),
+            max_rooms: self.max_rooms,
+            worker: self.remote.status(),
+        }
+    }
+
     /// At most `max_rooms` open at once; each closes after `idle` with nobody connected.
     pub fn with_limits(self, max_rooms: usize, idle: Duration) -> AppState {
         AppState {
@@ -214,8 +257,9 @@ impl AppState {
 
     /// Opens a room and returns its id, which is also its share link, or
     /// `None` when the server already has as many rooms as it allows.
-    pub fn create_room<G: SessionGame>(&self, settings: G::Settings) -> Option<String> {
+    pub fn create_room<G: SessionGame>(&self, mut settings: G::Settings) -> Option<String> {
         const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
+        G::freeze(&mut settings);
         let mut rooms = self.rooms.lock().expect("room registry poisoned");
         if rooms.len() >= self.max_rooms {
             return None;
@@ -255,7 +299,7 @@ impl AppState {
         tokio::spawn(async move {
             room.run(me, rx, idle, save).await;
             registry.lock().expect("room registry poisoned").remove(&key);
-            tracing::info!(room = key, "closed idle room");
+            tracing::info!(room = key, "room closed");
         });
         rooms.insert(id, tx);
     }
@@ -265,6 +309,18 @@ impl AppState {
     }
 }
 
+/// Pins the settings of a room saved before rooms pinned their rules; see
+/// [`SessionGame::freeze`]. Pinned settings, or ones that do not load, pass.
+fn freeze_saved<G: SessionGame>(mut snapshot: Value) -> Value {
+    if let Ok(mut settings) = serde_json::from_value::<G::Settings>(snapshot["settings"].clone()) {
+        G::freeze(&mut settings);
+        if let Ok(frozen) = serde_json::to_value(settings) {
+            snapshot["settings"] = frozen;
+        }
+    }
+    snapshot
+}
+
 /// The API under `/api`, plus the built web client from `web_dir` if given.
 pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
     let state = AppState { web: web_dir, ..state };
@@ -272,10 +328,10 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .route("/healthz", get(|| async { "ok" }))
         .route("/api/presets", get(presets))
         .route("/api/presets/{id}", get(preset_rules))
-        .route("/api/rooms", post(create_room))
+        .route("/api/rooms", post(create_room).layer(DefaultBodyLimit::max(4 * 1024)))
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
-        .route("/api/reports", post(report))
+        .route("/api/reports", post(report).layer(DefaultBodyLimit::max(REPORT_BODY)))
         .route(
             "/api/errors",
             post(errors::client_error).layer(DefaultBodyLimit::max(32 * 1024)),
@@ -309,7 +365,9 @@ async fn bot_worker(State(app): State<AppState>, headers: axum::http::HeaderMap,
     if !allowed {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    ws.on_upgrade(move |socket| async move { app.remote.serve(socket).await })
+    ws.max_message_size(limit::WS_MAX_MESSAGE)
+        .max_frame_size(limit::WS_MAX_MESSAGE)
+        .on_upgrade(move |socket| async move { app.remote.serve(socket).await })
 }
 
 /// Compares secrets without leaking how much of them matched.
@@ -336,9 +394,16 @@ async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: 
         return too_many();
     }
     let preset = body.and_then(|Json(b)| b.preset).unwrap_or(Preset::Gshs);
-    match app.create_room::<Mighty>(MightySettings { preset, rules: None }) {
+    match app.create_room::<Mighty>(MightySettings::new(preset)) {
         Some(id) => Json(json!({ "id": id })).into_response(),
-        None => (StatusCode::SERVICE_UNAVAILABLE, "too many tables are open").into_response(),
+        None => {
+            tracing::warn!(max = app.max_rooms, "refused a table: too many are open");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "지금은 열린 테이블이 너무 많아요. 잠시 뒤에 다시 해 주세요.",
+            )
+                .into_response()
+        }
     }
 }
 
@@ -357,6 +422,8 @@ struct Report {
 /// Reports kept at most this long, and accepted at most this often.
 pub(crate) const REPORT_DAYS: u64 = 14;
 const REPORTS_PER_HOUR: usize = 30;
+/// The largest report body: 2000 characters of text and the client's description.
+const REPORT_BODY: usize = 32 * 1024;
 
 /// Saves a player's problem report with the room's state and move log under
 /// `<data>/reports`, where the owner reads it on `/stats`.
@@ -444,7 +511,51 @@ async fn connect(
         return StatusCode::NOT_FOUND.into_response();
     };
     let conn = app.next_conn.fetch_add(1, Ordering::Relaxed);
-    ws.on_upgrade(move |socket| serve_connection(socket, room, conn))
+    ws.max_message_size(limit::WS_MAX_MESSAGE)
+        .max_frame_size(limit::WS_MAX_MESSAGE)
+        .on_upgrade(move |socket| serve_connection(socket, room, conn))
+}
+
+/// A table connection's message limits; see [`limit::ws_messages`].
+struct ConnLimits {
+    messages: limit::ConnBucket,
+    hints: limit::ConnBucket,
+    /// Messages dropped in a row.
+    over: u32,
+}
+
+/// What becomes of one message under a connection's limits.
+#[derive(Debug, PartialEq, Eq)]
+enum Admit {
+    Pass,
+    Drop,
+    /// The client keeps flooding: hang up.
+    Close,
+}
+
+impl ConnLimits {
+    fn new() -> ConnLimits {
+        ConnLimits {
+            messages: limit::ws_messages(),
+            hints: limit::ws_hints(),
+            over: 0,
+        }
+    }
+
+    /// Counts one incoming message against the connection's rate.
+    fn admit(&mut self) -> Admit {
+        if self.messages.take() {
+            self.over = 0;
+            Admit::Pass
+        } else {
+            self.over += 1;
+            if self.over >= limit::WS_FLOOD {
+                Admit::Close
+            } else {
+                Admit::Drop
+            }
+        }
+    }
 }
 
 async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, conn: ConnId) {
@@ -461,17 +572,32 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
             }
         }
     });
+    let error = |message: String| {
+        let _ = errors.send(json!({ "type": "error", "message": message }).to_string());
+    };
+    let mut limits = ConnLimits::new();
     loop {
         tokio::select! {
             incoming = stream.next() => match incoming {
-                Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMsg>(&text) {
-                    Ok(msg) => {
-                        let _ = room.send(Command::Message { conn, msg });
+                Some(Ok(message @ (Message::Text(_) | Message::Binary(_)))) => {
+                    match limits.admit() {
+                        Admit::Pass => {}
+                        // Too fast: drop it quietly rather than answer each one.
+                        Admit::Drop => continue,
+                        Admit::Close => {
+                            tracing::warn!(conn, "closing a connection that floods its table");
+                            break;
+                        }
                     }
-                    Err(e) => {
-                        let _ = errors.send(json!({ "type": "error", "message": format!("bad message: {e}") }).to_string());
+                    let Message::Text(text) = message else { continue };
+                    match serde_json::from_str::<ClientMsg>(&text) {
+                        Ok(ClientMsg::Hint) if !limits.hints.take() => error("hints too often".into()),
+                        Ok(msg) => {
+                            let _ = room.send(Command::Message { conn, msg });
+                        }
+                        Err(e) => error(format!("bad message: {e}")),
                     }
-                },
+                }
                 Some(Ok(Message::Close(_)) | Err(_)) | None => break,
                 Some(Ok(_)) => {}
             },
@@ -480,4 +606,25 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
     }
     let _ = room.send(Command::Disconnect { conn });
     writer.abort();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_flooding_connection_is_dropped_then_closed() {
+        let mut limits = ConnLimits::new();
+        let mut seen = Vec::new();
+        for _ in 0..1000 {
+            let admit = limits.admit();
+            if seen.last() != Some(&admit) {
+                seen.push(admit);
+            }
+            if seen.last() == Some(&Admit::Close) {
+                break;
+            }
+        }
+        assert_eq!(seen, [Admit::Pass, Admit::Drop, Admit::Close]);
+    }
 }
