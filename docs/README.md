@@ -4,6 +4,7 @@
 | --- | --- |
 | [PLAN.md](PLAN.md) | The plan: goals, principles, target layout and phases; the source of truth for direction |
 | [FIXES.md](FIXES.md) | Fixes for the live site in waves: play-test feedback, the 2026-10-05 review, and what waits on the owner |
+| [REFACTOR.md](REFACTOR.md) | The codebase plan from the 2026-10-05 eight-angle code review: bugs first, then one source of truth, structure, and the game boundary |
 | [DESIGN.md](DESIGN.md) | The web table's design brief: tokens, components, card art, motion and sound |
 | [Mighty rules](../crates/mighty/RULES.md) | The rules as the engine implements them, preset by preset |
 | [Research](../research/README.md) | Conventions for evals, experiments and artifacts, and the log of results |
