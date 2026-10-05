@@ -294,6 +294,9 @@ export interface StateMsg {
   /** How long, in ms, the slowest legal action must still wait after the
    * deal (the first bid where 딜미스 comes first). */
   grace_ms?: number;
+  /** Which state of the hand this is; a hint carries the version it was
+   * asked for, and one for an older state is dropped. */
+  version?: number;
 }
 
 export type ServerMsg =

@@ -1452,7 +1452,9 @@ impl<G: SessionGame> Room<G> {
 
     /// The hand as `seat` may see it, with its legal actions on its turn
     /// and what it may do out of turn otherwise. `grace_ms` is how long
-    /// the slowest of its legal actions must still wait after the deal.
+    /// the slowest of its legal actions must still wait after the deal;
+    /// `version` is the one a hint for this state carries, so the client
+    /// can drop a hint that arrives after the hand moved on.
     fn state_message(&self, seat: Option<usize>) -> Option<Value> {
         let game = self.game.as_ref()?;
         let viewer = seat.map_or(Viewer::Spectator, Viewer::Seat);
@@ -1467,7 +1469,7 @@ impl<G: SessionGame> Room<G> {
         let grace_ms = grace.saturating_sub(waited).as_millis() as u64;
         Some(json!({
             "type": "state", "view": G::view(game, viewer), "legal": legal, "turn": turn,
-            "out_of_turn": out_of_turn, "grace_ms": grace_ms,
+            "out_of_turn": out_of_turn, "grace_ms": grace_ms, "version": self.version,
         }))
     }
 

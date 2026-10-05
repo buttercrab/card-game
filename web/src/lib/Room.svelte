@@ -13,7 +13,6 @@
   import { presetRules, takePending } from './rulesets';
   import type { Rules } from './types';
   import SettingsSheet from './SettingsSheet.svelte';
-  import { sound } from './sound';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
 
@@ -33,10 +32,14 @@
   } = $props();
 
   const client = untrack(() => preview) ?? new RoomClient(untrack(() => id));
-  $effect(() => {
-    if (client.error) sound.error();
+  // Off the page, nothing of the table keeps running: no socket, no
+  // reconnect, no timer.
+  onDestroy(() => {
+    client.close();
+    clearTimeout(invitedTimer);
   });
-  onDestroy(() => client.close());
+  /** The client plays the error sound; notices are quiet. */
+  const toast = $derived(client.toasts.current);
 
   let showMenu = $state(untrack(() => menuAtStart));
   let showSettings = $state(false);
@@ -140,7 +143,9 @@
   /** Steps back off the table's own entry, then hands over to the app. */
   async function leave() {
     leaving = true;
-    if (seated) client.leave();
+    // Even while reconnecting (not seated just now): the seat's token is
+    // forgotten, so the table never takes the seat back.
+    client.leave();
     showMenu = false;
     if (!preview && history.state?.table === id) {
       await new Promise<void>((done) => {
@@ -202,8 +207,10 @@
     />
   {/if}
 
-  {#if client.error}
-    <div class="toast" role="alert">{client.error}</div>
+  {#if toast}
+    {#key toast.id}
+      <div class="toast" data-kind={toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'}>{toast.text}</div>
+    {/key}
   {/if}
 </div>
 

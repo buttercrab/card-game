@@ -421,6 +421,9 @@ async fn a_hint_is_one_of_the_legal_actions() {
     send(&mut ws, json!({ "type": "hint" })).await;
     let hint = next(&mut ws, "hint").await;
     assert!(state["legal"].as_array().unwrap().contains(&hint["action"]));
+    // The hint names the state it was for, so a client can drop a late one.
+    assert!(state["version"].is_u64());
+    assert_eq!(hint["version"], state["version"]);
 }
 
 #[tokio::test]
