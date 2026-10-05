@@ -148,9 +148,9 @@ mod tests {
                         Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                         Turn::Seat(seat) => {
                             let legal = Mighty::legal_actions(&state);
-                            let hand = state.hands[seat].clone();
+                            let hand = state.hands()[seat].clone();
                             let refused = state.unplayable();
-                            if matches!(state.phase, crate::state::Phase::Play(_)) {
+                            if matches!(state.phase(), crate::state::Phase::Play(_)) {
                                 let legal_cards: Vec<_> = legal
                                     .iter()
                                     .filter_map(|a| match a {

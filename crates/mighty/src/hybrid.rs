@@ -282,7 +282,7 @@ impl HybridBot {
 
 /// Tricks finished in the hand under way.
 fn tricks_done(state: &State) -> usize {
-    match &state.phase {
+    match state.phase() {
         Phase::Play(p) => p.tricks.len(),
         Phase::Done(_) => usize::MAX,
         _ => 0,
@@ -393,7 +393,7 @@ mod tests {
                         Mighty::apply(&mut state, deal).unwrap();
                     }
                     Turn::Seat(seat) => {
-                        if let Phase::Play(p) = &state.phase
+                        if let Phase::Play(p) = state.phase()
                             && p.tricks.len() == 3
                             && p.plays.is_empty()
                         {

@@ -245,7 +245,7 @@ mod tests {
                     Turn::Over => break,
                     Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                     Turn::Seat(seat) => {
-                        if matches!(state.phase, Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_)) {
+                        if matches!(state.phase(), Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_)) {
                             visit(&state, seat);
                         }
                         Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone()
@@ -340,7 +340,7 @@ mod tests {
             });
             // Late positions too, where voids bite.
             positions(&preset.rules(), 1, |state, seat| {
-                if matches!(&state.phase, Phase::Play(p) if p.trick_no >= 5) && picked.len() < 9 {
+                if matches!(&state.phase(), Phase::Play(p) if p.trick_no >= 5) && picked.len() < 9 {
                     picked.push(Mighty::view(state, Viewer::Seat(seat)));
                 }
             });
@@ -371,7 +371,7 @@ mod tests {
         let rules = Preset::Default.rules();
         let mut view = None;
         positions(&rules, 1, |state, seat| {
-            if view.is_none() && matches!(state.phase, Phase::Bidding(_)) {
+            if view.is_none() && matches!(state.phase(), Phase::Bidding(_)) {
                 view = Some(Mighty::view(state, Viewer::Seat(seat)));
             }
         });

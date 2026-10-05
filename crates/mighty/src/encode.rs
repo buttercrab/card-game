@@ -428,13 +428,7 @@ impl<'a> Table<'a> {
     }
 
     fn context(&self, lead: Lead) -> TrickContext {
-        TrickContext {
-            trump: self.trump,
-            mighty: self.rules.mighty(self.trump),
-            deck: self.rules.deck,
-            lead,
-            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
-        }
+        self.rules.trick_context(self.trump, lead)
     }
 
     /// Each live card's power in the trick under way, or as a lead when
@@ -505,6 +499,7 @@ impl<'a> Table<'a> {
             card,
             powered: powered(self.rules, self.trick_state(Some(lead)), card),
         });
+
         trick::winner(&self.context(lead), plays) == plays.len() - 1
     }
 }
@@ -1086,9 +1081,9 @@ impl Encode for Mighty {
     fn belief_targets(state: &State, viewer: Seat) -> Vec<i32> {
         let view = Mighty::view(state, Viewer::Seat(viewer));
         let table = Table::new(&view);
-        let players = state.rules.players;
+        let players = state.seats();
         let buried: Vec<Card> = state
-            .kitty
+            .kitty()
             .iter()
             .chain(state.discards().map_or(&[][..], |(d, _)| d))
             .copied()
@@ -1099,13 +1094,13 @@ impl Encode for Mighty {
                 if table.places[i] != Place::Unseen {
                     return -1;
                 }
-                if let Some(seat) = state.hands.iter().position(|h| h.contains(&card)) {
+                if let Some(seat) = state.hands().iter().position(|h| h.contains(&card)) {
                     relative(viewer, seat, players) as i32
                 } else if buried.contains(&card) {
                     BURIED
                 } else {
                     // Not dealt yet.
-                    debug_assert!(matches!(state.phase, Phase::Dealing), "{card} is nowhere");
+                    debug_assert!(matches!(state.phase(), Phase::Dealing), "{card} is nowhere");
                     -1
                 }
             })

@@ -15,7 +15,7 @@ pub use crate::deal::Sampler;
 use crate::read::Memo;
 pub use crate::read::Reading;
 use crate::rules::Contract;
-use crate::state::{Action, Bidding, Exchange, FriendCall, Phase, Play, State};
+use crate::state::{Action, FriendCall, Phase, State};
 use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Turn, Viewer};
 use rand::rngs::StdRng;
@@ -478,76 +478,8 @@ impl Dealer {
         let mut capacity: Vec<usize> = view.hand_sizes.clone();
         capacity[me] = 0;
 
-        let mut state = State {
-            rules: rules.clone(),
-            first_bidder: view.first_bidder,
-            phase: Phase::Dealing,
-            hands: Vec::new(),
-            kitty: Vec::new(),
-            taken: vec![Vec::new(); seats],
-            bids: view.bids.clone(),
-            redealt: view.redealt.clone(),
-        };
-        state.phase = match &view.phase {
-            PhaseView::Bidding {
-                to_act,
-                best,
-                passed,
-                has_bid,
-            } => Phase::Bidding(Bidding {
-                to_act: *to_act,
-                best: *best,
-                passed: passed.clone(),
-                has_bid: has_bid.clone(),
-            }),
-            PhaseView::Play {
-                declarer,
-                contract,
-                call,
-                friend,
-                trick_no,
-                leader,
-                lead,
-                plays,
-                called_joker,
-                tricks,
-                discards,
-                // Derived from the plays; the rebuilt state works them out again.
-                leading: _,
-                no_friend: _,
-            } => {
-                for t in tricks {
-                    state.taken[t.winner].extend(t.plays.iter().map(|p| p.card));
-                }
-                Phase::Play(Play {
-                    declarer: *declarer,
-                    contract: *contract,
-                    // Dealt face down when not seen.
-                    discards: discards.clone().unwrap_or_default(),
-                    call: *call,
-                    friend: *friend,
-                    trick_no: *trick_no,
-                    leader: *leader,
-                    lead: *lead,
-                    plays: plays.clone(),
-                    called_joker: *called_joker,
-                    tricks: tricks.clone(),
-                })
-            }
-            PhaseView::Exchange {
-                declarer,
-                contract,
-                trump_changed,
-                discards,
-            } => Phase::Exchange(Exchange {
-                declarer: *declarer,
-                contract: *contract,
-                discards: discards.clone().unwrap_or_default(),
-                trump_changed: *trump_changed,
-            }),
-            _ => unreachable!("other phases returned above"),
-        };
-        let bidder = match &state.phase {
+        let state = State::from_public(view)?;
+        let bidder = match state.phase() {
             Phase::Bidding(b) => b.best.map(|(seat, contract)| (seat, contract, Vec::new())),
             Phase::Play(p) => {
                 let played = p.tricks.iter().flat_map(|t| &t.plays).chain(&p.plays);
@@ -580,7 +512,7 @@ impl Dealer {
         };
         let mut hand: Vec<Card> = hands[*seat].iter().collect();
         hand.extend(played);
-        let rules = &self.template.rules;
+        let rules = self.template.rules();
         policy.estimate(rules, &hand, contract.trump) >= policy.needed(rules, *contract)
     }
 
@@ -606,21 +538,7 @@ impl Dealer {
 
     /// Puts these cards into `world`, a copy of the template.
     pub(crate) fn fill(&self, world: &mut State, (hands, down): Dealt) {
-        world.hands.resize(self.capacity.len(), Vec::new());
-        for (seat, hand) in world.hands.iter_mut().enumerate() {
-            hand.clear();
-            if seat == self.me {
-                hand.extend(&self.hand);
-                hand.sort();
-            } else {
-                hand.extend(hands[seat].iter());
-            }
-        }
-        match &mut world.phase {
-            Phase::Bidding(_) => world.kitty = down,
-            Phase::Play(p) if self.hidden_down > 0 => p.discards = down,
-            _ => {}
-        }
+        world.fill_hidden(self.me, &self.hand, &hands, down);
     }
 }
 
@@ -727,7 +645,7 @@ mod tests {
                 let mut state = Mighty::new_game(&options).unwrap();
                 while let Turn::Chance | Turn::Seat(_) = Mighty::turn(&state) {
                     if let Turn::Seat(seat) = Mighty::turn(&state)
-                        && matches!(state.phase, Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_))
+                        && matches!(state.phase(), Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_))
                     {
                         let view = Mighty::view(&state, Viewer::Seat(seat));
                         let world = determinize(&view, &mut rng).expect("a deal exists");

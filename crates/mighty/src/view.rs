@@ -93,7 +93,7 @@ impl View {
     /// one for every card played, so it should cost little.
     pub(crate) fn for_policy(state: &State, seat: Seat) -> View {
         let mut view = View::lean(state, Viewer::Seat(seat));
-        view.hand = state.hands[seat].clone();
+        view.hand = state.hands()[seat].clone();
         view
     }
 
@@ -103,15 +103,15 @@ impl View {
             Viewer::Spectator => None,
         };
         View {
-            hand: me.map(|s| state.hands[s].clone()).unwrap_or_default(),
-            hand_sizes: state.hands.iter().map(Vec::len).collect(),
+            hand: me.map(|s| state.hands()[s].clone()).unwrap_or_default(),
+            hand_sizes: state.hands().iter().map(Vec::len).collect(),
             points_taken: state
-                .taken
+                .taken()
                 .iter()
                 .map(|t| t.iter().copied().filter(|c| c.is_point()).collect())
                 .collect(),
-            bids: state.bids.clone(),
-            redealt: state.redealt.clone(),
+            bids: state.bids().to_vec(),
+            redealt: state.redealt().cloned(),
             ..View::lean(state, viewer)
         }
     }
@@ -123,7 +123,7 @@ impl View {
             Viewer::Spectator => None,
         };
         let own_discards = |declarer: Seat, discards: &[Card]| (me == Some(declarer)).then(|| discards.to_vec());
-        let phase = match &state.phase {
+        let phase = match state.phase() {
             Phase::Dealing => PhaseView::Dealing,
             Phase::Bidding(b) => PhaseView::Bidding {
                 to_act: b.to_act,
@@ -159,9 +159,9 @@ impl View {
                 friend: d.friend,
                 team_points: d.team_points,
                 payoffs: d.payoffs.clone(),
-                value: crate::score::breakdown(&state.rules, d.contract, d.call == FriendCall::Alone, d.team_points),
+                value: crate::score::breakdown(state.rules(), d.contract, d.call == FriendCall::Alone, d.team_points),
                 tricks: d.tricks.clone(),
-                discards: if state.rules.reveal_discards {
+                discards: if state.rules().reveal_discards {
                     d.discards.clone()
                 } else {
                     own_discards(d.declarer, &d.discards).unwrap_or_default()
@@ -170,8 +170,8 @@ impl View {
         };
         View {
             viewer,
-            rules: state.rules.clone(),
-            first_bidder: state.first_bidder,
+            rules: state.rules().clone(),
+            first_bidder: state.first_bidder(),
             hand: Vec::new(),
             hand_sizes: Vec::new(),
             points_taken: Vec::new(),
@@ -252,7 +252,8 @@ fn no_friend(state: &State, p: &Play, me: Option<Seat>) -> bool {
         FriendCall::Card(card) => {
             let played = p.tricks.iter().flat_map(|t| &t.plays).chain(&p.plays);
             let shown = played.clone().any(|pl| pl.card == card && pl.seat == p.declarer);
-            let own = me == Some(p.declarer) && (state.hands[p.declarer].contains(&card) || p.discards.contains(&card));
+            let own =
+                me == Some(p.declarer) && (state.hands()[p.declarer].contains(&card) || p.discards.contains(&card));
             shown || own
         }
         FriendCall::Seat(_) | FriendCall::LastTrick => false,

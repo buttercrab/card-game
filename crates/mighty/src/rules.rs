@@ -3,6 +3,7 @@
 
 use crate::card::{ACE, Card, CardSet, DeckKind, Suit};
 use crate::state::HandSummary;
+use crate::trick::{Lead, TrickContext};
 use engine::Seat;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -597,6 +598,17 @@ impl Rules {
         let min = b.last_chance_min.map_or(b.min, |m| m.min(b.min));
         let bonus = if b.allow_no_trump { b.no_trump_bonus } else { 0 };
         min.saturating_sub(bonus)
+    }
+
+    /// What settles a trick that follows `lead` under `trump`.
+    pub fn trick_context(&self, trump: Option<Suit>, lead: Lead) -> TrickContext {
+        TrickContext {
+            trump,
+            mighty: self.mighty(trump),
+            deck: self.deck,
+            lead,
+            powerless_joker_passes: self.joker_lead.powerless_passes,
+        }
     }
 
     pub fn mighty(&self, trump: Option<Suit>) -> Card {

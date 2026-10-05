@@ -7,8 +7,8 @@ use crate::card::{ACE, Card, CardSet, Suit};
 use crate::rules::{CardPolicy, Contract, Rules};
 use crate::search::SearchBot;
 use crate::state::hand_value;
-use crate::state::{Action, FriendCall};
-use crate::trick::{self, Lead, Played, TrickContext};
+use crate::state::{Action, FriendCall, TrickState, powered};
+use crate::trick::{self, Lead, Played};
 use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Viewer};
 use rand::seq::IndexedRandom;
@@ -509,10 +509,18 @@ impl Table<'_> {
         power(self.view, self.trump, card)
     }
 
+    /// The trick under way as the rules see it, `called` its called joker.
+    fn trick(&self, lead: Option<Lead>, called: Option<Card>) -> TrickState {
+        TrickState {
+            trump: self.trump,
+            trick_no: self.trick_no,
+            lead,
+            called_joker: called,
+        }
+    }
+
     fn powered(&self, card: Card, called: Option<Card>) -> bool {
-        let rules = &self.view.rules;
-        let called_powerless = called == Some(card) && !rules.joker_call.called_joker_has_power;
-        rules.policy(card, self.trump, self.trick_no) != CardPolicy::NoEffect && !called_powerless
+        powered(&self.view.rules, self.trick(None, called), card)
     }
 
     /// No unseen card can beat this one if it is led: it is the mighty, or
@@ -733,13 +741,9 @@ fn lead_card(t: &Table, legal: &[Action]) -> Action {
 
 /// Choosing what to play to a trick someone else led.
 fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Option<Card>) -> Action {
-    let ctx = TrickContext {
-        trump: t.trump,
-        mighty: t.mighty,
-        deck: t.view.rules.deck,
-        lead,
-        powerless_joker_passes: t.view.rules.joker_lead.powerless_passes,
-    };
+    let rules = &t.view.rules;
+    let ctx = rules.trick_context(t.trump, lead);
+    let trick = t.trick(Some(lead), called);
     let winner_seat = plays[trick::winner(&ctx, plays)].seat;
     let points = plays.iter().filter(|p| p.card.is_point()).count();
     let seats = t.view.rules.players;
@@ -752,11 +756,7 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
     let wins = |card: Card| {
         let mut next = [plays[0]; 8];
         next[..plays.len()].copy_from_slice(plays);
-        next[plays.len()] = Played {
-            seat: t.me,
-            card,
-            powered: t.powered(card, called),
-        };
+        next[plays.len()] = trick.played(rules, t.me, card);
         trick::winner(&ctx, &next[..=plays.len()]) == plays.len()
     };
     let cards: Vec<Card> = legal.iter().map(card_of).collect();

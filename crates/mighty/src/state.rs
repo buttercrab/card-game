@@ -1,7 +1,8 @@
-use crate::card::{Card, Color, Suit};
+use crate::card::{Card, CardSet, Color, Suit};
 use crate::rules::{CardPolicy, Contract, InvalidRules, Rules, WinScore};
-use crate::trick::{self, Lead, Played, Trick, TrickContext};
-use engine::{Seat, Turn};
+use crate::trick::{self, Lead, Played, Trick};
+use crate::view::{PhaseView, View};
+use engine::{Seat, Turn, Viewer};
 use rand::RngCore;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -102,20 +103,22 @@ pub enum Error {
     BadDeal(&'static str),
 }
 
+/// A hand of Mighty under way. Only the game's own transitions
+/// ([`State::step`] and the constructors here) change it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
-    pub(crate) rules: Rules,
-    pub(crate) first_bidder: Seat,
-    pub(crate) phase: Phase,
+    rules: Rules,
+    first_bidder: Seat,
+    phase: Phase,
     /// Kept sorted.
-    pub(crate) hands: Vec<Vec<Card>>,
-    pub(crate) kitty: Vec<Card>,
+    hands: Vec<Vec<Card>>,
+    kitty: Vec<Card>,
     /// Every card each seat won in tricks.
-    pub(crate) taken: Vec<Vec<Card>>,
+    taken: Vec<Vec<Card>>,
     /// Every bid and pass of this deal, in order.
-    pub(crate) bids: Vec<Bid>,
+    bids: Vec<Bid>,
     /// Why the cards were last dealt again, until the bidding ends.
-    pub(crate) redealt: Option<Redealt>,
+    redealt: Option<Redealt>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,7 +176,8 @@ impl Play {
 }
 
 /// What the cards that may be played next depend on, besides the hand: the
-/// trick so far.
+/// trick so far. The game ([`State::step`]) and the endgame solver, which
+/// plays tricks out without a [`State`], move it on alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TrickState {
     pub trump: Option<Suit>,
@@ -182,6 +186,59 @@ pub(crate) struct TrickState {
     pub lead: Option<Lead>,
     /// The joker called this trick, if the call has effect.
     pub called_joker: Option<Card>,
+}
+
+impl TrickState {
+    /// The trick once `card` leads it: what it follows, and the joker it
+    /// calls when `call_joker` asks and a call is possible. `gone` tells
+    /// whether a joker was won in a finished trick.
+    pub(crate) fn led(
+        self,
+        rules: &Rules,
+        card: Card,
+        joker_lead: Option<Lead>,
+        call_joker: bool,
+        gone: impl Fn(Card) -> bool,
+    ) -> TrickState {
+        let mut t = self;
+        t.lead = if card.is_joker() {
+            joker_lead
+        } else {
+            card.suit().map(Lead::Suit)
+        };
+        t.called_joker = if call_joker {
+            callable_joker(rules, t, card, gone)
+        } else {
+            None
+        };
+        t
+    }
+
+    /// `card`, from `seat`, as it lies in this trick.
+    pub(crate) fn played(self, rules: &Rules, seat: Seat, card: Card) -> Played {
+        Played {
+            seat,
+            card,
+            powered: powered(rules, self, card),
+        }
+    }
+
+    /// The index into `plays`, this trick's cards so far, of the card
+    /// winning it; `None` before the first card.
+    pub(crate) fn winner(self, rules: &Rules, plays: &[Played]) -> Option<usize> {
+        let lead = self.lead.filter(|_| !plays.is_empty())?;
+        Some(trick::winner(&rules.trick_context(self.trump, lead), plays))
+    }
+
+    /// The next trick, before its first card.
+    pub(crate) fn next(self) -> TrickState {
+        TrickState {
+            trump: self.trump,
+            trick_no: self.trick_no + 1,
+            lead: None,
+            called_joker: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,8 +290,170 @@ impl State {
         })
     }
 
+    /// A world `view` cannot tell from the real one but for the cards it
+    /// has not seen: every other hand empty, nothing face down (fill them
+    /// with [`State::fill_hidden`]), and the cards won in tricks as they
+    /// were won. While bidding, exchanging and playing; `None` otherwise
+    /// and for spectators.
+    pub(crate) fn from_public(view: &View) -> Option<State> {
+        let Viewer::Seat(_) = view.viewer else { return None };
+        let seats = view.rules.players;
+        let mut taken = vec![Vec::new(); seats];
+        let phase = match &view.phase {
+            PhaseView::Bidding {
+                to_act,
+                best,
+                passed,
+                has_bid,
+            } => Phase::Bidding(Bidding {
+                to_act: *to_act,
+                best: *best,
+                passed: passed.clone(),
+                has_bid: has_bid.clone(),
+            }),
+            PhaseView::Play {
+                declarer,
+                contract,
+                call,
+                friend,
+                trick_no,
+                leader,
+                lead,
+                plays,
+                called_joker,
+                tricks,
+                discards,
+                // Derived from the plays; the rebuilt state works them out again.
+                leading: _,
+                no_friend: _,
+            } => {
+                for t in tricks {
+                    taken[t.winner].extend(t.plays.iter().map(|p| p.card));
+                }
+                Phase::Play(Play {
+                    declarer: *declarer,
+                    contract: *contract,
+                    // Dealt face down when not seen.
+                    discards: discards.clone().unwrap_or_default(),
+                    call: *call,
+                    friend: *friend,
+                    trick_no: *trick_no,
+                    leader: *leader,
+                    lead: *lead,
+                    plays: plays.clone(),
+                    called_joker: *called_joker,
+                    tricks: tricks.clone(),
+                })
+            }
+            PhaseView::Exchange {
+                declarer,
+                contract,
+                trump_changed,
+                discards,
+            } => Phase::Exchange(Exchange {
+                declarer: *declarer,
+                contract: *contract,
+                discards: discards.clone().unwrap_or_default(),
+                trump_changed: *trump_changed,
+            }),
+            PhaseView::Dealing | PhaseView::Done { .. } => return None,
+        };
+        Some(State {
+            rules: view.rules.clone(),
+            first_bidder: view.first_bidder,
+            phase,
+            hands: Vec::new(),
+            kitty: Vec::new(),
+            taken,
+            bids: view.bids.clone(),
+            redealt: view.redealt.clone(),
+        })
+    }
+
+    /// Deals the cards a world from [`State::from_public`] lacks: `me`
+    /// holds `own`, every other seat its set in `hands`, and `down` lie face
+    /// down (the kitty while bidding; the discards in play, when unseen).
+    pub(crate) fn fill_hidden(&mut self, me: Seat, own: &[Card], hands: &[CardSet], down: Vec<Card>) {
+        let seats = self.seats();
+        self.hands.resize(seats, Vec::new());
+        for (seat, hand) in self.hands.iter_mut().enumerate() {
+            hand.clear();
+            if seat == me {
+                hand.extend(own);
+                hand.sort();
+            } else {
+                // In card order already.
+                hand.extend(hands[seat].iter());
+            }
+        }
+        match &mut self.phase {
+            Phase::Bidding(_) => self.kitty = down,
+            Phase::Play(p) if !down.is_empty() => p.discards = down,
+            _ => {}
+        }
+    }
+
+    /// This hand, in play, wound back to the declarer's friend call: every
+    /// seat holding `hands` (as the play began), the discards made, nothing
+    /// won yet. Replaying the call and the cards since through
+    /// [`State::step`] brings it back to the trick under way.
+    pub(crate) fn before_call(&self, hands: Vec<Vec<Card>>) -> Option<State> {
+        let Phase::Play(p) = &self.phase else { return None };
+        Some(State {
+            rules: self.rules.clone(),
+            first_bidder: self.first_bidder,
+            phase: Phase::Exchange(Exchange {
+                declarer: p.declarer,
+                contract: p.contract,
+                discards: p.discards.clone(),
+                // The call comes after any change, which no longer matters.
+                trump_changed: false,
+            }),
+            hands,
+            kitty: Vec::new(),
+            taken: vec![Vec::new(); self.seats()],
+            bids: self.bids.clone(),
+            redealt: None,
+        })
+    }
+
     pub(crate) fn seats(&self) -> usize {
         self.rules.players
+    }
+
+    pub(crate) fn phase(&self) -> &Phase {
+        &self.phase
+    }
+
+    #[cfg(test)]
+    pub(crate) fn phase_mut(&mut self) -> &mut Phase {
+        &mut self.phase
+    }
+
+    pub(crate) fn first_bidder(&self) -> Seat {
+        self.first_bidder
+    }
+
+    /// Every seat's hand, each sorted.
+    pub(crate) fn hands(&self) -> &[Vec<Card>] {
+        &self.hands
+    }
+
+    pub(crate) fn kitty(&self) -> &[Card] {
+        &self.kitty
+    }
+
+    /// Every card each seat won in tricks.
+    pub(crate) fn taken(&self) -> &[Vec<Card>] {
+        &self.taken
+    }
+
+    pub(crate) fn bids(&self) -> &[Bid] {
+        &self.bids
+    }
+
+    pub(crate) fn redealt(&self) -> Option<&Redealt> {
+        self.redealt.as_ref()
     }
 
     pub(crate) fn turn(&self) -> Turn {
@@ -648,33 +867,19 @@ impl State {
     /// The seat whose card is winning the trick so far, by the same rule
     /// that settles a finished trick. None before the first card.
     pub(crate) fn leading(&self, p: &Play) -> Option<Seat> {
-        let lead = p.lead.filter(|_| !p.plays.is_empty())?;
-        let ctx = TrickContext {
-            trump: p.contract.trump,
-            mighty: self.rules.mighty(p.contract.trump),
-            deck: self.rules.deck,
-            lead,
-            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
-        };
-        Some(p.plays[trick::winner(&ctx, &p.plays)].seat)
+        Some(p.plays[p.trick().winner(&self.rules, &p.plays)?].seat)
     }
 
     fn step_play(&mut self, mut p: Play, seat: Seat, card: Card, joker_lead: Option<Lead>, call: bool) -> Phase {
         self.hands[seat].retain(|&c| c != card);
         if p.plays.is_empty() {
-            p.lead = if card.is_joker() {
-                joker_lead
-            } else {
-                card.suit().map(Lead::Suit)
-            };
-            p.called_joker = if call {
-                callable_joker(&self.rules, p.trick(), card, |j| self.joker_gone(j))
-            } else {
-                None
-            };
+            let t = p
+                .trick()
+                .led(&self.rules, card, joker_lead, call, |j| self.joker_gone(j));
+            p.lead = t.lead;
+            p.called_joker = t.called_joker;
         }
-        let powered = powered(&self.rules, p.trick(), card);
-        p.plays.push(Played { seat, card, powered });
+        p.plays.push(p.trick().played(&self.rules, seat, card));
         if p.call == FriendCall::Card(card) && seat != p.declarer {
             p.friend = Some(seat);
         }
@@ -696,10 +901,11 @@ impl State {
         }
         let plays = std::mem::take(&mut p.plays);
         p.tricks.push(Trick { plays, lead, winner });
-        p.trick_no += 1;
+        let next = p.trick().next();
+        p.trick_no = next.trick_no;
+        p.lead = next.lead;
+        p.called_joker = next.called_joker;
         p.leader = winner;
-        p.lead = None;
-        p.called_joker = None;
         if last {
             Phase::Done(self.score(p))
         } else {

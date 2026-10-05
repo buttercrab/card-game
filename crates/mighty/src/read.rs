@@ -11,8 +11,8 @@ use crate::bot::SimpleBot;
 use crate::card::{Card, CardSet, Suit};
 use crate::endgame::Mix;
 use crate::rules::{Contract, Rules};
-use crate::state::{Action, Exchange, FriendCall, Phase, Play, State};
-use crate::trick::{Played, Trick};
+use crate::state::{Action, FriendCall, Phase, Play, State};
+use crate::trick::{Lead, Played};
 use crate::view::View;
 use engine::Seat;
 use std::collections::HashMap;
@@ -89,7 +89,7 @@ impl Reading {
         if self.bid_scale > 0.0 {
             log += self.bidding(policy, world, &hands, me);
         }
-        if let Phase::Play(p) = &world.phase {
+        if let Phase::Play(p) = world.phase() {
             log += self.play(policy, world, p, hands, me, memo);
         }
         log
@@ -128,10 +128,10 @@ impl Reading {
     /// How likely every other seat's bids and passes were with the hand
     /// `world` dealt it. The declarer is judged on the cards it kept.
     fn bidding(&self, policy: &SimpleBot, world: &State, hands: &[Vec<Card>], me: Seat) -> f64 {
-        let rules = &world.rules;
+        let rules = world.rules();
         let mut best: Option<Contract> = None;
         let mut log = 0.0;
-        for bid in &world.bids {
+        for bid in world.bids() {
             if bid.seat != me {
                 log += self.bid(policy, rules, &hands[bid.seat], best, bid.contract);
             }
@@ -193,7 +193,7 @@ impl Reading {
         me: Seat,
         memo: &mut Memo,
     ) -> f64 {
-        let rules = &world.rules;
+        let rules = world.rules();
         let trump = now.contract.trump;
         let discards = if me == now.declarer {
             CardSet::EMPTY
@@ -207,54 +207,31 @@ impl Reading {
         for (mask, hand) in masks.iter_mut().zip(&hands) {
             *mask = hand.iter().collect();
         }
+        // The hand wound back to the friend call with these hands, built
+        // only once a choice is not remembered.
         let mut hands = Some(hands);
-        let build = |hands: Vec<Vec<Card>>| State {
-            rules: rules.clone(),
-            first_bidder: world.first_bidder,
-            phase: Phase::Exchange(Exchange {
-                declarer: now.declarer,
-                contract: now.contract,
-                discards: now.discards.clone(),
-                trump_changed: false,
-            }),
-            hands,
-            kitty: Vec::new(),
-            taken: vec![Vec::new(); rules.players],
-            bids: world.bids.clone(),
-            redealt: None,
+        let rewind = |hands: &mut Option<Vec<Vec<Card>>>| {
+            let hands = hands.take().expect("wound back once");
+            world.before_call(hands).expect("reading the play")
         };
+        let mut wound_back: Option<State> = None;
         let mut log = 0.0;
         if me != now.declarer {
             let key = (masks[now.declarer], now.discards.iter().collect());
             log += *memo.calls.entry(key).or_insert_with(|| {
-                let state = build(hands.clone().expect("not yet used"));
-                self.friend_call(policy, &state, now.call)
+                let state = wound_back.insert(rewind(&mut hands));
+                self.friend_call(policy, state, now.call)
             });
         }
-        let start = Play {
-            declarer: now.declarer,
-            contract: now.contract,
-            discards: now.discards.clone(),
-            call: now.call,
-            friend: match now.call {
-                FriendCall::Seat(s) => Some(s),
-                _ => None,
-            },
-            trick_no: 0,
-            leader: now.declarer,
-            lead: None,
-            plays: Vec::new(),
-            called_joker: None,
-            tricks: Vec::new(),
-        };
         let mut state: Option<State> = None;
-        // Every card played and every trick finished so far, and how many
-        // of them `state` has seen.
-        let mut events: Vec<Event> = Vec::new();
+        // Every card played so far, as the action that played it, and how
+        // many of them `state` has seen.
+        let mut moves: Vec<(Seat, Action)> = Vec::new();
         let mut applied = 0;
-        let finished = now.tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead), Some(t)));
+        let finished = now.tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead), None));
+        let under_way = (now.plays.as_slice(), now.lead, Some(now.called_joker.is_some()));
         let mut index = 0;
-        for (plays, lead, done) in finished.chain([(now.plays.as_slice(), now.lead, None)]) {
+        for (plays, lead, called) in finished.chain([under_way]) {
             // Who must play a called joker is not on record for finished
             // tricks; the cards after a joker-call card are not read.
             let call_card = plays.first().is_some_and(|first| {
@@ -270,25 +247,21 @@ impl Reading {
                     );
                     let (legal, choice) = *memo.plays.entry(key).or_insert_with(|| {
                         let state = state.get_or_insert_with(|| {
-                            let mut state = build(hands.take().expect("built once"));
-                            state.phase = Phase::Play(start.clone());
+                            let mut state = wound_back.take().unwrap_or_else(|| rewind(&mut hands));
+                            state.step(now.declarer, Action::CallFriend(now.call));
                             state
                         });
-                        for event in &events[applied..] {
-                            event.apply(state);
+                        for (seat, action) in &moves[applied..] {
+                            state.step(*seat, action.clone());
                         }
-                        applied = events.len();
-                        play_mut(state).lead = if i == 0 { None } else { lead };
+                        applied = moves.len();
                         decide(policy, state, seat)
                     });
                     log += self.card(legal, choice, played.card);
                 }
                 masks[seat].remove(played.card);
-                events.push(Event::Card(played));
+                moves.push((seat, replayed(rules, trump, plays, i, lead, called)));
                 index += 1;
-            }
-            if let Some(trick) = done {
-                events.push(Event::Trick(trick));
             }
         }
         log
@@ -299,10 +272,10 @@ impl Reading {
     /// picks among the few cards worth calling, and a card the declarer
     /// holds itself is hardly ever called.
     fn friend_call(&self, policy: &SimpleBot, state: &State, call: FriendCall) -> f64 {
-        let Phase::Exchange(e) = &state.phase else {
+        let Phase::Exchange(e) = state.phase() else {
             return 0.0;
         };
-        if matches!(call, FriendCall::Card(c) if state.hands[e.declarer].contains(&c)) {
+        if matches!(call, FriendCall::Card(c) if state.hands()[e.declarer].contains(&c)) {
             return OWN_CALL;
         }
         let legal = state.legal_actions();
@@ -330,35 +303,32 @@ impl Reading {
     }
 }
 
-/// A step of the replay in [`Reading::play`].
-enum Event<'a> {
-    Card(&'a Played),
-    Trick(&'a Trick),
-}
-
-impl Event<'_> {
-    fn apply(&self, state: &mut State) {
-        match *self {
-            Event::Card(played) => {
-                state.hands[played.seat].retain(|&c| c != played.card);
-                let p = play_mut(state);
-                p.plays.push(*played);
-                if p.call == FriendCall::Card(played.card) && played.seat != p.declarer {
-                    p.friend = Some(played.seat);
-                }
-            }
-            Event::Trick(trick) => {
-                state.taken[trick.winner].extend(trick.plays.iter().map(|p| p.card));
-                let p = play_mut(state);
-                if p.call == FriendCall::FirstTrick && p.trick_no == 0 && trick.winner != p.declarer {
-                    p.friend = Some(trick.winner);
-                }
-                p.tricks.push(trick.clone());
-                p.plays.clear();
-                p.trick_no += 1;
-                p.leader = trick.winner;
-            }
-        }
+/// The action that played card `i` of a trick, `plays` its cards so far,
+/// following `lead`. The record keeps neither how a joker led nor whether a
+/// joker-call card called its joker: a joker leads as the trick went, and a
+/// call shows in its joker played powerless in the same trick (`called`
+/// says outright for the trick under way). A call that changed nothing
+/// else in the trick is no matter to the replay.
+fn replayed(
+    rules: &Rules,
+    trump: Option<Suit>,
+    plays: &[Played],
+    i: usize,
+    lead: Option<Lead>,
+    called: Option<bool>,
+) -> Action {
+    let card = plays[i].card;
+    let leading = i == 0;
+    let call_joker = leading
+        && called.unwrap_or_else(|| {
+            plays
+                .iter()
+                .any(|q| q.card.is_joker() && !q.powered && rules.joker_call_card(q.card, trump) == Some(card))
+        });
+    Action::Play {
+        card,
+        joker_lead: if leading && card.is_joker() { lead } else { None },
+        call_joker,
     }
 }
 
@@ -378,18 +348,11 @@ fn card_of(action: &Action) -> Card {
     action.played_card().expect("only plays during play")
 }
 
-fn play_mut(state: &mut State) -> &mut Play {
-    match &mut state.phase {
-        Phase::Play(p) => p,
-        _ => unreachable!("replaying the play"),
-    }
-}
-
 /// Each seat's hand as the play began (as dealt, while bidding), counting
 /// back the cards it has played since.
 fn hands_before_play(world: &State) -> Vec<Vec<Card>> {
-    let mut hands = world.hands.clone();
-    if let Phase::Play(p) = &world.phase {
+    let mut hands = world.hands().to_vec();
+    if let Phase::Play(p) = world.phase() {
         for played in p.tricks.iter().flat_map(|t| &t.plays).chain(&p.plays) {
             hands[played.seat].push(played.card);
         }
@@ -503,7 +466,7 @@ mod tests {
             .map(|w| reading.log_weight(&policy, w, 4, &mut memo))
             .collect();
         let weights = reading.weights(&logs);
-        let friend = |w: &State| w.hands[3].contains(&ace);
+        let friend = |w: &State| w.hands()[3].contains(&ace);
         let prior = worlds.iter().filter(|w| friend(w)).count() as f64 / worlds.len() as f64;
         let read: f64 = worlds
             .iter()
@@ -516,6 +479,56 @@ mod tests {
             read > 0.5 && read > 2.5 * prior,
             "seat 3 holds ♥A in {read:.2} of the weight"
         );
+    }
+
+    /// Wound back to the friend call and replayed card by card through the
+    /// game's own steps, every position of hands played under every preset
+    /// and drawn rules comes back exactly: the replay reads what the record
+    /// leaves out (joker leads and calls) correctly.
+    #[test]
+    fn replays_reproduce_the_hand() {
+        use crate::Mighty;
+        use crate::rules::Preset;
+        use engine::{Bot, Game, Turn};
+        let mut rng = ChaCha8Rng::seed_from_u64(4);
+        let mut rule_sets: Vec<Rules> = Preset::ALL.iter().map(|p| p.rules()).collect();
+        rule_sets.extend(Preset::ALL.iter().map(|p| p.rules().varied(&mut rng)));
+        let mut replayed_cards = 0;
+        for rules in rule_sets {
+            for first_bidder in 0..3 {
+                let options = Options {
+                    first_bidder: first_bidder % rules.players,
+                    rules: rules.clone(),
+                };
+                let mut state = Mighty::new_game(&options).unwrap();
+                loop {
+                    if let Phase::Play(p) = state.phase() {
+                        let mut replay = state.before_call(hands_before_play(&state)).unwrap();
+                        replay.step(p.declarer, Action::CallFriend(p.call));
+                        let trump = p.contract.trump;
+                        let finished = p.tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead), None));
+                        let under_way = (p.plays.as_slice(), p.lead, Some(p.called_joker.is_some()));
+                        for (plays, lead, called) in finished.chain([under_way]) {
+                            for (i, played) in plays.iter().enumerate() {
+                                replay.step(played.seat, replayed(state.rules(), trump, plays, i, lead, called));
+                                replayed_cards += 1;
+                            }
+                        }
+                        assert_eq!(replay, state);
+                    }
+                    let action = match Mighty::turn(&state) {
+                        Turn::Over => break,
+                        Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                        Turn::Seat(seat) => {
+                            let view = Mighty::view(&state, Viewer::Seat(seat));
+                            SimpleBot::default().act(&view, &Mighty::legal_actions(&state), &mut rng)
+                        }
+                    };
+                    Mighty::apply(&mut state, action).unwrap();
+                }
+            }
+        }
+        assert!(replayed_cards > 10_000, "{replayed_cards}");
     }
 
     #[test]

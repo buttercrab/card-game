@@ -10,7 +10,7 @@
 use crate::card::{Card, CardSet};
 use crate::rules::Rules;
 use crate::state::{self, Action, FriendCall, Phase, Play, State, TrickState};
-use crate::trick::{self, Lead, Played, TrickContext};
+use crate::trick::{self, Lead, Played};
 use engine::Seat;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -21,8 +21,8 @@ use std::hash::{BuildHasherDefault, Hasher};
 /// way), and the sides are settled: a friend named by who wins the first or
 /// last trick is not yet known, and then the sides are not two.
 pub fn solve(state: &State, tricks: usize) -> Option<Vec<i64>> {
-    let Phase::Play(p) = &state.phase else { return None };
-    let rules = &state.rules;
+    let Phase::Play(p) = state.phase() else { return None };
+    let rules = state.rules();
     if rules.hand_size - p.trick_no > tricks {
         return None;
     }
@@ -36,7 +36,7 @@ pub fn solve(state: &State, tricks: usize) -> Option<Vec<i64>> {
     let attack: Vec<bool> = (0..seats).map(|s| s == p.declarer || Some(s) == friend).collect();
     let won: usize = (0..seats)
         .filter(|&s| attack[s])
-        .flat_map(|s| &state.taken[s])
+        .flat_map(|s| &state.taken()[s])
         .filter(|c| c.is_point())
         .count();
     let won = won + state::discard_points(rules, &p.discards);
@@ -64,7 +64,7 @@ fn friend(state: &State, p: &Play) -> Option<Option<Seat>> {
         // Whoever holds the card; nobody if the declarer does, or it was
         // discarded or already played by the declarer.
         FriendCall::Card(card) => {
-            Some((0..state.rules.players).find(|&s| s != p.declarer && state.hands[s].contains(&card)))
+            Some((0..state.seats()).find(|&s| s != p.declarer && state.hands()[s].contains(&card)))
         }
         FriendCall::Seat(_) | FriendCall::Alone => Some(None),
         // The declarer took the first trick itself.
@@ -144,18 +144,18 @@ struct Solver<'a> {
 
 impl<'a> Solver<'a> {
     fn new(state: &'a State, p: &Play, attack: Vec<bool>) -> Solver<'a> {
-        let rules = &state.rules;
+        let rules = state.rules();
         let gone = rules
             .deck
             .jokers()
             .iter()
             .copied()
-            .filter(|j| state.taken.iter().any(|t| t.contains(j)))
+            .filter(|j| state.taken().iter().any(|t| t.contains(j)))
             .collect();
-        let in_play = state.hands.iter().flatten().chain(p.plays.iter().map(|pl| &pl.card));
+        let in_play = state.hands().iter().flatten().chain(p.plays.iter().map(|pl| &pl.card));
         let left = in_play.filter(|c| c.is_point()).count() as u8;
         let mut masks = [CardSet::EMPTY; 8];
-        for (mask, hand) in masks.iter_mut().zip(&state.hands) {
+        for (mask, hand) in masks.iter_mut().zip(state.hands()) {
             *mask = hand.iter().collect();
         }
         let live = masks.iter().fold(CardSet::EMPTY, |m, &h| m | h) | p.plays.iter().map(|pl| pl.card).collect();
@@ -169,7 +169,7 @@ impl<'a> Solver<'a> {
         Solver {
             rules,
             seats: rules.players,
-            hands: state.hands.clone(),
+            hands: state.hands().to_vec(),
             attack,
             gone,
             plays: p.plays.clone(),
@@ -310,23 +310,13 @@ impl<'a> Solver<'a> {
             moves.sort_by_key(|a| std::cmp::Reverse(strength(card_of(a))));
             return;
         };
-        let ctx = TrickContext {
-            trump: t.trump,
-            mighty: self.rules.mighty(t.trump),
-            deck: self.rules.deck,
-            lead,
-            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
-        };
+        let ctx = self.rules.trick_context(t.trump, lead);
         let side = self.attack[seat];
         let mut plays = std::mem::take(&mut self.plays);
         let partner_ahead = self.attack[plays[trick::winner(&ctx, &plays)].seat] == side;
         let key = |a: &Action, plays: &mut Vec<Played>| {
             let card = card_of(a);
-            plays.push(Played {
-                seat,
-                card,
-                powered: state::powered(self.rules, t, card),
-            });
+            plays.push(t.played(self.rules, seat, card));
             let ahead = plays[trick::winner(&ctx, plays)].seat == seat;
             plays.pop();
             let point = i32::from(card.is_point());
@@ -379,20 +369,10 @@ impl<'a> Solver<'a> {
         self.hands[seat].remove(index);
         self.masks[seat].remove(card);
         if self.plays.is_empty() {
-            t.lead = if card.is_joker() {
-                joker_lead
-            } else {
-                card.suit().map(Lead::Suit)
-            };
             let gone = &self.gone;
-            t.called_joker = if call_joker {
-                state::callable_joker(self.rules, t, card, |j| gone.contains(&j))
-            } else {
-                None
-            };
+            t = t.led(self.rules, card, joker_lead, call_joker, |j| gone.contains(&j));
         }
-        let powered = state::powered(self.rules, t, card);
-        self.plays.push(Played { seat, card, powered });
+        self.plays.push(t.played(self.rules, seat, card));
         let value = if self.plays.len() < self.seats {
             self.trick(trick_no, leader, t, alpha, beta)
         } else {
@@ -406,14 +386,7 @@ impl<'a> Solver<'a> {
 
     /// Settles the full trick and searches the next one.
     fn finish(&mut self, trick_no: usize, t: TrickState, alpha: u8, beta: u8) -> u8 {
-        let ctx = TrickContext {
-            trump: t.trump,
-            mighty: self.rules.mighty(t.trump),
-            deck: self.rules.deck,
-            lead: t.lead.expect("a full trick has a lead"),
-            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
-        };
-        let winner = self.plays[trick::winner(&ctx, &self.plays)].seat;
+        let winner = self.plays[t.winner(self.rules, &self.plays).expect("a full trick has a lead")].seat;
         let points = self.plays.iter().filter(|p| p.card.is_point()).count() as u8;
         let won = if self.attack[winner] { points } else { 0 };
         if trick_no + 1 == self.rules.hand_size {
@@ -425,12 +398,7 @@ impl<'a> Solver<'a> {
         self.left -= points;
         let out: CardSet = plays.iter().map(|p| p.card).collect();
         self.live = self.live - out;
-        let next = TrickState {
-            trump: t.trump,
-            trick_no: trick_no + 1,
-            lead: None,
-            called_joker: None,
-        };
+        let next = t.next();
         let rest = self.trick(
             trick_no + 1,
             winner,
@@ -460,7 +428,7 @@ mod tests {
     /// the declarer's side's final points.
     fn brute(state: &State, attack: &[bool]) -> u8 {
         match Mighty::turn(state) {
-            Turn::Over => match &state.phase {
+            Turn::Over => match state.phase() {
                 Phase::Done(d) => d.team_points,
                 _ => unreachable!(),
             },
@@ -496,7 +464,7 @@ mod tests {
             let mut state = Mighty::new_game(&options).unwrap();
             let cut = rng.random_range(0..rules.players);
             loop {
-                if let Phase::Play(p) = &state.phase
+                if let Phase::Play(p) = state.phase()
                     && rules.hand_size - p.trick_no == tricks
                     && p.plays.len() == cut
                 {
@@ -525,11 +493,11 @@ mod tests {
         for preset in Preset::ALL {
             for state in positions(preset, 2, 12) {
                 let Some(payoffs) = solve(&state, 2) else { continue };
-                let Phase::Play(p) = &state.phase else { unreachable!() };
+                let Phase::Play(p) = state.phase() else { unreachable!() };
                 let friend = friend(&state, p).unwrap();
                 let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
                 let points = brute(&state, &attack);
-                let expected = state::settle(&state.rules, p.declarer, friend, p.contract, p.call, points);
+                let expected = state::settle(state.rules(), p.declarer, friend, p.contract, p.call, points);
                 assert_eq!(payoffs, expected, "{preset}");
             }
         }
@@ -541,13 +509,13 @@ mod tests {
         for preset in [Preset::Gshs, Preset::Default] {
             for state in positions(preset, 3, 4) {
                 let Some(payoffs) = solve(&state, 3) else { continue };
-                let Phase::Play(p) = &state.phase else { unreachable!() };
+                let Phase::Play(p) = state.phase() else { unreachable!() };
                 let friend = friend(&state, p).unwrap();
                 let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
                 let points = brute(&state, &attack);
                 assert_eq!(
                     payoffs,
-                    state::settle(&state.rules, p.declarer, friend, p.contract, p.call, points)
+                    state::settle(state.rules(), p.declarer, friend, p.contract, p.call, points)
                 );
             }
         }
@@ -598,7 +566,7 @@ mod tests {
         let (mut solved, mut declined) = (0, 0);
         for rules in &variants {
             for state in positions_for(rules, 2, 6) {
-                let Phase::Play(p) = &state.phase else { unreachable!() };
+                let Phase::Play(p) = state.phase() else { unreachable!() };
                 let Some(friend) = friend(&state, p) else { continue };
                 let rises = state::payoff_rises_with_points(rules, p.contract, p.call == FriendCall::Alone);
                 let Some(payoffs) = solve(&state, 2) else {
@@ -626,7 +594,7 @@ mod tests {
     fn windows_bound_the_value() {
         for preset in [Preset::Gshs, Preset::Skku] {
             for state in positions(preset, 4, 6) {
-                let Phase::Play(p) = &state.phase else { unreachable!() };
+                let Phase::Play(p) = state.phase() else { unreachable!() };
                 let Some(friend) = friend(&state, p) else { continue };
                 let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
                 let solver = || Solver::new(&state, p, attack.clone());
@@ -654,7 +622,7 @@ mod tests {
         let state = &positions(Preset::Default, 5, 1)[0];
         assert!(solve(state, 4).is_none());
         let mut late = positions(Preset::Default, 2, 1).remove(0);
-        if let Phase::Play(p) = &mut late.phase {
+        if let Phase::Play(p) = late.phase_mut() {
             p.call = FriendCall::LastTrick;
             p.friend = None;
         }
@@ -671,7 +639,7 @@ mod tests {
             let started = std::time::Instant::now();
             let mut nodes = Vec::new();
             for state in &states {
-                let Phase::Play(p) = &state.phase else { unreachable!() };
+                let Phase::Play(p) = state.phase() else { unreachable!() };
                 let Some(friend) = friend(state, p) else { continue };
                 let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
                 let mut s = Solver::new(state, p, attack);
