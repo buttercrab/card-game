@@ -42,6 +42,10 @@ struct Args {
     /// Ask the server at --addr whether it is up, then exit (for container health checks).
     #[arg(long)]
     healthcheck: bool,
+    /// Write the web client's generated files (the protocol's types) into
+    /// this directory, `web/src/lib/generated`, then exit.
+    #[arg(long)]
+    write_generated: Option<PathBuf>,
 }
 
 /// Exits successfully when the server at `addr` answers /healthz.
@@ -68,6 +72,9 @@ async fn main() -> std::io::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
     let args = Args::parse();
+    if let Some(dir) = args.write_generated {
+        return server::codegen::write(&dir);
+    }
     if args.healthcheck {
         return healthcheck(args.addr).await;
     }

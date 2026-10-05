@@ -187,7 +187,7 @@ async fn spectators_see_no_cards_and_cannot_act() {
 
     send(&mut spectator, json!({ "type": "act", "action": "Pass" })).await;
     let error = next(&mut spectator, "error").await;
-    assert_eq!(error["message"], "you are not seated");
+    assert_eq!(error["code"], "not_seated");
 }
 
 #[tokio::test]
@@ -197,19 +197,19 @@ async fn cannot_start_with_empty_seats_or_act_out_of_turn() {
     let mut ws = connect(addr, &room).await;
     join(&mut ws, "A", None).await;
     send(&mut ws, json!({ "type": "start" })).await;
-    assert_eq!(
-        next(&mut ws, "error").await["message"],
-        "every seat needs a player or a bot"
-    );
+    assert_eq!(next(&mut ws, "error").await["code"], "empty_seats");
 
     send(&mut ws, json!({ "type": "act", "action": "Pass" })).await;
-    assert_eq!(next(&mut ws, "error").await["message"], "no hand in progress");
+    assert_eq!(next(&mut ws, "error").await["code"], "no_hand");
 }
 
 #[tokio::test]
 async fn unknown_rooms_are_not_found() {
     let addr = spawn_server().await;
     assert_eq!(http(addr, "GET", "/api/rooms/nope", "").await.0, 404);
+    let (status, body) = http(addr, "GET", "/api/presets/nope", "").await;
+    assert_eq!(status, 404);
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["code"], "unknown_preset");
     assert!(connect_async(format!("ws://{addr}/api/rooms/nope/ws")).await.is_err());
 }
 
@@ -225,8 +225,12 @@ async fn idle_rooms_close_and_the_room_count_is_capped() {
     let mut ws = connect(addr, &first).await;
     create_room(addr, "gshs").await;
     // Two rooms open: a third is refused.
-    let (status, _) = http(addr, "POST", "/api/rooms", &json!({ "preset": "gshs" }).to_string()).await;
+    let (status, body) = http(addr, "POST", "/api/rooms", &json!({ "preset": "gshs" }).to_string()).await;
     assert_eq!(status, 503);
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap(),
+        json!({ "code": "too_many_tables" })
+    );
 
     // The empty room closes; the one with a connection stays.
     tokio::time::sleep(Duration::from_millis(600)).await;
@@ -311,7 +315,7 @@ async fn seated_players_change_the_rules_between_hands() {
         json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } }),
     )
     .await;
-    next(&mut ws, "error").await;
+    assert_eq!(next(&mut ws, "error").await["code"], "not_seated");
 
     join(&mut ws, "Jae", None).await;
     send(
@@ -329,7 +333,11 @@ async fn seated_players_change_the_rules_between_hands() {
         json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } }),
     )
     .await;
-    next(&mut ws, "error").await;
+    let error = next(&mut ws, "error").await;
+    assert_eq!(
+        (&error["code"], &error["rule"]),
+        (&json!("invalid_rules"), &json!("empty_bid_range"))
+    );
     rules["bidding"]["min"] = json!(15);
     rules["players"] = json!(4);
     send(
@@ -337,7 +345,16 @@ async fn seated_players_change_the_rules_between_hands() {
         json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": rules } }),
     )
     .await;
-    next(&mut ws, "error").await;
+    assert_eq!(next(&mut ws, "error").await["code"], "player_count_fixed");
+    // Not rules at all.
+    send(
+        &mut ws,
+        json!({ "type": "set_settings", "settings": { "preset": "gshs", "rules": 7 } }),
+    )
+    .await;
+    let error = next(&mut ws, "error").await;
+    assert_eq!(error["code"], "bad_message");
+    assert!(error["detail"].is_string());
 
     // The hand is dealt under the new rules.
     for bot in 1..5 {
@@ -351,7 +368,7 @@ async fn seated_players_change_the_rules_between_hands() {
         json!({ "type": "set_settings", "settings": { "preset": "gshs" } }),
     )
     .await;
-    next(&mut ws, "error").await;
+    assert_eq!(next(&mut ws, "error").await["code"], "rules_between_hands");
 }
 
 #[tokio::test]
@@ -368,9 +385,9 @@ async fn reactions_reach_the_table_and_unknown_ones_are_refused() {
     assert_eq!(r["text"], "나이스");
 
     send(&mut a, json!({ "type": "react", "text": "<script>" })).await;
-    next(&mut a, "error").await;
+    assert_eq!(next(&mut a, "error").await["code"], "unknown_reaction");
     send(&mut watcher, json!({ "type": "react", "text": "👏" })).await;
-    next(&mut watcher, "error").await;
+    assert_eq!(next(&mut watcher, "error").await["code"], "not_seated");
 }
 
 #[tokio::test]
@@ -588,17 +605,11 @@ async fn anyone_may_call_a_misdeal_out_of_turn_while_their_window_is_open() {
     let states = next_states(&mut players).await;
     assert_eq!(states[turn]["out_of_turn"], json!([]));
     send(&mut players[turn], json!({ "type": "act", "action": "Misdeal" })).await;
-    assert_eq!(
-        next(&mut players[turn], "error").await["message"],
-        "it is not your turn"
-    );
+    assert_eq!(next(&mut players[turn], "error").await["code"], "not_your_turn");
     // Nor may a seat take a turn action out of turn.
     let other = (to_act(&states[0]) + 1) % 5;
     send(&mut players[other], json!({ "type": "act", "action": "Pass" })).await;
-    assert_eq!(
-        next(&mut players[other], "error").await["message"],
-        "it is not your turn"
-    );
+    assert_eq!(next(&mut players[other], "error").await["code"], "not_your_turn");
 }
 
 #[tokio::test]
@@ -616,10 +627,7 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
         .unwrap()
         .clone();
     send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
-    assert_eq!(
-        next(&mut players[turn], "error").await["message"],
-        "wait a moment after the deal"
-    );
+    assert_eq!(next(&mut players[turn], "error").await["code"], "wait_after_deal");
     let other = (turn + 2) % 5;
     assert_eq!(states[other]["out_of_turn"], json!(["Misdeal"]));
 
@@ -630,10 +638,7 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
     // The first bid closed every window.
     assert!(states.iter().all(|s| s["out_of_turn"] == json!([])));
     send(&mut players[other], json!({ "type": "act", "action": "Misdeal" })).await;
-    assert_eq!(
-        next(&mut players[other], "error").await["message"],
-        "it is not your turn"
-    );
+    assert_eq!(next(&mut players[other], "error").await["code"], "not_your_turn");
 }
 
 /// A server whose turn-limit seconds last 10 ms, so a 20-second turn runs
@@ -725,7 +730,7 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     // Seats stay put while a hand is on.
     next_where(&mut b, "room", |r| r["in_hand"] == true).await;
     send(&mut b, json!({ "type": "swap_seats", "a": 0, "b": 1 })).await;
-    assert_eq!(next(&mut b, "error").await["message"], "seats move only between hands");
+    assert_eq!(next(&mut b, "error").await["code"], "seats_between_hands");
     let before = next_where(&mut a, "room", |r| r["hands_played"] == 1).await;
     assert_eq!(before["showing"], true);
     let score = |r: &Value, name: &str| -> (usize, i64) {
@@ -931,7 +936,7 @@ async fn bots_keep_their_names_and_levels_when_seats_move() {
     send(&mut a, json!({ "type": "remove_bot", "seat": 1 })).await;
     next_where(&mut a, "room", |r| r["seats"][1]["kind"] == "empty").await;
     send(&mut a, json!({ "type": "swap_seats", "a": 1, "b": 4 })).await;
-    assert_eq!(next(&mut a, "error").await["message"], "nobody to move");
+    assert_eq!(next(&mut a, "error").await["code"], "nobody_to_move");
     // A bot sitting down never takes a name in use: seat 1's own (모과)
     // and 호두 are, so it is 보리, free again.
     send(&mut a, json!({ "type": "add_bot", "seat": 1, "level": "easy" })).await;
@@ -994,7 +999,7 @@ async fn a_shuffle_waits_for_the_next_hand_and_everyone_sees_it_coming() {
     assert_eq!(state["view"]["viewer"]["Seat"], seat, "dealt in the new seat");
     // Not while a hand is on.
     send(&mut a, json!({ "type": "set_table", "shuffle_next": true })).await;
-    assert_eq!(next(&mut a, "error").await["message"], "seats move only between hands");
+    assert_eq!(next(&mut a, "error").await["code"], "seats_between_hands");
 }
 
 #[tokio::test]

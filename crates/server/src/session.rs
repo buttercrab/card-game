@@ -1,6 +1,7 @@
 //! What a room needs from a game beyond one hand: table size, how each hand
 //! is set up, and a bot to fill empty seats.
 
+use crate::protocol::ServerError;
 use engine::{Bot, Game, Viewer};
 use mighty::Mighty;
 use mighty::bot::{Clumsy, tempered};
@@ -26,7 +27,7 @@ pub trait SessionGame:
     fn seats(settings: &Self::Settings) -> usize;
 
     /// Checks settings a player proposes for the table.
-    fn validate(settings: &Self::Settings) -> Result<(), String>;
+    fn validate(settings: &Self::Settings) -> Result<(), ServerError>;
 
     /// Pins whatever the settings take from outside the room (a preset's
     /// rules, say) as it is now, so the table keeps its rules for its whole
@@ -182,8 +183,8 @@ impl SessionGame for Mighty {
         settings.rules().players
     }
 
-    fn validate(settings: &MightySettings) -> Result<(), String> {
-        settings.rules().validate().map_err(|e| e.to_string())
+    fn validate(settings: &MightySettings) -> Result<(), ServerError> {
+        Ok(settings.rules().validate()?)
     }
 
     fn freeze(settings: &mut MightySettings) {

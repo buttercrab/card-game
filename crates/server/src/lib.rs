@@ -2,9 +2,11 @@
 //! task (see [`room`]).
 
 pub mod bots;
+pub mod codegen;
 pub mod dashboard;
 pub mod errors;
 pub mod limit;
+pub mod protocol;
 pub mod room;
 pub mod session;
 pub mod site;
@@ -21,6 +23,7 @@ use futures_util::{SinkExt, StreamExt};
 use limit::{ClientIp, Limits, too_many};
 use mighty::Mighty;
 use mighty::rules::Preset;
+use protocol::{ErrorCode, ServerError};
 use rand::Rng;
 use room::{ClientMsg, Command, ConnId, Room};
 use serde::Deserialize;
@@ -412,7 +415,7 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 async fn preset_rules(Path(id): Path<String>) -> Response {
     match id.parse::<Preset>() {
         Ok(preset) => Json(preset.rules()).into_response(),
-        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+        Err(e) => ServerError::with_detail(ErrorCode::UnknownPreset, e).respond(StatusCode::NOT_FOUND),
     }
 }
 
@@ -431,11 +434,7 @@ async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: 
         Some(id) => Json(json!({ "id": id })).into_response(),
         None => {
             tracing::warn!(max = app.max_rooms, "refused a table: too many are open");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "지금은 열린 테이블이 너무 많아요. 잠시 뒤에 다시 해 주세요.",
-            )
-                .into_response()
+            ServerError::new(ErrorCode::TooManyTables).respond(StatusCode::SERVICE_UNAVAILABLE)
         }
     }
 }
@@ -466,13 +465,13 @@ async fn report(State(app): State<AppState>, ClientIp(ip): ClientIp, Json(r): Js
     }
     let text: String = r.text.trim().chars().take(2000).collect();
     if text.is_empty() {
-        return (StatusCode::BAD_REQUEST, "describe the problem").into_response();
+        return ServerError::new(ErrorCode::EmptyReport).respond(StatusCode::BAD_REQUEST);
     }
     {
         let mut recent = app.reports.lock().expect("report times poisoned");
         recent.retain(|t| t.elapsed() < Duration::from_secs(3600));
         if recent.len() >= REPORTS_PER_HOUR {
-            return (StatusCode::TOO_MANY_REQUESTS, "too many reports").into_response();
+            return ServerError::new(ErrorCode::TooManyReports).respond(StatusCode::TOO_MANY_REQUESTS);
         }
         recent.push(std::time::Instant::now());
     }
@@ -605,8 +604,8 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
             }
         }
     });
-    let error = |message: String| {
-        let _ = errors.send(json!({ "type": "error", "message": message }).to_string());
+    let error = |error: ServerError| {
+        let _ = errors.send(room::error_message(&error).to_string());
     };
     let mut limits = ConnLimits::new();
     loop {
@@ -624,11 +623,11 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
                     }
                     let Message::Text(text) = message else { continue };
                     match serde_json::from_str::<ClientMsg>(&text) {
-                        Ok(ClientMsg::Hint) if !limits.hints.take() => error("hints too often".into()),
+                        Ok(ClientMsg::Hint) if !limits.hints.take() => error(ErrorCode::HintsTooOften.into()),
                         Ok(msg) => {
                             let _ = room.send(Command::Message { conn, msg });
                         }
-                        Err(e) => error(format!("bad message: {e}")),
+                        Err(e) => error(ServerError::with_detail(ErrorCode::BadMessage, e)),
                     }
                 }
                 Some(Ok(Message::Close(_)) | Err(_)) | None => break,

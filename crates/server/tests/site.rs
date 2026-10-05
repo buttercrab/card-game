@@ -298,7 +298,7 @@ async fn too_many_requests_from_one_client_are_refused() {
     )
     .await;
     assert_eq!(r.status, 429);
-    assert!(r.body.contains("잠시 후에"));
+    assert_eq!(r.body, r#"{"code":"rate_limited"}"#);
     let r = request(
         addr,
         "POST",

@@ -3,6 +3,7 @@
 //! their move back as a command.
 
 use crate::bots::RemoteBots;
+use crate::protocol::{ErrorCode, ServerError};
 use crate::session::{BotLevel, Decision, SessionGame};
 use crate::stats::{Event, Hand, Stats};
 use engine::{Turn, Viewer};
@@ -108,6 +109,13 @@ fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, contents)?;
     std::fs::rename(tmp, path)
+}
+
+/// A refusal as sent on a table's connection.
+pub fn error_message(error: &ServerError) -> Value {
+    let mut message = serde_json::to_value(error).expect("errors serialize");
+    message["type"] = json!("error");
+    message
 }
 
 /// One line of JSON per move, so a hand can be replayed from the server log.
@@ -630,8 +638,8 @@ impl<G: SessionGame> Room<G> {
                 let quiet = matches!(msg, ClientMsg::React { .. } | ClientMsg::Hint);
                 // Anything a player does says they are back at the table.
                 let back = self.back(conn);
-                if let Err(message) = self.on_message(conn, msg) {
-                    self.send(conn, &json!({ "type": "error", "message": message }));
+                if let Err(error) = self.on_message(conn, msg) {
+                    self.send(conn, &error_message(&error));
                     if !back {
                         return;
                     }
@@ -830,15 +838,15 @@ impl<G: SessionGame> Room<G> {
     }
 
     /// Seat changes wait for the hand to end, and only players make them.
-    fn may_move_seats(&self, my_seat: Option<usize>) -> Result<(), String> {
-        my_seat.ok_or("only seated players can move seats")?;
+    fn may_move_seats(&self, my_seat: Option<usize>) -> Result<(), ServerError> {
+        my_seat.ok_or(ErrorCode::NotSeated)?;
         if self.in_hand() {
-            return Err("seats move only between hands".into());
+            return Err(ErrorCode::SeatsBetweenHands.into());
         }
         Ok(())
     }
 
-    fn on_message(&mut self, conn: ConnId, msg: ClientMsg) -> Result<(), String> {
+    fn on_message(&mut self, conn: ConnId, msg: ClientMsg) -> Result<(), ServerError> {
         let my_seat = self.conns.get(&conn).and_then(|c| c.seat);
         match msg {
             ClientMsg::Join {
@@ -849,7 +857,7 @@ impl<G: SessionGame> Room<G> {
                 reclaim,
             } => self.join(conn, name, token, seat, device, reclaim),
             ClientMsg::Leave => {
-                let seat = my_seat.ok_or("you are not seated")?;
+                let seat = my_seat.ok_or(ErrorCode::NotSeated)?;
                 let mid_hand = self.in_hand();
                 if mid_hand {
                     self.record(Event::LeftMidHand {
@@ -874,13 +882,13 @@ impl<G: SessionGame> Room<G> {
                 shuffle,
                 shuffle_next,
             } => {
-                my_seat.ok_or("only seated players can change the table")?;
+                my_seat.ok_or(ErrorCode::NotSeated)?;
                 if shuffle_next.is_some() {
                     self.may_move_seats(my_seat)?;
                 }
                 if let Some(secs) = turn_secs {
                     if !TURN_LIMITS.contains(&secs) {
-                        return Err("no such turn limit".into());
+                        return Err(ErrorCode::NoSuchTurnLimit.into());
                     }
                     self.table.turn_secs = secs;
                 }
@@ -901,10 +909,10 @@ impl<G: SessionGame> Room<G> {
                 self.may_move_seats(my_seat)?;
                 let n = self.seats.len();
                 if a >= n || b >= n || a == b {
-                    return Err("no such seat".into());
+                    return Err(ErrorCode::NoSuchSeat.into());
                 }
                 if matches!(self.seats[a], Occupant::Empty) && matches!(self.seats[b], Occupant::Empty) {
-                    return Err("nobody to move".into());
+                    return Err(ErrorCode::NobodyToMove.into());
                 }
                 let new_seat: Vec<usize> = (0..n)
                     .map(|s| match s {
@@ -920,10 +928,10 @@ impl<G: SessionGame> Room<G> {
             ClientMsg::ClearSeat { seat } => {
                 self.may_move_seats(my_seat)?;
                 if my_seat == Some(seat) {
-                    return Err("leave your own seat instead".into());
+                    return Err(ErrorCode::LeaveOwnSeat.into());
                 }
                 if !matches!(self.seats.get(seat), Some(Occupant::Human { .. })) {
-                    return Err("no player in that seat".into());
+                    return Err(ErrorCode::NoPlayerInSeat.into());
                 }
                 self.seats[seat] = Occupant::Empty;
                 self.away[seat] = false;
@@ -936,13 +944,13 @@ impl<G: SessionGame> Room<G> {
                 Ok(())
             }
             ClientMsg::AddBot { seat, level } => {
-                my_seat.ok_or("only seated players can add bots")?;
-                let free = match self.seats.get(seat).ok_or("no such seat")? {
+                my_seat.ok_or(ErrorCode::NotSeated)?;
+                let free = match self.seats.get(seat).ok_or(ErrorCode::NoSuchSeat)? {
                     Occupant::Empty | Occupant::Bot { .. } => true,
                     Occupant::Human { .. } => !self.connected(seat),
                 };
                 if !free {
-                    return Err("that seat is taken".into());
+                    return Err(ErrorCode::SeatTaken.into());
                 }
                 // A bot already there only changes how well it plays; a new
                 // one gets a name of its own.
@@ -969,9 +977,9 @@ impl<G: SessionGame> Room<G> {
                 Ok(())
             }
             ClientMsg::RemoveBot { seat } => {
-                my_seat.ok_or("only seated players can remove bots")?;
+                my_seat.ok_or(ErrorCode::NotSeated)?;
                 if self.in_hand() {
-                    return Err("bots stay until the hand is over".into());
+                    return Err(ErrorCode::BotsStayInHand.into());
                 }
                 match self.seats.get(seat) {
                     Some(Occupant::Bot { .. }) => {
@@ -979,37 +987,37 @@ impl<G: SessionGame> Room<G> {
                         self.away[seat] = false;
                         Ok(())
                     }
-                    _ => Err("no bot in that seat".into()),
+                    _ => Err(ErrorCode::NoBotInSeat.into()),
                 }
             }
             ClientMsg::SetSettings { settings } => {
-                my_seat.ok_or("only seated players can change the rules")?;
+                my_seat.ok_or(ErrorCode::NotSeated)?;
                 if self.in_hand() {
-                    return Err("rules can change only between hands".into());
+                    return Err(ErrorCode::RulesBetweenHands.into());
                 }
                 let mut settings: G::Settings =
-                    serde_json::from_value(settings).map_err(|e| format!("bad settings: {e}"))?;
+                    serde_json::from_value(settings).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))?;
                 G::freeze(&mut settings);
                 G::validate(&settings)?;
                 if G::seats(&settings) != self.seats.len() {
-                    return Err("the number of players cannot change".into());
+                    return Err(ErrorCode::PlayerCountFixed.into());
                 }
                 tracing::info!(room = %self.id, settings = %log_action(&settings), "settings");
                 self.settings = settings;
                 Ok(())
             }
             ClientMsg::Hint => {
-                let seat = my_seat.ok_or("you are not seated")?;
-                let game = self.game.as_ref().ok_or("no hand in progress")?;
+                let seat = my_seat.ok_or(ErrorCode::NotSeated)?;
+                let game = self.game.as_ref().ok_or(ErrorCode::NoHand)?;
                 if G::turn(game) != Turn::Seat(seat) {
-                    return Err("it is not your turn".into());
+                    return Err(ErrorCode::NotYourTurn.into());
                 }
-                let c = self.conns.get_mut(&conn).ok_or("not connected")?;
+                let c = self.conns.get_mut(&conn).ok_or(ErrorCode::NotSeated)?;
                 if c.hinted.is_some_and(|t| t.elapsed() < Duration::from_secs(1)) {
                     return Ok(());
                 }
                 // Searches are capped across the server; see `limit::HINTS`.
-                let permit = crate::limit::hint_permit().ok_or("hints are busy")?;
+                let permit = crate::limit::hint_permit().ok_or(ErrorCode::HintsBusy)?;
                 c.hinted = Some(Instant::now());
                 let tx = c.tx.clone();
                 let view = G::view(game, Viewer::Seat(seat));
@@ -1028,11 +1036,11 @@ impl<G: SessionGame> Room<G> {
                 Ok(())
             }
             ClientMsg::React { text } => {
-                let seat = my_seat.ok_or("you are not seated")?;
+                let seat = my_seat.ok_or(ErrorCode::NotSeated)?;
                 if !REACTIONS.contains(&text.as_str()) {
-                    return Err("unknown reaction".into());
+                    return Err(ErrorCode::UnknownReaction.into());
                 }
-                let c = self.conns.get_mut(&conn).ok_or("not connected")?;
+                let c = self.conns.get_mut(&conn).ok_or(ErrorCode::NotSeated)?;
                 // Too fast: drop it quietly rather than nag.
                 if c.reacted.is_some_and(|t| t.elapsed() < Duration::from_millis(700)) {
                     return Ok(());
@@ -1045,12 +1053,12 @@ impl<G: SessionGame> Room<G> {
                 Ok(())
             }
             ClientMsg::Start => {
-                my_seat.ok_or("only seated players can start")?;
+                my_seat.ok_or(ErrorCode::NotSeated)?;
                 if self.in_hand() {
-                    return Err("a hand is already in progress".into());
+                    return Err(ErrorCode::HandInProgress.into());
                 }
                 if self.seats.iter().any(|s| matches!(s, Occupant::Empty)) {
-                    return Err("every seat needs a player or a bot".into());
+                    return Err(ErrorCode::EmptySeats.into());
                 }
                 // 매 판 자리 섞기, or 섞기 pressed since the last hand.
                 if std::mem::take(&mut self.table.shuffle_next) | self.table.shuffle {
@@ -1062,7 +1070,7 @@ impl<G: SessionGame> Room<G> {
                     self.last_hand(self.hands_played),
                     self.rotation,
                 );
-                let state = G::new_game(&options).map_err(|e| e.to_string())?;
+                let state = G::new_game(&options).map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
                 self.game = Some(state);
                 self.log.clear();
                 self.hand_no = self.hands_played;
@@ -1083,21 +1091,23 @@ impl<G: SessionGame> Room<G> {
                 Ok(())
             }
             ClientMsg::Act { action } => {
-                let seat = my_seat.ok_or("you are not seated")?;
-                let game = self.game.as_mut().ok_or("no hand in progress")?;
-                let action: G::Action = serde_json::from_value(action).map_err(|e| format!("bad action: {e}"))?;
+                let seat = my_seat.ok_or(ErrorCode::NotSeated)?;
+                let game = self.game.as_mut().ok_or(ErrorCode::NoHand)?;
+                let action: G::Action =
+                    serde_json::from_value(action).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))?;
                 if G::turn(game) != Turn::Seat(seat) {
                     if !G::out_of_turn_actions(game, seat).contains(&action) {
-                        return Err("it is not your turn".into());
+                        return Err(ErrorCode::NotYourTurn.into());
                     }
                     return self.out_of_turn(seat, action);
                 }
                 if self.dealt_at.is_some_and(|t| t.elapsed() < G::grace(game, &action)) {
-                    return Err("wait a moment after the deal".into());
+                    return Err(ErrorCode::WaitAfterDeal.into());
                 }
                 let logged = log_action(&action);
-                let entry = serde_json::to_value(&action).map_err(|e| e.to_string())?;
-                G::apply(game, action).map_err(|e| e.to_string())?;
+                let entry =
+                    serde_json::to_value(&action).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))?;
+                G::apply(game, action).map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
                 self.log.push(entry);
                 tracing::info!(room = %self.id, seat, action = %logged, "move");
                 self.advance();
@@ -1107,11 +1117,11 @@ impl<G: SessionGame> Room<G> {
     }
 
     /// Applies `seat`'s out-of-turn action, already known to be allowed.
-    fn out_of_turn(&mut self, seat: usize, action: G::Action) -> Result<(), String> {
-        let game = self.game.as_mut().ok_or("no hand in progress")?;
+    fn out_of_turn(&mut self, seat: usize, action: G::Action) -> Result<(), ServerError> {
+        let game = self.game.as_mut().ok_or(ErrorCode::NoHand)?;
         let logged = log_action(&action);
         let entry = json!({ "out_of_turn": { "seat": seat, "action": action } });
-        G::apply_out_of_turn(game, seat, action).map_err(|e| e.to_string())?;
+        G::apply_out_of_turn(game, seat, action).map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
         self.log.push(entry);
         tracing::info!(room = %self.id, seat, action = %logged, "out-of-turn move");
         self.advance();
@@ -1126,13 +1136,13 @@ impl<G: SessionGame> Room<G> {
         seat: Option<usize>,
         device: Option<String>,
         reclaim: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), ServerError> {
         let name = name.trim().chars().take(24).collect::<String>();
         if name.is_empty() {
-            return Err("pick a name".into());
+            return Err(ErrorCode::NameRequired.into());
         }
         if self.conns.get(&conn).is_some_and(|c| c.seat.is_some()) {
-            return Err("you are already seated".into());
+            return Err(ErrorCode::AlreadySeated.into());
         }
         let reclaimed = token.as_ref().and_then(|t| {
             self.seats
@@ -1155,7 +1165,7 @@ impl<G: SessionGame> Room<G> {
             None => seat
                 .filter(|&s| self.seats.get(s).is_some_and(open))
                 .or_else(|| self.seats.iter().position(|s| matches!(s, Occupant::Empty)))
-                .ok_or("the table is full")?,
+                .ok_or(ErrorCode::TableFull)?,
         };
         // Coming back clears 자리 비움 too: the `back` check before this
         // message ran while the connection was not yet seated.

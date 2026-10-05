@@ -93,12 +93,12 @@ fn temp_dir(name: &str) -> PathBuf {
 }
 
 #[tokio::test]
-async fn a_full_server_refuses_a_table_in_korean() {
+async fn a_full_server_refuses_a_table_with_a_code() {
     let addr = serve(AppState::new(Duration::ZERO).with_limits(1, Duration::from_secs(60))).await;
     create_room(addr).await;
     let (status, body) = http(addr, "POST", "/api/rooms", "{}").await;
     assert_eq!(status, 503);
-    assert!(body.contains("테이블이 너무 많아요"), "{body}");
+    assert_eq!(body, r#"{"code":"too_many_tables"}"#);
 }
 
 #[tokio::test]
@@ -164,7 +164,7 @@ async fn hints_wait_for_a_free_search_and_are_rate_limited() {
         .map(|_| server::limit::hint_permit().unwrap())
         .collect();
     send(ws, json!({ "type": "hint" })).await;
-    assert_eq!(next(ws, "error").await["message"], "hints are busy");
+    assert_eq!(next(ws, "error").await["code"], "hints_busy");
     drop(held);
     send(ws, json!({ "type": "hint" })).await;
     next(ws, "hint").await;
@@ -173,7 +173,7 @@ async fn hints_wait_for_a_free_search_and_are_rate_limited() {
     for _ in 0..4 {
         send(ws, json!({ "type": "hint" })).await;
     }
-    assert_eq!(next(ws, "error").await["message"], "hints too often");
+    assert_eq!(next(ws, "error").await["code"], "hints_too_often");
 }
 
 #[tokio::test]

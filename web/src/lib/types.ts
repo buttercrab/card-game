@@ -1,5 +1,6 @@
 // Mirrors the JSON the server sends: serde's default enum encoding of the
 // Rust types in crates/mighty and crates/server.
+import type { ServerError } from './generated/protocol';
 
 export type BotLevel = 'easy' | 'normal' | 'hard';
 export type Suit = 'Spade' | 'Diamond' | 'Heart' | 'Club';
@@ -310,4 +311,4 @@ export type ServerMsg =
   | { type: 'seats_moved'; how: 'shuffle' | 'swap'; seats?: [number, number]; /** Shuffle: where each seat went. */ order?: number[] }
   | { type: 'reaction'; seat: number; text: string }
   | { type: 'hint'; version: number; action: Action }
-  | { type: 'error'; message: string };
+  | ({ type: 'error' } & ServerError);

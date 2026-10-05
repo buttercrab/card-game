@@ -1,3 +1,4 @@
+import { errorText } from './errorText';
 import { sound } from './sound';
 import { Toasts } from './toast.svelte';
 import type { Action, BotLevel, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
@@ -28,37 +29,6 @@ function load<T>(key: string): T | null {
   } catch {
     return null;
   }
-}
-
-// The server answers in English; players see Korean.
-const ERRORS: [RegExp, string][] = [
-  [/not your turn/, '아직 내 차례가 아니에요'],
-  [/not seated/, '먼저 자리에 앉아야 해요'],
-  [/only seated players/, '자리에 앉은 사람만 할 수 있어요'],
-  [/seat is taken/, '이미 누가 앉은 자리예요'],
-  [/bots stay/, '판이 끝날 때까지 봇을 뺄 수 없어요'],
-  [/already in progress/, '이미 판이 진행 중이에요'],
-  [/every seat needs/, '빈 자리를 먼저 채워 주세요'],
-  [/pick a name/, '이름을 적어 주세요'],
-  [/illegal action/, '지금은 그렇게 할 수 없어요'],
-  [/wait a moment after the deal/, '딜미스할 사람이 있는지 잠깐 기다려요'],
-  [/seats move only between hands/, '자리는 판과 판 사이에만 바꿀 수 있어요'],
-  [/only between hands/, '규칙은 판과 판 사이에만 바꿀 수 있어요'],
-  [/no such turn limit/, '그 시간으로는 정할 수 없어요'],
-  [/no player in that seat/, '그 자리에는 사람이 없어요'],
-  [/leave your own seat/, '내 자리는 직접 일어나 주세요'],
-  [/table is full/, '자리가 다 찼어요'],
-  [/nobody to move/, '바꿀 사람이 없어요'],
-  [/bidding range is empty/, '공약 최소가 최대보다 클 수 없어요'],
-  [/no-trump bonus/, '노기루다 보너스는 최소 공약보다 작아야 해요'],
-  [/no way to choose a friend/, '프렌드를 정하는 방법을 하나는 골라 주세요'],
-  [/invalid rules/, '그 규칙으로는 게임을 할 수 없어요'],
-  [/hints are busy/, '지금은 힌트를 보는 사람이 많아요. 잠시 뒤에 다시 해 주세요'],
-  [/hints too often/, '힌트는 잠시 뒤에 다시 볼 수 있어요'],
-];
-
-function translate(message: string): string {
-  return ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? '요청을 처리하지 못했어요';
 }
 
 function store(key: string, value: unknown) {
@@ -251,7 +221,7 @@ export class RoomClient {
       }
       case 'error':
         this.#starting = false;
-        this.toasts.show('error', translate(msg.message));
+        this.toasts.show('error', errorText(msg));
         break;
     }
   }
