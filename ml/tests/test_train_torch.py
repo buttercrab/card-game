@@ -59,7 +59,7 @@ def test_a_tiny_run_learns_and_writes_its_files(
     assert len(val) >= config.optim.epochs
     assert report.to_json()["all"]["model"]["cards"] > 0
     described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
-    assert described["encoding"] == "mighty-1"
+    assert described["encoding"] == "mighty-2"
     trained = load(tmp_path)
     assert trained.parameter_count() == described["parameters"]
     # Better than the count baseline on the games it saw, at least.

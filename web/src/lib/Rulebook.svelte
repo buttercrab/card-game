@@ -47,6 +47,7 @@
     run: true,
     back_run: { TeamAtMost: 10 },
     discards_to_declarer: true,
+    lose: 'Shortfall',
   };
   const scoring = (r: Rules): Scoring => r.scoring ?? DEFAULT_SCORING;
 
@@ -90,7 +91,9 @@
             : 'TeamAtMost' in b
               ? points <= b.TeamAtMost
               : short >= b.ShortBy;
-      base = -short * (backRun ? 2 : 1);
+      const lose = s.lose ?? 'Shortfall';
+      const owed = lose === 'Shortfall' ? short : c.count - lose.PaysBack + short;
+      base = -owed * (backRun ? 2 : 1);
     }
     const applies = (d: Scoring['alone']) => d === 'Always' || (d === 'Win' && made);
     const doubles = [
@@ -139,7 +142,14 @@
           : 'TeamAtMost' in b
             ? ` ${b.TeamAtMost}점 이하로 가져왔다면(백런) 두 배로 잃어요.`
             : ` ${b.ShortBy}점 이상 모자라면(백런) 두 배로 잃어요.`;
-    lines.push(`공약을 못 채우면 모자란 만큼 잃어요.${backRun}`);
+    const lose = s.lose ?? 'Shortfall';
+    if (lose === 'Shortfall') lines.push(`공약을 못 채우면 모자란 만큼 잃어요.${backRun}`);
+    else {
+      const n = lose.PaysBack;
+      // Under points − 10, (contract − 10) is what making it exactly pays.
+      const why = s.win === 'OverTen' && n === 10 ? ' 딱 이겼을 때 받았을 점수를 물어 주는 셈이에요.' : '';
+      lines.push(`공약을 못 채우면 (공약 − ${n})에 모자란 만큼을 더해 잃어요.${why}${backRun}`);
+    }
     const lossDoubles = [
       noTrump && s.no_trump === 'Always' && '노기루다',
       alone && s.alone === 'Always' && '노프렌드',
@@ -309,6 +319,7 @@
     {@const opponents = r.players - (withFriend ? 2 : 1)}
     {@const bid = { trump: 'Spade' as const, count: r.bidding.min + 1 }}
     {@const v = handValue(r, bid, !withFriend, bid.count + 2)}
+    {@const lost = handValue(r, bid, !withFriend, bid.count - 2)}
     <section>
       <h2>목표</h2>
       <p>
@@ -512,6 +523,7 @@
       <p class="example">
         예: ♠ {bid.count} 공약에 {bid.count + 2}점을 가져오면 한 몫이 {v}점. 야당 {opponents}명이 {signed(-v)}씩,
         {#if withFriend}프렌드 {signed(v)}, 주공 {signed(v * (opponents - 1))}.{:else}주공 {signed(v * opponents)}.{/if}
+        {bid.count - 2}점에 그치면 한 몫이 {signed(lost)}점이에요.
       </p>
     </section>
   {/if}

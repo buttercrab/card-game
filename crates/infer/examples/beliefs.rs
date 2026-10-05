@@ -201,6 +201,18 @@ fn main() {
         Err(_) => serde_json::from_str(&std::fs::read_to_string(&args.rules).expect("a rules file"))
             .expect("a JSON array of rule sets"),
     };
+    // A model reads the encoding it was trained on, and no other.
+    let spec = Mighty::spec(&Options {
+        rules: rules[0].clone(),
+        first_bidder: 0,
+    })
+    .expect("rules the encoding takes");
+    assert!(
+        net.spec() == &spec,
+        "the model reads {}, not {}",
+        net.spec().version,
+        spec.version
+    );
     let total = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..args.threads)
             .map(|t| {

@@ -1,5 +1,5 @@
 use crate::card::{Card, Color, Suit};
-use crate::rules::{BackRun, CardPolicy, Contract, InvalidRules, Rules, WinScore};
+use crate::rules::{BackRun, CardPolicy, Contract, InvalidRules, LoseScore, Rules, WinScore};
 use crate::trick::{self, Lead, Played, Trick, TrickContext};
 use engine::{Seat, Turn};
 use rand::RngCore;
@@ -981,7 +981,12 @@ pub(crate) fn hand_value(rules: &Rules, contract: Contract, alone: bool, team_po
             // Every point the side did not take went to the defence.
             BackRun::DefenceReachesBid => 20 - points >= count,
         };
-        -short * if back_run { 2 } else { 1 }
+        let owed = match s.lose {
+            LoseScore::Shortfall => short,
+            // Validated to be at most the lowest contract: never a gain.
+            LoseScore::PaysBack(n) => count - i64::from(n) + short,
+        };
+        -owed * if back_run { 2 } else { 1 }
     };
     let doubles = [
         s.no_trump.applies(made) && contract.trump.is_none(),
@@ -1065,6 +1070,7 @@ mod tests {
         let rules = Rules {
             scoring: Scoring {
                 win: WinScore::BidBonus,
+                lose: LoseScore::Shortfall,
                 no_trump: Doubling::Win,
                 alone: Doubling::Never,
                 run: true,
@@ -1188,6 +1194,7 @@ mod tests {
     #[test]
     fn basic_scoring() {
         let s = basic();
+        assert_eq!(s.rules.scoring.lose, LoseScore::Shortfall);
         let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
         assert_eq!(value(DIAMOND, 15, false, 19), 8);
         assert_eq!(value(DIAMOND, 13, false, 13), 1);
@@ -1200,6 +1207,55 @@ mod tests {
         // C = 20 doubles too: 풀노 made alone with a run is ×16.
         assert_eq!(value(None, 20, true, 20), 16 * 14);
         assert_eq!(value(DIAMOND, 20, false, 15), -2 * 5);
+    }
+
+    /// The schools' G: made pays P − 10 (at least 1); failed pays back
+    /// C − 10 plus the shortfall, then doubles as before (경기과고: 백런
+    /// at 10 or fewer, nothing else doubles a loss). Seat 0 declares,
+    /// seat 1 is the friend when there is one.
+    #[test]
+    fn a_failed_contract_pays_back_what_it_would_have_won() {
+        let rules = crate::rules::Preset::Gshs.rules();
+        assert_eq!(rules.scoring.lose, LoseScore::PaysBack(10));
+        let pay = |trump, count, call, points| {
+            let friend = (call != FriendCall::Alone).then_some(1);
+            settle(&rules, 0, friend, Contract { trump, count }, call, points)
+        };
+        let friend = FriendCall::Seat(1);
+        // Made exactly, and by two more.
+        assert_eq!(pay(DIAMOND, 14, friend, 14), vec![8, 4, -4, -4, -4]);
+        assert_eq!(pay(DIAMOND, 14, friend, 16), vec![12, 6, -6, -6, -6]);
+        // Failed by 1: (14 − 10) + 1; by 3: (16 − 10) + 3.
+        assert_eq!(pay(DIAMOND, 14, friend, 13), vec![-10, -5, 5, 5, 5]);
+        assert_eq!(pay(DIAMOND, 16, friend, 13), vec![-18, -9, 9, 9, 9]);
+        // 백런 (10 or fewer) doubles the whole loss: ((14 − 10) + 4) × 2.
+        assert_eq!(pay(DIAMOND, 14, friend, 10), vec![-32, -16, 16, 16, 16]);
+        assert_eq!(pay(DIAMOND, 14, friend, 11), vec![-14, -7, 7, 7, 7]);
+        // Alone: the declarer pays all four; only a win doubles.
+        let alone = FriendCall::Alone;
+        assert_eq!(pay(DIAMOND, 14, alone, 12), vec![-24, 6, 6, 6, 6]);
+        assert_eq!(pay(DIAMOND, 14, alone, 15), vec![40, -10, -10, -10, -10]);
+        // 노기루다 15 failed by 2: (15 − 10) + 2, not doubled.
+        assert_eq!(pay(None, 15, friend, 13), vec![-14, -7, 7, 7, 7]);
+        assert_eq!(pay(None, 15, friend, 15), vec![20, 10, -10, -10, -10]);
+    }
+
+    /// Paying back starts from the contract, so a failed contract always
+    /// costs more than under the shortfall alone, and every point taken
+    /// still helps.
+    #[test]
+    fn paying_back_keeps_more_points_better() {
+        for preset in crate::rules::Preset::ALL {
+            let rules = preset.rules();
+            for count in rules.lowest_contract()..=rules.bidding.max {
+                for trump in [DIAMOND, None] {
+                    for alone in [false, true] {
+                        let contract = Contract { trump, count };
+                        assert!(payoff_rises_with_points(&rules, contract, alone), "{preset} {count}");
+                    }
+                }
+            }
+        }
     }
 
     /// A finished hand of seat 0 declaring ♦15 with `call`, `friend`

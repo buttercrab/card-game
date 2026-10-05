@@ -175,9 +175,9 @@ fn encodings_are_pinned() {
             }
         });
     }
-    assert_eq!(positions, 7833);
+    assert_eq!(positions, 8433);
     assert_eq!(
-        fingerprint.0, 0xd307_7bb1_4d77_944e,
+        fingerprint.0, 0x0f76_b0fa_82f4_9af6,
         "the encoding changed: bump VERSION and pin the new fingerprint (only re-pin if a preset's rules changed)"
     );
 }

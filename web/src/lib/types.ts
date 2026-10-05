@@ -57,6 +57,9 @@ export type Doubling = 'Never' | 'Win' | 'Always';
  * points − the minimum bid, points − the contract, or points − the contract
  * + 2 × how far the bid ranks above the minimum. */
 export type WinScore = 'OverTen' | 'OverMin' | 'OverBid' | 'BidBonus' | { BothOver: number };
+/** What a failed contract costs before doubling: the shortfall, or
+ * (contract − n) plus the shortfall. */
+export type LoseScore = 'Shortfall' | { PaysBack: number };
 /** Who opens the next hand's bidding: the next seat, or last hand's friend
  * (else its declarer). */
 export type NextDealer = 'Rotate' | 'FriendOrDeclarer';
@@ -65,6 +68,8 @@ export type BackRun = 'Never' | 'DefenceReachesBid' | { TeamAtMost: number } | {
 
 export interface Scoring {
   win: WinScore;
+  /** Older servers leave this out: the shortfall. */
+  lose?: LoseScore;
   no_trump: Doubling;
   /** Playing openly alone (노프렌드). */
   alone: Doubling;

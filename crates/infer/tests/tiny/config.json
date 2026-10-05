@@ -8,9 +8,9 @@
       "dropout": 0.0
     }
   },
-  "encoding": "mighty-1",
+  "encoding": "mighty-2",
   "spec": {
-    "version": "mighty-1",
+    "version": "mighty-2",
     "global": [
       "rules.players=1",
       "rules.players=2",
@@ -98,6 +98,9 @@
       "rules.scoring.win=bid_bonus",
       "rules.scoring.win=both_over",
       "rules.scoring.win.both_over",
+      "rules.scoring.lose=shortfall",
+      "rules.scoring.lose=pays_back",
+      "rules.scoring.lose.pays_back",
       "rules.scoring.no_trump=never",
       "rules.scoring.no_trump=win",
       "rules.scoring.no_trump=always",
@@ -975,5 +978,5 @@
       "buried"
     ]
   },
-  "parameters": 13625
+  "parameters": 13673
 }
