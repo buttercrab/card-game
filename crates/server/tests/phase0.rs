@@ -1,100 +1,17 @@
 //! The bot worker link, coming back to a seat, and leaving mid-hand, driven
 //! over a real server.
 
-use futures_util::{SinkExt, StreamExt};
+mod common;
+
+use common::*;
+use futures_util::SinkExt;
 use serde_json::{Value, json};
-use server::{AppState, router};
+use server::AppState;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-
-type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
-async fn serve(state: AppState) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
-    addr
-}
-
-async fn http(addr: SocketAddr, method: &str, path: &str, body: &str) -> (u16, String) {
-    let mut stream = TcpStream::connect(addr).await.unwrap();
-    let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(request.as_bytes()).await.unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).await.unwrap();
-    let status = response[9..12].parse().unwrap();
-    let body = response
-        .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
-        .unwrap_or_default();
-    (status, body)
-}
-
-async fn create_room(addr: SocketAddr) -> String {
-    let (status, body) = http(addr, "POST", "/api/rooms", r#"{"preset":"gshs"}"#).await;
-    assert_eq!(status, 200, "{body}");
-    serde_json::from_str::<Value>(&body).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string()
-}
-
-async fn connect(addr: SocketAddr, room: &str) -> Socket {
-    connect_async(format!("ws://{addr}/api/rooms/{room}/ws"))
-        .await
-        .unwrap()
-        .0
-}
-
-async fn send(ws: &mut Socket, msg: Value) {
-    ws.send(Message::Text(msg.to_string().into())).await.unwrap();
-}
-
-/// The next text message, as JSON; `None` once the socket closes.
-async fn next_text(ws: &mut Socket) -> Option<Value> {
-    let wait = async {
-        while let Some(Ok(message)) = ws.next().await {
-            if let Message::Text(text) = message {
-                return Some(serde_json::from_str(&text).unwrap());
-            }
-        }
-        None
-    };
-    tokio::time::timeout(Duration::from_secs(10), wait)
-        .await
-        .expect("timed out")
-}
-
-/// Next message of the given type that satisfies `pred`, skipping others.
-async fn next_where(ws: &mut Socket, kind: &str, pred: impl Fn(&Value) -> bool) -> Value {
-    loop {
-        let value = next_text(ws).await.expect("socket closed");
-        if value["type"] == kind && pred(&value) {
-            return value;
-        }
-    }
-}
-
-async fn next(ws: &mut Socket, kind: &str) -> Value {
-    next_where(ws, kind, |_| true).await
-}
-
-async fn join(ws: &mut Socket, name: &str) -> (u64, String) {
-    send(ws, json!({ "type": "join", "name": name })).await;
-    let welcome = next(ws, "welcome").await;
-    (
-        welcome["seat"].as_u64().unwrap(),
-        welcome["token"].as_str().unwrap().to_string(),
-    )
-}
+use tokio_tungstenite::{MaybeTlsStream, connect_async};
 
 /// Plays seat 0's first legal move each time until the hand is over.
 async fn play_out(ws: &mut Socket) {
@@ -113,9 +30,9 @@ async fn play_out(ws: &mut Socket) {
 async fn reclaiming_a_seat_clears_its_away_mark() {
     // Turn-limit seconds last 10 ms, so a 20-second turn runs out in 200 ms.
     let addr = serve(AppState::new(Duration::ZERO).with_turn_second(Duration::from_millis(10))).await;
-    let room = create_room(addr).await;
+    let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
-    let (seat, token) = join(&mut ws, "Jae").await;
+    let (seat, token) = join(&mut ws, "Jae", None).await;
     send(&mut ws, json!({ "type": "set_table", "turn_secs": 20 })).await;
     for bot in 1..5 {
         send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
@@ -146,12 +63,12 @@ async fn leaving_mid_hand_is_counted() {
     let state = AppState::new(Duration::from_millis(50));
     let stats = state.stats();
     let addr = serve(state).await;
-    let room = create_room(addr).await;
+    let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
-    join(&mut ws, "Jae").await;
+    join(&mut ws, "Jae", None).await;
     // Leaving between hands is not leaving a hand.
     let mut other = connect(addr, &room).await;
-    join(&mut other, "B").await;
+    join(&mut other, "B", None).await;
     // Seat 1 is empty before B sits too, so wait for B first.
     next_where(&mut ws, "room", |r| r["seats"][1]["kind"] == "human").await;
     send(&mut other, json!({ "type": "leave" })).await;
@@ -203,9 +120,9 @@ async fn a_worker_that_cannot_make_a_move_does_not_hold_up_the_room() {
         }
     });
 
-    let room = create_room(addr).await;
+    let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
-    join(&mut ws, "Jae").await;
+    join(&mut ws, "Jae", None).await;
     for bot in 1..5 {
         send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "normal" })).await;
     }
@@ -279,6 +196,7 @@ async fn the_worker_says_hello_and_answers_every_job() {
         format!("ws://{addr}/internal/bots"),
         "secret".into(),
         Duration::from_millis(10),
+        server::bots::Liveness::new(None),
     ));
     let (stream, _) = tokio::time::timeout(Duration::from_secs(10), listener.accept())
         .await
@@ -308,4 +226,61 @@ async fn the_worker_says_hello_and_answers_every_job() {
         assert!(reply["error"].is_string(), "{reply}");
         assert!(reply.get("action").is_none());
     }
+}
+
+/// The worker's container is healthy while its server talks to it: the
+/// liveness file appears with the server's welcome and stays fresh.
+#[tokio::test]
+async fn the_worker_keeps_its_liveness_file_while_welcomed() {
+    let dir = temp_dir();
+    let path = dir.path().join("alive");
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(server::bots::run_worker::<mighty::Mighty>(
+        format!("ws://{addr}/internal/bots"),
+        "secret".into(),
+        Duration::from_millis(10),
+        server::bots::Liveness::new(Some(path.clone())),
+    ));
+    let (stream, _) = tokio::time::timeout(DEADLINE, listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut ws = tokio_tungstenite::accept_async(MaybeTlsStream::Plain(stream))
+        .await
+        .unwrap();
+    assert_eq!(next_text(&mut ws).await.unwrap()["type"], "hello");
+    assert!(
+        !server::bots::alive_within(&path, Duration::from_secs(60)),
+        "not before the welcome"
+    );
+    send(
+        &mut ws,
+        json!({ "type": "welcome", "protocol": server::bots::PROTOCOL, "commit": "x" }),
+    )
+    .await;
+    eventually("the worker says it is alive", || async {
+        server::bots::alive_within(&path, Duration::from_secs(60))
+    })
+    .await;
+    // Long stale, it is not.
+    std::fs::write(&path, "1").unwrap();
+    assert!(!server::bots::alive_within(&path, Duration::from_secs(60)));
+}
+
+/// The worker reaches its server over wss:// with TLS built in (rustls, its
+/// crypto provider chosen at build time, so no OpenSSL and no panic for
+/// want of one): a peer that does not speak TLS is a plain error.
+#[tokio::test]
+async fn the_worker_link_speaks_tls() {
+    use tokio::io::AsyncWriteExt;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\n\r\n").await;
+        }
+    });
+    let refused = connect_async(format!("wss://localhost:{port}/internal/bots")).await;
+    assert!(refused.is_err());
 }

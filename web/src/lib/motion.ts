@@ -82,6 +82,29 @@ export function wait(ms: number): Promise<void> {
   return after(ms);
 }
 
+// What the table is still showing: a deal, or the moves it is playing out.
+// The previews (and so the e2e tests) wait for it to end before they say
+// they are drawn, rather than for a fixed time.
+let busy = 0;
+const idle: (() => void)[] = [];
+
+/** Marks motion under way until the returned function is called (once is
+ * enough; more calls do nothing). */
+export function hold(): () => void {
+  busy++;
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    if (--busy === 0) for (const done of idle.splice(0)) done();
+  };
+}
+
+/** Resolves once nothing holds the motion. */
+export function settled(): Promise<void> {
+  return busy === 0 ? Promise.resolve() : new Promise((done) => idle.push(done));
+}
+
 /** Whether motion is wanted at all: off in settings or by the system. */
 function still(): boolean {
   if (typeof document === 'undefined') return true;

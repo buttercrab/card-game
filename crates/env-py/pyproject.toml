@@ -18,7 +18,7 @@ extend = "../../ml/pyproject.toml"
 python-source = "python"
 module-name = "cardgame_env._core"
 manifest-path = "Cargo.toml"
-profile = "release"
+profile = "wheel"
 
 # uv rebuilds the extension when any Rust it is made of changes.
 [tool.uv]

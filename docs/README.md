@@ -51,14 +51,17 @@ needs it. On the Mac training runs on MPS
 The encoding (`engine::Encode`, Mighty's in `crates/mighty/src/encode.rs`)
 defines every model's input, so it changes only on purpose:
 
-1. Change the encoder and bump its `VERSION` (`mighty-3` to `mighty-4`).
-2. Rewrite the pinned spec:
-   `cargo test -p mighty --test encode -- --ignored write_spec_snapshot`,
-   re-pin `encodings_are_pinned` in the same file, and rewrite the
-   fixtures built on it: `crates/env/tests/parity.json`
-   (`cargo test -p env --test parity -- --ignored write_parity_fixture`)
-   and `crates/infer/tests/tiny` (`uv run python -m
-   cardgame_ml.export.fixture` in `ml/`).
+1. Change the encoder, bump its `VERSION` (`mighty-3` to `mighty-4`) and
+   append the new version to `SPECS` next to it, with the spec
+   fingerprint the failing `the_spec_changes_only_with_its_version` test
+   prints. That test fails while the spec and the last `SPECS` line
+   disagree, so the spec cannot change without a new version.
+2. Rewrite every fixture built on it with `scripts/regenerate-fixtures.sh`
+   (Rust's `tests/encoding.json`, the pinned encodings and search
+   decisions in `crates/mighty/tests/pinned`, `crates/env/tests/parity.json`,
+   and, with `uv`, `crates/infer/tests/tiny` and `tiny-q`), and review the
+   diff. The pinned games' rules are frozen there, so changing a preset's
+   house rules moves none of these, only `presets.json` and `payoffs.json`.
 3. Commit them together. Data and models record the version they were
    made with: a dataset in its `meta.json` and manifest (`encoding`), a
    model in its `config.json` (`encoding`, and the whole spec under

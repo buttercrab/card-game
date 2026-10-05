@@ -1,100 +1,19 @@
 //! Drives a real server over HTTP and WebSockets.
 
-use futures_util::{SinkExt, StreamExt};
+mod common;
+
+use common::*;
 use serde_json::{Value, json};
-use server::{AppState, router};
+use server::AppState;
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-
-type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
-async fn spawn_server() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let app = router(AppState::new(Duration::ZERO), None);
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    addr
-}
-
-async fn http(addr: SocketAddr, method: &str, path: &str, body: &str) -> (u16, String) {
-    let mut stream = TcpStream::connect(addr).await.unwrap();
-    let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(request.as_bytes()).await.unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).await.unwrap();
-    let status = response[9..12].parse().unwrap();
-    let body = response
-        .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_string())
-        .unwrap_or_default();
-    (status, body)
-}
-
-async fn create_room(addr: SocketAddr, preset: &str) -> String {
-    let (status, body) = http(addr, "POST", "/api/rooms", &json!({ "preset": preset }).to_string()).await;
-    assert_eq!(status, 200, "{body}");
-    serde_json::from_str::<Value>(&body).unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string()
-}
-
-async fn connect(addr: SocketAddr, room: &str) -> Socket {
-    connect_async(format!("ws://{addr}/api/rooms/{room}/ws"))
-        .await
-        .unwrap()
-        .0
-}
-
-async fn send(ws: &mut Socket, msg: Value) {
-    ws.send(Message::Text(msg.to_string().into())).await.unwrap();
-}
-
-/// Next message of the given type that satisfies `pred`, skipping others.
-async fn next_where(ws: &mut Socket, kind: &str, pred: impl Fn(&Value) -> bool) -> Value {
-    let wait = async {
-        loop {
-            let msg = ws.next().await.expect("socket closed").unwrap();
-            let Message::Text(text) = msg else { continue };
-            let value: Value = serde_json::from_str(&text).unwrap();
-            if value["type"] == kind && pred(&value) {
-                return value;
-            }
-        }
-    };
-    tokio::time::timeout(Duration::from_secs(10), wait)
-        .await
-        .expect("timed out")
-}
-
-async fn next(ws: &mut Socket, kind: &str) -> Value {
-    next_where(ws, kind, |_| true).await
-}
-
-async fn join(ws: &mut Socket, name: &str, token: Option<&str>) -> (u64, String) {
-    send(ws, json!({ "type": "join", "name": name, "token": token })).await;
-    let welcome = next(ws, "welcome").await;
-    (
-        welcome["seat"].as_u64().unwrap(),
-        welcome["token"].as_str().unwrap().to_string(),
-    )
-}
+use tokio_tungstenite::connect_async;
 
 #[tokio::test]
 async fn one_player_and_four_bots_finish_a_hand() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let state = AppState::new(Duration::ZERO);
     let stats = state.stats();
-    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+    let addr = serve(state).await;
     let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
     let (seat, _) = join(&mut ws, "Jae", None).await;
@@ -215,10 +134,9 @@ async fn unknown_rooms_are_not_found() {
 
 #[tokio::test]
 async fn idle_rooms_close_and_the_room_count_is_capped() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let state = AppState::new(Duration::ZERO).with_limits(2, Duration::from_millis(200));
-    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+    let open = state.clone();
+    let addr = serve(state).await;
 
     assert_eq!(http(addr, "GET", "/healthz", "").await.0, 200);
     let first = create_room(addr, "gshs").await;
@@ -229,30 +147,29 @@ async fn idle_rooms_close_and_the_room_count_is_capped() {
     assert_eq!(status, 503);
 
     // The empty room closes; the one with a connection stays.
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    eventually("the empty room closes", || async { open.open_rooms() == 1 }).await;
     assert_eq!(http(addr, "GET", &format!("/api/rooms/{first}"), "").await.0, 200);
     create_room(addr, "gshs").await;
 
     // Once everyone leaves, it closes too.
     ws.close(None).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    assert_eq!(http(addr, "GET", &format!("/api/rooms/{first}"), "").await.0, 404);
+    let path = format!("/api/rooms/{first}");
+    eventually("the left room closes", || async {
+        http(addr, "GET", &path, "").await.0 == 404
+    })
+    .await;
 }
 
 #[tokio::test]
 async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
-    let dir = std::env::temp_dir().join(format!("cards-test-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let serve = |dir: std::path::PathBuf| async move {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    let dir = temp_dir();
+    let start = |dir: std::path::PathBuf| async move {
         let state = AppState::new(Duration::ZERO).with_data(dir);
         let restored = state.restore_rooms().unwrap();
-        tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
-        (addr, restored)
+        (serve(state).await, restored)
     };
 
-    let (addr, restored) = serve(dir.clone()).await;
+    let (addr, restored) = start(dir.path().to_path_buf()).await;
     assert_eq!(restored, 0);
     let room = create_room(addr, "gshs").await;
     // Five people rather than bots, so the test never waits on a bot thinking.
@@ -282,10 +199,17 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     }
     let seat = before["turn"]["Seat"].as_u64().unwrap() as usize;
     let token = players[seat].1.clone();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // The room saves itself after each move, before it reads its next
+    // message: once it has answered one more, the file is up to date.
+    let other = (seat + 1) % players.len();
+    send(&mut players[other].0, json!({ "type": "act", "action": "Pass" })).await;
+    assert_eq!(
+        next(&mut players[other].0, "error").await["message"],
+        "it is not your turn"
+    );
 
     // A second server reading the same directory picks the hand up where it was.
-    let (addr, restored) = serve(dir.clone()).await;
+    let (addr, restored) = start(dir.path().to_path_buf()).await;
     assert_eq!(restored, 1);
     let mut ws = connect(addr, &room).await;
     let (reclaimed, _) = join(&mut ws, "again", Some(&token)).await;
@@ -293,7 +217,6 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     let after = next(&mut ws, "state").await;
     assert_eq!(after["view"], before["view"]);
     assert_eq!(after["legal"], before["legal"]);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[tokio::test]
@@ -375,12 +298,10 @@ async fn reactions_reach_the_table_and_unknown_ones_are_refused() {
 
 #[tokio::test]
 async fn a_report_saves_the_room_without_seat_tokens() {
-    let dir = std::env::temp_dir().join(format!("cards-report-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let state = AppState::new(Duration::ZERO).with_data(dir.clone());
-    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+    let dir = temp_dir();
+    let dir = dir.path();
+    let state = AppState::new(Duration::ZERO).with_data(dir.to_path_buf());
+    let addr = serve(state).await;
 
     let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
@@ -399,7 +320,6 @@ async fn a_report_saves_the_room_without_seat_tokens() {
     let report: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(report["text"], "joker won wrongly");
     assert_eq!(report["room"]["seats"][0]["human"], "Jae");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[tokio::test]
@@ -418,12 +338,31 @@ async fn a_hint_is_one_of_the_legal_actions() {
         m["legal"].as_array().is_some_and(|l| !l.is_empty())
     })
     .await;
+    // The hand may move on while the hint is thought of (a bot throwing the
+    // deal in, out of turn), or before it is asked for: the hint names the
+    // state it was for, so a client can drop a late one.
+    let mut states = std::collections::HashMap::new();
+    states.insert(state["version"].as_u64().expect("states have versions"), state);
     send(&mut ws, json!({ "type": "hint" })).await;
-    let hint = next(&mut ws, "hint").await;
+    let hint = loop {
+        let msg = next_text(&mut ws).await.expect("socket open");
+        match msg["type"].as_str() {
+            Some("state") => {
+                let mine = msg["legal"].as_array().is_some_and(|l| !l.is_empty());
+                states.insert(msg["version"].as_u64().unwrap(), msg);
+                if mine {
+                    // Asked again for this state (at most one a second).
+                    tokio::time::sleep(Duration::from_millis(1100)).await;
+                    send(&mut ws, json!({ "type": "hint" })).await;
+                }
+            }
+            Some("error") => assert_eq!(msg["message"], "it is not your turn"),
+            Some("hint") => break msg,
+            _ => {}
+        }
+    };
+    let state = &states[&hint["version"].as_u64().unwrap()];
     assert!(state["legal"].as_array().unwrap().contains(&hint["action"]));
-    // The hint names the state it was for, so a client can drop a late one.
-    assert!(state["version"].is_u64());
-    assert_eq!(hint["version"], state["version"]);
 }
 
 #[tokio::test]
@@ -454,11 +393,9 @@ async fn bots_default_to_hard_and_their_level_can_change() {
 
 #[tokio::test]
 async fn a_bot_worker_thinks_for_the_room() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let state = AppState::new(Duration::ZERO).with_bot_token("secret".into());
     let remote = state.remote_bots();
-    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+    let addr = serve(state).await;
 
     // Without the token, no worker gets in.
     let refused = connect_async(format!("ws://{addr}/internal/bots")).await;
@@ -468,15 +405,9 @@ async fn a_bot_worker_thinks_for_the_room() {
         format!("ws://{addr}/internal/bots"),
         "secret".into(),
         Duration::from_millis(20),
+        server::bots::Liveness::new(None),
     ));
-    let wait = async {
-        while !remote.connected() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    };
-    tokio::time::timeout(Duration::from_secs(5), wait)
-        .await
-        .expect("worker connects");
+    eventually("the worker connects", || async { remote.connected() }).await;
 
     let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
@@ -499,11 +430,9 @@ async fn a_bot_worker_thinks_for_the_room() {
 
 #[tokio::test]
 async fn a_hand_left_unfinished_when_the_table_closes_counts_as_abandoned() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let state = AppState::new(Duration::from_millis(50)).with_limits(10, Duration::from_millis(200));
     let stats = state.stats();
-    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
+    let addr = serve(state).await;
 
     let room = create_room(addr, "gshs").await;
     let mut ws = connect(addr, &room).await;
@@ -515,7 +444,10 @@ async fn a_hand_left_unfinished_when_the_table_closes_counts_as_abandoned() {
     next(&mut ws, "state").await;
     // Everyone leaves mid-hand; the table closes once idle.
     drop(ws);
-    tokio::time::sleep(Duration::from_millis(800)).await;
+    eventually("the table closes", || async {
+        stats.summary(server::stats::now()).totals.hands_abandoned == 1
+    })
+    .await;
     let s = stats.summary(server::stats::now());
     assert_eq!(s.totals.hands_started, 1);
     assert_eq!(s.totals.hands_abandoned, 1);
@@ -623,9 +555,32 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
     let other = (turn + 2) % 5;
     assert_eq!(states[other]["out_of_turn"], json!(["Misdeal"]));
 
-    tokio::time::sleep(Duration::from_millis(grace + 50)).await;
-    send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
-    let states = next_states(&mut players).await;
+    // Once the grace is over, the same bid goes through.
+    let mut asked = 1;
+    let mine = loop {
+        tokio::time::sleep(Duration::from_millis(grace / 10)).await;
+        send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
+        asked += 1;
+        let reply = loop {
+            let msg = next_text(&mut players[turn]).await.expect("socket open");
+            if msg["type"] == "state" || msg["type"] == "error" {
+                break msg;
+            }
+        };
+        if reply["type"] == "state" {
+            break reply;
+        }
+        assert_eq!(reply["message"], "wait a moment after the deal");
+        assert!(asked < 100, "the grace never ends");
+    };
+    let mut states = Vec::new();
+    for (seat, ws) in players.iter_mut().enumerate() {
+        states.push(if seat == turn {
+            mine.clone()
+        } else {
+            next(ws, "state").await
+        });
+    }
     assert_eq!(states[0]["view"]["bids"].as_array().unwrap().len(), 1);
     // The first bid closed every window.
     assert!(states.iter().all(|s| s["out_of_turn"] == json!([])));
@@ -639,11 +594,7 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
 /// A server whose turn-limit seconds last 10 ms, so a 20-second turn runs
 /// out in a fifth of a second.
 async fn spawn_quick_clock_server() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let state = AppState::new(Duration::ZERO).with_turn_second(Duration::from_millis(10));
-    tokio::spawn(async move { axum::serve(listener, router(state, None)).await.unwrap() });
-    addr
+    serve(AppState::new(Duration::ZERO).with_turn_second(Duration::from_millis(10))).await
 }
 
 #[tokio::test]

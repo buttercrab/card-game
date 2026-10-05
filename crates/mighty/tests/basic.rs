@@ -5,6 +5,16 @@ use engine::{Game, Turn, Viewer};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, Preset, Rules};
 use mighty::{Action, FriendCall, HandSummary, Mighty, Options, PhaseView, Redeal, State};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+
+/// Redeals here come from a fixed seed, so a failure replays exactly; the
+/// assertions that follow one name it.
+const SEED: u64 = 0x5eed;
+
+fn rng() -> ChaCha8Rng {
+    ChaCha8Rng::seed_from_u64(SEED)
+}
 
 fn cards(s: &str) -> Vec<Card> {
     s.split_whitespace()
@@ -196,7 +206,7 @@ fn the_misdeal_is_shown_and_its_caller_deals() {
     // Seat 2 calls it out of turn, while the dealer is still thinking.
     Mighty::apply_out_of_turn(&mut state, 2, Action::Misdeal).unwrap();
     assert_eq!(Mighty::turn(&state), Turn::Chance);
-    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    let deal = Mighty::sample_chance(&state, &mut rng());
     act(&mut state, deal);
     let view = Mighty::view(&state, Viewer::Seat(4));
     assert_eq!(
@@ -204,10 +214,11 @@ fn the_misdeal_is_shown_and_its_caller_deals() {
         Redeal::Misdeal {
             seat: 2,
             hand: cards(WEAK)
-        }
+        },
+        "seed {SEED}"
     );
     // Seat 2 deals the new hand and so speaks first.
-    assert_eq!(view.first_bidder, 2);
+    assert_eq!(view.first_bidder, 2, "seed {SEED}");
     assert_eq!(Mighty::turn(&state), Turn::Seat(2));
 }
 
@@ -265,11 +276,11 @@ fn after_five_passes_the_dealer_may_bid_13_once() {
     // A second pass deals again with the same dealer; it is not a misdeal.
     act(&mut state, Action::Pass);
     assert_eq!(Mighty::turn(&state), Turn::Chance);
-    let deal = Mighty::sample_chance(&state, &mut rand::rng());
+    let deal = Mighty::sample_chance(&state, &mut rng());
     act(&mut state, deal);
     let view = Mighty::view(&state, Viewer::Spectator);
-    assert_eq!(view.redealt.unwrap().why, Redeal::AllPassed);
-    assert_eq!(view.first_bidder, 0);
+    assert_eq!(view.redealt.unwrap().why, Redeal::AllPassed, "seed {SEED}");
+    assert_eq!(view.first_bidder, 0, "seed {SEED}");
 }
 
 const DECLARER: &str = "D2 D3 D4 D5 D6 D7 D8 D9 C3 C4";
@@ -575,10 +586,9 @@ fn the_next_dealer_is_the_friend_or_else_the_declarer() {
 
 #[test]
 fn every_hand_ends_zero_sum_with_twenty_points() {
-    use rand::SeedableRng;
     use rand::seq::IndexedRandom;
     for seed in 0..200 {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut state = Mighty::new_game(&Options {
             rules: basic(),
             first_bidder: (seed % 5) as usize,
@@ -590,8 +600,8 @@ fn every_hand_ends_zero_sum_with_twenty_points() {
                 _ => legal(&state).choose(&mut rng).unwrap().clone(),
             };
             act(&mut state, action);
-            Mighty::check_invariants(&state).unwrap();
+            Mighty::check_invariants(&state).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
         }
-        assert_eq!(Mighty::payoffs(&state).unwrap().iter().sum::<i64>(), 0);
+        assert_eq!(Mighty::payoffs(&state).unwrap().iter().sum::<i64>(), 0, "seed {seed}");
     }
 }

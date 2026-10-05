@@ -39,9 +39,14 @@ struct Args {
     /// less at faster paces.
     #[arg(long, default_value_t = 3000)]
     worker_think_ms: u64,
-    /// Ask the server at --addr whether it is up, then exit (for container health checks).
+    /// Ask the server at --addr whether it is up, then exit (for container
+    /// health checks). With --worker-alive, ask the worker instead: whether
+    /// it heard from its server in the last minute.
     #[arg(long)]
     healthcheck: bool,
+    /// A worker keeps this file fresh while its server talks to it.
+    #[arg(long)]
+    worker_alive: Option<PathBuf>,
 }
 
 /// Exits successfully when the server at `addr` answers /healthz.
@@ -69,14 +74,24 @@ async fn main() -> std::io::Result<()> {
         .init();
     let args = Args::parse();
     if args.healthcheck {
-        return healthcheck(args.addr).await;
+        return match &args.worker_alive {
+            // Heard from within the time the link allows for silence.
+            Some(path) if server::bots::alive_within(path, server::bots::SILENCE + Duration::from_secs(15)) => Ok(()),
+            Some(path) => Err(std::io::Error::other(format!(
+                "the worker has not heard from its server lately ({})",
+                path.display()
+            ))),
+            None => healthcheck(args.addr).await,
+        };
     }
     let token = std::env::var("BOT_TOKEN").ok().filter(|t| !t.is_empty());
     if let Some(url) = args.bot_worker {
         let Some(token) = token else {
             return Err(std::io::Error::other("--bot-worker needs BOT_TOKEN"));
         };
-        server::bots::run_worker::<mighty::Mighty>(url, token, Duration::from_millis(args.worker_think_ms)).await;
+        let alive = server::bots::Liveness::new(args.worker_alive);
+        server::bots::run_worker::<mighty::Mighty>(url, token, Duration::from_millis(args.worker_think_ms), alive)
+            .await;
         return Ok(());
     }
     if !args.web.join("index.html").exists() {

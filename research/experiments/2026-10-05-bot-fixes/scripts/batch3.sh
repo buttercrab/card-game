@@ -1,5 +1,5 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 N=200000
 J0="simple@aim_joker_call=false,spare_declarer_joker=false"
 J1="simple@aim_joker_call=true,spare_declarer_joker=false"

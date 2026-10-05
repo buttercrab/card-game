@@ -17,6 +17,7 @@
   import Room from './Room.svelte';
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
+  import { settled } from './motion';
   import type { Bid, Card, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
 
   const which = new URLSearchParams(location.search).get('state') ?? 'play';
@@ -326,46 +327,97 @@
     reactions: { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
 
+  /** The preview's scripted steps, which [`ready`] waits for. */
+  const steps: Promise<void>[] = [];
+  function step(ms: number, run: () => void) {
+    steps.push(
+      new Promise((done) =>
+        setTimeout(() => {
+          run();
+          done();
+        }, ms),
+      ),
+    );
+  }
+
   if (which === 'misdeal') {
     // A new deal arrives after seat 3 threw in a weak hand.
     Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-    setTimeout(() => {
+    step(300, () => {
       const next = msg(phases.bidding, 'bidding', { Seat: 0 });
       next.view.redealt = {
         why: { Misdeal: { seat: 3, hand: [n('Spade', 2), n('Spade', 3), n('Diamond', 4), n('Diamond', 5), n('Heart', 2), n('Heart', 6), n('Heart', 7), n('Club', 3), n('Club', 5), n('Club', 8)] } },
         count: 1,
       };
       client.game = next;
-    }, 300);
+    });
   }
 
   if (key === 'exchange') {
     Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-    setTimeout(() => (client.game = msg(phases.exchange, 'exchange', { Seat: 0 })), 300);
+    step(300, () => (client.game = msg(phases.exchange, 'exchange', { Seat: 0 })));
   }
 
   // The states that need a tap: done here, as a player would, once drawn.
   const tapSeat = { seatbot: 1, seatperson: 2, seatkick: 2, seatme: 0, seatempty: 2, seatsit: 0, seatsitbot: 1, swap: 1 }[which];
   if (tapSeat !== undefined || which === 'folded' || which === 'leave') {
     const click = (selector: string) => document.querySelector<HTMLElement>(selector)?.click();
-    setTimeout(() => {
+    step(200, () => {
       if (which === 'folded') click('.result .fold');
       if (which === 'leave') click('dialog .leave');
       if (tapSeat !== undefined) click(`[data-seat="${tapSeat}"] .seat-tap`);
-      const pick = (text: string) => [...document.querySelectorAll<HTMLElement>('.pop-card button')].find((b) => b.textContent?.includes(text))?.click();
-      if (which === 'swap') setTimeout(() => pick('자리 바꾸기'), 50);
-      if (which === 'seatkick') setTimeout(() => pick('내보내기'), 50);
-    }, 200);
+    });
+    const pick = (text: string) => [...document.querySelectorAll<HTMLElement>('.pop-card button')].find((b) => b.textContent?.includes(text))?.click();
+    if (which === 'swap') step(250, () => pick('자리 바꾸기'));
+    if (which === 'seatkick') step(250, () => pick('내보내기'));
   }
 
   if (which === 'sweep') {
     // Finish the trick so the table plays its sweep, holding the note on screen.
     Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
-    setTimeout(() => {
+    step(300, () => {
       const done = [...trickPlays, { seat: 0, card: n('Club', 11), powered: true }];
       client.game = msg(playPhase([], [{ plays: done, lead: { Suit: 'Club' }, winner: 2 }]), 'play', { Seat: 2 });
-    }, 300);
+    });
   }
+
+  /** Resolves once `selector` is on the page. */
+  function shown(selector: string): Promise<void> {
+    return new Promise((done) => {
+      const check = () => (document.querySelector(selector) ? done() : requestAnimationFrame(check));
+      check();
+    });
+  }
+
+  /** Marks the page `data-ready` once the preview is drawn as it will stay:
+   * its steps taken, the table done dealing and moving (or, for the sweep,
+   * holding on its winner), the fonts in and every short animation
+   * over. The e2e tests (web/e2e) wait for it instead of a fixed time. */
+  async function ready() {
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    // A frame after each step, so the table has taken up what it changed.
+    await frame();
+    await Promise.all(steps);
+    await frame();
+    // The sweep holds on its winner; with motion off it goes straight past.
+    await (which === 'sweep' ? Promise.race([shown('.won-note'), settled()]) : settled());
+    await document.fonts.ready;
+    // Entrances and transitions, not the endless loops or a clock's countdown.
+    const short = () =>
+      document.getAnimations().filter((a) => {
+        const end = Number(a.effect?.getComputedTiming().endTime ?? Infinity);
+        return a.playState === 'running' && end < 5000;
+      });
+    for (let round = 0; round < 10 && short().length > 0; round++) {
+      await Promise.allSettled(short().map((a) => a.finished));
+    }
+    await frame();
+    await frame();
+    document.documentElement.dataset.ready = '';
+  }
+  $effect(() => {
+    void ready();
+  });
 </script>
 
 {#if inRoom}

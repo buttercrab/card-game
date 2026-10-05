@@ -12,25 +12,25 @@
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import { PRESET_NAME } from './presets';
-  import { customName, loadCustom, setPending } from './rulesets';
+  import { customName, loadCustom, setPending, type CustomSet } from './rulesets';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
-  /** A preset id, or `custom:<id>` for rules saved on this device: the last
-   * one used here, or 기본. */
-  let choice = $state(
-    (() => {
-      try {
-        return localStorage.getItem('mighty.preset') ?? 'default';
-      } catch {
-        return 'default';
-      }
-    })(),
-  );
-  let customs = $state(loadCustom());
-  // A remembered choice that no longer exists falls back to 기본.
-  if (choice.startsWith('custom:') ? !customs.some((c) => `custom:${c.id}` === choice) : !(choice in PRESET_NAME))
-    choice = 'default';
+  /** The preset last used here, if it still exists, or 기본. */
+  function remembered(saved: CustomSet[]): string {
+    let id = 'default';
+    try {
+      id = localStorage.getItem('mighty.preset') ?? 'default';
+    } catch {
+      // Private mode: start from 기본.
+    }
+    const known = id.startsWith('custom:') ? saved.some((c) => `custom:${c.id}` === id) : id in PRESET_NAME;
+    return known ? id : 'default';
+  }
+  const saved = loadCustom();
+  let customs = $state(saved);
+  /** A preset id, or `custom:<id>` for rules saved on this device. */
+  let choice = $state(remembered(saved));
   const chosen = $derived(choice.startsWith('custom:') ? (customs.find((c) => `custom:${c.id}` === choice) ?? null) : null);
   const preset = $derived(chosen?.base ?? choice);
   const chosenName = $derived(chosen ? customName(chosen) : (PRESET_NAME[preset] ?? preset));

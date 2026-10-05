@@ -1,13 +1,12 @@
 //! The site around the game: pages and their status codes, robots and
 //! sitemap, the stats page, client error reports and rate limits.
 
+mod common;
+
+use common::*;
 use serde_json::{Value, json};
-use server::{AppState, router};
-use std::net::SocketAddr;
-use std::path::PathBuf;
+use server::AppState;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
 
 const INDEX: &str = r#"<!doctype html>
 <html lang="ko">
@@ -21,60 +20,22 @@ const INDEX: &str = r#"<!doctype html>
 </html>"#;
 
 /// A built client with an index, a hashed asset and a public file.
-fn web_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cards-web-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("assets")).unwrap();
-    std::fs::create_dir_all(dir.join("music")).unwrap();
-    std::fs::write(dir.join("index.html"), INDEX).unwrap();
-    std::fs::write(dir.join("assets/index-abc12345.js"), "console.log(1)").unwrap();
-    std::fs::write(dir.join("og.png"), "png").unwrap();
-    std::fs::write(dir.join("music/a.mp3"), "mp3").unwrap();
+fn web_dir() -> tempfile::TempDir {
+    let dir = temp_dir();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("assets")).unwrap();
+    std::fs::create_dir_all(root.join("music")).unwrap();
+    std::fs::write(root.join("index.html"), INDEX).unwrap();
+    std::fs::write(root.join("assets/index-abc12345.js"), "console.log(1)").unwrap();
+    std::fs::write(root.join("og.png"), "png").unwrap();
+    std::fs::write(root.join("music/a.mp3"), "mp3").unwrap();
     dir
-}
-
-async fn serve(state: AppState, web: Option<PathBuf>) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let app = router(state, web);
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    addr
-}
-
-struct Reply {
-    status: u16,
-    head: String,
-    body: String,
-}
-
-async fn request(addr: SocketAddr, method: &str, path: &str, headers: &[&str], body: &str) -> Reply {
-    let mut stream = TcpStream::connect(addr).await.unwrap();
-    let extra: String = headers.iter().map(|h| format!("{h}\r\n")).collect();
-    let request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: test\r\nContent-Type: application/json\r\n{extra}\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(request.as_bytes()).await.unwrap();
-    let mut response = Vec::new();
-    stream.read_to_end(&mut response).await.unwrap();
-    let response = String::from_utf8_lossy(&response).to_string();
-    let (head, body) = response.split_once("\r\n\r\n").unwrap_or((&response, ""));
-    Reply {
-        status: head[9..12].parse().unwrap(),
-        head: head.to_ascii_lowercase(),
-        body: body.to_string(),
-    }
-}
-
-async fn get(addr: SocketAddr, path: &str) -> Reply {
-    request(addr, "GET", path, &[], "").await
 }
 
 #[tokio::test]
 async fn app_routes_are_found_and_other_paths_are_404() {
-    let dir = web_dir("routes");
-    let addr = serve(AppState::new(Duration::ZERO), Some(dir.clone())).await;
+    let dir = web_dir();
+    let addr = serve_web(AppState::new(Duration::ZERO), Some(dir.path().to_path_buf())).await;
 
     for path in [
         "/",
@@ -121,14 +82,13 @@ async fn app_routes_are_found_and_other_paths_are_404() {
     assert!(rules.body.contains("<title>민사고 마이티 규칙 · 마이티</title>"));
     assert!(rules.body.contains("https://cards.buttercrab.io/rules/kmla"));
     assert!(!rules.body.contains("cloudflareinsights"), "no beacon without a token");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[tokio::test]
 async fn a_share_link_preview_names_the_rules_and_empty_seats() {
-    let dir = web_dir("share");
+    let dir = web_dir();
     let state = AppState::new(Duration::ZERO).with_beacon("tok123".into());
-    let addr = serve(state, Some(dir.clone())).await;
+    let addr = serve_web(state, Some(dir.path().to_path_buf())).await;
     let r = request(
         addr,
         "POST",
@@ -155,12 +115,11 @@ async fn a_share_link_preview_names_the_rules_and_empty_seats() {
     let gone = get(addr, "/r/zzzzzz").await;
     assert_eq!(gone.status, 200);
     assert!(gone.body.contains("<title>마이티 한 판 하실래요?</title>"));
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[tokio::test]
 async fn robots_and_sitemap_are_served() {
-    let addr = serve(AppState::new(Duration::ZERO), None).await;
+    let addr = serve(AppState::new(Duration::ZERO)).await;
     let robots = get(addr, "/robots.txt").await;
     assert_eq!(robots.status, 200);
     assert!(robots.body.contains("Disallow: /api/"));
@@ -177,11 +136,11 @@ async fn robots_and_sitemap_are_served() {
 
 #[tokio::test]
 async fn the_stats_page_is_private() {
-    let off = serve(AppState::new(Duration::ZERO), None).await;
+    let off = serve(AppState::new(Duration::ZERO)).await;
     assert_eq!(get(off, "/stats").await.status, 404, "no token, no page");
     assert_eq!(get(off, "/api/stats").await.status, 404);
 
-    let addr = serve(AppState::new(Duration::ZERO).with_stats_token("s3cret".into()), None).await;
+    let addr = serve(AppState::new(Duration::ZERO).with_stats_token("s3cret".into())).await;
     assert_eq!(get(addr, "/stats").await.status, 401);
     assert_eq!(get(addr, "/stats?token=wrong").await.status, 401);
     let login = get(addr, "/stats?token=s3cret").await;
@@ -212,7 +171,7 @@ async fn the_stats_page_is_private() {
 async fn tables_and_hands_are_counted() {
     let state = AppState::new(Duration::ZERO);
     let stats = state.stats();
-    let addr = serve(state, None).await;
+    let addr = serve(state).await;
     let r = request(
         addr,
         "POST",
@@ -233,11 +192,11 @@ async fn tables_and_hands_are_counted() {
 
 #[tokio::test]
 async fn a_new_client_error_is_saved_for_an_issue_once() {
-    let data = std::env::temp_dir().join(format!("cards-errors-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&data);
-    let state = AppState::new(Duration::ZERO).with_data(data.clone());
+    let data = temp_dir();
+    let data = data.path();
+    let state = AppState::new(Duration::ZERO).with_data(data.to_path_buf());
     let stats = state.stats();
-    let addr = serve(state, None).await;
+    let addr = serve(state).await;
     let error = |n: u32| {
         json!({
             "message": format!("seat {n} is undefined"),
@@ -270,12 +229,11 @@ async fn a_new_client_error_is_saved_for_an_issue_once() {
     assert_eq!(seat.frame, "Kt@index.js");
     let log = std::fs::read_to_string(data.join("stats.jsonl")).unwrap();
     assert!(!log.contains("127.0.0.1"), "no addresses in the log");
-    let _ = std::fs::remove_dir_all(&data);
 }
 
 #[tokio::test]
 async fn too_many_requests_from_one_client_are_refused() {
-    let addr = serve(AppState::new(Duration::ZERO), None).await;
+    let addr = serve(AppState::new(Duration::ZERO)).await;
     let body = json!({ "preset": "gshs" }).to_string();
     let from = |ip: &'static str| [ip];
     for _ in 0..10 {

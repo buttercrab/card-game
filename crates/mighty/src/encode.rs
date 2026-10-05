@@ -43,6 +43,13 @@ use engine::{Encode, Features, Game, Observation, Seat, Spec, Unsupported, Viewe
 /// called from the moment the cards land, so there is no round to show.
 pub const VERSION: &str = "mighty-3";
 
+/// Every encoding version and the fingerprint of the spec it stands for
+/// (FNV-1a, 64 bits, of the spec's JSON with `version` left empty), oldest
+/// first. Append a line with each new `VERSION`; never edit one. A test
+/// (`tests/encode.rs`) fails when the spec no longer matches the last line,
+/// so a spec cannot change without a new version.
+pub const SPECS: &[(&str, u64)] = &[("mighty-3", 0x34b5_0ba5_4929_610f)];
+
 /// The most players any rule set may seat ([`Rules::validate`]).
 pub const MAX_SEATS: usize = 8;
 

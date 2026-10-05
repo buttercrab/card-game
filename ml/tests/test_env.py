@@ -181,7 +181,9 @@ def test_python_matches_rust_on_recorded_positions(repo: Path) -> None:
         json.loads((repo / "crates/env/tests/parity.json").read_text(encoding="utf-8")),
     )
     num_envs, seed = cast(int, fixture["num_envs"]), cast(int, fixture["seed"])
-    env = Env(cast(str, fixture["game"]), num_envs=num_envs, seed=seed, rules="varied")
+    # A pool of rule sets frozen in a file, by its path from the repository.
+    rules = (repo / cast(str, fixture["rules"])).read_text(encoding="utf-8")
+    env = Env(cast(str, fixture["game"]), num_envs=num_envs, seed=seed, rules=rules)
     assert env.spec()["version"] == fixture["encoding"]
     types = {
         "global": "<f4",

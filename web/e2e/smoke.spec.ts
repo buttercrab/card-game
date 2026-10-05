@@ -78,11 +78,10 @@ function sizeOf(project: string): string {
 }
 
 async function settle(page: Page, name: string) {
-  // The previews swap in their real state after 300 ms (exchange, misdeal,
-  // sweep); give that and the deal time to land.
+  // A preview marks the page once its scripted steps, the deal and any
+  // moves have played out (TablePreview.svelte, `ready`).
   if (name.startsWith('preview-')) {
-    await page.locator('.seat .name').first().waitFor({ state: 'attached' });
-    await page.waitForTimeout(900);
+    await page.locator('html[data-ready]').waitFor({ state: 'attached' });
   } else {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(150);
@@ -313,8 +312,8 @@ function popoverOverflow(page: Page, view?: { top: number; height: number }) {
 for (const state of POPOVERS) {
   test(`popover-${state}`, async ({ page }) => {
     await page.goto(`/preview?state=${state}`);
+    await page.locator('html[data-ready]').waitFor({ state: 'attached' });
     await page.locator('.pop-card').waitFor();
-    await page.waitForTimeout(400);
     expect(await popoverOverflow(page)).toEqual([]);
     // Playwright itself can reach every control in it.
     for (const control of await page.locator('.pop-card button:not([disabled]), .pop-card input').all()) {
@@ -338,8 +337,8 @@ test('popover stays above the keyboard', async ({ page }, info) => {
     };
   });
   await page.goto('/preview?state=seatsit');
+  await page.locator('html[data-ready]').waitFor({ state: 'attached' });
   await page.locator('.pop-card input').waitFor();
-  await page.waitForTimeout(300);
   const { height } = page.viewportSize()!;
   const keyboard = Math.round(height * 0.45);
   await page.evaluate((h) => (window as unknown as { keyboard: (h: number) => void }).keyboard(h), keyboard);
