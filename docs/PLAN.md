@@ -280,6 +280,25 @@ Exit: a self-play agent that beats 보통 on suite v1, with its learning curve
 (rating against fixed opponents by games played) in `research/`; whether it
 beats 고수, alone or inside the search, is the report's headline.
 
+Result (2026-10-05), a shakedown run stopped by the owner
+([DMC v1](../research/experiments/2026-10-05-dmc-v1)); exit not met:
+- Built: `cardgame_ml.models.q` (0.76M parameters; the belief model's
+  trunk, now `models.trunk`; actions from the spec's names, attending
+  over the card tokens), `cardgame_ml.train.dmc` (actor processes on the
+  CPU, a learner on MPS, a fixed learning-curve probe, resume), Q export
+  with parity, `infer::QNet`/`QBot` (1.45 ms a decision) and the bot
+  spec `dmc:<model>[:temperature]`. From random weights, pure
+  self-play, varied rules, held-out sets excluded.
+- 510 000 hands in 2.5 h: against four 초보 −0.40 ± 0.31 and four 보통
+  −1.38 ± 0.32 a seat-hand on 경기과고, flat since ~250 000 hands. Card
+  play is learnt (84% of late-trick payoff variance explained); the
+  bidding lags (11%): its own declarations lose, so it mostly passes
+  and defends. Uniform exploration alone made it pass every hand;
+  softmax and runner-up exploration and action attention were needed
+  for it to bid at all. Suite v1 not run.
+- Next (owner): 경기과고 only at 5 players with the current rules and
+  scoring, a bigger network, and a hybrid with 고수's search.
+
 ### P4 — Scaling study
 
 - How the RL agent's strength grows with self-play games, model size and

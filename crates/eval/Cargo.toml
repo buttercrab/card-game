@@ -15,7 +15,7 @@ rand_chacha.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-sim = { workspace = true, features = ["belief"] }
+sim = { workspace = true, features = ["belief", "dmc"] }
 
 [dev-dependencies]
 # Only to check that the eval's bot levels are the ones the tables seat.

@@ -1,8 +1,10 @@
 //! Bots named on the command line and in eval suites: `random`, `simple`
 //! or `search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]`, with `@name=value,...`
-//! settings, the table's levels `easy`, `normal` and `hard`, and
+//! settings, the table's levels `easy`, `normal` and `hard`,
 //! `belief:MODEL_DIR:SAMPLES`: `hard` at that many samples, dealing by a
-//! belief model (needs the `belief` feature). See `sim --help`.
+//! belief model (needs the `belief` feature), and
+//! `dmc:MODEL_DIR[:TEMPERATURE]`: playing by a Q network (needs the `dmc`
+//! feature). See `sim --help`.
 
 use engine::{Bot, RandomBot, Seat};
 use mighty::bot::SimpleBot;
@@ -29,6 +31,9 @@ pub enum Kind {
     /// The simple bot, playing a random card this often.
     Clumsy(SimpleBot, f64),
     Search(SearchBot),
+    /// A Q network's choice (`dmc:MODEL_DIR[:TEMPERATURE]`).
+    #[cfg(feature = "dmc")]
+    Dmc(infer::QBot),
 }
 
 /// The server's bid boldness by seat, added to the simple bot's
@@ -45,6 +50,12 @@ impl FromStr for Spec {
         let (name, settings) = s.split_once('@').unwrap_or((s, ""));
         if let Some(rest) = name.strip_prefix("belief:") {
             return belief(rest, settings);
+        }
+        if let Some(rest) = name.strip_prefix("dmc:") {
+            if !settings.is_empty() {
+                return Err(format!("{s}: a dmc bot takes no settings"));
+            }
+            return dmc(rest);
         }
         // The table's levels, as the server builds them. 고수 thinks
         // until a time budget runs out there; here it deals a fixed 200
@@ -143,18 +154,7 @@ fn load_belief(dir: &str) -> Result<Sampler, String> {
         return Ok(Sampler::Belief(net));
     }
     let net = infer::BeliefNet::open(std::path::Path::new(dir)).map_err(|e| e.to_string())?;
-    let options = mighty::Options {
-        rules: mighty::rules::Preset::Default.rules(),
-        first_bidder: 0,
-    };
-    let spec = <Mighty as engine::Encode>::spec(&options).map_err(|e| e.to_string())?;
-    if net.spec() != &spec {
-        return Err(format!(
-            "{dir}: the model reads {}, not {}",
-            net.spec().version,
-            spec.version
-        ));
-    }
+    check_encoding(dir, net.spec())?;
     let net: &'static infer::BeliefNet = Box::leak(Box::new(net));
     loaded.insert(dir.to_string(), net);
     Ok(Sampler::Belief(net))
@@ -165,6 +165,69 @@ fn load_belief(dir: &str) -> Result<Sampler, String> {
     Err(format!(
         "{dir}: this build has no belief models (build with --features belief)"
     ))
+}
+
+/// `dmc:MODEL_DIR[:TEMPERATURE]`: plays by the Q network in `MODEL_DIR`
+/// (an exported `cardgame_ml.train.dmc` run), the legal action of highest
+/// value, or with a temperature in points drawn with probability
+/// proportional to `exp(value / temperature)`. No search, no seat temper.
+fn dmc(rest: &str) -> Result<Spec, String> {
+    let (dir, temperature) = match rest.rsplit_once(':') {
+        // A directory may hold a colon; a temperature is a number.
+        Some((dir, t)) if t.parse::<f32>().is_ok() => (dir, t.parse::<f32>().unwrap_or_default()),
+        _ => (rest, 0.0),
+    };
+    if !(temperature >= 0.0 && temperature.is_finite()) {
+        return Err(format!(
+            "dmc:{rest}: the temperature must be a number of points, at least 0"
+        ));
+    }
+    load_dmc(dir, temperature)
+}
+
+/// The Q network in directory `dir`, checked to read Mighty's encoding.
+/// Loaded once per directory and kept for the life of the process.
+#[cfg(feature = "dmc")]
+fn load_dmc(dir: &str, temperature: f32) -> Result<Spec, String> {
+    use std::collections::BTreeMap;
+    use std::sync::{Mutex, PoisonError};
+    static LOADED: Mutex<BTreeMap<String, &'static infer::QNet>> = Mutex::new(BTreeMap::new());
+    let mut loaded = LOADED.lock().unwrap_or_else(PoisonError::into_inner);
+    let net = match loaded.get(dir) {
+        Some(&net) => net,
+        None => {
+            let net = infer::QNet::open(std::path::Path::new(dir)).map_err(|e| e.to_string())?;
+            check_encoding(dir, net.spec())?;
+            let net: &'static infer::QNet = Box::leak(Box::new(net));
+            loaded.insert(dir.to_string(), net);
+            net
+        }
+    };
+    Ok(Spec {
+        kind: Kind::Dmc(infer::QBot { net, temperature }),
+        temper: false,
+    })
+}
+
+#[cfg(not(feature = "dmc"))]
+fn load_dmc(dir: &str, _temperature: f32) -> Result<Spec, String> {
+    Err(format!(
+        "{dir}: this build has no Q networks (build with --features dmc)"
+    ))
+}
+
+/// Whether a model reads Mighty's encoding.
+#[cfg(any(feature = "belief", feature = "dmc"))]
+fn check_encoding(dir: &str, spec: &engine::Spec) -> Result<(), String> {
+    let options = mighty::Options {
+        rules: mighty::rules::Preset::Default.rules(),
+        first_bidder: 0,
+    };
+    let ours = <Mighty as engine::Encode>::spec(&options).map_err(|e| e.to_string())?;
+    if spec != &ours {
+        return Err(format!("{dir}: the model reads {}, not {}", spec.version, ours.version));
+    }
+    Ok(())
 }
 
 impl Spec {
@@ -186,6 +249,8 @@ impl Spec {
                 policy: temper(bot.policy),
                 ..bot
             }),
+            #[cfg(feature = "dmc")]
+            Kind::Dmc(bot) => Box::new(bot),
         }
     }
 
@@ -195,6 +260,9 @@ impl Spec {
         match self.kind {
             Kind::Search(bot) => bot.budget.is_none(),
             Kind::Random | Kind::Simple(_) | Kind::Clumsy(..) => true,
+            // Its temperature draws from the game's seeded generator.
+            #[cfg(feature = "dmc")]
+            Kind::Dmc(_) => true,
         }
     }
 }
@@ -326,5 +394,29 @@ mod tests {
         assert!(again.reading.on);
         assert!("belief:/no/such/model:50".parse::<Spec>().is_err());
         assert!(format!("belief:{dir}").parse::<Spec>().is_err());
+    }
+
+    /// `dmc:` plays by a Q network, greedy unless given a temperature.
+    #[cfg(feature = "dmc")]
+    #[test]
+    fn dmc_bots_play_by_a_q_network() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
+        let greedy = spec(&format!("dmc:{dir}"));
+        let Kind::Dmc(bot) = greedy.kind else {
+            panic!("a dmc bot")
+        };
+        assert_eq!(bot.temperature, 0.0);
+        assert!(!greedy.temper && greedy.reproducible());
+        let Kind::Dmc(warm) = spec(&format!("dmc:{dir}:2.5")).kind else {
+            panic!("a dmc bot")
+        };
+        assert_eq!(warm.temperature, 2.5);
+        assert!(std::ptr::eq(warm.net, bot.net), "loaded once");
+        assert!(format!("dmc:{dir}:-1").parse::<Spec>().is_err());
+        assert!(format!("dmc:{dir}@threads=2").parse::<Spec>().is_err());
+        assert!("dmc:/no/such/model".parse::<Spec>().is_err());
+        // The belief fixture is no Q network.
+        let belief = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny");
+        assert!(format!("dmc:{belief}").parse::<Spec>().is_err());
     }
 }

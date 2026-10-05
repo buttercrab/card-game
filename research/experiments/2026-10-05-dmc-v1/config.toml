@@ -1,0 +1,88 @@
+# DMC v1: Mighty from self-play alone (P3b), Deep Monte Carlo as in
+# DouZero. One network for every phase of the hand and every rule set.
+#
+#   cd ml && nice -n 10 uv run python -m cardgame_ml.train.dmc \
+#       --config ../research/experiments/2026-10-05-dmc-v1/config.toml
+#
+# Weights go to models/dmc-v1/ in the artifact store, the manifest to
+# research/manifests/dmc-v1.json. Stopped, the same command resumes.
+#
+# From scratch, by the owner's rule (2026-10-05):
+# - the network starts from random weights: the belief model's code is
+#   reused, never its weights, and nothing warm-starts from any
+#   checkpoint but this run's own;
+# - no imitation, no supervised pretraining, no datasets: the only
+#   signal is the payoff of the network's own self-play hands;
+# - every seat of every training hand is the current network; the
+#   built-in bots (random, 초보, 보통, 고수) only measure it (the
+#   learning curve below, and suite v1).
+
+name = "dmc-v1"
+seed = 20261005
+device = "auto"
+# Fresh draws around every preset, 3 to 7 players, never a held-out set.
+rules = "varied"
+exclude = "research/evals/v1/heldout-rules.json"
+# Payoffs in self-play v1 have a standard deviation of about 40 points:
+# targets are points / 40.
+reward_scale = 0.025
+checkpoint_minutes = 10.0
+log_seconds = 60.0
+
+# Three and a half hours of the Mac, leaving time for suite v1 afterwards.
+[budget]
+hands = 20000000
+hours = 3.5
+
+# About 0.6M parameters: the belief model's trunk one layer shallower,
+# so both the CPU actors and the GPU learner go faster.
+[model]
+head_width = 256
+head_layers = 2
+
+[model.trunk]
+width = 128
+heads = 4
+layers = 3
+feedforward = 256
+dropout = 0.0
+
+# Five actors of two PyTorch threads and one Rust thread each, on the
+# Mac's 14 cores with the learner's: about two left for the system.
+[actors]
+processes = 5
+envs = 128
+threads = 2
+env_threads = 1
+groups = 4
+epsilon = 0.02
+# Two points (targets are points / 40).
+temperature = 0.05
+runner_up = 0.05
+refresh_every = 10
+chunk = 2048
+
+# About 2 500 hands of decisions; float16 rows, about 4 GB.
+[buffer]
+capacity = 200000
+min_fill = 20000
+window = 8
+replay_ratio = 2.0
+
+[optim]
+batch_size = 1024
+lr = 0.0003
+weight_decay = 0.0
+warmup_steps = 500
+grad_clip = 1.0
+
+# The learning curve: greedy, in one seat of 경기과고 (suite v1's ladder
+# rules) against four 초보 and against four 보통, the same 2 000 deals
+# each time.
+[curve]
+every_hands = 50000
+deals = 2000
+rules = "gshs"
+opponents = ["easy", "normal"]
+seed = 20261006
+threads = 2

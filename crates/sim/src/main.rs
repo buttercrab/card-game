@@ -41,7 +41,9 @@ struct Args {
     /// bidding a little bolder or more carefully by seat as at the table.
     /// `belief:MODEL_DIR:SAMPLES` is `hard` at SAMPLES deals, dealing the
     /// unseen cards by the belief model in MODEL_DIR instead of reading
-    /// the table (built with `--features belief`).
+    /// the table (built with `--features belief`). `dmc:MODEL_DIR[:TEMP]`
+    /// plays by the Q network in MODEL_DIR, greedily or at a temperature
+    /// in points (built with `--features dmc`).
     #[arg(long, default_value = "search")]
     focus: Spec,
     /// With `--bots search`: the bot in every other seat.
