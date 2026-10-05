@@ -303,10 +303,13 @@ Regional rules (지역별 규칙) against the presets, for the owner:
   no-trump at all) and changing to no-trump costs 1; misdeal on a lone
   one-eyed jack (♠J, ♥J) or the mighty, where ours lists ♠10, ♥10 and ♠A;
   all point cards is a misdeal (`misdeal.all_points`, left off so the preset is unchanged).
-- **동대전 5마 / `ddshs`:** the rules match 대전동신과학고 (no no-trump, card
-  friend only, +1 to change, ♣3 always calls); the owner confirmed the
-  preset is 대전동신과고 (it was misnamed 대구동신과고). Its scoring is |bid − points| with no doubling
-  (`OverBid`).
+- **동대전 5마 / `ddshs`:** the play matches the 대전동신과고 preset (no
+  no-trump, card friend only, +1 to change, ♣3 always calls); the owner
+  confirmed the preset's name is 대전동신과고 (it was once misnamed
+  대구동신과고). The scoring differs: 나무위키 scores |bid − points| with no
+  doubling, while the preset scores like every school preset, `points −
+  10` (at least 1) when made and [실패 배상](#실패-배상-the-schools-loss)
+  when failed, with the default doublings.
 - **수원 5마 / `skku`:** matches (minimum 12, free trump change, jokers
   valid on the first and last trick, trump may lead the first trick, a
   called joker keeps its power, 노프렌드 doubles).

@@ -19,7 +19,7 @@ import type { BackRun, Card, CardPolicy, Doubling, LoseScore, Rules, TrickPolicy
 export type GroupId = 'deal' | 'bidding' | 'friend' | 'power' | 'score';
 
 export const GROUPS: { id: GroupId; label: string; note?: string }[] = [
-  { id: 'deal', label: '덱과 딜 미스' },
+  { id: 'deal', label: '덱과 딜미스' },
   { id: 'bidding', label: '공약' },
   { id: 'friend', label: '키티와 프렌드' },
   { id: 'power', label: '카드의 힘' },
@@ -179,7 +179,7 @@ function backRunSay(v: BackRun): string {
 }
 
 export const RULE_FIELDS: Field[] = [
-  // 덱과 딜 미스
+  // 덱과 딜미스
   {
     path: 'deck',
     group: 'deal',
@@ -204,29 +204,29 @@ export const RULE_FIELDS: Field[] = [
   {
     path: 'misdeal.threshold',
     group: 'deal',
-    label: '딜 미스 기준',
+    label: '딜미스 기준',
     help: '아래 값으로 센 패가 이 점수 이하면 다시 나눠요',
     control: { kind: 'stepper', min: -3, max: 6, unit: '점 이하' },
     say: (v) => `${v}점 이하`,
-    trait: (v) => `딜 미스 ${v}점 이하`,
+    trait: (v) => `딜미스 ${v}점 이하`,
     weight: 2,
   },
   {
     path: 'misdeal.point_value',
     group: 'deal',
     label: '점수 카드 값',
-    help: '딜 미스를 셀 때 10·J·Q·K·A 한 장의 값',
+    help: '딜미스를 셀 때 10·J·Q·K·A 한 장의 값',
     control: { kind: 'stepper', min: -2, max: 3, signed: true },
-    trait: () => '딜 미스 셈 다름',
+    trait: () => '딜미스 셈 다름',
     weight: 1,
   },
   {
     path: 'misdeal.joker_value',
     group: 'deal',
     label: '조커 값',
-    help: '딜 미스를 셀 때 조커 한 장의 값',
+    help: '딜미스를 셀 때 조커 한 장의 값',
     control: { kind: 'stepper', min: -3, max: 3, signed: true },
-    trait: () => '딜 미스 셈 다름',
+    trait: () => '딜미스 셈 다름',
     weight: 1,
   },
   {
@@ -241,7 +241,7 @@ export const RULE_FIELDS: Field[] = [
       max: 3,
     },
     say: (v: [Card, number][]) => (v.length ? v.map(([c, x]) => `${cardLabel(c)} ${signed(x)}`).join(', ') : '없음'),
-    trait: () => '딜 미스 셈 다름',
+    trait: () => '딜미스 셈 다름',
     weight: 1,
   },
   {

@@ -55,7 +55,7 @@
           bind:value={text}
           rows="5"
           maxlength="2000"
-          placeholder="예: 조커 콜을 했는데 조커가 안 나왔어요"
+          placeholder="예: 조커콜을 했는데 조커가 안 나왔어요"
           aria-label="문제 설명"
         ></textarea>
         {#if status === 'failed'}<p class="error" role="alert">보내지 못했어요. 잠시 뒤에 다시 해 보세요.</p>{/if}

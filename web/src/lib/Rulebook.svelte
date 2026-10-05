@@ -200,11 +200,11 @@
       ['마이티', r.policy.mighty],
       ['조커', r.policy.joker],
       ['기루다', r.policy.trump],
-      ['조커 콜', r.policy.joker_call],
+      ['조커콜', r.policy.joker_call],
     ];
     const out: { who: string; round: string; text: string }[] = [];
     const say = (who: string, p: CardPolicy) =>
-      who === '조커 콜' ? (p === 'Valid' ? null : '할 수 없어요') : policyText(p);
+      who === '조커콜' ? (p === 'Valid' ? null : '할 수 없어요') : policyText(p);
     for (const [who, p] of rows) {
       // Trump that may not lead the first trick gets its own line below.
       const trumpLead = who === '기루다' && p.first === 'NoLead';
@@ -478,13 +478,13 @@
     </section>
 
     <section>
-      <h2>조커 콜</h2>
+      <h2>조커콜</h2>
       <ul>
         {#each r.joker_call.calls as [call, fallback], i (i)}
           <li>
             {cardLabel(call)}{#if JSON.stringify(call) !== JSON.stringify(fallback)}(기루다가 {cardLabel(call).slice(0, 1)}이면 {cardLabel(
                 fallback,
-              )}){/if} 카드로 라운드를 시작하면서 조커 콜을 하면, {twoJokers ? cardLabel(jokers(r)[i]) : '조커'}를 가진 사람은
+              )}){/if} 카드로 라운드를 시작하면서 조커콜을 하면, {twoJokers ? cardLabel(jokers(r)[i]) : '조커'}를 가진 사람은
             그 조커를 내야 해요.
           </li>
         {/each}
@@ -502,7 +502,7 @@
         <h2>첫 라운드와 마지막 라운드</h2>
         <ul>
           {#each roundLimits(r) as row (row.who + row.round)}
-            <li><strong>{row.round}</strong>에 {row.who}{row.who === '조커 콜' ? '은' : '는'} {row.text}.</li>
+            <li><strong>{row.round}</strong>에 {row.who}{row.who === '조커콜' ? '은' : '는'} {row.text}.</li>
           {/each}
         </ul>
       </section>
