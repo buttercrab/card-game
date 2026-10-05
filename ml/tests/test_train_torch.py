@@ -14,6 +14,7 @@ from cardgame_ml.data.shards import Dataset
 from cardgame_ml.train.batching import Split, batches, every_row, steps_per_epoch
 from cardgame_ml.train.belief import evaluate, load, train
 from cardgame_ml.train.config import BeliefTrainConfig, SplitConfig, from_mapping
+from cardgame_ml.train.sessions import ConfigChangedError
 
 
 def test_the_split_is_by_game_and_batches_cover_it(dataset: Dataset) -> None:
@@ -65,3 +66,26 @@ def test_a_tiny_run_learns_and_writes_its_files(
     # Better than the count baseline on the games it saw, at least.
     fitted = evaluate(trained, dataset, every_row).to_json()["all"]
     assert fitted["model"]["log_loss"] < fitted["baseline"]["log_loss"]
+
+
+def test_a_resume_keeps_the_record_and_refuses_another_config(
+    dataset: Dataset, train_config: dict[str, Any], tmp_path: Path
+) -> None:
+    config = from_mapping(BeliefTrainConfig, train_config, "test")
+    train(config, dataset, tmp_path, lambda _: None, commit="a" * 40)
+    assert not list(tmp_path.glob("*.tmp"))  # the checkpoint was written whole
+    described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert [s["commit"] for s in described["sessions"]] == ["a" * 40]
+    # Another config: refused before config.json is touched.
+    other = dataclasses.replace(config, optim=dataclasses.replace(config.optim, lr=0.5))
+    with pytest.raises(ConfigChangedError, match=r"optim\.lr"):
+        train(other, dataset, tmp_path, lambda _: None, commit="b" * 40)
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == described
+    # The same config resumes (all epochs done: it only validates) as a new session.
+    lines: list[dict[str, Any]] = []
+    train(config, dataset, tmp_path, lines.append, commit="b" * 40)
+    assert lines[0]["event"] == "resume"
+    start = next(line for line in lines if line["event"] == "start")
+    assert (start["session"], start["commit"], start["seed"]) == (2, "b" * 40, config.seed)
+    described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert [s["commit"] for s in described["sessions"]] == ["a" * 40, "b" * 40]

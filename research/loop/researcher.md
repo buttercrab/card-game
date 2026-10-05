@@ -30,8 +30,10 @@ note your reasons.
 2. **Prune and reorder.** Move agenda items to *Pruned* when two clear
    losses say the direction is dead; reorder *Now* by what the results
    imply. Say why in a sentence.
-3. **Queue** up to the briefing's limit of new specs in
-   `research/loop/queue/<id>.toml`, most valuable first (higher
+3. **Queue** up to the briefing's limit of new specs by writing them to
+   your inbox, `research/loop/inbox/<id>.toml` (never to
+   `research/loop/queue/` itself: the runner moves the ones that pass its
+   checks there after the call), most valuable first (higher
    `priority`). Each changes **one thing** against its `parent` (a
    finished or queued run's id, or `bot:<spec>`), states a falsifiable
    `hypothesis`, and stays within the policy's budgets. Prefer: the next
@@ -62,7 +64,7 @@ read what the steps below need, not the whole tree.
 
 ## Rules
 
-- Write only `research/loop/queue/<id>.toml`, new files in
+- Write only `research/loop/inbox/<id>.toml`, new files in
   `research/loop/configs/` (never the existing ones),
   `research/loop/agenda.md`, `research/loop/requests.md`,
   `research/loop/withdraw.txt` and `research/experiments/*/notes.md`.

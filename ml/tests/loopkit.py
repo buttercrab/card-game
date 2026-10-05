@@ -85,6 +85,14 @@ def write(layout: Layout, data: dict[str, Any], name: str | None = None) -> Path
     return path
 
 
+def propose(layout: Layout, data: dict[str, Any], name: str | None = None) -> Path:
+    """A spec the researcher writes: into its inbox, never the queue."""
+    layout.inbox.mkdir(parents=True, exist_ok=True)
+    path = layout.inbox / f"{name or data['id']}.toml"
+    path.write_text(tomlw.dumps(data), encoding="utf-8")
+    return path
+
+
 def estimate(mean: float, ci95: float = 0.3, n: int = 1000) -> dict[str, Any]:
     return {"mean": mean, "ci95": ci95, "n": n}
 
