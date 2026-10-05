@@ -10,13 +10,22 @@ from which the actors reload. No search, no bootstrapping: the target is
 the hand's real outcome.
 
 A run writes into its directory: ``config.json`` (the config, the spec,
-the parameter count), ``log.jsonl`` (throughput, losses by phase of the
+the parameter count, and its ``sessions``: each one's commit, config
+hash and seed, see ``train.sessions``), ``log.jsonl`` (throughput, losses by phase of the
 hand, the learning curve), ``checkpoint.pt`` (to resume from, every
 ``checkpoint_minutes``), ``snapshots/hands-<n>.pt`` (the weights at each
 point of the learning curve) and at the end ``model.pt`` and
 ``metrics.json``. Stopped and started again, it resumes from the
 checkpoint (weights, optimiser, counts; the buffer refills) with fresh
-actor seeds.
+actor seeds, provided its config is the one the run started with
+(``budget`` aside); a changed config is refused unless the caller
+accepts it (``allow_config_change``), and the session records the change.
+
+Every iteration the learner checks that each actor is alive: an actor
+that died (its ``Failure`` report, with the traceback, goes to the log
+as an ``actor-error`` event) ends the session with ``ActorError``, after
+a checkpoint, and no ``model.pt``: the run fails rather than idling to
+its budget and passing for finished.
 """
 
 # PyTorch leaves a few parameters unannotated (manual_seed's seed,
@@ -46,8 +55,16 @@ from cardgame_ml.train.dmc.buffer import Batch, ReplayBuffer
 from cardgame_ml.train.dmc.config import DmcConfig, curve_deals
 from cardgame_ml.train.dmc.system import gpu_utilisation, load_average
 from cardgame_ml.train.metrics import PHASES, phases
+from cardgame_ml.train.sessions import check_resume, recorded_sessions, session, write_json
 
 type Log = Callable[[dict[str, Any]], None]
+
+type ActorMain = Callable[..., None]
+"""An actor process's entry point (``actor.run``; tests substitute one)."""
+
+
+class ActorError(RuntimeError):
+    """An actor process died: the run cannot go on as configured."""
 
 
 @dataclass
@@ -190,8 +207,23 @@ class Learner:
     """One session of a run: start the actors, learn until the budget is
     spent or the process is stopped, checkpoint on the way out."""
 
-    def __init__(self, config: DmcConfig, out: Path, exclude: Path, log: Log) -> None:
+    def __init__(  # noqa: PLR0913
+        self,
+        config: DmcConfig,
+        out: Path,
+        exclude: Path,
+        log: Log,
+        *,
+        commit: str | None = None,
+        dirty: bool = False,
+        allow_config_change: bool = False,
+        actor_main: ActorMain = actor.run,
+    ) -> None:
+        """``commit`` and ``dirty``: the checkout this session runs, for the
+        record. Raises ``ConfigChangedError`` when resuming with another
+        config outside ``budget`` (unless ``allow_config_change``)."""
         self.config, self.out, self.exclude, self.log = config, out, exclude, log
+        self.actor_main = actor_main
         self.device = device_for(config.device)
         torch.manual_seed(config.seed)
         probe = Env(num_envs=1, seed=0, rules=config.rules, exclude=exclude, threads=1)
@@ -207,16 +239,32 @@ class Learner:
         out.mkdir(parents=True, exist_ok=True)
         (out / "snapshots").mkdir(exist_ok=True)
         checkpoint = out / "checkpoint.pt"
+        sessions: list[dict[str, Any]] = []
+        changed: list[str] = []
         if checkpoint.exists():
             described = json.loads((out / "config.json").read_text(encoding="utf-8"))
             check_encoding(out, described, self.spec)
+            changed = check_resume(
+                out,
+                described["config"],
+                asdict(config),
+                ignore=("budget",),
+                allow_change=allow_config_change,
+            )
+            sessions = recorded_sessions(described)
             state = torch.load(checkpoint, map_location=self.device, weights_only=False)
             self.model.load_state_dict(state["model"])
             self.optimizer.load_state_dict(state["optimizer"])
             self.progress = Progress(**state["progress"])
             log({"event": "resume", **asdict(self.progress)})
         self.progress.sessions += 1
-        _write_json(out / "config.json", describe(config, self.spec, self.model))
+        self.session = session(
+            self.progress.sessions, commit, dirty, asdict(config), config.seed, changed
+        )
+        write_json(
+            out / "config.json",
+            describe(config, self.spec, self.model) | {"sessions": [*sessions, self.session]},
+        )
         self.buffer = ReplayBuffer(self.spec, config.buffer.capacity)
         self.rng = np.random.default_rng([config.seed, self.progress.sessions])
         self.losses = PhaseLoss(self.device)
@@ -235,7 +283,7 @@ class Learner:
         self._publish(shared_state, version, lock)
         processes = [
             context.Process(
-                target=actor.run,
+                target=self.actor_main,
                 args=(
                     i,
                     config,
@@ -260,22 +308,29 @@ class Learner:
                 "device": str(self.device),
                 "actors": a.processes,
                 "parameters": self.model.parameter_count(),
-                "session": progress.sessions,
+                **self.session,
             }
         )
         try:
-            self._loop(reports, shared_state, version, lock)
+            self._loop(reports, shared_state, version, lock, processes)
         finally:
             stop.set()
             _drain(reports)
             for p in processes:
                 p.join(timeout=10)
                 if p.is_alive():
-                    p.terminate()
+                    p.kill()  # actors ignore SIGTERM
             self._checkpoint()
         return progress
 
-    def _loop(self, reports: Any, shared: dict[str, torch.Tensor], version: Any, lock: Any) -> None:
+    def _loop(
+        self,
+        reports: Any,
+        shared: dict[str, torch.Tensor],
+        version: Any,
+        lock: Any,
+        processes: list[Any],
+    ) -> None:
         config, progress, buffer = self.config, self.progress, self.buffer
         budget = config.budget
         session_start = time.monotonic()
@@ -295,7 +350,9 @@ class Learner:
                 buffer.size < config.buffer.min_fill
                 or trained_session >= config.buffer.replay_ratio * max(added_session, 1)
             )
-            for report in _take(reports, block=starved):
+            taken = _take(reports, block=starved)
+            self._check_actors(taken, processes, reports)
+            for report in cast(list[actor.Report], taken):
                 buffer.add(report.decisions)
                 added_session += len(report.decisions)
                 progress.hands += report.hands
@@ -333,6 +390,36 @@ class Learner:
         self._curve()
         torch.save(self.model.state_dict(), self.out / "model.pt")
         self.log({"event": "end", **asdict(progress)})
+
+    def _check_actors(self, taken: list[Any], processes: list[Any], reports: Any) -> None:
+        """Raises ``ActorError`` when an actor failed (its report is among
+        ``taken``) or exited; the failure's traceback goes to the log."""
+        failures = [t for t in taken if isinstance(t, actor.Failure)]
+        dead = [(i, p.exitcode) for i, p in enumerate(processes) if p.exitcode is not None]
+        if not failures and not dead:
+            return
+        if not failures:
+            # It may have sent its traceback just before it exited.
+            failures = [t for t in _take(reports, block=False) if isinstance(t, actor.Failure)]
+        codes = dict(dead)
+        for failure in failures:
+            self.log(
+                {
+                    "event": "actor-error",
+                    "actor": failure.actor,
+                    "exit_code": codes.get(failure.actor),
+                    "error": failure.error,
+                    "traceback": failure.traceback,
+                }
+            )
+        for i, code in dead:
+            if all(f.actor != i for f in failures):
+                self.log({"event": "actor-error", "actor": i, "exit_code": code, "error": None})
+        first = failures[0] if failures else None
+        if first is not None:
+            raise ActorError(f"actor {first.actor} failed: {first.error}")
+        i, code = dead[0]
+        raise ActorError(f"actor {i} exited with code {code} (no error report)")
 
     def _publish(self, shared: dict[str, torch.Tensor], version: Any, lock: Any) -> None:
         with lock, torch.no_grad():
@@ -449,10 +536,10 @@ class _Window:
         self.reports += 1
 
 
-def _take(reports: Any, block: bool) -> list[actor.Report]:
+def _take(reports: Any, block: bool) -> list[actor.Report | actor.Failure]:
     """Every report waiting; with ``block``, at least one (or none after
     a second, so the loop stays responsive)."""
-    taken: list[actor.Report] = []
+    taken: list[actor.Report | actor.Failure] = []
     if block:
         try:
             taken.append(reports.get(timeout=1.0))
@@ -475,13 +562,28 @@ def _drain(reports: Any) -> None:
             return
 
 
-def _write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def train(config: DmcConfig, out: Path, exclude: Path, log: Log) -> Progress:
+def train(  # noqa: PLR0913
+    config: DmcConfig,
+    out: Path,
+    exclude: Path,
+    log: Log,
+    *,
+    commit: str | None = None,
+    dirty: bool = False,
+    allow_config_change: bool = False,
+    actor_main: ActorMain = actor.run,
+) -> Progress:
     """Runs (or resumes) the run ``config`` into ``out``; see the module docs."""
-    return Learner(config, out, exclude, log).run()
+    return Learner(
+        config,
+        out,
+        exclude,
+        log,
+        commit=commit,
+        dirty=dirty,
+        allow_config_change=allow_config_change,
+        actor_main=actor_main,
+    ).run()
 
 
-__all__ = ["Learner", "PhaseLoss", "Progress", "describe", "load", "train"]
+__all__ = ["ActorError", "Learner", "PhaseLoss", "Progress", "describe", "load", "train"]

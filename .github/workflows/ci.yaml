@@ -25,6 +25,14 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
+  # The deploy scripts, against stand-ins for docker, ssh, curl and gh.
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: shellcheck deploy/*.sh deploy/seoul/*.sh deploy/test/*.sh deploy/test/bin/* research/loop/ops/*.sh
+      - run: bash deploy/test/run.sh
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -91,6 +99,9 @@ jobs:
       - run: uv run ruff check . ../crates/env-py/python
       - run: uv run ruff format --check . ../crates/env-py/python
       - run: uv run pyright
+      # For the one test that runs the real `eval check-bot` (the others
+      # stub it); it is skipped when no eval is built.
+      - run: cargo build -p eval
       - run: uv run pytest
 
   web:
@@ -108,6 +119,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx svelte-check --tsconfig ./tsconfig.json --threshold error
+      # Unit tests (vitest); the scoring test reads crates/mighty/tests/payoffs.json.
+      - run: npm test
 
   # Every page and /preview state at four sizes, light and dark, served by
   # the real server (web/e2e). Known layout bugs are marked expected-fail

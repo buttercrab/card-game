@@ -239,7 +239,10 @@ export interface RoomMsg {
   type: 'room';
   id: string;
   game: string;
-  settings: { preset: string; rules?: Rules };
+  /** `rules`: the table's own, when its players changed the preset's.
+   * `preset_rules`: the preset's rules as pinned when the table chose it,
+   * which may differ from the preset's today. */
+  settings: { preset: string; rules?: Rules; preset_rules?: Rules };
   seats: SeatInfo[];
   scores: number[];
   hands_played: number;
@@ -294,6 +297,9 @@ export interface StateMsg {
   /** How long, in ms, the slowest legal action must still wait after the
    * deal (the first bid where 딜미스 comes first). */
   grace_ms?: number;
+  /** Which state of the hand this is; a hint carries the version it was
+   * asked for, and one for an older state is dropped. */
+  version?: number;
 }
 
 export type ServerMsg =

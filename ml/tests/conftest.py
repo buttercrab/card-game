@@ -3,8 +3,10 @@ from typing import Any
 
 import pytest
 from cardgame_env import selfplay
+from loopkit import fake_check_bot
 
 from cardgame_ml.data.shards import Dataset
+from cardgame_ml.loop import botcheck
 
 TINY = """
 name = "tiny"
@@ -26,6 +28,13 @@ weight = 1.0
 spec = "초보"
 weight = 1.0
 """
+
+
+@pytest.fixture(autouse=True)
+def stub_check_bot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test asks ``eval check-bot`` through ``loopkit``'s stub; one
+    runs the real binary, passing its own runner."""
+    monkeypatch.setattr(botcheck, "RUN", fake_check_bot)
 
 
 @pytest.fixture

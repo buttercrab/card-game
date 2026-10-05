@@ -179,7 +179,7 @@ def main() -> None:  # noqa: PLR0912, PLR0915
 
 def _daily_hook(runner: Runner, now: datetime) -> bool:
     day = due(runner.layout, runner.policy, now)
-    if day is None:
+    if day is None or runner.calling():  # the leaderboard waits for the call's check
         return False
     write_leaderboard(runner.layout, runner.policy)
     write_daily(runner.layout, runner.policy, day)

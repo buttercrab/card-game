@@ -15,6 +15,7 @@
   let {
     preset,
     rules = null,
+    base: pinned = null,
     name: givenName = '',
     applyLabel = '적용',
     note = '다음 판부터 적용돼요.',
@@ -25,6 +26,9 @@
     preset: string;
     /** Changed rules to start from, or null for the preset as it is. */
     rules?: Rules | null;
+    /** `preset`'s rules as a table pinned them, which may differ from the
+     * preset's today; null for today's. */
+    base?: Rules | null;
     name?: string;
     applyLabel?: string;
     note?: string;
@@ -48,6 +52,13 @@
   function startFrom(id: string, start: Rules | null) {
     baseId = id;
     base = null;
+    // The table's own preset: as the table pinned it.
+    const kept = id === untrack(() => preset) ? untrack(() => $state.snapshot(pinned) as Rules | null) : null;
+    if (kept) {
+      base = kept;
+      draft = structuredClone(start ?? kept);
+      return;
+    }
     presetRules(id)
       .then((r) => {
         if (baseId !== id) return;

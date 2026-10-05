@@ -3,7 +3,7 @@
 //! these rules.
 
 use crate::Mighty;
-use crate::card::{ACE, Card, Color, DeckKind, Suit};
+use crate::card::{ACE, Card, Color, Suit};
 use crate::rules::{CardPolicy, Contract, Rules};
 use crate::state::hand_value;
 use crate::state::{Action, FriendCall};
@@ -433,11 +433,30 @@ impl Table<'_> {
     }
 }
 
-/// Every card of `deck`, as [`bit`]s.
-fn deck(deck: DeckKind) -> u64 {
-    // Ranks 2 to the ace of each suit, then the jokers.
-    let suits = (0..4).fold(0, |m, suit| m | (0x7ffc << (suit * 15)));
-    deck.jokers().iter().fold(suits, |m, &j| m | bit(j))
+/// Every card these rules deal, as [`bit`]s: not the deck kind alone,
+/// since 3마 and 4마 leave the low ranks out ([`Rules::cards`]).
+fn deck(rules: &Rules) -> u64 {
+    // Each suit's ranks from `lowest_rank` to the ace (bits 2 to 14 of its
+    // 15), then the low cards dealt anyway and the jokers. Built without
+    // listing the cards: the search's playouts ask for it every play.
+    let ranks = 0x7ffc & u64::MAX.checked_shl(u32::from(rules.lowest_rank)).unwrap_or(0);
+    let suits = (0..4).fold(0, |m, suit| m | (ranks << (suit * 15)));
+    let extra = rules
+        .extra_cards
+        .iter()
+        .filter(|c| !c.is_joker())
+        .fold(0, |m, &c| m | bit(c));
+    rules.deck.jokers().iter().fold(suits | extra, |m, &j| m | bit(j))
+}
+
+/// Every card these rules deal that `view`'s seat has not seen: not in
+/// its hand and not played.
+fn unseen(view: &View, tricks: &[trick::Trick], plays: &[Played]) -> u64 {
+    let played = tricks.iter().flat_map(|t| &t.plays).chain(plays).map(|p| p.card);
+    let seen = played
+        .chain(view.hand.iter().copied())
+        .fold(0u64, |seen, c| seen | bit(c));
+    deck(&view.rules) & !seen
 }
 
 /// The cards in a set of [`bit`]s, in card order.
@@ -472,15 +491,31 @@ fn card_of(a: &Action) -> Card {
 }
 
 fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
+    let t = table(bot, view)?;
+    let PhaseView::Play {
+        lead,
+        plays,
+        called_joker,
+        ..
+    } = &view.phase
+    else {
+        return None;
+    };
+    match lead {
+        None => Some(lead_card(&t, legal)),
+        Some(lead) => Some(follow(&t, legal, *lead, plays, *called_joker)),
+    }
+}
+
+/// What `view`'s seat knows during play; `None` outside it.
+fn table<'a>(bot: &'a SimpleBot, view: &'a View) -> Option<Table<'a>> {
     let PhaseView::Play {
         declarer,
         contract,
         call,
         friend,
         trick_no,
-        lead,
         plays,
-        called_joker,
         tricks,
         ..
     } = &view.phase
@@ -503,11 +538,7 @@ fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
             known && on_attack == attacking
         })
         .fold(0, |m, s| m | 1 << s);
-    let played = tricks.iter().flat_map(|t| &t.plays).chain(plays).map(|p| p.card);
-    let seen = played
-        .chain(view.hand.iter().copied())
-        .fold(0u64, |seen, c| seen | bit(c));
-    let unseen = deck(view.rules.deck) & !seen;
+    let unseen = unseen(view, tricks, plays);
     let out = || cards(unseen);
     let mighty = view.rules.mighty(trump);
     let mut top_out = [0; 4];
@@ -516,7 +547,7 @@ fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
             top_out[suit as usize] = top_out[suit as usize].max(rank);
         }
     }
-    let t = Table {
+    Some(Table {
         specials_out: out().any(|c| c.is_joker() || c == mighty),
         trumps_out: out().any(|c| c != mighty && c.suit() == trump),
         top_out,
@@ -543,12 +574,7 @@ fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
         } else {
             0
         },
-    };
-
-    match lead {
-        None => Some(lead_card(&t, legal)),
-        Some(lead) => Some(follow(&t, legal, *lead, plays, *called_joker)),
-    }
+    })
 }
 
 /// Choosing what to lead.
@@ -722,15 +748,101 @@ fn cheapest_dump(t: &Table, cards: &[Card]) -> Card {
 mod tests {
     use super::*;
 
+    use crate::card::DeckKind;
+    use engine::{Game, Turn};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    /// Every table size the rules know, with each deck kind.
+    fn all_rules() -> Vec<Rules> {
+        let mut all = Vec::new();
+        for kind in [DeckKind::OneJoker, DeckKind::TwoJokers] {
+            let five = Rules {
+                deck: kind,
+                ..Rules::default()
+            };
+            all.extend((3..=7).filter_map(|n| five.for_players(n)));
+        }
+        all
+    }
+
     /// Sets of cards as bits give back the same cards, in card order.
     #[test]
     fn card_sets_round_trip() {
         for kind in [DeckKind::OneJoker, DeckKind::TwoJokers] {
             let mut all = kind.cards();
             all.sort();
-            assert_eq!(cards(deck(kind)).collect::<Vec<_>>(), all);
             for c in all {
                 assert_eq!(cards(bit(c)).collect::<Vec<_>>(), vec![c]);
+            }
+        }
+    }
+
+    /// The deck is the cards the rules deal, not every card of the deck
+    /// kind: 3마 starts at 7, 4마 at 5 plus the joker-call threes.
+    #[test]
+    fn the_deck_is_the_cards_dealt() {
+        let odd = Rules {
+            lowest_rank: 10,
+            extra_cards: vec![Card::new(Suit::Heart, 9), Card::new(Suit::Club, 3)],
+            ..Rules::default()
+        };
+        for rules in all_rules().into_iter().chain([odd]) {
+            assert_eq!(
+                cards(deck(&rules)).collect::<Vec<_>>(),
+                rules.cards(),
+                "{} players",
+                rules.players
+            );
+        }
+        let three = Rules::default().for_players(3).unwrap();
+        assert!(cards(deck(&three)).all(|c| c.rank().is_none_or(|r| r >= 7)));
+    }
+
+    /// Regression: at 3 and 4 players the never-dealt low cards counted as
+    /// unseen, so the bot played against phantom trumps. Through whole
+    /// games of bots, every seat's unseen cards are exactly the dealt
+    /// cards it has not seen.
+    #[test]
+    fn unseen_cards_are_never_undealt_cards() {
+        for players in [3, 4] {
+            let rules = Rules::default().for_players(players).unwrap();
+            let dealt = rules.cards().into_iter().fold(0, |m, c| m | bit(c));
+            let mut rng = StdRng::seed_from_u64(players as u64);
+            for game in 0..20 {
+                let options = crate::Options {
+                    rules: rules.clone(),
+                    first_bidder: game % players,
+                };
+                let mut state = Mighty::new_game(&options).unwrap();
+                let mut plays = 0;
+                loop {
+                    let action = match Mighty::turn(&state) {
+                        Turn::Over => break,
+                        Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                        Turn::Seat(seat) => {
+                            let view = Mighty::view(&state, Viewer::Seat(seat));
+                            let bot = tempered(seat);
+                            if let Some(t) = table(&bot, &view) {
+                                plays += 1;
+                                let PhaseView::Play { tricks, plays, .. } = &view.phase else {
+                                    unreachable!()
+                                };
+                                let seen = (tricks.iter().flat_map(|t| &t.plays).chain(plays))
+                                    .map(|p| p.card)
+                                    .chain(view.hand.iter().copied())
+                                    .fold(0, |m, c| m | bit(c));
+                                assert_eq!(t.unseen & !dealt, 0, "{players} players: undealt cards unseen");
+                                assert_eq!(t.unseen, dealt & !seen);
+                                assert!(t.trumps_out == t.unseen().any(|c| c != t.mighty && c.suit() == t.trump));
+                            }
+                            let legal = Mighty::legal_actions(&state);
+                            Bot::<Mighty>::act(&mut tempered(seat), &view, &legal, &mut rng)
+                        }
+                    };
+                    Mighty::apply(&mut state, action).unwrap();
+                }
+                assert!(plays > 0 || Mighty::payoffs(&state).is_some());
             }
         }
     }

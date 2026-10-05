@@ -340,6 +340,7 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
     let state = AppState { web: web_dir, ..state };
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
+        .route("/version", get(version))
         .route("/api/presets", get(presets))
         .route("/api/presets/{id}", get(preset_rules))
         .route("/api/rooms", post(create_room).layer(DefaultBodyLimit::max(4 * 1024)))
@@ -360,6 +361,24 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .fallback(site::fallback)
         .layer(axum::middleware::map_response(site::base_headers))
         .with_state(state)
+}
+
+/// The build this server runs, and whether its bot worker runs the same:
+/// the deploy checks it after shipping, and the `deploy-watch` workflow
+/// compares it with `main`. The repository is public, so none of it is a
+/// secret.
+async fn version(State(app): State<AppState>) -> Response {
+    let worker = app.remote.status();
+    let body = json!({
+        "commit": bots::commit(),
+        "version": env!("CARGO_PKG_VERSION"),
+        "protocol": bots::PROTOCOL,
+        "worker": {
+            "connected": worker.connected,
+            "commit": worker.commit,
+        },
+    });
+    ([(axum::http::header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
 }
 
 async fn presets() -> Json<Vec<&'static str>> {

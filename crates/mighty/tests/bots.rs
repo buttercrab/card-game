@@ -3,7 +3,7 @@
 use engine::{Bot, Viewer};
 use mighty::bot::{Clumsy, SimpleBot};
 use mighty::card::{Card, Color, Suit};
-use mighty::rules::{Contract, Preset};
+use mighty::rules::{Contract, Preset, Rules};
 use mighty::trick::{Played, Trick};
 use mighty::{Action, FriendCall, Lead, PhaseView, View};
 use rand::SeedableRng;
@@ -274,4 +274,80 @@ fn clumsy_slips_never_throw_a_joker() {
     let usual = decide(&v, &legal);
     let picks: Vec<Action> = (0..50).map(|_| clumsy.act(&v, &legal, &mut rng)).collect();
     assert!(picks.iter().all(|a| *a == usual || *a == play(d9)));
+}
+
+/// Seat 0 declares ♥ alone at `players` (3마 or 4마 rules) and leads the
+/// eighth trick holding ♣K, ♦9 and ♠7. Every heart, the mighty, the joker
+/// and ♣A went in earlier tricks; the other seats hold only low spades and
+/// diamonds, and so do the discards.
+fn short_deck_lead(players: usize) -> (View, Vec<Action>) {
+    let rules = Rules::default().for_players(players).unwrap();
+    let hand = vec![
+        Card::new(Suit::Club, 13),
+        Card::new(Suit::Diamond, 9),
+        Card::new(Suit::Spade, 7),
+    ];
+    let mighty = rules.mighty(Some(Suit::Heart));
+    let rest: Vec<Card> = rules.cards().into_iter().filter(|c| !hand.contains(c)).collect();
+    let harmless = |c: &Card| matches!(c.suit(), Some(Suit::Spade | Suit::Diamond)) && *c != mighty;
+    let held = (players - 1) * 3 + rules.kitty_size();
+    let quiet: Vec<Card> = rest.iter().copied().filter(harmless).take(held).collect();
+    let played: Vec<Card> = rest.iter().copied().filter(|c| !quiet.contains(c)).collect();
+    let discards = &quiet[..rules.kitty_size()];
+    let tricks: Vec<Trick> = played
+        .chunks(players)
+        .map(|cards| Trick {
+            plays: (cards.iter().enumerate())
+                .map(|(seat, &card)| Played {
+                    seat,
+                    card,
+                    powered: true,
+                })
+                .collect(),
+            lead: Lead::Suit(Suit::Spade),
+            winner: 0,
+        })
+        .collect();
+    assert_eq!(tricks.len(), 7, "the eighth trick");
+    let legal = hand.iter().map(|&c| play(c)).collect();
+    let view = View {
+        viewer: Viewer::Seat(0),
+        first_bidder: 0,
+        hand,
+        hand_sizes: vec![3; players],
+        points_taken: vec![Vec::new(); players],
+        phase: PhaseView::Play {
+            declarer: 0,
+            contract: Contract {
+                trump: Some(Suit::Heart),
+                count: 14,
+            },
+            call: FriendCall::Alone,
+            friend: None,
+            no_friend: true,
+            trick_no: 7,
+            leader: 0,
+            lead: None,
+            plays: Vec::new(),
+            leading: None,
+            called_joker: None,
+            tricks,
+            discards: Some(discards.to_vec()),
+        },
+        rules,
+        bids: Vec::new(),
+        redealt: None,
+    };
+    (view, legal)
+}
+
+/// Regression: the bot counted 3마's and 4마's never-dealt low hearts as
+/// trumps still out, so it never trusted a side card no dealt card can
+/// beat. With every dealt trump gone, ♣K wins the trick and is led.
+#[test]
+fn a_sure_side_card_is_led_at_three_and_four_players() {
+    for players in [3, 4] {
+        let (v, legal) = short_deck_lead(players);
+        assert_eq!(decide(&v, &legal), play(Card::new(Suit::Club, 13)), "{players} players");
+    }
 }

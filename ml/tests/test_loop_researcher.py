@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from loopkit import DMC, EVAL, Clock, make_layout, spec, write
+from loopkit import DMC, EVAL, Clock, make_layout, propose, spec, write
 
 from cardgame_ml.loop import tomlw
 from cardgame_ml.loop.layout import Layout
@@ -85,8 +85,8 @@ def test_the_command_limits_its_tools(policy: Policy, layout: Layout) -> None:
         [
             f"Read(/{repo}/research/**)",
             f"Read(/{repo}/docs/**)",
-            f"Write(/{repo}/research/loop/queue/*.toml)",
-            f"Edit(/{repo}/research/loop/queue/*.toml)",
+            f"Write(/{repo}/research/loop/inbox/*.toml)",
+            f"Edit(/{repo}/research/loop/inbox/*.toml)",
             f"Write(/{repo}/research/loop/configs/*.toml)",
             f"Write(/{repo}/research/loop/agenda.md)",
             f"Edit(/{repo}/research/loop/agenda.md)",
@@ -140,7 +140,7 @@ def test_it_starts_in_research_with_a_clean_environment(layout: Layout, policy: 
 @pytest.mark.parametrize(
     ("path", "ok"),
     [
-        ("research/loop/queue/x.toml", True),
+        ("research/loop/inbox/x.toml", True),
         ("research/loop/agenda.md", True),
         ("research/loop/requests.md", True),
         ("research/loop/withdraw.txt", True),
@@ -148,10 +148,10 @@ def test_it_starts_in_research_with_a_clean_environment(layout: Layout, policy: 
         ("research/experiments/2026-10-06-x/notes.md", True),
         ("research/experiments/2026-10-06-x/summary.md", False),
         ("research/experiments/../notes.md", False),
-        ("research/loop/queue/x.txt", False),
-        ("research/loop/queue/sub/x.toml", False),
-        ("research/loop/queue/-x.toml", False),
-        ("research/loop/queue/../policy.toml", False),
+        ("research/loop/inbox/x.txt", False),
+        ("research/loop/inbox/sub/x.toml", False),
+        ("research/loop/inbox/-x.toml", False),
+        ("research/loop/inbox/../policy.toml", False),
         ("research/loop/configs/../../../ml/x.toml", False),
         ("research/loop/policy.toml", False),
         ("research/loop/researcher.md", False),
@@ -272,9 +272,9 @@ def call(layout: Layout, policy: Policy, act: Any) -> tuple[dict[str, Any], Fake
 
 def test_its_specs_are_validated(layout: Layout, policy: Policy) -> None:
     def act(git: FakeCheckout) -> None:
-        write(layout, spec(EVAL, id="good-one"))
-        write(layout, spec(DMC, id="too-long", budget={"wall_hours": 99.0}))
-        write(
+        propose(layout, spec(EVAL, id="good-one"))
+        propose(layout, spec(DMC, id="too-long", budget={"wall_hours": 99.0}))
+        propose(
             layout,
             spec(
                 DMC,
@@ -285,8 +285,8 @@ def test_its_specs_are_validated(layout: Layout, policy: Policy) -> None:
                 },
             ),
         )
-        (layout.queue / "junk.toml").write_text("not toml [", encoding="utf-8")
-        git.paths = [f"research/loop/queue/{p.name}" for p in layout.queue.glob("*.toml")]
+        (layout.inbox / "junk.toml").write_text("not toml [", encoding="utf-8")
+        git.paths = [f"research/loop/inbox/{p.name}" for p in layout.inbox.glob("*.toml")]
 
     entry, git = call(layout, policy, act)
     assert entry["accepted"] == ["good-one"]
@@ -301,7 +301,7 @@ def test_its_specs_are_validated(layout: Layout, policy: Policy) -> None:
 
 def test_new_methods_are_requests_not_specs(layout: Layout, policy: Policy) -> None:
     def act(_: FakeCheckout) -> None:
-        write(layout, spec(DMC, id="ppo-try", method="ppo"))
+        propose(layout, spec(DMC, id="ppo-try", method="ppo"))
 
     entry, _ = call(layout, policy, act)
     assert entry["accepted"] == []
@@ -311,7 +311,7 @@ def test_new_methods_are_requests_not_specs(layout: Layout, policy: Policy) -> N
 def test_limits_per_call_and_gpu_hours(layout: Layout, policy: Policy) -> None:
     def act(_: FakeCheckout) -> None:
         for k in range(policy.limits.max_specs_per_call + 2):
-            write(layout, spec(EVAL, id=f"many-{k:02d}"))
+            propose(layout, spec(EVAL, id=f"many-{k:02d}"))
 
     entry, _ = call(layout, policy, act)
     assert len(entry["accepted"]) == policy.limits.max_specs_per_call
@@ -319,7 +319,7 @@ def test_limits_per_call_and_gpu_hours(layout: Layout, policy: Policy) -> None:
 
     def gpu(_: FakeCheckout) -> None:
         for k in range(20):
-            write(layout, spec(DMC, id=f"gpu-{k:02d}"))
+            propose(layout, spec(DMC, id=f"gpu-{k:02d}"))
 
     roomy = dataclasses.replace(
         policy, limits=dataclasses.replace(policy.limits, max_specs_per_call=50)
@@ -344,17 +344,48 @@ def test_writing_elsewhere_switches_it_off(layout: Layout, policy: Policy) -> No
     assert "policy.toml" in layout.researcher_off.read_text(encoding="utf-8")
 
 
-def test_confirmations_are_put_back(layout: Layout, policy: Policy) -> None:
+def test_the_queue_is_put_back(layout: Layout, policy: Policy) -> None:
+    """The queue is the runner's: whatever the call did to it is undone
+    (from the snapshot, whatever git says) and switches it off."""
     confirmation = spec(EVAL, id="x-confirm", confirms="x", tags=["search", "confirmation"])
     path = layout.queue / "x-confirm.toml"
     path.write_text(tomlw.dumps(confirmation), encoding="utf-8")
     original = path.read_text(encoding="utf-8")
+    edited = write(layout, spec(EVAL, id="edited"))
+    edited_text = edited.read_text(encoding="utf-8")
 
     def act(_: FakeCheckout) -> None:
         path.unlink()
+        edited.write_text(edited_text + "\n# changed\n", encoding="utf-8")
+        write(layout, spec(DMC, id="sneaked-in", budget={"wall_hours": 99.0}))
 
-    call(layout, policy, act)
+    entry, _ = call(layout, policy, act)
     assert path.read_text(encoding="utf-8") == original
+    assert edited.read_text(encoding="utf-8") == edited_text
+    assert not (layout.queue / "sneaked-in.toml").exists()
+    assert entry["outcome"] == "violation"
+    off = layout.researcher_off.read_text(encoding="utf-8")
+    assert "research/loop/queue/sneaked-in.toml" in off
+    assert "research/loop/queue/x-confirm.toml" in off
+    quarantined = list((layout.state / "researcher" / "quarantine").rglob("sneaked-in.toml"))
+    assert len(quarantined) == 1
+
+
+def test_the_inbox_ends_empty(layout: Layout, policy: Policy) -> None:
+    def act(git: FakeCheckout) -> None:
+        propose(layout, spec(EVAL, id="fine"))
+        propose(layout, spec(EVAL, id="confirming", confirms="x", tags=["confirmation"]))
+        (layout.inbox / "notes.txt").write_text("hello", encoding="utf-8")
+        git.paths = [f"research/loop/inbox/{p.name}" for p in layout.inbox.iterdir()]
+
+    entry, _ = call(layout, policy, act)
+    assert entry["accepted"] == ["fine"]
+    assert [r["file"] for r in entry["rejected"]] == ["confirming.toml"]
+    assert list(layout.inbox.iterdir()) == []
+    assert (layout.queue / "fine.toml").is_file()
+    # Anything but a spec file in the inbox is a place it may not write.
+    assert entry["outcome"] == "violation"
+    assert "inbox/notes.txt" in layout.researcher_off.read_text(encoding="utf-8")
 
 
 def test_a_call_past_its_time_is_stopped(layout: Layout, policy: Policy) -> None:
@@ -404,7 +435,7 @@ def test_changing_an_existing_base_config_switches_it_off(layout: Layout, policy
 
 def test_the_next_briefing_says_what_was_refused(layout: Layout, policy: Policy) -> None:
     def act(_: FakeCheckout) -> None:
-        write(layout, spec(DMC, id="too-long", budget={"wall_hours": 99.0}))
+        propose(layout, spec(DMC, id="too-long", budget={"wall_hours": 99.0}))
 
     call(layout, policy, act)
     researcher, _, _ = make(layout, policy)

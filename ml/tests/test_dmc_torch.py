@@ -1,7 +1,10 @@
 """Deep Monte Carlo on CPU: the Q network, playing with it, labelling
 hands, the Q export's parity fixture, and a tiny run end to end."""
 
+import dataclasses
 import json
+import os
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -18,9 +21,15 @@ from cardgame_ml.export.onnx import observations  # noqa: E402
 from cardgame_ml.models.config import QConfig, TrunkConfig  # noqa: E402
 from cardgame_ml.models.q import QModel  # noqa: E402
 from cardgame_ml.train.config import from_mapping  # noqa: E402
+from cardgame_ml.train.dmc import actor  # noqa: E402
 from cardgame_ml.train.dmc.actor import Hands  # noqa: E402
 from cardgame_ml.train.dmc.config import DmcConfig  # noqa: E402
-from cardgame_ml.train.dmc.learner import EncodingMismatchError, load, train  # noqa: E402
+from cardgame_ml.train.dmc.learner import (  # noqa: E402
+    ActorError,
+    EncodingMismatchError,
+    load,
+    train,
+)
 from cardgame_ml.train.dmc.policy import (  # noqa: E402
     GREEDY,
     Exploration,
@@ -31,6 +40,9 @@ from cardgame_ml.train.dmc.policy import (  # noqa: E402
     legal_values,
     observation_tensors,
 )
+from cardgame_ml.train.sessions import ConfigChangedError  # noqa: E402
+
+SESSION_KEYS = {"session", "commit", "dirty", "config_sha256", "seed", "started"}
 
 TINY = QConfig(TrunkConfig(width=16, heads=2, layers=1, feedforward=32), 32, 1)
 CPU = torch.device("cpu")
@@ -199,7 +211,7 @@ def test_a_tiny_run_plays_learns_and_resumes(repo: Path, tmp_path: Path) -> None
     config = tiny_config(repo)
     lines: list[dict[str, Any]] = []
     exclude = repo / config.exclude
-    progress = train(config, tmp_path, exclude, lines.append)
+    progress = train(config, tmp_path, exclude, lines.append, commit="a" * 40)
     assert progress.hands >= config.budget.hands
     assert progress.step > 0
     files = {p.name for p in tmp_path.iterdir()}
@@ -214,12 +226,73 @@ def test_a_tiny_run_plays_learns_and_resumes(repo: Path, tmp_path: Path) -> None
     assert described["reward_scale"] == config.reward_scale
     trained = load(tmp_path)
     assert trained.parameter_count() == described["parameters"]
-    # Done: started again, it resumes, finds the budget spent and stops.
+    start = next(line for line in lines if line["event"] == "start")
+    assert (start["session"], start["commit"], start["seed"]) == (1, "a" * 40, config.seed)
+    assert described["sessions"] == [{k: v for k, v in start.items() if k in SESSION_KEYS}]
+    # Done: started again (on another commit, with more time: a budget
+    # change is fine), it resumes, finds the hands spent and stops.
+    longer = dataclasses.replace(config, budget=dataclasses.replace(config.budget, hours=0.06))
     again: list[dict[str, Any]] = []
-    resumed = train(config, tmp_path, exclude, again.append)
+    resumed = train(longer, tmp_path, exclude, again.append, commit="b" * 40)
     assert again[0]["event"] == "resume"
     assert resumed.sessions == 2
     assert resumed.hands == progress.hands
+    described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    sessions = described["sessions"]
+    assert [(s["session"], s["commit"]) for s in sessions] == [(1, "a" * 40), (2, "b" * 40)]
+    assert sessions[0]["config_sha256"] != sessions[1]["config_sha256"]
+    # Anything else changed is refused, and the record left alone...
+    other = dataclasses.replace(config, optim=dataclasses.replace(config.optim, lr=1.0))
+    with pytest.raises(ConfigChangedError, match=r"optim\.lr"):
+        train(other, tmp_path, exclude, print, commit="c" * 40)
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8")) == described
+    # ...unless accepted, and then the session says what changed.
+    train(other, tmp_path, exclude, print, commit="c" * 40, allow_config_change=True)
+    described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert described["config"]["optim"]["lr"] == 1.0
+    assert described["sessions"][-1]["config_changed"] == [f"optim.lr ({config.optim.lr} → 1.0)"]
+
+
+def actor_without_weights(
+    index: int, config: DmcConfig, spec_json: Any, exclude: str, *rest: Any
+) -> None:
+    """The real actor, handed no published weights: it fails loading them
+    (an actor process's entry point, so it lives at module level)."""
+    shared, *others = rest
+    assert shared
+    actor.run(index, config, spec_json, exclude, {}, *others)
+
+
+def actor_that_vanishes(*_: Any) -> None:
+    """An actor killed from outside (the OOM killer, say): no report."""
+    os._exit(3)
+
+
+def test_a_failing_actor_fails_the_run(repo: Path, tmp_path: Path) -> None:
+    config = tiny_config(repo)
+    config = dataclasses.replace(config, budget=dataclasses.replace(config.budget, hands=10**9))
+    lines: list[dict[str, Any]] = []
+    started = time.monotonic()
+    with pytest.raises(ActorError, match="actor 0 failed: RuntimeError"):
+        train(
+            config, tmp_path, repo / config.exclude, lines.append, actor_main=actor_without_weights
+        )
+    assert time.monotonic() - started < 0.5 * config.budget.hours * 3600
+    errors = [line for line in lines if line["event"] == "actor-error"]
+    assert len(errors) == 1
+    assert errors[0]["actor"] == 0
+    assert "load_state_dict" in errors[0]["traceback"]
+    assert all(line["event"] != "end" for line in lines)
+    assert not (tmp_path / "model.pt").exists()
+
+
+def test_a_vanished_actor_fails_the_run(repo: Path, tmp_path: Path) -> None:
+    config = tiny_config(repo)
+    lines: list[dict[str, Any]] = []
+    with pytest.raises(ActorError, match="actor 0 exited with code 3"):
+        train(config, tmp_path, repo / config.exclude, lines.append, actor_main=actor_that_vanishes)
+    assert [line["exit_code"] for line in lines if line["event"] == "actor-error"] == [3]
+    assert not (tmp_path / "model.pt").exists()
 
 
 def test_a_model_of_another_encoding_is_refused(repo: Path, tmp_path: Path) -> None:

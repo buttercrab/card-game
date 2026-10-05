@@ -1,0 +1,11 @@
+[Unit]
+Description=Note a failed card game deploy in the journal
+# Started by OnFailure= in card-game-update.service. update.sh tries a
+# failed deploy again (10 minutes later, then further apart), and the
+# deploy-watch workflow opens a GitHub issue if the site stays behind main;
+# this only puts the failure in the journal at error priority, where
+# `journalctl --user -p err` finds it.
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "card-game-update failed; see journalctl --user -u card-game-update -n 50" | systemd-cat -t card-game-deploy -p err'

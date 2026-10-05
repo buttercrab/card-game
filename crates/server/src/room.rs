@@ -850,7 +850,14 @@ impl<G: SessionGame> Room<G> {
             } => self.join(conn, name, token, seat, device, reclaim),
             ClientMsg::Leave => {
                 let seat = my_seat.ok_or("you are not seated")?;
-                self.seats[seat] = if self.in_hand() {
+                let mid_hand = self.in_hand();
+                if mid_hand {
+                    self.record(Event::LeftMidHand {
+                        table: self.id.clone(),
+                        seat,
+                    });
+                }
+                self.seats[seat] = if mid_hand {
                     Occupant::Bot {
                         level: BotLevel::default(),
                         name: self.new_bot_name(seat),
@@ -1150,8 +1157,10 @@ impl<G: SessionGame> Room<G> {
                 .or_else(|| self.seats.iter().position(|s| matches!(s, Occupant::Empty)))
                 .ok_or("the table is full")?,
         };
+        // Coming back clears 자리 비움 too: the `back` check before this
+        // message ran while the connection was not yet seated.
+        self.away[seat] = false;
         if reclaimed.is_none() {
-            self.away[seat] = false;
             // Scores belong to players: whoever sat here before (a player
             // who left, a bot) took theirs with them.
             self.scores[seat] = 0;
@@ -1452,7 +1461,9 @@ impl<G: SessionGame> Room<G> {
 
     /// The hand as `seat` may see it, with its legal actions on its turn
     /// and what it may do out of turn otherwise. `grace_ms` is how long
-    /// the slowest of its legal actions must still wait after the deal.
+    /// the slowest of its legal actions must still wait after the deal;
+    /// `version` is the one a hint for this state carries, so the client
+    /// can drop a hint that arrives after the hand moved on.
     fn state_message(&self, seat: Option<usize>) -> Option<Value> {
         let game = self.game.as_ref()?;
         let viewer = seat.map_or(Viewer::Spectator, Viewer::Seat);
@@ -1467,7 +1478,7 @@ impl<G: SessionGame> Room<G> {
         let grace_ms = grace.saturating_sub(waited).as_millis() as u64;
         Some(json!({
             "type": "state", "view": G::view(game, viewer), "legal": legal, "turn": turn,
-            "out_of_turn": out_of_turn, "grace_ms": grace_ms,
+            "out_of_turn": out_of_turn, "grace_ms": grace_ms, "version": self.version,
         }))
     }
 

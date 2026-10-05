@@ -10,14 +10,23 @@ first chance to bid is taken as a bid. An actor
 reloads the weights whenever the learner has published newer ones, and
 each draws its hands from its own seed, so actors never play the same
 hands.
+
+An actor that fails sends the learner a ``Failure`` (its traceback)
+before it exits, so the reason reaches the run's log; the learner also
+watches every actor's exit code and stops the run when one dies. Actors
+ignore SIGINT and SIGTERM: the learner stops them (``stop``) when it is
+stopped itself.
 """
 
 # PyTorch leaves a few parameters unannotated (load_state_dict's, for
 # one), which strict mode reports.
 # pyright: reportUnknownMemberType=false
 
+import contextlib
 import queue
+import signal
 import time
+import traceback
 from dataclasses import dataclass, field
 from multiprocessing.synchronize import Event, Lock
 from typing import Any
@@ -113,8 +122,17 @@ class Report:
     """Bids forced by exploring starts."""
 
 
+@dataclass(frozen=True)
+class Failure:
+    """What an actor sends instead of a report when it fails."""
+
+    actor: int
+    error: str
+    traceback: str
+
+
 # A process entry point: everything it needs, passed once at spawn.
-def run(  # noqa: PLR0913, PLR0915, PLR0917
+def run(  # noqa: PLR0913, PLR0917
     index: int,
     config: DmcConfig,
     spec_json: dict[str, object],
@@ -122,12 +140,36 @@ def run(  # noqa: PLR0913, PLR0915, PLR0917
     shared: dict[str, torch.Tensor],
     version: Any,  # a multiprocessing Value("q")
     lock: Lock,
-    out: "queue.Queue[Report]",
+    out: "queue.Queue[Report | Failure]",
     stop: Event,
     seed: int,
 ) -> None:
     """An actor's life: play and report until ``stop`` is set. The
-    entry point of an actor process."""
+    entry point of an actor process. A failure is sent to the learner,
+    then raised (the process exits non-zero)."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    try:
+        _play(index, config, spec_json, exclude, shared, version, lock, out, stop, seed)
+    except Exception as e:
+        failure = Failure(index, f"{type(e).__name__}: {e}", traceback.format_exc())
+        with contextlib.suppress(queue.Full):  # the learner sees the exit code all the same
+            out.put(failure, timeout=10.0)
+        raise
+
+
+def _play(  # noqa: PLR0913, PLR0917
+    index: int,
+    config: DmcConfig,
+    spec_json: dict[str, object],
+    exclude: str,
+    shared: dict[str, torch.Tensor],
+    version: Any,
+    lock: Lock,
+    out: "queue.Queue[Report | Failure]",
+    stop: Event,
+    seed: int,
+) -> None:
     a = config.actors
     torch.set_num_threads(a.threads)
     spec = EncodingSpec.from_json(spec_json)

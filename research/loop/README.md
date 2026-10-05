@@ -15,7 +15,8 @@ agent (Claude Code, headless) proposes the next batch within the
 | [`researcher.md`](researcher.md) | The researcher's instructions | people |
 | [`requests.md`](requests.md) | Methods the researcher wants that need code | researcher |
 | `withdraw.txt` | Queued spec files the researcher wants dropped (the runner moves them, then deletes this) | researcher |
-| `queue/` | Specs waiting to run | researcher, people, the runner (confirmations) |
+| `queue/` | Specs waiting to run | people, the runner (checked researcher specs, confirmations) |
+| `inbox/` | The researcher's new specs during a call; empty otherwise | researcher (the runner empties it) |
 | `configs/` | Base training configs specs start from | people (researcher: new files only) |
 | `suites/` | The loop's own suites: fresh-deal twins of the scoreboard, head-to-heads | people (`fresh-suite`) |
 | `rejected/` | Specs refused, each with a `.reason.txt` | the runner |
@@ -190,7 +191,7 @@ claude -p <researcher.md + briefing> --model claude-opus-5-5 --output-format jso
   --tools Read,Glob,Grep,Write,Edit                  # no Bash, no web, no agents
   --max-budget-usd 5.00 --add-dir <repo>/docs
   --allowedTools 'Read(/<repo>/research/**)' 'Read(/<repo>/docs/**)'
-      'Write|Edit(/<repo>/research/loop/queue/*.toml)'
+      'Write|Edit(/<repo>/research/loop/inbox/*.toml)'
       'Write(/<repo>/research/loop/configs/*.toml)'
       'Write|Edit(/<repo>/research/loop/{agenda.md,requests.md,withdraw.txt})'
       'Write|Edit(/<repo>/research/experiments/*/notes.md)'
@@ -208,7 +209,7 @@ claude -p <researcher.md + briefing> --model claude-opus-5-5 --output-format jso
   rule sets), and never anything that looks like a secret wherever it is
   (`~/.ssh`, `~/.aws`, `~/.config`, `~/.claude`, `.env` files,
   `site.env`, keys).
-- **Writes**: only its own files — specs in `queue/`, new base configs in
+- **Writes**: only its own files — specs in `inbox/`, new base configs in
   `configs/`, `agenda.md`, `requests.md`, `withdraw.txt` and runs'
   `notes.md`. It never writes code.
 - **No shell**: no Bash at all (a prefix allow-list such as
@@ -230,14 +231,27 @@ claude -p <researcher.md + briefing> --model claude-opus-5-5 --output-format jso
   by hand refuses too.
 
 The briefing names the time, the repository, the queue, the recent runs,
-the last call's refused specs and the limits. Afterwards the runner
+the last call's refused specs and the limits.
+
+A call is a critical section for the runner: while
+`<store>/loop/researcher-call.json` exists it keeps watching and
+finishing runs, but takes nothing from the queue, starts no step that
+needs a clean checkout, and writes and commits nothing under
+`research/loop` (its confirmations wait in `<store>/loop/held/`, the
+leaderboard and the daily report wait too). So everything the call
+wrote is still uncommitted when it is checked. Afterwards the runner
 checks the work whatever the tool rules allowed: any change outside the
-places above (or to an existing base config) is reverted and switches
-the researcher off (with the reason in `researcher-off`); every new or
-changed spec is validated with the researcher's limits (at most
-`max_specs_per_call`, the queue under `max_gpu_hours_queued`, safe names
-and paths), and failures go to `rejected/`; confirmations it touched are
-put back. Each call is a line in `researcher-log.jsonl` (outcome, specs
+places above (or to an existing base config) is reverted (tracked
+files) or moved to `<store>/loop/researcher/quarantine/` (new ones) and
+switches the researcher off (with the reason in `researcher-off`); the
+queue is put back as it was when the call started, and any difference
+counts as such a change. Run folders (but `notes.md`), manifests and
+reports are not judged: runs write there during a call, and the tool
+rules keep the researcher out. Every spec in `inbox/` is validated with
+the researcher's limits (at most `max_specs_per_call`, the queue under
+`max_gpu_hours_queued`, no `confirms`, safe names and paths): the good
+ones move to `queue/`, failures go to `rejected/`, and the inbox ends
+empty. Each call is a line in `researcher-log.jsonl` (outcome, specs
 taken, refused and withdrawn, paths changed, cost, tokens and turns, its
 closing summary); the transcript stays in `<store>/loop/researcher/`.
 `research --dry-run` prints the briefing, the command and the day's

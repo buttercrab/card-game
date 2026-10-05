@@ -72,10 +72,28 @@ worker that thinks for its bots.
 [`Dockerfile`](Dockerfile) builds the web client and the server into one
 image serving port 3030. On the home server, a systemd timer runs
 [`deploy/update.sh`](deploy/update.sh) every two minutes: when `main`
-moves and its CI run is green, it rebuilds, restarts the bot worker
-([`deploy/compose.yaml`](deploy/compose.yaml)) and ships the image to
-Seoul, where [`deploy/seoul/`](deploy/seoul) runs it behind
-Caddy with an automatic certificate. On a stop signal the server saves
+is not what runs yet and its CI run is green, it builds the image, ships
+it to Seoul, where [`deploy/seoul/`](deploy/seoul) runs it behind Caddy
+with an automatic certificate, checks that the site reports the new
+commit at `/version`, and only then restarts the bot worker
+([`deploy/compose.yaml`](deploy/compose.yaml)) on the same image. The
+deployed commit is kept in `~/.local/state/card-game/deployed`, written
+only when both are up, so a failed build, ship or restart is tried again
+(10 minutes later, then further apart, at most hourly); a new server that
+does not come up healthy in Seoul is replaced by the one that ran before.
+The bot worker and the server greet each other with a protocol version
+and their build commits; a worker of another protocol is turned away and
+shows on `/stats`, and tables think for themselves meanwhile. The
+[`deploy-watch`](.github/workflows/deploy-watch.yaml) workflow reads
+`/version` every 15 minutes and opens an issue labelled `deploy`,
+assigned to the owner, when main's newest green commit has not reached
+the site 40 minutes after CI finished, or when main has waited on red or
+unfinished CI for an hour; it closes the issue once the site catches up.
+It runs on GitHub, so it also notices a home server that stopped
+deploying, and the home server needs no token that can write. A failed
+run of the update service also starts `card-game-update-failed.service`,
+which logs it at error priority. `bash deploy/test/run.sh` runs both
+scripts against stand-ins for docker, ssh, curl and gh. On a stop signal the server saves
 every table to its `tables` volume and the next start restores them, so a
 deploy only drops connections for a moment; players see "잠깐 다시 연결하는
 중" and get their seats back. The image that ran before stays as

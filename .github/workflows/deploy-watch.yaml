@@ -1,0 +1,36 @@
+# Checks every 15 minutes that main reaches the site: it compares the
+# commit the site reports at /version with main's newest green commit.
+# When a deploy fails (the site stays behind for 40 minutes after CI
+# went green) or is blocked (main waits on red or unfinished CI for an
+# hour), it opens an issue labelled `deploy` and assigns the owner; when
+# the site catches up, it closes it. See deploy/watch.sh. It watches from
+# here rather than from the home server so that a home server that stops
+# deploying altogether is noticed too, and so the home server needs no
+# token that can write to the repository. GitHub may delay scheduled runs
+# by a few minutes, and pauses them after 60 days without commits.
+name: deploy-watch
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          sparse-checkout: deploy
+      - name: Compare the site with main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          SITE: https://cards.buttercrab.io
+        run: bash deploy/watch.sh

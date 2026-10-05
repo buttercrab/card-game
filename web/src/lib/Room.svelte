@@ -13,7 +13,6 @@
   import { presetRules, takePending } from './rulesets';
   import type { Rules } from './types';
   import SettingsSheet from './SettingsSheet.svelte';
-  import { sound } from './sound';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
 
@@ -33,10 +32,14 @@
   } = $props();
 
   const client = untrack(() => preview) ?? new RoomClient(untrack(() => id));
-  $effect(() => {
-    if (client.error) sound.error();
+  // Off the page, nothing of the table keeps running: no socket, no
+  // reconnect, no timer.
+  onDestroy(() => {
+    client.close();
+    clearTimeout(invitedTimer);
   });
-  onDestroy(() => client.close());
+  /** The client plays the error sound; notices are quiet. */
+  const toast = $derived(client.toasts.current);
 
   let showMenu = $state(untrack(() => menuAtStart));
   let showSettings = $state(false);
@@ -88,14 +91,17 @@
     const pending = untrack(() => takePending(id));
     if (pending) client.setRules(pending.base, pending.rules);
   });
-  // What this table changed from its preset, for the rules' name.
-  let presetBase = $state<Rules | null>(null);
+  // What this table changed from its preset, for the rules' name: against
+  // the preset as the table pinned it, not as the preset reads today.
+  let fetchedBase = $state<Rules | null>(null);
+  const presetBase = $derived(room?.settings.preset_rules ?? fetchedBase);
   $effect(() => {
     const preset = room?.settings.preset;
-    if (!preset) return;
+    // A server too old to say: the preset as it is today.
+    if (!preset || room?.settings.preset_rules) return;
     presetRules(preset)
-      .then((r) => (presetBase = r))
-      .catch(() => (presetBase = null));
+      .then((r) => (fetchedBase = r))
+      .catch(() => (fetchedBase = null));
   });
   const changedCount = $derived(
     room?.settings.rules && presetBase ? differences(room.settings.rules, presetBase).length : 0,
@@ -140,7 +146,9 @@
   /** Steps back off the table's own entry, then hands over to the app. */
   async function leave() {
     leaving = true;
-    if (seated) client.leave();
+    // Even while reconnecting (not seated just now): the seat's token is
+    // forgotten, so the table never takes the seat back.
+    client.leave();
     showMenu = false;
     if (!preview && history.state?.table === id) {
       await new Promise<void>((done) => {
@@ -202,8 +210,10 @@
     />
   {/if}
 
-  {#if client.error}
-    <div class="toast" role="alert">{client.error}</div>
+  {#if toast}
+    {#key toast.id}
+      <div class="toast" data-kind={toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'}>{toast.text}</div>
+    {/key}
   {/if}
 </div>
 
@@ -234,12 +244,20 @@
   <RuleEditor
     preset={room.settings.preset}
     rules={room.settings.rules ?? null}
-    onsave={(base, rules) => client.setRules(base, rules)}
+    base={room.settings.preset_rules ?? null}
+    onsave={(base, rules) =>
+      // On the same preset, the table keeps the preset's rules it pinned.
+      client.setRules(base, rules, base === room.settings.preset ? room.settings.preset_rules : undefined)}
     onclose={() => (editRules = false)}
   />
 {/if}
 {#if showRules && room}
-  <RulebookSheet preset={room.settings.preset} rules={room.settings.rules ?? null} onclose={() => (showRules = false)} />
+  <RulebookSheet
+    preset={room.settings.preset}
+    rules={room.settings.rules ?? null}
+    base={room.settings.preset_rules ?? null}
+    onclose={() => (showRules = false)}
+  />
 {/if}
 
 <style>

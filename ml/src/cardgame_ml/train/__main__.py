@@ -5,7 +5,9 @@
 The run goes to ``models/<name>/`` in the artifact store (resuming from
 its last epoch if it was interrupted), its manifest to
 ``research/manifests/<name>.json``. Run it from a clean checkout: the
-manifest names the commit.
+manifest names the commit. A resume with another config than the run's
+is refused; ``--allow-config-change`` accepts it (the run's sessions
+record the change).
 """
 
 import argparse
@@ -20,12 +22,18 @@ from cardgame_ml.provenance import Checkout
 from cardgame_ml.store import artifact_store
 from cardgame_ml.train.belief import train
 from cardgame_ml.train.config import BeliefTrainConfig
+from cardgame_ml.train.sessions import ConfigChangedError
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m cardgame_ml.train", description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--allow-dirty", action="store_true", help="run with uncommitted changes")
+    parser.add_argument(
+        "--allow-config-change",
+        action="store_true",
+        help="resume although the config changed (recorded in the run)",
+    )
     args = parser.parse_args()
 
     checkout = Checkout.of(Path.cwd())
@@ -43,7 +51,18 @@ def main() -> None:
             log_file.flush()
             print(line, file=sys.stderr)
 
-        train(config, dataset, out, log)
+        try:
+            train(
+                config,
+                dataset,
+                out,
+                log,
+                commit=checkout.commit,
+                dirty=checkout.dirty,
+                allow_config_change=args.allow_config_change,
+            )
+        except ConfigChangedError as e:
+            raise SystemExit(str(e)) from None
     manifest = runs.record(
         out,
         checkout,
