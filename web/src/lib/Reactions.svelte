@@ -71,8 +71,9 @@
     max-width: min(300px, 90vw);
     padding: 10px;
     border-radius: var(--r-panel);
-    background: var(--panel);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+    border: 1px solid var(--raised-line);
+    background: var(--raised);
+    box-shadow: var(--lip);
   }
   .menu.below {
     top: calc(100% + 6px);

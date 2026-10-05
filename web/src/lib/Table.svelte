@@ -1,7 +1,6 @@
 <script lang="ts">
   import { occupantName } from './names';
   import { tick, untrack } from 'svelte';
-  import { prefersReducedMotion } from 'svelte/motion';
   import BidPanel from './BidPanel.svelte';
   import Card from './Card.svelte';
   import ExchangePanel from './ExchangePanel.svelte';
@@ -21,7 +20,7 @@
   import { after, later } from './clock';
   import { EASE_STANDARD, flyFrom, flyTo, hold, juice, pop, ring, settle } from './motion';
   import { setMood } from './music.svelte';
-  import { settings } from './settings.svelte';
+  import { motion, settings } from './settings.svelte';
   import { BACK_NAMES, TABLE_NAMES, checkHand, type Achievement } from './achievements';
   import { loadStats, recordHand } from './stats';
   import { sound } from './sound';
@@ -256,7 +255,7 @@
   $effect(() => {
     if (!done || !result) return;
     const key = `${room?.id}-${room?.hands_played}-${JSON.stringify(done.payoffs)}`;
-    const instant = counted.has(key) || prefersReducedMotion.current || settings.speed === 'off';
+    const instant = counted.has(key) || motion.level !== 'full';
     counted.add(key);
     const pays = done.payoffs;
     const lines = result.lines.length;
@@ -270,7 +269,7 @@
     step = 0;
     shownPay = pays.map(() => 0);
     let cancelled = false;
-    const k = settings.speed === 'fast' ? 0.5 : 1;
+    const k = motion.speed;
     (async () => {
       await after(450 * k);
       for (let i = 1; i <= lines && !cancelled; i++) {
@@ -528,7 +527,7 @@
     const first = untrack(() => shown);
     const phase = first.view.phase;
     const fresh = typeof phase === 'object' && 'Bidding' in phase && first.view.bids.length === 0;
-    if (!fresh || settings.speed === 'off') return;
+    if (!fresh || motion.level === 'off') return;
     dealing = true;
     sound.shuffle();
     const release = hold();
@@ -603,7 +602,7 @@
   }
   /** The same without your turn's hurry: a finished trick is always shown. */
   function paceUnhurried(): number {
-    if (settings.speed === 'off' || hurry) return 0;
+    if (motion.level === 'off' || hurry) return 0;
     return (settings.speed === 'fast' ? 0.5 : 1) / (1 + 0.5 * queue.length);
   }
 
@@ -728,7 +727,7 @@
     const heavy = fresh.map((p) =>
       context ? weight(p, context.all[0]?.seat === p.seat, context.lead, context.trump, context.taker) : null,
     );
-    if (!prefersReducedMotion.current) {
+    if (motion.level === 'full') {
       await Promise.all(
         fresh.map((p, i) => {
           const origin = from[i];
@@ -856,7 +855,7 @@
       sound.result(mine ? declarerWon : !declarerWon);
     }
     // With motion off, cards still make their sound as they land.
-    if (pace() === 0 || prefersReducedMotion.current) {
+    if (pace() === 0 || motion.level !== 'full') {
       const a = roundOf(was);
       const b = roundOf(now);
       if (a && b && b.tricks.length === a.tricks.length) {
@@ -886,7 +885,7 @@
       }
       return;
     }
-    const reduced = prefersReducedMotion.current;
+    const reduced = motion.level !== 'full';
     const nowPhase = next.view.phase;
     const trump = typeof nowPhase === 'object' && 'Play' in nowPhase ? nowPhase.Play.contract.trump : null;
     const liveLead = typeof nowPhase === 'object' && 'Play' in nowPhase ? nowPhase.Play.lead : null;
@@ -1181,7 +1180,7 @@
   let slidingUntil = 0;
   $effect(() => {
     client.onmove = (order) => {
-      const still = prefersReducedMotion.current || settings.speed === 'off';
+      const still = motion.level !== 'full';
       // A move arriving while the last one still slides starts from where
       // the seats are drawn now: finish that one first.
       for (const a of section?.getAnimations({ subtree: true }) ?? []) if (a.id === 'seat-slide') a.finish();
@@ -1207,7 +1206,7 @@
     kinds = now;
     const f = flip;
     flip = null;
-    const still = prefersReducedMotion.current || settings.speed === 'off';
+    const still = motion.level !== 'full';
     if (f) {
       if (still) return;
       void tick().then(() => {
@@ -1611,13 +1610,6 @@
           <div class="result-head">
             <p class="headline">
               {#if result?.run && tallied}<span class="run-word">런</span>{:else}{won ? '여당 승리' : '야당 승리'}{/if}
-              {#if mineWon}
-                <span class="burst" aria-hidden="true">
-                  {#each ['Spade', 'Heart', 'Diamond', 'Club', 'Spade', 'Heart', 'Diamond', 'Club'] as const as suit, i (i)}
-                    <span class="spark suit-{suit}" style:--a="{i * 45 + 20}deg"><SuitIcon {suit} /></span>
-                  {/each}
-                </span>
-              {/if}
             </p>
             <!-- When made, the first line of the count already says the points. -->
             <p class="sub" class:said={result?.made}>여당 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
@@ -1947,15 +1939,12 @@
     animation: tick-pop 280ms var(--ease-settle) var(--d, 0ms) both;
   }
   @keyframes tick-pop {
-    0% {
-      transform: translateY(0);
-    }
     45% {
-      transform: translateY(-4px);
+      translate: 0 -4px;
     }
-    100% {
-      transform: translateY(0);
-    }
+  }
+  :global(:root[data-motion='reduced']) .tally .tick {
+    animation: none;
   }
   /* The contract: a tall ink line. */
   .tally .goal {
@@ -2059,7 +2048,8 @@
     border-radius: var(--r-pill);
     background: var(--card);
     color: var(--card-ink);
-    box-shadow: 0 4px 14px rgb(0 0 0 / 0.14);
+    border: 1px solid var(--card-edge);
+    box-shadow: var(--lip);
     font-size: 14px;
     white-space: nowrap;
   }
@@ -2293,7 +2283,7 @@
     padding: 16px;
     border-radius: var(--r-panel);
     background: var(--panel);
-    box-shadow: 0 4px 0 rgb(0 0 0 / 0.08);
+    box-shadow: var(--lip);
     z-index: 2;
   }
   /* Sheet buttons that only close: secondary, and small. */
@@ -2470,18 +2460,12 @@
   @keyframes rise {
     from {
       opacity: 0;
-      transform: translateY(24px) scale(0.96);
+      translate: 0 24px;
+      scale: 0.96;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .result {
-      animation-name: fade;
-    }
-    @keyframes fade {
-      from {
-        opacity: 0;
-      }
-    }
+  :global(:root[data-motion='reduced']) :is(.result, .result tbody tr, .achieved, .run-word, .centre) {
+    animation-name: fade;
   }
   .result p {
     margin: 0;
@@ -2599,15 +2583,10 @@
     font-size: var(--text-caption);
     color: var(--gold);
   }
-  @media (prefers-reduced-motion: reduce) {
-    .achieved {
-      animation: none;
-    }
-  }
   @keyframes achieved {
     from {
       opacity: 0;
-      transform: translateY(10px);
+      translate: 0 10px;
     }
   }
   /* A loss reads quieter, not angrier. */
@@ -2625,7 +2604,7 @@
   @keyframes run-word {
     from {
       opacity: 0;
-      transform: scale(0.7);
+      scale: 0.7;
     }
   }
   .result.big .headline {
@@ -2637,11 +2616,14 @@
   }
   @keyframes nudge {
     30% {
-      transform: translateY(2px);
+      translate: 0 2px;
     }
     60% {
-      transform: translateY(-1px);
+      translate: 0 -1px;
     }
+  }
+  :global(:root[data-motion='reduced']) .table.nudge {
+    animation: none;
   }
   .headline {
     position: relative;
@@ -2757,7 +2739,8 @@
     background: var(--card);
     color: var(--card-ink);
     font-size: 14px;
-    box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+    border: 1px solid var(--card-edge);
+    box-shadow: var(--lip);
   }
   .strip .refusal {
     font-weight: 700;
@@ -2838,7 +2821,8 @@
     border-radius: var(--r-panel);
     background: var(--card);
     color: var(--card-ink);
-    box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
+    border: 1px solid var(--card-edge);
+    box-shadow: var(--lip);
     font-size: var(--text-body);
     font-weight: 700;
     white-space: nowrap;
@@ -2865,9 +2849,17 @@
       transform: translate(-50%, -130%);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .my-reaction {
-      animation: none !important;
+  :global(:root[data-motion='reduced']) .my-reaction {
+    animation-name: my-reaction-fade;
+  }
+  @keyframes my-reaction-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    12%,
+    82% {
+      opacity: 1;
     }
   }
   /* Only the hand's container (its direct child), never the cards, which
@@ -2881,22 +2873,6 @@
   }
   .mine .tray {
     outline-color: var(--accent);
-    animation: turn-pulse 900ms var(--ease-standard);
-  }
-  /* Your turn: the tray's ring swells once, then settles. */
-  @keyframes turn-pulse {
-    0% {
-      outline-offset: -3px;
-      outline-width: 3px;
-    }
-    35% {
-      outline-offset: 2px;
-      outline-width: 5px;
-    }
-    100% {
-      outline-offset: -3px;
-      outline-width: 3px;
-    }
   }
   .me-row {
     display: flex;
@@ -3564,41 +3540,4 @@
     }
   }
 
-  /* Your side won: suit marks burst out from the headline, once. */
-  .burst {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    pointer-events: none;
-  }
-  .spark {
-    position: absolute;
-    width: 16px;
-    height: 16px;
-    margin: -8px 0 0 -8px;
-    opacity: 0;
-    animation: spark 900ms var(--ease-standard) 200ms;
-  }
-  .spark.suit-Heart {
-    color: var(--suit-heart);
-  }
-  .spark.suit-Diamond {
-    color: var(--suit-diamond);
-  }
-  .spark.suit-Club {
-    color: var(--suit-club);
-  }
-  .spark.suit-Spade {
-    color: var(--ink);
-  }
-  @keyframes spark {
-    0% {
-      opacity: 1;
-      transform: rotate(var(--a)) translateX(10px) scale(0.6);
-    }
-    100% {
-      opacity: 0;
-      transform: rotate(var(--a)) translateX(110px) scale(1);
-    }
-  }
 </style>

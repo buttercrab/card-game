@@ -62,15 +62,22 @@
       transform: translateY(3px) scale(0.6);
     }
   }
-  /* Without motion the label simply shows; the table removes it. */
-  @media (prefers-reduced-motion: reduce) {
-    .callout,
-    .ch {
-      animation: none !important;
-    }
+  /* Reduced: the label fades in and out where it sits, letters and all;
+     with motion off it simply shows, and the table removes it. */
+  :global(:root[data-motion='reduced']) .callout {
+    animation-name: callout-fade;
   }
-  :global(:root[data-motion='off']) .callout,
-  :global(:root[data-motion='off']) .ch {
-    animation: none !important;
+  :global(:root[data-motion='reduced']) .ch {
+    animation: none;
+  }
+  @keyframes callout-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    10%,
+    78% {
+      opacity: 1;
+    }
   }
 </style>

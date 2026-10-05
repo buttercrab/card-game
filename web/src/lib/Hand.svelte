@@ -5,7 +5,7 @@
   import { cubicOut } from 'svelte/easing';
   import Card from './Card.svelte';
   import { sameCard, type Seal } from './cards';
-  import { settings } from './settings.svelte';
+  import { motion, settings } from './settings.svelte';
   import { sound } from './sound';
   import { MEDIA } from './tokens';
   import type { Card as CardT } from './types';
@@ -54,7 +54,7 @@
   /** A refused card shakes its head, clearly: ±9px easing out over 420 ms. */
   function shake(card: CardT) {
     const el = document.querySelector(`.hand [data-card='${JSON.stringify(card)}']`);
-    if (!el || typeof el.animate !== 'function' || settings.speed === 'off') return;
+    if (!el || typeof el.animate !== 'function' || motion.level !== 'full') return;
     el.animate(
       [0, -9, 9, -7, 7, -4, 4, -1, 0].map((x) => ({ transform: `translateX(${x}px)` })),
       { duration: 420, easing: 'ease-out' },
@@ -157,7 +157,7 @@
     {@const step = stepFor(row.length)}
     <div class="row" class:overlapped={step < cardWidth} style:--overlap="{step - cardWidth}px">
       {#each row as card, i (JSON.stringify(card))}
-        <div class="spot" class:fresh={kitty.some((k) => sameCard(k, card))} style:--i={i} style:--rot="{((i * 37) % 7) - 3}deg" animate:flip={{ duration: settings.speed === 'off' ? 0 : 240, easing: cubicOut }}>
+        <div class="spot" class:fresh={kitty.some((k) => sameCard(k, card))} style:--i={i} style:--rot="{((i * 37) % 7) - 3}deg" animate:flip={{ duration: motion.level === 'full' ? 240 : 0, easing: cubicOut }}>
         <Card
           {card}
           width={cardWidth}
@@ -248,14 +248,7 @@
       transform: rotate(calc(var(--rot) * -0.3));
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .deal .spot {
-      animation-name: fade-in;
-    }
-    @keyframes fade-in {
-      from {
-        opacity: 0;
-      }
-    }
+  :global(:root[data-motion='reduced']) :is(.deal .spot, .fresh) {
+    animation-name: fade;
   }
 </style>

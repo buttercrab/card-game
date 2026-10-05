@@ -72,7 +72,10 @@
     padding: 12px 12px 12px 16px;
     border-radius: var(--r-panel);
     background: var(--panel);
-    animation: fade-up 0.3s ease-out both;
+    animation: fade-up 300ms var(--ease-standard) both;
+  }
+  :global(:root[data-motion='reduced']) .hint {
+    animation-name: fade;
   }
   img {
     border-radius: 10px;

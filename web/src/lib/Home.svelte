@@ -210,25 +210,6 @@
     align-items: flex-end;
     margin-bottom: 16px;
   }
-  /* The three cards on the home page drift gently, out of step. */
-  .mark > :global(.card) {
-    animation: float 5s ease-in-out infinite;
-  }
-  .mark > :global(.card:nth-child(2)) {
-    animation-delay: -1.6s;
-  }
-  .mark > :global(.card:last-child) {
-    animation-delay: -3.2s;
-  }
-  @keyframes float {
-    0%,
-    100% {
-      translate: 0 0;
-    }
-    50% {
-      translate: 0 -4px;
-    }
-  }
   .mark > :global(.card:first-child) {
     transform: rotate(-10deg) translate(18px, 6px);
   }

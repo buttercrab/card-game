@@ -194,10 +194,8 @@
       transform: perspective(500px) rotateX(0);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .seat.reveal {
-      animation: none;
-    }
+  :global(:root[data-motion='reduced']) .seat.reveal {
+    animation: none;
   }
   .seat.dim {
     opacity: 0.6;
@@ -300,21 +298,28 @@
   @keyframes gain {
     0% {
       opacity: 0;
-      transform: translateY(4px);
+      translate: 0 4px;
     }
     20% {
       opacity: 1;
-      transform: translateY(-6px);
+      translate: 0 -6px;
     }
     100% {
       opacity: 0;
-      transform: translateY(-22px);
+      translate: 0 -22px;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .thinking i {
-      animation: none;
-      opacity: 0.6;
+  :global(:root[data-motion='reduced']) .gain {
+    animation-name: gain-fade;
+  }
+  @keyframes gain-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    20%,
+    70% {
+      opacity: 1;
     }
   }
   .dot {
@@ -399,7 +404,8 @@
     background: var(--card);
     /* The bubble is card paper in both themes, so its text is card ink. */
     color: var(--card-ink);
-    box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
+    border: 1px solid var(--card-edge);
+    box-shadow: var(--lip);
     font-size: var(--text-body);
     font-weight: 700;
     white-space: nowrap;
@@ -441,6 +447,20 @@
     100% {
       opacity: 0;
       transform: translateY(-12px);
+    }
+  }
+  /* Reduced: the bubble fades in where it rests, then out. */
+  :global(:root[data-motion='reduced']) .reaction {
+    animation-name: react-fade;
+  }
+  @keyframes react-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    8%,
+    82% {
+      opacity: 1;
     }
   }
   @keyframes react {

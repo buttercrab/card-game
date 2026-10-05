@@ -243,8 +243,9 @@ button.chip[aria-pressed='true'] {
   background: var(--ink);
   color: var(--table);
   box-shadow: 0 3px 0 var(--chip-lip);
-  /* A chip pops as it is chosen (Wordle's tile pop). */
-  animation: chip-pop 200ms var(--ease-settle);
+  /* A chip pulses as it is chosen (Wordle's tile pop). */
+  --pulse: 1.08;
+  animation: pulse 180ms var(--ease-settle);
 }
 /* Choices in the action strip cascade in as the panel appears. */
 .strip .chips > button {
@@ -257,17 +258,6 @@ button.chip[aria-pressed='true'] {
 .strip .chips > button:nth-child(6) { animation-delay: 125ms; }
 .strip .chips > button:nth-child(7) { animation-delay: 150ms; }
 .strip .chips > button:nth-child(n + 8) { animation-delay: 175ms; }
-@keyframes chip-pop {
-  0% {
-    scale: 0.92;
-  }
-  60% {
-    scale: 1.06;
-  }
-  100% {
-    scale: 1;
-  }
-}
 
 input,
 select,
@@ -382,56 +372,69 @@ dialog.sheet::backdrop {
   -webkit-user-drag: none;
 }
 
-/* Micro-animations: small, quick acknowledgements of a change. Off under
-   reduced motion and when animation is set to 끄기. */
-@keyframes pop {
-  0% {
-    transform: scale(0.6);
+
+/* ---- Motion (docs/DESIGN.md) ---------------------------------------------
+   One switch: data-motion on the root, set in settings.svelte.ts from the
+   speed setting and the system's reduced motion. 'full' plays everything;
+   'reduced' keeps fades and highlights and drops movement; 'off' (끄기)
+   shows every change at once. Components write their own fallbacks
+   against the same attribute, never against the media query. Everything
+   that moves is transform (translate, scale) and opacity. */
+@keyframes fade {
+  from {
     opacity: 0;
-  }
-  60% {
-    transform: scale(1.12);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-@keyframes bump {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  40% {
-    transform: scale(1.25);
   }
 }
 @keyframes fade-up {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    translate: 0 4px;
   }
 }
-button.chip[aria-checked='true'] {
-  animation: bump 180ms var(--ease-settle);
+/* Comes in with one overshoot. */
+@keyframes pop {
+  0% {
+    opacity: 0;
+    scale: 0.6;
+  }
+  60% {
+    opacity: 1;
+    scale: 1.12;
+  }
+  100% {
+    scale: 1;
+  }
+}
+/* A changed value swells once; --pulse is how far. */
+@keyframes pulse {
+  40% {
+    scale: var(--pulse, 1.1);
+  }
 }
 .pop {
   animation: pop 260ms var(--ease-settle) both;
 }
 .bump {
   display: inline-block;
-  animation: bump 320ms var(--ease-settle);
+  --pulse: 1.25;
+  animation: pulse 320ms var(--ease-settle);
 }
 .fade-up {
   animation: fade-up 240ms var(--ease-standard) both;
 }
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-  }
+
+/* Reduced: entrances fade in place; swells and movement are dropped, and
+   transitions keep only their colour and opacity. */
+:root[data-motion='reduced'] :is(.pop, .fade-up, .strip .chips > button) {
+  animation-name: fade;
+}
+:root[data-motion='reduced'] :is(.bump, button.chip[aria-checked='true'], button.chip[aria-pressed='true']) {
+  animation: none;
+}
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  transition-property: opacity, color, background-color, border-color, outline-color, fill, stroke !important;
 }
 :root[data-motion='off'] *,
 :root[data-motion='off'] *::before,

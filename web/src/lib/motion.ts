@@ -4,6 +4,7 @@
 // the game.
 
 import { after } from './clock';
+import { motion } from './settings.svelte';
 
 export const EASE_STANDARD = 'cubic-bezier(0.2, 0, 0, 1)';
 export const EASE_SETTLE = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
@@ -105,13 +106,9 @@ export function settled(): Promise<void> {
   return busy === 0 ? Promise.resolve() : new Promise((done) => idle.push(done));
 }
 
-/** Whether motion is wanted at all: off in settings or by the system. */
+/** Whether movement is unwanted: off in settings or by the system. */
 function still(): boolean {
-  if (typeof document === 'undefined') return true;
-  return (
-    document.documentElement.dataset.motion === 'off' ||
-    (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
-  );
+  return motion.level !== 'full';
 }
 
 /**

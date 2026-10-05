@@ -497,20 +497,6 @@
   .raised {
     translate: 0 calc(var(--w) * -0.36);
     box-shadow: var(--shadow-raised);
-    /* A raised card sways a hair while it waits, as if held. */
-    animation: sway 2.6s ease-in-out 300ms infinite;
-  }
-  @keyframes sway {
-    0%,
-    100% {
-      rotate: 0deg;
-    }
-    30% {
-      rotate: 0.9deg;
-    }
-    70% {
-      rotate: -0.7deg;
-    }
   }
   /* Cards that cannot be played sink back and lose some colour, rather
      than greying out; they stay solid paper (never see-through, which
@@ -565,12 +551,8 @@
       translate: 0 -6px;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .card {
-      transition: none;
-    }
-    button.card {
-      transform: none;
-    }
+  /* Reduced: no tilt toward the pointer. */
+  :global(:root[data-motion='reduced']) button.card {
+    transform: none;
   }
 </style>

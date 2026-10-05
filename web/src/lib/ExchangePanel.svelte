@@ -356,17 +356,10 @@
   }
   /* Enough cards chosen: the button wakes up once. */
   .ready {
-    animation: ready 360ms var(--ease-settle);
+    --pulse: 1.07;
+    animation: pulse 360ms var(--ease-settle);
   }
-  @keyframes ready {
-    0% {
-      scale: 1;
-    }
-    40% {
-      scale: 1.07;
-    }
-    100% {
-      scale: 1;
-    }
+  :global(:root[data-motion='reduced']) .ready {
+    animation: none;
   }
 </style>

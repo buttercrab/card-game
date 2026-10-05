@@ -324,6 +324,9 @@
     box-shadow: var(--shadow-card);
     animation: fade-up 260ms var(--ease-standard) both;
   }
+  :global(:root[data-motion='reduced']) img {
+    animation-name: fade;
+  }
   .status {
     min-height: 1.4em;
     margin: 8px 0 0;

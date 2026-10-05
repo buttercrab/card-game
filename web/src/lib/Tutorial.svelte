@@ -137,7 +137,7 @@
     height: 8px;
     border-radius: 50%;
     background: color-mix(in srgb, var(--ink) 22%, transparent);
-    transition: width var(--dur-move) var(--ease-standard);
+    transition: background-color var(--dur-move) var(--ease-standard);
   }
   .dots span.on {
     width: 20px;

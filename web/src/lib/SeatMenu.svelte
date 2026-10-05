@@ -231,6 +231,9 @@
   .pop-card:focus {
     outline: none;
   }
+  :global(:root[data-motion='reduced']) .pop-card {
+    animation-name: fade;
+  }
   @keyframes pop-in {
     from {
       opacity: 0;
