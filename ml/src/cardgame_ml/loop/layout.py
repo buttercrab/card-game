@@ -1,10 +1,11 @@
 """Where the loop keeps things.
 
 In the repository (committed): ``research/loop/`` (policy, agenda, queue,
-rejected specs, leaderboard, plots, requests), each run's folder in
-``research/experiments/`` and the daily reports in ``research/reports/``.
-Outside it, under ``<artifact store>/loop/``: the runner's lock, active
-runs' records, step logs and the researcher's transcripts.
+the researcher's inbox, rejected specs, leaderboard, plots, requests),
+each run's folder in ``research/experiments/`` and the daily reports in
+``research/reports/``. Outside it, under ``<artifact store>/loop/``: the
+runner's lock, active runs' records, step logs, the researcher's
+transcripts and the state of a call under way.
 """
 
 from dataclasses import dataclass
@@ -39,6 +40,12 @@ class Layout:
     @property
     def queue(self) -> Path:
         return self.loop / "queue"
+
+    @property
+    def inbox(self) -> Path:
+        """Where the researcher writes its specs; after the call the runner
+        validates them and moves the good ones to the queue."""
+        return self.loop / "inbox"
 
     @property
     def rejected(self) -> Path:
@@ -82,6 +89,19 @@ class Layout:
         """While this file exists the researcher is not called; the runner
         writes it when a call broke the rules, with the reason."""
         return self.state / "researcher-off"
+
+    @property
+    def researcher_call(self) -> Path:
+        """Exists while a researcher call is under way: the runner then
+        takes nothing from the queue and commits nothing under
+        ``research/loop`` until the call is checked."""
+        return self.state / "researcher-call.json"
+
+    @property
+    def held(self) -> Path:
+        """Confirmations the runner queued during a researcher call; they
+        move to the queue when the call is over."""
+        return self.state / "held"
 
     @property
     def live(self) -> Path:

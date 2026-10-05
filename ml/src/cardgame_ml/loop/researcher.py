@@ -8,9 +8,10 @@ specs, the limits). Its sandbox (``command``):
 - it starts in ``research/`` with ``docs/`` added, and its rules allow
   reading only those two (never ``research/evals``, and never anything
   that looks like a secret: ``~/.ssh``, ``.env`` files, ``site.env``…);
-- it may write only its own files: specs in ``research/loop/queue/``, new
-  base configs in ``research/loop/configs/``, ``agenda.md``,
-  ``requests.md``, ``withdraw.txt`` (queued specs it wants dropped) and
+- it may write only its own files: specs in its inbox
+  (``research/loop/inbox/``, never the queue itself), new base configs
+  in ``research/loop/configs/``, ``agenda.md``, ``requests.md``,
+  ``withdraw.txt`` (queued specs it wants dropped) and
   ``research/experiments/*/notes.md``;
 - it has no shell, no web and no MCP servers: the runner validates its
   specs afterwards and the next briefing says what was refused. It never
@@ -23,18 +24,29 @@ specs, the limits). Its sandbox (``command``):
   ``timeout_minutes``; the calls of the last 24 hours may cost
   ``max_usd_per_day`` in all, by ``claude``'s own reported cost.
 
-The runner checks every call afterwards, whatever the tool rules said:
+A call is a critical section: while it is under way
+(``<store>/loop/researcher-call.json`` exists) the runner takes nothing
+from the queue, starts no step that needs a clean checkout, writes and
+commits nothing under ``research/loop`` (its confirmations wait in
+``<store>/loop/held/``), so everything the call wrote is still there,
+uncommitted, when it is checked. The runner checks every call
+afterwards, whatever the tool rules said:
 
 - a change outside those places (or to an existing base config) is put
-  back (tracked files) and the researcher is switched off
-  (``<store>/loop/researcher-off`` says why) until a person removes it;
-- every new or changed spec is validated with the researcher's limits
-  (methods the policy allows, budgets, the protocol, no evals, safe
-  names and paths) and the ones that fail go to ``research/loop/rejected/``
-  with the reasons;
+  back (tracked files) or moved out of the repository to
+  ``<store>/loop/researcher/quarantine/`` (new files), and the researcher
+  is switched off (``<store>/loop/researcher-off`` says why) until a
+  person removes it. The queue is compared with its contents when the
+  call started, so any change to it counts and is undone. Run folders,
+  manifests and reports are not judged: runs and their steps write
+  there while a call is under way, and the tool rules keep the
+  researcher out of them (except ``notes.md``);
+- every spec in the inbox is validated with the researcher's limits
+  (methods the policy allows, budgets, the protocol, no evals, no
+  ``confirms``, safe names and paths); the good ones move to the queue,
+  the ones that fail go to ``research/loop/rejected/`` with the reasons;
 - at most ``max_specs_per_call`` new specs and ``max_gpu_hours_queued``
-  GPU hours in the queue: the rest are rejected;
-- confirmations the runner queued are put back if touched.
+  GPU hours in the queue: the rest are rejected.
 
 Calls are rate-limited (``min_interval_hours``, ``max_calls_per_day``)
 and each is logged in ``research/loop/researcher-log.jsonl`` (outcome,
@@ -44,6 +56,7 @@ cost, tokens), its transcript kept in ``<store>/loop/researcher/``.
 import contextlib
 import json
 import os
+import shutil
 import signal
 import subprocess
 from collections.abc import Callable
@@ -68,7 +81,7 @@ FILES = (
     "research/loop/requests.md",
     WITHDRAW,
 )
-FOLDERS = ("research/loop/queue", "research/loop/configs")
+FOLDERS = ("research/loop/inbox", "research/loop/configs")
 """``*.toml`` files directly in these (configs: new ones only)."""
 
 TOOLS = "Read,Glob,Grep,Write,Edit"
@@ -115,6 +128,19 @@ def allowed_path(path: str) -> bool:
     )
 
 
+def runner_path(path: str, folders: set[str]) -> bool:
+    """Whether ``path`` is one the runner and its steps write while a call
+    is under way: a run's folder (except ``notes.md``, the researcher's),
+    a manifest or a report. These are not judged after a call."""
+    top, _, rest = path.removeprefix("research/").partition("/")
+    if not path.startswith("research/") or not rest or ".." in rest.split("/"):
+        return False
+    if top == "experiments":
+        folder, _, inner = rest.partition("/")
+        return folder in folders and bool(inner) and inner != "notes.md"
+    return top in ("manifests", "reports")
+
+
 def _safe(text: str) -> bool:
     try:
         name(text, "file")
@@ -145,7 +171,7 @@ class Sandbox:
         allow = [
             rule("Read", research, "/**"),
             rule("Read", docs, "/**"),
-            *(rule(t, loop / "queue", "/*.toml") for t in ("Write", "Edit")),
+            *(rule(t, loop / "inbox", "/*.toml") for t in ("Write", "Edit")),
             rule("Write", loop / "configs", "/*.toml"),
             *(rule(t, repo / f) for f in FILES for t in ("Write", "Edit")),
             *(rule(t, research / "experiments", "/*/notes.md") for t in ("Write", "Edit")),
@@ -284,7 +310,7 @@ class Researcher:
     ) -> None:
         self.layout, self.policy, self.git = layout, policy, git
         self.spawn, self.alive = spawn, alive
-        self.state_file = layout.state / "researcher-call.json"
+        self.state_file = layout.researcher_call
 
     # -- when ----------------------------------------------------------
 
@@ -389,12 +415,16 @@ class Researcher:
         instructions = (self.layout.loop / "researcher.md").read_text(encoding="utf-8")
         prompt = f"{instructions}\n\n## Briefing\n\n{self.briefing(now).text(self.policy)}\n"
         transcript = self.layout.state / "researcher" / f"{stamp(now).replace(':', '')}.json"
+        queue = self.layout.queue
         before = {
             "changed": self.git.changed(),
             "queue": {
-                p.name: p.read_text(encoding="utf-8") for p in self.layout.queue.glob("*.toml")
+                p.name: p.read_text(encoding="utf-8", errors="replace")
+                for p in (sorted(queue.iterdir()) if queue.is_dir() else [])
+                if p.is_file() and not p.is_symlink()
             },
         }
+        self.layout.inbox.mkdir(parents=True, exist_ok=True)
         box = Sandbox.of(self.layout.repo)
         pid = self.spawn(command(self.policy, prompt, self.layout.repo), box.cwd, transcript)
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
@@ -426,32 +456,39 @@ class Researcher:
 
     def settle(self, call: dict[str, Any], now: datetime, outcome: str) -> dict[str, Any]:
         before: dict[str, Any] = call["before"]
-        old_queue: dict[str, str] = before["queue"]
         changed = sorted(set(self.git.changed()) - set(before["changed"]))
+        folders = {r.folder for r in Records(self.layout.experiments, self.layout.live).all()}
         violations = [
             p
             for p in changed
-            if not allowed_path(p)
-            # Base configs: new files only; the existing ones runs were built on stay.
-            or (p.startswith("research/loop/configs/") and self.git.tracked(p))
+            if not runner_path(p, folders)
+            and (
+                not allowed_path(p)
+                # Base configs: new files only; the existing ones runs were built on stay.
+                or (p.startswith("research/loop/configs/") and self.git.tracked(p))
+            )
         ]
+        tracked = [p for p in violations if self.git.tracked(p)]
+        self.git.restore(tracked)
+        self._quarantine([p for p in violations if p not in tracked], now)
+        # The queue is the runner's: whatever git says, it goes back to what
+        # it held when the call started.
+        queue = self.layout.queue.relative_to(self.layout.repo).as_posix()
+        violations += [f"{queue}/{file}" for file in self._restore_queue(before["queue"], now)]
+        violations = sorted(set(violations))
         if violations:
             outcome = "violation"
-            self.git.restore([p for p in violations if self.git.tracked(p)])
             self.layout.researcher_off.parent.mkdir(parents=True, exist_ok=True)
             self.layout.researcher_off.write_text(
                 f"{stamp(now)}: the researcher changed {', '.join(violations)}\n",
                 encoding="utf-8",
             )
-        # Confirmations are the runner's: put back any the researcher touched.
-        for file, text in old_queue.items():
-            path = self.layout.queue / file
-            if "\nconfirms = " in text and (
-                not path.exists() or path.read_text(encoding="utf-8") != text
-            ):
-                path.write_text(text, encoding="utf-8")
         withdrawn = self._withdraw()
-        accepted, rejected = self._validate(old_queue)
+        accepted, rejected = self._validate()
+        # The inbox ends empty: what is left is not a spec file.
+        if self.layout.inbox.is_dir():
+            left = [p.relative_to(self.layout.repo).as_posix() for p in self.layout.inbox.iterdir()]
+            self._quarantine(left, now)
         entry: dict[str, Any] = {
             "started": call["started"],
             "ended": stamp(now),
@@ -464,6 +501,36 @@ class Researcher:
         }
         entry |= _usage(Path(call["transcript"]))
         return entry
+
+    def _restore_queue(self, old: dict[str, str], now: datetime) -> list[str]:
+        """Puts the queue back as it was when the call started (the runner
+        does not touch it during a call); returns the files that differed."""
+        queue = self.layout.queue
+        differ: set[str] = set()
+        present = sorted(queue.iterdir()) if queue.is_dir() else []
+        for path in present:
+            if path.name not in old or path.is_symlink() or not path.is_file():
+                differ.add(path.name)
+                self._quarantine([path.relative_to(self.layout.repo).as_posix()], now)
+        for file, text in old.items():
+            path = queue / file
+            if not path.is_file() or path.read_text(encoding="utf-8", errors="replace") != text:
+                differ.add(file)
+                queue.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+        return sorted(differ)
+
+    def _quarantine(self, paths: list[str], now: datetime) -> None:
+        """Moves what the researcher had no right to write out of the
+        repository (kept for a person to look at, never run or committed)."""
+        root = self.layout.state / "researcher" / "quarantine" / stamp(now).replace(":", "")
+        for rel in paths:
+            source = self.layout.repo / rel
+            if not (source.exists() or source.is_symlink()):
+                continue
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(source, target)
 
     def _withdraw(self) -> list[str]:
         """Moves the queued specs ``withdraw.txt`` names to ``rejected/``
@@ -489,26 +556,26 @@ class Researcher:
         listing.unlink()
         return done
 
-    def _validate(self, old_queue: dict[str, str]) -> tuple[list[str], list[dict[str, Any]]]:
-        """Checks every spec the call added or changed, in file order."""
+    def _validate(self) -> tuple[list[str], list[dict[str, Any]]]:
+        """Checks every spec in the inbox, in file order: the good ones move
+        to the queue, the others to ``rejected/``. The inbox ends empty."""
         layout, policy = self.layout, self.policy
         runs = Records(layout.experiments, layout.live).by_id()
         queue = read_queue(layout.queue)
-        fresh = sorted(
-            q.path
-            for q in queue
-            if old_queue.get(q.path.name) != q.path.read_text(encoding="utf-8")
-        )
-        gpu = sum(q.spec.gpu_hours() for q in queue if q.spec is not None and q.path not in fresh)
+        fresh = sorted(layout.inbox.glob("*.toml")) if layout.inbox.is_dir() else []
+        inbox = read_queue(layout.inbox)
+        gpu = sum(q.spec.gpu_hours() for q in queue if q.spec is not None)
         accepted: list[str] = []
         rejected: list[dict[str, Any]] = []
         for k, path in enumerate(fresh):
-            others = [q.spec.id for q in queue if q.spec is not None and q.path != path]
+            others = [q.spec.id for q in [*queue, *inbox] if q.spec is not None and q.path != path]
             spec, problems = check_file(
                 path, policy, layout.repo, Known(runs, others), researcher=True
             )
             if not _safe(path.name) or path.is_symlink():
                 problems = [*problems, f"{path.name}: not a plain spec file with a safe name"]
+            if not problems and (layout.queue / path.name).exists():
+                problems = [f"{path.name}: a queued spec has this file name"]
             if not problems and k >= policy.limits.max_specs_per_call:
                 problems = [f"over the {policy.limits.max_specs_per_call} specs a call may queue"]
             if not problems and spec is not None:
@@ -517,10 +584,12 @@ class Researcher:
                     problems = [f"the queue would hold over {limit} GPU hours"]
                 else:
                     gpu += spec.gpu_hours()
-            if problems:
-                reject(path, layout.rejected, problems)
-                rejected.append({"file": path.name, "reasons": problems})
-            elif spec is not None:
+            if problems or spec is None:
+                reject(path, layout.rejected, problems or ["unreadable"])
+                rejected.append({"file": path.name, "reasons": problems or ["unreadable"]})
+            else:
+                layout.queue.mkdir(parents=True, exist_ok=True)
+                path.replace(layout.queue / path.name)
                 accepted.append(spec.id)
         return accepted, rejected
 

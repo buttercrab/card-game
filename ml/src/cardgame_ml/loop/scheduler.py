@@ -24,6 +24,15 @@ Rules, each tick (every 30 s):
    the queue; the leaderboard is rewritten; on the loop's branch, the
    records are committed (never pushed).
 
+A researcher call is a critical section. While one is under way
+(``Layout.researcher_call`` exists) the runner keeps watching and
+finishing runs, but it takes nothing from the queue (no new runs, no
+replicate splits), starts no step that needs a clean checkout (the
+researcher's edits are uncommitted), and neither writes nor commits
+anything under ``research/loop``: confirmations wait in
+``Layout.held`` and the leaderboard waits, until the call has been
+checked (``Researcher.settle``) and the next tick catches up.
+
 Only one runner works at a time (``RunnerLock``). Steps run in their own
 process groups and outlive the runner, which adopts them on restart.
 """
@@ -40,7 +49,7 @@ from typing import TextIO
 
 from cardgame_ml.loop import tomlw
 from cardgame_ml.loop.executors import LOST, RUNNING, UNKNOWN, HostExecutor
-from cardgame_ml.loop.gitops import Git, GitError
+from cardgame_ml.loop.gitops import RECORD_PATHS, Git, GitError
 from cardgame_ml.loop.layout import Layout
 from cardgame_ml.loop.methods import METHODS, Context
 from cardgame_ml.loop.policy import Host, Policy
@@ -60,6 +69,9 @@ from cardgame_ml.loop.spec import Spec, load_spec
 from cardgame_ml.loop.steps import Step
 from cardgame_ml.loop.summary import write_summary
 from cardgame_ml.loop.validate import Known, check
+
+LOOP = "research/loop"
+"""The researcher's and the queue's part of the records."""
 
 TRAINING = "cardgame_ml.train"
 """Training processes (belief, DMC and their scoring) hold the GPU."""
@@ -207,22 +219,35 @@ class Runner:
         self.records = Records(layout.experiments, layout.live)
         self.finished: list[RunRecord] = []
         """Runs finished during the last tick."""
+        self._board_stale = False
+        """Runs finished during a researcher call: the leaderboard waits."""
+
+    def calling(self) -> bool:
+        """Whether a researcher call is under way (see the module's doc)."""
+        return self.layout.researcher_call.exists()
 
     # -- one tick ------------------------------------------------------
 
     def tick(self) -> None:
         now = self.clock()
         self.finished = []
+        calling = self.calling()
+        released = [] if calling else self._release_held()
         for run in self.records.active():
             self._advance(run, now)
-        if self.finished:
+        self._board_stale |= bool(self.finished)
+        if self._board_stale and not calling:
             from cardgame_ml.loop.leaderboard import write_leaderboard  # noqa: PLC0415
 
             write_leaderboard(self.layout, self.policy)
-            self._commit(f"loop: {', '.join(r.id for r in self.finished)} finished")
+            self._board_stale = False
+        if self.finished or released:
+            done = [f"{r.id} finished" for r in self.finished] + [f"queued {f}" for f in released]
+            self._commit(f"loop: {', '.join(done)}")
         if not self.layout.pause.exists():
-            self._split_replicates()
-            started = self._start(now)
+            if not calling:
+                self._split_replicates()
+            started = self._start(now, intake=not calling)
             if started:
                 self._commit(f"loop: started {', '.join(started)}")
         for hook in self.hooks:
@@ -232,10 +257,24 @@ class Runner:
     def _commit(self, message: str) -> None:
         if self.git is None:
             return
+        # During a researcher call its files are uncommitted on purpose: the
+        # call's check diffs them against HEAD.
+        paths = tuple(p for p in RECORD_PATHS if p != LOOP) if self.calling() else RECORD_PATHS
         try:
-            self.git.commit(message, self.policy.loop_branch)
+            self.git.commit(message, self.policy.loop_branch, paths)
         except GitError as e:
             self.say(f"not committed: {e}")
+
+    def _release_held(self) -> list[str]:
+        """Moves confirmations held during a researcher call to the queue."""
+        if not self.layout.held.is_dir():
+            return []
+        released: list[str] = []
+        for path in sorted(self.layout.held.glob("*.toml")):
+            self.layout.queue.mkdir(parents=True, exist_ok=True)
+            path.replace(self.layout.queue / path.name)
+            released.append(path.name)
+        return released
 
     # -- watching ------------------------------------------------------
 
@@ -317,7 +356,7 @@ class Runner:
             scoreboard = spec.evals.suite == self.policy.protocol.suite
             if run.confirms is None and beats and scoreboard:
                 confirm = confirmation(spec, self.policy)
-                write_spec(confirm, self.layout.queue)
+                write_spec(confirm, self.layout.held if self.calling() else self.layout.queue)
                 run.candidate, run.confirmation = True, confirm.id
             original = runs.get(run.confirms) if run.confirms else None
             if original is not None:
@@ -343,15 +382,21 @@ class Runner:
                     write_spec(replicate, self.layout.queue)
                 item.path.unlink()
 
-    def _start(self, now: datetime) -> list[str]:
+    def _start(self, now: datetime, intake: bool = True) -> list[str]:
+        """Starts what fits. Without ``intake`` (a researcher call is under
+        way) nothing comes from the queue and steps that need a clean
+        checkout wait."""
         active = self.records.active()
         runs = self.records.by_id()
         wants = [
             Want(current.step, run=run)
             for run in active
-            if (current := run.current()) is not None and current.status == "pending"
+            if (current := run.current()) is not None
+            and current.status == "pending"
+            and (intake or not current.step.clean)
         ]
-        wants += self._new_wants(runs, now)
+        if intake:
+            wants += self._new_wants(runs, now)
         if not wants:
             return []
         loads = {name: self._load(name) for name in {w.step.host for w in wants}}
