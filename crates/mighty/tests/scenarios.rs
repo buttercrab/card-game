@@ -2,7 +2,7 @@
 
 use engine::{Game, Turn, Viewer};
 use mighty::card::{Card, Color, Suit};
-use mighty::rules::{Contract, Preset, Rules};
+use mighty::rules::{Contract, MisdealWindow, Preset, Rules};
 use mighty::{Action, Bid, FriendCall, Lead, Mighty, Options, PhaseView, Redeal, State};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -120,7 +120,7 @@ const KITTY: &str = "C5 C6 C7";
 
 #[test]
 fn everyone_passing_redeals() {
-    let mut state = start(Rules::default(), &[], "");
+    let mut state = start(Rules::web_mighty(), &[], "");
     for _ in 0..5 {
         act(&mut state, Action::Pass);
     }
@@ -144,7 +144,7 @@ fn everyone_hears_every_bid_until_the_redeal() {
         (1, None),
     ]
     .map(|(seat, contract)| Bid { seat, contract });
-    let mut state = start(Rules::default(), &[DECLARER], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER], KITTY);
     for bid in &heard {
         act(&mut state, bid.contract.map_or(Action::Pass, Action::Bid));
     }
@@ -155,7 +155,7 @@ fn everyone_hears_every_bid_until_the_redeal() {
     assert_eq!(Mighty::view(&state, Viewer::Spectator).bids, heard);
 
     // A thrown-in deal starts a fresh record.
-    let mut state = start(Rules::default(), &[], "");
+    let mut state = start(Rules::web_mighty(), &[], "");
     act(&mut state, Action::Pass);
     assert_eq!(Mighty::view(&state, Viewer::Spectator).bids.len(), 1);
     for _ in 1..5 {
@@ -167,7 +167,7 @@ fn everyone_hears_every_bid_until_the_redeal() {
 #[test]
 fn everyone_sees_why_the_cards_were_dealt_again() {
     let weak = "S2 S3 S4 S5 D2 D3 D4 H2 H3 C2";
-    let mut state = start(Rules::default(), &[weak], "");
+    let mut state = start(Rules::web_mighty(), &[weak], "");
     act(&mut state, Action::Misdeal);
     // The server deals again; the new deal's view says who threw in which hand.
     let deal = Mighty::sample_chance(&state, &mut rng());
@@ -202,7 +202,7 @@ fn some_presets_forbid_passing_first() {
 
 #[test]
 fn bids_must_rise_and_no_trump_wins_ties() {
-    let mut state = start(Rules::default(), &[], "");
+    let mut state = start(Rules::web_mighty(), &[], "");
     act(
         &mut state,
         Action::Bid(Contract {
@@ -251,7 +251,7 @@ fn gshs_no_trump_counts_one_more_and_ties_never_win() {
 
 #[test]
 fn declarer_takes_the_kitty_then_discards() {
-    let mut state = start(Rules::default(), &[DECLARER], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER], KITTY);
     act(
         &mut state,
         Action::Bid(Contract {
@@ -269,7 +269,7 @@ fn declarer_takes_the_kitty_then_discards() {
 #[test]
 fn must_follow_suit_but_mighty_and_joker_are_free() {
     let hand = "D10 SA BJ H2 H3 S2 S3 S4 S5 S6";
-    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     lead(&mut state, "D2");
     assert_eq!(legal_cards(&state), sorted("D10 SA BJ"));
@@ -280,7 +280,7 @@ fn the_mighty_still_counts_as_its_own_suit() {
     // Spades are led and the only spade in hand is the mighty (♠A): it must follow.
     let declarer = "S2 D3 D4 D5 D6 D7 D8 D9 C3 C4";
     let hand = "SA D2 H2 H3 H4 C8 C9 C10 CJ CQ";
-    let mut state = start(Rules::default(), &[declarer, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[declarer, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     lead(&mut state, "S2");
     assert_eq!(legal_cards(&state), sorted("SA"));
@@ -291,7 +291,7 @@ fn trump_may_follow_on_the_first_trick() {
     // Only leading trump is held back on the first trick: a seat void in
     // the led suit may trump it.
     let hand = "SA BJ H2 H3 S2 S3 S4 S5 S6 S7";
-    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     lead(&mut state, "D2");
     assert_eq!(legal_cards(&state), sorted(hand));
@@ -324,7 +324,7 @@ fn trump_led_on_the_first_trick_must_still_be_followed() {
     // then means following with it, even though trump is otherwise held back.
     let declarer = "BJ D3 D4 D5 D6 D7 D8 D9 C3 C4";
     let hand = "SA H2 H3 D2 S2 S3 S4 S5 S6 S7";
-    let mut state = start(Rules::default(), &[declarer, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[declarer, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     act(
         &mut state,
@@ -342,7 +342,7 @@ fn only_trump_and_a_joker_left_forces_trump() {
     // Void in the led suit on the first trick: trump is held back, but a
     // joker alone is no real choice, so trump becomes playable.
     let hand = "BJ H2 H3 H4 H5 H6 H7 H8 H9 H10";
-    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     lead(&mut state, "D2");
     assert_eq!(legal_cards(&state), sorted(hand));
@@ -417,7 +417,7 @@ fn gshs_a_joker_led_on_the_first_trick_may_name_trump() {
 #[test]
 fn trump_may_follow_the_first_trick_when_only_specials_are_left() {
     let hand = "SA BJ H2 H3 H4 H5 H6 H7 H8 H9";
-    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     lead(&mut state, "D2");
     assert_eq!(legal_cards(&state), sorted(hand));
@@ -425,7 +425,7 @@ fn trump_may_follow_the_first_trick_when_only_specials_are_left() {
 
 #[test]
 fn a_joker_may_lead_its_colour_where_allowed() {
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.joker_lead.by_color = true;
     let declarer = "BJ D3 D4 D5 D6 D7 D8 D9 C3 C4";
     let hand = "SA H2 D2 S2 S3 S4 S5 S6 S7 S8";
@@ -445,7 +445,7 @@ fn a_joker_may_lead_its_colour_where_allowed() {
 #[test]
 fn joker_call_forces_the_joker_out() {
     let hand = "BJ C8 C9 S2 S3 S4 S5 S6 S7 S8";
-    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     let call = Action::Play {
         card: cards("C3")[0],
@@ -460,7 +460,7 @@ fn joker_call_forces_the_joker_out() {
 #[test]
 fn mighty_may_defend_a_called_joker() {
     let hand = "BJ SA C8 S2 S3 S4 S5 S6 S7 S8";
-    let mut state = start(Rules::default(), &[DECLARER, hand], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, hand], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     act(
         &mut state,
@@ -489,7 +489,7 @@ fn mighty_may_defend_a_called_joker() {
 fn card_friend_is_revealed_when_the_card_is_played() {
     let friend = "CA S2 S3 S4 S5 S6 S7 S8 S9 S10";
     let mut state = start(
-        Rules::default(),
+        Rules::web_mighty(),
         &[DECLARER, "D10 H2 H3 H4 H5 H6 H7 H8 H9 H10", friend],
         KITTY,
     );
@@ -508,7 +508,7 @@ fn card_friend_is_revealed_when_the_card_is_played() {
 #[test]
 fn the_view_says_who_is_winning_the_trick_so_far() {
     let mut state = start(
-        Rules::default(),
+        Rules::web_mighty(),
         &[
             DECLARER,
             "D10 H2 H3 H4 H5 H6 H7 H8 H9 H10",
@@ -545,7 +545,7 @@ fn the_view_says_who_is_winning_the_trick_so_far() {
 
 #[test]
 fn illegal_actions_change_nothing() {
-    let mut state = start(Rules::default(), &[DECLARER], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER], KITTY);
     let before = state.clone();
     let too_low = Action::Bid(Contract {
         trump: Some(Suit::Spade),
@@ -558,7 +558,7 @@ fn illegal_actions_change_nothing() {
 
 #[test]
 fn others_never_see_the_discards() {
-    let mut state = start(Rules::default(), &[DECLARER], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     let discards = |viewer| match Mighty::view(&state, viewer).phase {
         PhaseView::Play { discards, .. } => discards,
@@ -575,7 +575,7 @@ fn a_finished_hand_sums_up_every_trick() {
     for seed in 0..40 {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut state = Mighty::new_game(&Options {
-            rules: Rules::default(),
+            rules: Rules::web_mighty(),
             first_bidder: 0,
         })
         .unwrap();
@@ -612,7 +612,7 @@ fn a_bid_nobody_can_top_ends_the_bidding() {
     // 풀노 (no-trump 20) can never be outbid: the bidding ends at once, so
     // nobody after it can throw the deal in (나무위키, 선거과정).
     let weak = "S2 S3 S4 S5 S6 S7 S8 H2 H3 C2";
-    let mut state = start(Rules::default(), &[DECLARER, weak], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, weak], KITTY);
     act(&mut state, Action::Bid(Contract { trump: None, count: 20 }));
     let view = Mighty::view(&state, Viewer::Seat(1));
     assert!(
@@ -623,7 +623,7 @@ fn a_bid_nobody_can_top_ends_the_bidding() {
     assert_eq!(view.bids.len(), 1);
 
     // A suit 20 can still be topped by 풀노, so the bidding goes on.
-    let mut state = start(Rules::default(), &[DECLARER, weak], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, weak], KITTY);
     act(
         &mut state,
         Action::Bid(Contract {
@@ -660,11 +660,11 @@ fn gshs_throws_in_a_hand_worth_one_point_card_or_less() {
 #[test]
 fn a_hand_of_only_point_cards_may_be_thrown_in_where_allowed() {
     let rich = "S10 SJ SQ SK D10 DJ DQ DK DA HA";
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.misdeal.all_points = true;
     let state = start(rules, &[rich], "");
     assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
-    let state = start(Rules::default(), &[rich], "");
+    let state = start(Rules::web_mighty(), &[rich], "");
     assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
 }
 
@@ -672,9 +672,9 @@ fn a_hand_of_only_point_cards_may_be_thrown_in_where_allowed() {
 fn passing_need_not_be_final() {
     // 나무위키's own example (딜 미스, footnote): 을 and 병 pass, then bid
     // again, and 병 throws the deal in after having bid.
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.bidding.pass_is_final = false;
-    rules.misdeal.after_bidding = true;
+    rules.misdeal.window = MisdealWindow::AllBidding;
     let (c, d, h, s) = (
         Some(Suit::Club),
         Some(Suit::Diamond),
@@ -718,7 +718,7 @@ fn passing_need_not_be_final() {
     ));
 
     // By default a pass is final and a bidder can no longer call a misdeal.
-    let mut state = start(Rules::default(), &[DECLARER, SECOND, WEAK], KITTY);
+    let mut state = start(Rules::web_mighty(), &[DECLARER, SECOND, WEAK], KITTY);
     for action in [
         bid(c, 13),
         Action::Pass,
@@ -733,7 +733,7 @@ fn passing_need_not_be_final() {
         Mighty::view(&state, Viewer::Spectator).phase,
         PhaseView::Exchange { declarer: 2, .. }
     ));
-    let mut state = start(Rules::default(), &[WEAK], KITTY);
+    let mut state = start(Rules::web_mighty(), &[WEAK], KITTY);
     for action in [bid(c, 13), bid(d, 14), Action::Pass, Action::Pass, Action::Pass] {
         act(&mut state, action);
     }
@@ -778,7 +778,7 @@ fn a_weak_hand_may_misdeal_out_of_turn_until_it_bids() {
 #[test]
 fn after_bidding_keeps_the_window_open_all_through_the_bidding() {
     let mut rules = Preset::Gshs.rules();
-    rules.misdeal.after_bidding = true;
+    rules.misdeal.window = MisdealWindow::AllBidding;
     let lone_ten = "S4 S5 S6 S7 S8 H4 H5 H6 C8 C10";
     let mut state = start(rules, &[DECLARER, lone_ten], KITTY);
     act(&mut state, bid(Some(Suit::Spade), 14));
@@ -834,7 +834,7 @@ fn random_out_of_turn_misdeals_keep_the_state_sound() {
 
 #[test]
 fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.misdeal.declarer = true;
     let mut state = start(rules, &[WEAK], "C3 C4 C5");
     act(&mut state, bid(Some(Suit::Spade), 13));
@@ -853,7 +853,7 @@ fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
     );
 
     // Not once a card is discarded, and never without the rule.
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.misdeal.declarer = true;
     let mut state = start(rules, &[WEAK], "C3 C4 C5");
     act(&mut state, bid(Some(Suit::Spade), 13));
@@ -862,7 +862,7 @@ fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
     }
     act(&mut state, Action::Discard(cards("C3")[0]));
     assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
-    let mut state = start(Rules::default(), &[WEAK], "C3 C4 C5");
+    let mut state = start(Rules::web_mighty(), &[WEAK], "C3 C4 C5");
     act(&mut state, bid(Some(Suit::Spade), 13));
     for _ in 1..5 {
         act(&mut state, Action::Pass);
@@ -873,7 +873,7 @@ fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
 #[test]
 fn changing_to_no_trump_may_cost_less() {
     // 나무위키 (선거과정): 셋다리 may become 섯삽 or 넷노.
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.bidding.change_to_no_trump_cost = Some(1);
     let changes = |rules: Rules| {
         let mut state = start(rules, &[DECLARER], KITTY);
@@ -891,14 +891,14 @@ fn changing_to_no_trump_may_cost_less() {
         (contract(&state), contract(&no_trump))
     };
     assert_eq!(changes(rules), (15, 14));
-    assert_eq!(changes(Rules::default()), (15, 15));
+    assert_eq!(changes(Rules::web_mighty()), (15, 15));
 }
 
 #[test]
 fn other_player_counts_deal_the_whole_deck() {
     use rand::seq::IndexedRandom;
     for players in [3, 4, 6, 7] {
-        let rules = Rules::default().for_players(players).unwrap();
+        let rules = Rules::web_mighty().for_players(players).unwrap();
         for seed in 0..30 {
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
             let mut state = Mighty::new_game(&Options {
@@ -987,7 +987,7 @@ fn others_follow(state: &mut State) {
 #[test]
 fn everyone_sees_no_friend_once_the_declarer_takes_the_first_trick_friend() {
     let declarer = "SA D2 D3 D4 D5 D6 D7 D8 D9 C3";
-    let mut state = start(Rules::default(), &[declarer], KITTY);
+    let mut state = start(Rules::web_mighty(), &[declarer], KITTY);
     to_play(&mut state, FriendCall::FirstTrick);
     assert!((0..5).all(|s| !sees_no_friend(&state, s)));
     // The mighty takes the first trick: the friend would be its winner.
@@ -999,7 +999,7 @@ fn everyone_sees_no_friend_once_the_declarer_takes_the_first_trick_friend() {
 #[test]
 fn a_card_of_the_declarers_own_is_no_friend_to_them_at_once_and_to_all_once_played() {
     let declarer = "SK D2 D3 D4 D5 D6 D7 D8 D9 C3";
-    let mut state = start(Rules::default(), &[declarer], KITTY);
+    let mut state = start(Rules::web_mighty(), &[declarer], KITTY);
     to_play(&mut state, FriendCall::Card(cards("SK")[0]));
     assert!(sees_no_friend(&state, 0));
     assert!((1..5).all(|s| !sees_no_friend(&state, s)));
@@ -1010,7 +1010,7 @@ fn a_card_of_the_declarers_own_is_no_friend_to_them_at_once_and_to_all_once_play
 #[test]
 fn a_friend_by_seat_or_by_the_last_trick_is_never_no_friend_in_play() {
     for call in [FriendCall::Seat(2), FriendCall::LastTrick] {
-        let mut state = start(Rules::default(), &[DECLARER], KITTY);
+        let mut state = start(Rules::web_mighty(), &[DECLARER], KITTY);
         to_play(&mut state, call);
         assert!((0..5).all(|s| !sees_no_friend(&state, s)), "{call:?}");
     }

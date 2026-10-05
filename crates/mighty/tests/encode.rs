@@ -63,7 +63,7 @@ fn encode(state: &State, seat: usize) -> Observation {
 }
 
 fn spec() -> Spec {
-    Mighty::spec(&options(Rules::default(), 0)).unwrap()
+    Mighty::spec(&options(Rules::web_mighty(), 0)).unwrap()
 }
 
 /// One card's value of a named card feature.
@@ -105,12 +105,12 @@ fn one_spec_fits_every_rule_set() {
 
 #[test]
 fn rules_beyond_the_action_space_are_refused() {
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.bidding.max = 31;
     assert!(Mighty::spec(&options(rules, 0)).is_err());
     let rules = Rules {
         hand_size: 0,
-        ..Rules::default()
+        ..Rules::web_mighty()
     };
     assert!(Mighty::spec(&options(rules, 0)).is_err(), "invalid rules");
 }
@@ -418,7 +418,7 @@ fn card_rows_carry_what_the_rules_make_of_a_card() {
 
 #[test]
 fn friend_calls_by_seat_are_relative() {
-    let rules = Rules::default();
+    let rules = Rules::web_mighty();
     let view = |seat| {
         let state = Mighty::new_game(&options(rules.clone(), 0)).unwrap();
         Mighty::view(&state, Viewer::Seat(seat))

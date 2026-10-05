@@ -15,7 +15,17 @@
 // pair or a whole sub-object.
 import { RULE_TEXT } from './errorText';
 import { cardLabel, deckSize, jokers } from './cards';
-import type { BackRun, Card, CardPolicy, Doubling, LoseScore, Rules, TrickPolicy, WinScore } from './types';
+import type {
+  BackRun,
+  Card,
+  CardPolicy,
+  Doubling,
+  LoseScore,
+  MisdealWindow,
+  Rules,
+  TrickPolicy,
+  WinScore,
+} from './types';
 
 export type GroupId = 'deal' | 'bidding' | 'friend' | 'power' | 'score';
 
@@ -255,23 +265,22 @@ export const RULE_FIELDS: Field[] = [
     weight: 2,
   },
   {
-    path: 'misdeal.ask_first',
+    path: 'misdeal.window',
     group: 'deal',
-    label: '딜미스는 첫 공약 전까지',
-    help: '패를 받자마자 누구든 딜미스할 수 있고, 첫 공약이 나오면 못 해요. 첫 공약은 패를 받고 잠깐 기다렸다가 해요',
-    control: { kind: 'toggle', on: '해요', off: '안 해요' },
-    trait: (v) => (v ? '딜미스는 첫 공약 전까지' : '공약하며 딜미스'),
-    weight: 1.6,
-  },
-  {
-    path: 'misdeal.after_bidding',
-    group: 'deal',
-    label: '공약 뒤에도 딜미스',
-    help: '이미 공약한 사람도 공약이 끝나기 전엔 딜미스할 수 있어요',
-    control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
-    show: (r) => !r.misdeal.ask_first,
-    trait: (v) => (v ? '공약 뒤에도 딜미스' : '공약 전에만 딜미스'),
-    weight: 2,
+    label: '딜미스는 언제까지',
+    help: '패를 받자마자 할 수 있고, 패스한 뒤에는 못 해요. 첫 공약 전까지라면 첫 공약은 패를 받고 잠깐 기다렸다가 해요',
+    control: {
+      kind: 'segment',
+      options: [
+        { value: 'OwnTurnUntilBid', label: '자기 공약 전까지' },
+        { value: 'AllBidding', label: '공약이 끝나기 전까지' },
+        { value: 'BeforeFirstBid', label: '첫 공약 전까지' },
+      ],
+      stack: true,
+    },
+    trait: (v: MisdealWindow) =>
+      v === 'BeforeFirstBid' ? '딜미스는 첫 공약 전까지' : v === 'AllBidding' ? '공약 뒤에도 딜미스' : '공약 전에만 딜미스',
+    weight: (v: MisdealWindow, base: MisdealWindow) => (v === 'AllBidding' || base === 'AllBidding' ? 2 : 1.6),
   },
   {
     path: 'misdeal.declarer',

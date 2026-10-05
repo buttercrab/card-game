@@ -59,9 +59,8 @@
         ],
         "threshold": 1,
         "all_points": false,
-        "after_bidding": false,
+        "window": "BeforeFirstBid",
         "declarer": false,
-        "ask_first": true,
         "caller_deals": true
       },
       "bidding": {
@@ -162,9 +161,8 @@
         "card_values": [],
         "threshold": 0,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {
@@ -265,9 +263,8 @@
         "card_values": [],
         "threshold": 0,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {
@@ -368,9 +365,8 @@
         "card_values": [],
         "threshold": 1,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {
@@ -471,9 +467,8 @@
         "card_values": [],
         "threshold": 0,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {
@@ -584,9 +579,8 @@
         ],
         "threshold": 2,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {
@@ -701,9 +695,8 @@
         "card_values": [],
         "threshold": 0,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {
@@ -850,9 +843,8 @@
         ],
         "threshold": 1,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {
@@ -981,9 +973,8 @@
         ],
         "threshold": 1,
         "all_points": false,
-        "after_bidding": false,
+        "window": "OwnTurnUntilBid",
         "declarer": false,
-        "ask_first": false,
         "caller_deals": false
       },
       "bidding": {

@@ -8,7 +8,7 @@
 //! payoff too.
 
 use crate::card::{Card, CardSet};
-use crate::rules::Rules;
+use crate::rules::{MAX_PLAYERS, Rules};
 use crate::state::{self, Action, FriendCall, Phase, Play, State, TrickState};
 use crate::trick::{self, Lead, Played};
 use engine::Seat;
@@ -77,7 +77,7 @@ fn friend(state: &State, p: &Play) -> Option<Option<Seat>> {
 
 /// The remaining cards of every seat as bits, for recognising a position
 /// reached by playing the same cards in another order.
-type Key = ([CardSet; 8], usize);
+type Key = ([CardSet; MAX_PLAYERS], usize);
 
 /// A quick hash for keys of card sets, which are already well spread bits;
 /// the standard one is built to resist attacks and costs more than the
@@ -127,7 +127,7 @@ struct Solver<'a> {
     /// Points not yet won by anyone: in hands and in the trick under way.
     left: u8,
     /// Every seat's hand as a set, kept up to date as cards are played.
-    masks: [CardSet; 8],
+    masks: [CardSet; MAX_PLAYERS],
     /// The cards whose holders' order among a suit's ranks matters: in
     /// hands or on the table. Cards out of play are no longer in the way.
     live: CardSet,
@@ -156,7 +156,7 @@ impl<'a> Solver<'a> {
             .collect();
         let in_play = state.hands().iter().flatten().chain(p.plays.iter().map(|pl| &pl.card));
         let left = in_play.filter(|c| c.is_point()).count() as u8;
-        let mut masks = [CardSet::EMPTY; 8];
+        let mut masks = [CardSet::EMPTY; MAX_PLAYERS];
         for (mask, hand) in masks.iter_mut().zip(state.hands()) {
             *mask = hand.iter().collect();
         }

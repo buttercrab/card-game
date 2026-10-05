@@ -1,5 +1,5 @@
 use crate::card::{Card, CardSet, Color, Suit};
-use crate::rules::{CardPolicy, Contract, InvalidRules, Rules, WinScore};
+use crate::rules::{CardPolicy, Contract, InvalidRules, MisdealWindow, Rules, WinScore};
 use crate::trick::{self, Lead, Played, Trick};
 use crate::view::{PhaseView, View};
 use engine::{Seat, Turn, Viewer};
@@ -557,16 +557,12 @@ impl State {
 
     /// Whether `seat` may throw the deal in now, on their turn or not:
     /// their hand qualifies, they are still in the bidding (a pass has had
-    /// its say), and the window is open. With `misdeal.ask_first` it stays
-    /// open for everyone until the first bid; otherwise until the seat
-    /// itself bids, or all through the bidding with
-    /// `misdeal.after_bidding`.
+    /// its say), and the window ([`MisdealWindow`]) is open.
     fn may_misdeal(&self, b: &Bidding, seat: Seat) -> bool {
-        let misdeal = &self.rules.misdeal;
-        let open = if misdeal.ask_first {
-            b.best.is_none()
-        } else {
-            !b.has_bid[seat] || misdeal.after_bidding
+        let open = match self.rules.misdeal.window {
+            MisdealWindow::OwnTurnUntilBid => !b.has_bid[seat],
+            MisdealWindow::AllBidding => true,
+            MisdealWindow::BeforeFirstBid => b.best.is_none(),
         };
         open && !b.passed[seat] && self.rules.is_misdeal(&self.hands[seat])
     }
@@ -1334,7 +1330,7 @@ mod tests {
                 full_contract: Doubling::Never,
                 discards_to_declarer: true,
             },
-            ..Rules::default()
+            ..Rules::web_mighty()
         };
         let s = state(rules);
         let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
@@ -1349,7 +1345,7 @@ mod tests {
 
     #[test]
     fn scoring_against_the_minimum_can_lose_on_a_win() {
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.win = WinScore::OverMin;
         let s = state(rules);
         // 둘노 made with 12 against a minimum of 13: (12 − 13) × 2.
@@ -1359,7 +1355,7 @@ mod tests {
 
     #[test]
     fn default_scoring_is_unchanged() {
-        let s = state(Rules::default());
+        let s = state(Rules::web_mighty());
         let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
         assert_eq!(value(DIAMOND, 13, false, 15), 5);
         assert_eq!(value(None, 13, true, 20), 80);
@@ -1371,7 +1367,7 @@ mod tests {
 
     #[test]
     fn doublings_may_apply_to_losses_too() {
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.no_trump = Doubling::Always;
         rules.scoring.alone = Doubling::Always;
         rules.scoring.back_run = BackRun::ShortBy(5);
@@ -1379,7 +1375,7 @@ mod tests {
         // 부산대: 13 bid, 8 taken is 백런; no-trump and 노프렌드 double too.
         assert_eq!(s.hand_value(Contract { trump: None, count: 13 }, true, 8), -40);
         assert_eq!(s.hand_value(Contract { trump: None, count: 13 }, true, 9), -16);
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.back_run = BackRun::DefenceReachesBid;
         let s = state(rules);
         // 세종: the defence took 13 of a 13 contract's points.
@@ -1409,7 +1405,7 @@ mod tests {
 
     #[test]
     fn discards_may_count_for_the_defence() {
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.discards_to_declarer = false;
         let mut s = state(rules);
         let tens = Suit::ALL.map(|suit| Card::new(suit, 10));
@@ -1645,10 +1641,10 @@ mod tests {
         let mut sets: Vec<(String, Rules)> = Preset::ALL.iter().map(|p| (p.name().to_string(), p.rules())).collect();
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
         for i in 0..10 {
-            sets.push((format!("varied-{i}"), Rules::default().varied(&mut rng)));
+            sets.push((format!("varied-{i}"), Rules::web_mighty().varied(&mut rng)));
         }
         // A bid under the minimum scored with the bid bonus: never a penalty.
-        let mut bonus = Rules::default();
+        let mut bonus = Rules::web_mighty();
         bonus.scoring.win = WinScore::BidBonus;
         sets.push(("bid-bonus".into(), bonus));
         let sets: Vec<serde_json::Value> = sets

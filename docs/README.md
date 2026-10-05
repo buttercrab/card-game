@@ -51,7 +51,7 @@ needs it. On the Mac training runs on MPS
 The encoding (`engine::Encode`, Mighty's in `crates/mighty/src/encode.rs`)
 defines every model's input, so it changes only on purpose:
 
-1. Change the encoder, bump its `VERSION` (`mighty-3` to `mighty-4`) and
+1. Change the encoder, bump its `VERSION` (`mighty-4` to `mighty-5`) and
    append the new version to `SPECS` next to it, with the spec
    fingerprint the failing `the_spec_changes_only_with_its_version` test
    prints. That test fails while the spec and the last `SPECS` line
@@ -73,10 +73,14 @@ Versions: `mighty-1` (2026-10, P0); `mighty-2` (2026-10-05) adds how a
 failed contract is scored (`rules.scoring.lose`); `mighty-3` (2026-10-05,
 faster 딜미스) drops the misdeal round (`phase=misdeal_round` and the
 `kind=no_misdeal` events), since a misdeal is now called from the deal,
-out of turn, and 기본 has no round of answers. Belief v1 and every
-dataset before 2026-10-05 are `mighty-1`; data and models from the
+out of turn, and 기본 has no round of answers; `mighty-4` (2026-10-06)
+says when a misdeal may be called as one `rules.misdeal.window` one-hot
+(until the seat's own bid, all through the bidding, or before the first
+bid) instead of the `after_bidding` and `ask_first` flags. Belief v1 and
+every dataset before 2026-10-05 are `mighty-1`; data and models from the
 `mighty-2` days (such as a training run started then) need a commit
-before the `mighty-3` change.
+before the `mighty-3` change, and `dmc-v2` and the 2026-10-06 RL
+assessment are `mighty-3`.
 
 `ml/` reads the same pinned spec (`crates/mighty/tests/encoding.json`), so
 the Python tests see the change too.

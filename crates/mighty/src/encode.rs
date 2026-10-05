@@ -28,7 +28,10 @@
 
 pub use crate::card::SLOTS;
 use crate::card::{ACE, Card, Color, Suit};
-use crate::rules::{BackRun, CardPolicy, Contract, Doubling, LoseScore, NextDealer, Rules, TrickPolicy, WinScore};
+use crate::rules::{
+    BackRun, CardPolicy, Contract, Doubling, LoseScore, MAX_PLAYERS, MisdealWindow, NextDealer, Rules, TrickPolicy,
+    WinScore,
+};
 use crate::state::{Action, Bid, FriendCall, Phase, TrickState, powered};
 use crate::trick::{self, Lead, PlainSuit, Played, Trick, TrickContext, plain_suit, power};
 use crate::view::{PhaseView, View};
@@ -42,17 +45,21 @@ use engine::{Encode, Features, Game, Observation, Seat, Spec, Unsupported, Viewe
 /// on `mighty-1` cannot read it. `mighty-3` (2026-10-05) dropped the
 /// misdeal round (`phase=misdeal_round`, `kind=no_misdeal`): a misdeal is
 /// called from the moment the cards land, so there is no round to show.
-pub const VERSION: &str = "mighty-3";
+/// `mighty-4` (2026-10-06) says when a misdeal may be called as one
+/// `rules.misdeal.window` instead of the `after_bidding` and `ask_first`
+/// flags.
+pub const VERSION: &str = "mighty-4";
 
 /// Every encoding version and the fingerprint of the spec it stands for
 /// (FNV-1a, 64 bits, of the spec's JSON with `version` left empty), oldest
 /// first. Append a line with each new `VERSION`; never edit one. A test
 /// (`tests/encode.rs`) fails when the spec no longer matches the last line,
 /// so a spec cannot change without a new version.
-pub const SPECS: &[(&str, u64)] = &[("mighty-3", 0x34b5_0ba5_4929_610f)];
+pub const SPECS: &[(&str, u64)] = &[("mighty-3", 0x34b5_0ba5_4929_610f), ("mighty-4", 0xea61_3429_37b6_0266)];
 
-/// The most players any rule set may seat ([`Rules::validate`]).
-pub const MAX_SEATS: usize = 8;
+/// The most players any rule set may seat: per-seat features have room
+/// for this many.
+pub const MAX_SEATS: usize = MAX_PLAYERS;
 
 /// The highest contract number the action space has room for. The rule
 /// editor stops at 26; [`Encode::spec`] refuses rules above this.
@@ -643,9 +650,16 @@ fn rules_features(f: &mut Features, r: &Rules) {
     f.num("rules.misdeal.joker_value", small(m.joker_value));
     f.num("rules.misdeal.threshold", f32::from(m.threshold) / 8.0);
     f.flag("rules.misdeal.all_points", m.all_points);
-    f.flag("rules.misdeal.after_bidding", m.after_bidding);
+    f.one_hot(
+        "rules.misdeal.window",
+        &["own_turn_until_bid", "all_bidding", "before_first_bid"],
+        Some(match m.window {
+            MisdealWindow::OwnTurnUntilBid => 0,
+            MisdealWindow::AllBidding => 1,
+            MisdealWindow::BeforeFirstBid => 2,
+        }),
+    );
     f.flag("rules.misdeal.declarer", m.declarer);
-    f.flag("rules.misdeal.ask_first", m.ask_first);
     f.flag("rules.misdeal.caller_deals", m.caller_deals);
 
     let b = &r.bidding;

@@ -574,7 +574,8 @@ async fn misdeal_table(addr: SocketAddr, preset: &str) -> (Vec<Socket>, Vec<Valu
     let room = create_room(addr, preset).await;
     let (_, rules) = http(addr, "GET", &format!("/api/presets/{preset}"), "").await;
     let mut rules: Value = serde_json::from_str(&rules).unwrap();
-    rules["misdeal"]["threshold"] = json!(100);
+    // Every hand but one of all point cards: practically every hand.
+    rules["misdeal"]["threshold"] = json!(19);
     let mut players = Vec::new();
     for name in ["A", "B", "C", "D", "E"] {
         let mut ws = connect(addr, &room).await;

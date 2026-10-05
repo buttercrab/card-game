@@ -10,7 +10,7 @@
 use crate::bot::SimpleBot;
 use crate::card::{Card, CardSet, Suit};
 use crate::endgame::Mix;
-use crate::rules::{Contract, Rules};
+use crate::rules::{Contract, MAX_PLAYERS, Rules};
 use crate::state::{Action, FriendCall, Phase, Play, State};
 use crate::trick::{Lead, Played};
 use crate::view::Seen;
@@ -203,7 +203,7 @@ impl Reading {
         // Most of the simple bot's choices are remembered from other deals,
         // so the hand is replayed on a state only up to where one is not:
         // `masks` follows every hand, `state` catches up when needed.
-        let mut masks = [CardSet::EMPTY; 8];
+        let mut masks = [CardSet::EMPTY; MAX_PLAYERS];
         for (mask, hand) in masks.iter_mut().zip(&hands) {
             *mask = hand.iter().collect();
         }
@@ -422,7 +422,7 @@ mod tests {
     /// ♠10 onto the declarer's sure trick, as only the friend would.
     #[test]
     fn whoever_feeds_the_declarer_looks_like_the_friend() {
-        let rules = Rules::default();
+        let rules = Rules::web_mighty();
         let options = Options { rules, first_bidder: 0 };
         let mut state = State::new(&options).expect("valid rules");
         let mut hands: Vec<Vec<Card>> = [

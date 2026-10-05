@@ -21,7 +21,7 @@ filled in from other rulesets. Each rule and how it is expressed
 | Mighty ♠A (♦A when ♠ is trump), joker call ♣3 (♠3 when ♣ is trump); 노기루다: ♠A and ♣3 | As everywhere |
 | Counterclockwise play | Seat numbers rise in playing order; the table draws them counterclockwise |
 | Deal 1-2-3-4 from the dealer's right, 3 face down | One shuffled deal; the order of handing out does not change what anyone gets |
-| Misdeal: everyone answers at once, nearest the dealer (dealer first) wins | `misdeal.ask_first`: anyone whose hand qualifies may call it from the moment the cards land until the first bid, on their turn or not; the first call to reach the table wins. The server holds the first bid back 2 s after the deal so nobody loses the chance to a fast bid (owner, 2026-10-05: this replaced a seat-by-seat round of 딜미스 / 딜미스 아님 from the dealer) |
+| Misdeal: everyone answers at once, nearest the dealer (dealer first) wins | `misdeal.window` = `BeforeFirstBid`: anyone whose hand qualifies may call it from the moment the cards land until the first bid, on their turn or not; the first call to reach the table wins. The server holds the first bid back 2 s after the deal so nobody loses the chance to a fast bid (owner, 2026-10-05: this replaced a seat-by-seat round of 딜미스 / 딜미스 아님 from the dealer) |
 | Misdeal value ≤ ½: J, Q, K, A 1, 10 ½, ♠A 0, joker −1 | Doubled: `point_value` 2, tens 1, ♠A 0, `joker_value` −2, `threshold` 1 |
 | Misdeal caller shows the hand and deals next | `Redeal::Misdeal` shows it; `misdeal.caller_deals` |
 | Dealer bids first; difficulty = count, +1 for 노기루다; count ≤ 20 | `first_bidder` is the dealer; `no_trump_bonus` 1, `no_trump_wins_ties` off, `max` 20 |
@@ -77,9 +77,10 @@ Not expressible or left to others:
      strictly higher. Which applies is a local rule.
    - A player whose hand qualifies under `misdeal` may ask for a redeal
      (딜미스) from the moment the cards land, on their turn or not
-     (`Game::out_of_turn_actions`), until they bid or pass; with
-     `misdeal.after_bidding`, all through the bidding until they pass.
-     With `misdeal.ask_first` anyone may until the first bid, and nobody
+     (`Game::out_of_turn_actions`), until they bid or pass
+     (`misdeal.window` = `OwnTurnUntilBid`); with `AllBidding`, all
+     through the bidding until they pass. With `BeforeFirstBid` anyone
+     may until the first bid, and nobody
      after it; the server then holds the first bid back 2 s after the
      deal, bots' too. A seat that has passed has had its say.
      `misdeal.all_points` also lets a hand of nothing but point cards
@@ -285,7 +286,7 @@ presets build on; 기본 is described in its own section above.
 | 4마 | 5 to A + joker + ♣3, ♠3 (43); local min 14–15 | `for_players(4)`; minimum unchanged | Added (engine and sim only) |
 | 6마, 7마 | Main: 5마 with the dealer sitting out; 대전/동대전: 8 each + 5 down, 7 each + 4 down, 7마 calls two friend cards | `for_players(6/7)` deals 8/7 each with one friend | Added in part; sitting out is a server seating rule, two friends missing |
 | Misdeal hand | No point cards; local: only a 10, only one point card, joker + one point card, all ten point cards | Weighted count and threshold; `misdeal.all_points` new | Matches; all-points added (off everywhere; 나무위키 has it for 서울과고 and 신촌) |
-| When to call misdeal | On your turn to bid, even after bidding (4.3 and its footnote) | Any time from the deal until you bid or pass, turn or not; `misdeal.after_bidding`; `ask_first`: until the first bid | Differs by default (owner, 2026-10-05); option added |
+| When to call misdeal | On your turn to bid, even after bidding (4.3 and its footnote) | Any time from the deal until you bid or pass, turn or not; `misdeal.window`: `AllBidding` until the bidding ends, `BeforeFirstBid` until the first bid | Differs by default (owner, 2026-10-05); option added |
 | Declarer's misdeal | Declarer holding 13 cards with no point card may call it | `misdeal.declarer` | Added, off everywhere |
 | Misdeal penalty | Caller −5 into a pot the next winning 여당 shares 3:2; all-pass −1 or 0 | Nothing: payoffs are per hand | Missing (needs session scoring) |
 | First bid | Dealer must open (local: may pass) | `first_bidder_may_pass` on by default; off for dshs, yonsei | Differs by default (judgement call) |

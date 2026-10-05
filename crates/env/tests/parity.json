@@ -1,5 +1,5 @@
 {
-  "encoding": "mighty-3",
+  "encoding": "mighty-4",
   "game": "mighty",
   "num_envs": 3,
   "rules": "crates/env/tests/parity-rules.json",
@@ -14,7 +14,7 @@
         "event_cards": "a97445652c91c7b1",
         "events": "c15a958bf2806ac9",
         "events_len": "15ec7bf0b50732b4",
-        "global": "f7f32fc7056dc893",
+        "global": "9c08f4c20046ac92",
         "legal": "17db6fd76ddd8015",
         "reward": "2ea9ab9198d16380",
         "seat": "8e1704b5a8c9d31d"
@@ -33,7 +33,7 @@
         "event_cards": "a97445652c91c7b1",
         "events": "197dec89d071d651",
         "events_len": "11047585fe102fbb",
-        "global": "915a2bbb8491f6e8",
+        "global": "52e91466c5e0b34a",
         "legal": "e6b0f0978ec70772",
         "reward": "2ea9ab9198d16380",
         "seat": "e337c9e9a29ce870"
@@ -52,7 +52,7 @@
         "event_cards": "a97445652c91c7b1",
         "events": "416439caf93659a6",
         "events_len": "636952d3023d8cf5",
-        "global": "320dc75f99191e26",
+        "global": "cb0b3adf99b6e66a",
         "legal": "11811d81da32c7e4",
         "reward": "2ea9ab9198d16380",
         "seat": "50ffabdcd9b2c937"
@@ -71,7 +71,7 @@
         "event_cards": "a97445652c91c7b1",
         "events": "ee9e41a6a19f2cdd",
         "events_len": "02433989dc22cf3b",
-        "global": "5be6744e76d1ec76",
+        "global": "cb5eb51ca3c73f94",
         "legal": "47efc212fa6ffe73",
         "reward": "2ea9ab9198d16380",
         "seat": "e64c4565ca6531b7"
@@ -90,7 +90,7 @@
         "event_cards": "e3bb1de3252e9213",
         "events": "d49addb9ac9a5485",
         "events_len": "2afc299ae2c44dba",
-        "global": "0c10de2c0e7b9768",
+        "global": "f41302f79bfbda6b",
         "legal": "5397b43d587ffb94",
         "reward": "2ea9ab9198d16380",
         "seat": "e541f4bd86be7c5d"
@@ -109,7 +109,7 @@
         "event_cards": "5b3663aca3d396d5",
         "events": "1cc49e99544c2367",
         "events_len": "0a389783af9ac112",
-        "global": "ca558439899a05c6",
+        "global": "6480f3061a641502",
         "legal": "4a77bc1cef691dc6",
         "reward": "2ea9ab9198d16380",
         "seat": "1acd855e4657b0c3"
@@ -128,7 +128,7 @@
         "event_cards": "18d35dd87902ee74",
         "events": "3fe8f0f9662903a4",
         "events_len": "bb1217dd178ab1ad",
-        "global": "e769df195f987399",
+        "global": "ea290c9bdceda20d",
         "legal": "b02bd9e5d9838ffb",
         "reward": "2ea9ab9198d16380",
         "seat": "15ec7bf0b50732b4"
@@ -147,7 +147,7 @@
         "event_cards": "8399a01ed451a0c6",
         "events": "0a4b7950a1103c43",
         "events_len": "df3cb1ae640ffe59",
-        "global": "ca21c849573ed05b",
+        "global": "7236e0d14e9048a1",
         "legal": "c1b8a667a76c3487",
         "reward": "2ea9ab9198d16380",
         "seat": "15ec7bf0b50732b4"
@@ -166,7 +166,7 @@
         "event_cards": "c49790ebc66d1b52",
         "events": "30253aeb17447817",
         "events_len": "1188333c65ea375c",
-        "global": "e83ddd134070209b",
+        "global": "c2594664a73b1ffd",
         "legal": "f859fadff4edcca7",
         "reward": "2ea9ab9198d16380",
         "seat": "31190090408f837a"
@@ -185,7 +185,7 @@
         "event_cards": "6f65b93e612fb2b3",
         "events": "23fa67f2373585cb",
         "events_len": "ebbc853322334371",
-        "global": "99ace3c98071c5af",
+        "global": "be35ec6b0eb59f9b",
         "legal": "77485c621764d172",
         "reward": "2ea9ab9198d16380",
         "seat": "a261a65a31a7b4d0"
@@ -204,7 +204,7 @@
         "event_cards": "c3c4ac6468421e1e",
         "events": "776c2a5282260e3c",
         "events_len": "5ff8c58fc49fbd4b",
-        "global": "94ef8b8cb49f31c4",
+        "global": "34d220fafbf03e24",
         "legal": "95b9eb0db60b8b90",
         "reward": "2ea9ab9198d16380",
         "seat": "a261a65a31a7b4d0"
@@ -223,7 +223,7 @@
         "event_cards": "9d1b7010080042b8",
         "events": "1549b312376e94c7",
         "events_len": "3ee8dfa5d41f6c8f",
-        "global": "7e5831ab4310b737",
+        "global": "8b76788d8b3329e8",
         "legal": "6c83bf8ca4b0e83a",
         "reward": "2ea9ab9198d16380",
         "seat": "ca888f40c3caca80"
@@ -242,7 +242,7 @@
         "event_cards": "2b4c2bee09c7ce03",
         "events": "b84fe2f857a00336",
         "events_len": "654787347c40b31c",
-        "global": "423aa077569e836b",
+        "global": "c24580ab90153a5a",
         "legal": "cac454bda060481d",
         "reward": "2ea9ab9198d16380",
         "seat": "7a4401f07925a89f"
@@ -261,7 +261,7 @@
         "event_cards": "68d382c559f9c8c8",
         "events": "07396ee592e191c6",
         "events_len": "d775a532f40d0854",
-        "global": "02bde94f8eae5ee4",
+        "global": "15a5ef4968c3b189",
         "legal": "5138df4e770a4d73",
         "reward": "2ea9ab9198d16380",
         "seat": "76fa33b644e35f62"
@@ -280,7 +280,7 @@
         "event_cards": "6bd6fac11c182589",
         "events": "3a9df8e419f5c5bc",
         "events_len": "cf55ca53b4cb4cf6",
-        "global": "70aaf273b2cc4fa8",
+        "global": "9e1dea7e954886be",
         "legal": "127686f6713d061f",
         "reward": "2ea9ab9198d16380",
         "seat": "881a0bc1df6e3655"
@@ -299,7 +299,7 @@
         "event_cards": "a8e9339ce08b72f2",
         "events": "8e62a2ba13b79fd4",
         "events_len": "f364597f833347a2",
-        "global": "df82aa02494b46fb",
+        "global": "4c3925d31b06a6db",
         "legal": "1c62999ee1896a92",
         "reward": "2ea9ab9198d16380",
         "seat": "56452094781a9653"
@@ -318,7 +318,7 @@
         "event_cards": "8e8802a5f7ee891c",
         "events": "71fa5f90983d9f56",
         "events_len": "3c9bd74494db3512",
-        "global": "88c90c54dbf5add9",
+        "global": "9f445885cc81ca6d",
         "legal": "ec022eec92e76561",
         "reward": "2ea9ab9198d16380",
         "seat": "4bbd25a40c7b71f3"
@@ -337,7 +337,7 @@
         "event_cards": "793c004e6b6f0051",
         "events": "568871e72ff4b74d",
         "events_len": "7a585d27ecd26479",
-        "global": "9b6b8916bca59187",
+        "global": "cb2a9aa5aae18249",
         "legal": "30772838b96125e2",
         "reward": "2ea9ab9198d16380",
         "seat": "ad380addef0fe171"
@@ -356,7 +356,7 @@
         "event_cards": "f225f779b9e5d8a0",
         "events": "9ca4daa8cbc55097",
         "events_len": "555e06247bc32750",
-        "global": "f2549a16af7a3007",
+        "global": "1763d5e253a72d20",
         "legal": "6cc7bce835c544b3",
         "reward": "2ea9ab9198d16380",
         "seat": "78c4f885b230035d"
@@ -375,7 +375,7 @@
         "event_cards": "c3c06c37da611047",
         "events": "a87facc046e7b99d",
         "events_len": "fc11bf2c9540e91c",
-        "global": "5d9effb5f9ae7da7",
+        "global": "38d56ac8b5e4623e",
         "legal": "7a541ac44e8ef9d0",
         "reward": "2ea9ab9198d16380",
         "seat": "82f63b935a385c7a"
@@ -394,7 +394,7 @@
         "event_cards": "5f4703c04bd7865b",
         "events": "3cf8a6aa43a413f6",
         "events_len": "3f6e8724125b58f5",
-        "global": "c10b312d5a2a674e",
+        "global": "0b36f61b40bd851a",
         "legal": "dd981c8ffee12dcc",
         "reward": "2ea9ab9198d16380",
         "seat": "11047585fe102fbb"
@@ -413,7 +413,7 @@
         "event_cards": "f0efea2af82d1d9d",
         "events": "a8e8048defd286ec",
         "events_len": "35dc9d58fc7988ca",
-        "global": "bc01375b4fd2a0bf",
+        "global": "52ca82c67d63b3f7",
         "legal": "006cf4411e6fabf9",
         "reward": "2ea9ab9198d16380",
         "seat": "636952d3023d8cf5"
@@ -432,7 +432,7 @@
         "event_cards": "c2411518ba06d65c",
         "events": "2be7cfd4dcc7ed93",
         "events_len": "dfee504f04810436",
-        "global": "194b7b327c62689b",
+        "global": "fd3acb7bf6f918aa",
         "legal": "a145954d7c31b1d9",
         "reward": "2ea9ab9198d16380",
         "seat": "40272649e0393212"
@@ -451,7 +451,7 @@
         "event_cards": "843dd78cf9854c39",
         "events": "f53b7ee19f236fca",
         "events_len": "8010ad32227c81f2",
-        "global": "514c3385e4aed076",
+        "global": "73bc879d4c90d7ec",
         "legal": "fc4f31137efc2426",
         "reward": "2ea9ab9198d16380",
         "seat": "1cbba6abfe4bf77b"
@@ -470,7 +470,7 @@
         "event_cards": "8c6f598aa72db5e1",
         "events": "42c2abec453e8e65",
         "events_len": "e6ac2369b33735d3",
-        "global": "6ed461d167f44b85",
+        "global": "47019a28b14d17b4",
         "legal": "89296e30d23c761a",
         "reward": "2ea9ab9198d16380",
         "seat": "4bbd25a40c7b71f3"
@@ -489,7 +489,7 @@
         "event_cards": "004b3afaf7c811ba",
         "events": "725417adf1606e35",
         "events_len": "dfa0ce0200249631",
-        "global": "9300dbae138db78e",
+        "global": "2d5f993a653d6085",
         "legal": "a796bd5a262a0b3b",
         "reward": "2ea9ab9198d16380",
         "seat": "1cbba6abfe4bf77b"
@@ -508,7 +508,7 @@
         "event_cards": "b15ead0d3c3f04fa",
         "events": "b4a7c9b22b47193b",
         "events_len": "50f494cbf747ffb7",
-        "global": "ddb5c1dc3437b0fb",
+        "global": "25c42d280549fd2f",
         "legal": "3e80f0a3df3bd339",
         "reward": "2ea9ab9198d16380",
         "seat": "4bbd25a40c7b71f3"
@@ -527,7 +527,7 @@
         "event_cards": "64f9e617eab6615f",
         "events": "c5e2be1a3bca80b3",
         "events_len": "8da1e9151dc9d010",
-        "global": "5a5190fa242fa52f",
+        "global": "d78501219caba275",
         "legal": "1e562462b4eb88c6",
         "reward": "2ea9ab9198d16380",
         "seat": "ad380addef0fe171"
@@ -546,7 +546,7 @@
         "event_cards": "ec578ded7a50b1a8",
         "events": "7a88f226fb7e96d6",
         "events_len": "9ba75b4afb6154f2",
-        "global": "6662d6be8313a037",
+        "global": "71f305c4014b5209",
         "legal": "2afcee43c9839ca4",
         "reward": "2ea9ab9198d16380",
         "seat": "363f012b74b9c88d"
@@ -565,7 +565,7 @@
         "event_cards": "cd9c7b7893c30317",
         "events": "00512c7c96700ee2",
         "events_len": "36930e12bcf101f5",
-        "global": "b330ea6f3405875c",
+        "global": "7675721f8551e4d3",
         "legal": "05c96dd34df3b189",
         "reward": "2ea9ab9198d16380",
         "seat": "9413299b9d7b8a24"
@@ -584,7 +584,7 @@
         "event_cards": "1f33ea7da220fbf2",
         "events": "24f741e0eeb8d135",
         "events_len": "18c83d1a42e9b015",
-        "global": "cb907e22dfe4c507",
+        "global": "fd8946a515a26566",
         "legal": "688b6b0cb5125327",
         "reward": "2ea9ab9198d16380",
         "seat": "76fa33b644e35f62"
@@ -603,7 +603,7 @@
         "event_cards": "2baba41f69a40518",
         "events": "20733984ae662f4e",
         "events_len": "069aaff62125d2f3",
-        "global": "3f29fac336275b22",
+        "global": "2a070616a2d88a95",
         "legal": "0546ce01580abb6b",
         "reward": "2ea9ab9198d16380",
         "seat": "0865ca4013e5543a"
@@ -622,7 +622,7 @@
         "event_cards": "a38d3610c8d39df1",
         "events": "2f5b889b22135c78",
         "events_len": "620298a10f72f698",
-        "global": "c640a8b6cd149286",
+        "global": "9d14d7d3310b44da",
         "legal": "1de6e12f5bae053d",
         "reward": "2ea9ab9198d16380",
         "seat": "45adb8cb9992e0cb"
@@ -641,7 +641,7 @@
         "event_cards": "9a7d8cc327e32cc2",
         "events": "7ff807113e863482",
         "events_len": "f2b098772e76d1a4",
-        "global": "4ed62eeebcb0da5f",
+        "global": "55199c3650461ffa",
         "legal": "07d4d6a2f23fd255",
         "reward": "2ea9ab9198d16380",
         "seat": "782486f75e626020"
@@ -660,7 +660,7 @@
         "event_cards": "45640377cfd5cab3",
         "events": "0bd4de3cd4f73ffe",
         "events_len": "cf0c3d1d4d6108df",
-        "global": "6e5f9e2786a17f68",
+        "global": "9c7be5718de59c0c",
         "legal": "42d1b95f04784fd8",
         "reward": "2ea9ab9198d16380",
         "seat": "88a785e43f081433"
@@ -679,7 +679,7 @@
         "event_cards": "491310a9ba5e12f9",
         "events": "25d672e91a60ebb9",
         "events_len": "8637d24dd3a7e3f8",
-        "global": "273dfb7c2cf00fd6",
+        "global": "bc0d787e7351047c",
         "legal": "b986e9a3306c146d",
         "reward": "2ea9ab9198d16380",
         "seat": "56452094781a9653"
@@ -698,7 +698,7 @@
         "event_cards": "a39c30ca9b14e1be",
         "events": "a7d64b1eae3b3863",
         "events_len": "3e9a2dc9f5cbd278",
-        "global": "41d656a5475a08a7",
+        "global": "df447594ce8fab74",
         "legal": "8ef636937ba28be4",
         "reward": "2ea9ab9198d16380",
         "seat": "1c8ee443d232409a"
@@ -717,7 +717,7 @@
         "event_cards": "2f101b4b89ea91cc",
         "events": "1048e6c6a7601d7f",
         "events_len": "b8e44e24669082ce",
-        "global": "3027ca5cee4f7f34",
+        "global": "ee7e6608a975cb20",
         "legal": "69695ee54ab0ab46",
         "reward": "0a892cfbe450e04e",
         "seat": "4860ca6f42d820d6"
@@ -736,7 +736,7 @@
         "event_cards": "53cfaca544096ae1",
         "events": "b07fed8b1ec848fb",
         "events_len": "e03270c323844fc6",
-        "global": "08b17bea2dc87666",
+        "global": "5fb22115f723c47d",
         "legal": "999e1aac3059c4af",
         "reward": "2ea9ab9198d16380",
         "seat": "b76875c50ef704db"
@@ -755,7 +755,7 @@
         "event_cards": "f1e381452eab9401",
         "events": "1ccbe90517e139a4",
         "events_len": "983224fafdb4e77c",
-        "global": "398c3af0d3eb90f1",
+        "global": "efb5d9a64aa93d4b",
         "legal": "7124a4dfa611578c",
         "reward": "2ea9ab9198d16380",
         "seat": "0580247cdede4c9e"
@@ -774,7 +774,7 @@
         "event_cards": "0edf5a468fbeff5a",
         "events": "5cdec9bd3a687457",
         "events_len": "ce1a1e0555b89fda",
-        "global": "398e4673edf2d358",
+        "global": "bb4bd1ba187e4487",
         "legal": "21abc5a67c756cd4",
         "reward": "2ea9ab9198d16380",
         "seat": "7d450465ceb49083"
@@ -793,7 +793,7 @@
         "event_cards": "1d44d866a8a99a96",
         "events": "bc8168399a9ccdc7",
         "events_len": "713421ce38cbfcc4",
-        "global": "7c53acb7e7a5bbe2",
+        "global": "48377f1b2bb89355",
         "legal": "bb04ac3354792cb6",
         "reward": "2ea9ab9198d16380",
         "seat": "7a4401f07925a89f"
@@ -812,7 +812,7 @@
         "event_cards": "27dc37f87f5d0b3d",
         "events": "920721336d94a435",
         "events_len": "074a8e05acf25341",
-        "global": "0c8e99066fd3990c",
+        "global": "5350306844e667fa",
         "legal": "6e51b80f559bde8d",
         "reward": "2ea9ab9198d16380",
         "seat": "dec2809e6e374a6f"
@@ -831,7 +831,7 @@
         "event_cards": "75154c6c2cfefd61",
         "events": "90c6ed11de4e7596",
         "events_len": "aeedc47fee4bd6ca",
-        "global": "a5bca0a6a1a64053",
+        "global": "700ccbd0ce8d6d72",
         "legal": "8f144cff4f7081a2",
         "reward": "2ea9ab9198d16380",
         "seat": "881a0bc1df6e3655"
@@ -850,7 +850,7 @@
         "event_cards": "89c3ccfd65ac7a25",
         "events": "f5ed1ff34a61438b",
         "events_len": "19ea1a5db9c06160",
-        "global": "3f98aee1bb846e0a",
+        "global": "ca63ca7b284ee1d5",
         "legal": "0a64c63cbc3ec0ed",
         "reward": "2ea9ab9198d16380",
         "seat": "e9df879ac2410b03"
@@ -869,7 +869,7 @@
         "event_cards": "eb68c3464a2420a0",
         "events": "4e66ce2654894f39",
         "events_len": "5a884068e076f20f",
-        "global": "eb9bc7ccfc188d02",
+        "global": "acb4acc654792b55",
         "legal": "73e378037e1ad534",
         "reward": "2ea9ab9198d16380",
         "seat": "91d56a3b7f9ae3cf"
@@ -888,7 +888,7 @@
         "event_cards": "d4b0ec11a36f0da3",
         "events": "fafcbc7434a43c66",
         "events_len": "42b924643e426c9d",
-        "global": "88d10e4608119fd0",
+        "global": "0117cb745002289a",
         "legal": "be588606550b5a54",
         "reward": "2ea9ab9198d16380",
         "seat": "94d8967691a2a042"
@@ -907,7 +907,7 @@
         "event_cards": "4838e02fa64c0f4f",
         "events": "8cfbd98beef705b0",
         "events_len": "e4105274cc5ef6d9",
-        "global": "f19e4d4ba101b015",
+        "global": "63d397b0eeb44e91",
         "legal": "51990a5c8c9579a0",
         "reward": "2ea9ab9198d16380",
         "seat": "56452094781a9653"
@@ -926,7 +926,7 @@
         "event_cards": "c40363b60b5eb11d",
         "events": "8bf4cb5e3383666e",
         "events_len": "6b8742533336f41c",
-        "global": "1b2a8abc7c7e5b72",
+        "global": "062ce0c5e665ce35",
         "legal": "6ecd5c80f4ae98d6",
         "reward": "2ea9ab9198d16380",
         "seat": "96506e6b75f711fc"
@@ -945,7 +945,7 @@
         "event_cards": "612d9c370bfd0288",
         "events": "e6e24a9e2786a1fb",
         "events_len": "eed5aefde19107f1",
-        "global": "753474759fb02f24",
+        "global": "d2a0175531e32805",
         "legal": "68a5b82d44f8ce35",
         "reward": "2ea9ab9198d16380",
         "seat": "d7a79f6ea47f027c"
@@ -964,7 +964,7 @@
         "event_cards": "f10316b6500bba39",
         "events": "b8141bec275281ad",
         "events_len": "5635031d62e49085",
-        "global": "054fe524de6a3e4d",
+        "global": "844809107387a770",
         "legal": "edaea3ffd5980b10",
         "reward": "2ea9ab9198d16380",
         "seat": "2d714ab792db7a16"
@@ -983,7 +983,7 @@
         "event_cards": "df773399b22d9da9",
         "events": "fc047d0fdf03b5cb",
         "events_len": "0f9450a4d15b3cc7",
-        "global": "d9136c1d4b9534fe",
+        "global": "74eb41a5e04e8a2d",
         "legal": "0199253d8a6a714a",
         "reward": "2ea9ab9198d16380",
         "seat": "5e1e6953392a7545"
@@ -1002,7 +1002,7 @@
         "event_cards": "2dc66eadd062d2d5",
         "events": "d91db7410e61d288",
         "events_len": "3ec4846232270611",
-        "global": "f34e1c15fc925e97",
+        "global": "0afbcf4fba34c151",
         "legal": "51bbdba31bafce45",
         "reward": "2ea9ab9198d16380",
         "seat": "ad5dc1478de06a4c"
@@ -1021,7 +1021,7 @@
         "event_cards": "50e3ef7233acbf77",
         "events": "557a28903e376595",
         "events_len": "29a6fdbae9e5fda4",
-        "global": "a1447ed5c9eea879",
+        "global": "cb4da086f73bbd76",
         "legal": "6963fd2d8f6a6adf",
         "reward": "2ea9ab9198d16380",
         "seat": "d04468d46671f8bb"
@@ -1040,7 +1040,7 @@
         "event_cards": "5d3c58b930bab765",
         "events": "755d65f5462e0c07",
         "events_len": "29d66442c990da34",
-        "global": "08b462ee11b0b9f1",
+        "global": "b94e62babeb2a714",
         "legal": "f46fd9e592c43b3d",
         "reward": "2ea9ab9198d16380",
         "seat": "fa2111168ab8ae62"
@@ -1059,7 +1059,7 @@
         "event_cards": "5ee2419baef06fee",
         "events": "e04ed7ebf6d7f38f",
         "events_len": "4a88ba98e8350d94",
-        "global": "9fca9c5ab8269b06",
+        "global": "11a914d39b2af7bd",
         "legal": "b0f57a32b9348dc9",
         "reward": "2ea9ab9198d16380",
         "seat": "10b10f7471aadc70"
@@ -1078,7 +1078,7 @@
         "event_cards": "8c81f1db60751b1d",
         "events": "cf399139bf096574",
         "events_len": "900a3fe06e2a2d03",
-        "global": "6f91435f8bcd2d20",
+        "global": "2f0bd9bd0851ebf0",
         "legal": "aca97ef6b799ec3d",
         "reward": "2ea9ab9198d16380",
         "seat": "ed7a214db17baa33"
@@ -1097,7 +1097,7 @@
         "event_cards": "b06cefbd969a5d6d",
         "events": "4c0ec0168de38a93",
         "events_len": "1cacb35325120ad0",
-        "global": "827758ec92d081e0",
+        "global": "d7fb035f8121ff32",
         "legal": "1769c38cbfab8a75",
         "reward": "2ea9ab9198d16380",
         "seat": "e64c4565ca6531b7"
@@ -1116,7 +1116,7 @@
         "event_cards": "0a99dbb125501c84",
         "events": "828735cb4e6dcd20",
         "events_len": "29ead9b58924e10f",
-        "global": "60bee2d080f78554",
+        "global": "8e74a9bd25e78cc8",
         "legal": "f8b853fb8439fec4",
         "reward": "2ea9ab9198d16380",
         "seat": "4ffdff4eaa3da037"
@@ -1135,7 +1135,7 @@
         "event_cards": "0ab8d6bb0499ff16",
         "events": "6f7473bc46392be0",
         "events_len": "3726fd5dc6bc3db4",
-        "global": "2ea65e5de39d9bf6",
+        "global": "eb20687c6486122a",
         "legal": "8e45939e4518c446",
         "reward": "2ea9ab9198d16380",
         "seat": "344b7b2c5d9e8262"
@@ -1154,7 +1154,7 @@
         "event_cards": "42d2ef84cde892fa",
         "events": "49fe2b28e86d265d",
         "events_len": "8ae72484b4233ff0",
-        "global": "b87860436d307d86",
+        "global": "3514375d4842f1f1",
         "legal": "b4c4a81187d4abbf",
         "reward": "a8680d33b6cb1fa1",
         "seat": "576f01424743fd8c"
@@ -1173,7 +1173,7 @@
         "event_cards": "de5f18e2fbd86cfa",
         "events": "8d9c5b6686e76e43",
         "events_len": "44588fd6739e8f76",
-        "global": "d7394966c9f6fd40",
+        "global": "b60dcc3783a6c2f2",
         "legal": "c2e7aa2cac9955f2",
         "reward": "2ea9ab9198d16380",
         "seat": "f7153f1c1a254448"
@@ -1192,7 +1192,7 @@
         "event_cards": "569d04153a8890ea",
         "events": "2352e3e43d6a0019",
         "events_len": "504e86b498c77e01",
-        "global": "c18a550907fb80c5",
+        "global": "2ebb7ac0ad24adb8",
         "legal": "a038a34398efe3da",
         "reward": "2ea9ab9198d16380",
         "seat": "7b3b70304ea74bf6"
@@ -1211,7 +1211,7 @@
         "event_cards": "c9a0555667e52cd3",
         "events": "2a6657c9512e8a58",
         "events_len": "4e8123b180b179df",
-        "global": "047f8c85d36ab66d",
+        "global": "c49329c0c1c6d4ad",
         "legal": "3b307026f68966f5",
         "reward": "2ea9ab9198d16380",
         "seat": "2f1a8c9bd0787478"
@@ -1230,7 +1230,7 @@
         "event_cards": "0c03866949f355d5",
         "events": "14c24e9d84b01f69",
         "events_len": "8c4ce77b02065c1d",
-        "global": "ef6ee302da662b3d",
+        "global": "870be021e55f45e4",
         "legal": "8fded9792f198da6",
         "reward": "2ea9ab9198d16380",
         "seat": "73d85d34b5aa7244"
@@ -1249,7 +1249,7 @@
         "event_cards": "15878c9f4af66fca",
         "events": "4bb5b43d0348336b",
         "events_len": "faadc805c06d3312",
-        "global": "a232d747d5a08a5f",
+        "global": "1c599dc3ff7dd650",
         "legal": "621b5ae90a22923b",
         "reward": "2ea9ab9198d16380",
         "seat": "d081adce8c7a596f"
@@ -1268,7 +1268,7 @@
         "event_cards": "2ccaa3cb33fe3b02",
         "events": "85181a7285b64c3e",
         "events_len": "00f23377d44072c3",
-        "global": "823e54631c03e5c1",
+        "global": "7284e9d59b88e63e",
         "legal": "c0f366b016083aad",
         "reward": "2ea9ab9198d16380",
         "seat": "e712069a78edaf3b"
@@ -1287,7 +1287,7 @@
         "event_cards": "b025ddd2c822f2a3",
         "events": "ad99725e64addac7",
         "events_len": "cbc5f32ba2e7b699",
-        "global": "2c9e42583aa74492",
+        "global": "39c6b48d509186b3",
         "legal": "10852447125c0b5a",
         "reward": "2ea9ab9198d16380",
         "seat": "a12f94f13be64d7d"
@@ -1306,7 +1306,7 @@
         "event_cards": "e2767a78c707917c",
         "events": "946318983411249c",
         "events_len": "6ce5ceb2826fa361",
-        "global": "48734c32c9477ff4",
+        "global": "eaba1005b5e1ec49",
         "legal": "375b1e62b3f30a3d",
         "reward": "2ea9ab9198d16380",
         "seat": "a31ac085b426edde"
@@ -1325,7 +1325,7 @@
         "event_cards": "46e27a6cdec19b0c",
         "events": "25021f10091b8973",
         "events_len": "6b22e8e2a370e9ec",
-        "global": "77bce7c1746013d8",
+        "global": "dd63a3aaa4bfcab5",
         "legal": "0b87ca91c29a14d7",
         "reward": "2ea9ab9198d16380",
         "seat": "4a703711c368bb9e"
@@ -1344,7 +1344,7 @@
         "event_cards": "fce74cbe290e5027",
         "events": "437e5c443fdfe075",
         "events_len": "0175c5ae559b314a",
-        "global": "553407fe0dc28781",
+        "global": "d7e3eb8041a2054c",
         "legal": "915ed39f05a5a3e4",
         "reward": "2ea9ab9198d16380",
         "seat": "e712069a78edaf3b"
@@ -1363,7 +1363,7 @@
         "event_cards": "e8d70098e6c1bceb",
         "events": "d6de14de48bde257",
         "events_len": "8c6fb58ce9a298df",
-        "global": "97a7ef551b7bb7a7",
+        "global": "8a764787f4cfd5a4",
         "legal": "5c8363ea289dd12b",
         "reward": "2ea9ab9198d16380",
         "seat": "a12f94f13be64d7d"
@@ -1382,7 +1382,7 @@
         "event_cards": "a0b70faf8fab403e",
         "events": "84f3f0216856d5c4",
         "events_len": "1a05a14a8dd1aad6",
-        "global": "646ee2ff24202860",
+        "global": "e1ef27b97d6adfca",
         "legal": "362bc1de724da1c0",
         "reward": "2ea9ab9198d16380",
         "seat": "826196a097be3272"
@@ -1401,7 +1401,7 @@
         "event_cards": "70a76abfa413e294",
         "events": "42f93ac4078721e1",
         "events_len": "7b6fb0d840961382",
-        "global": "95f89a84cad064d7",
+        "global": "eabea8080806e829",
         "legal": "76030f61dcb00d36",
         "reward": "2ea9ab9198d16380",
         "seat": "d4b6f1d35c193c23"
@@ -1420,7 +1420,7 @@
         "event_cards": "c9d73ea8c1bea592",
         "events": "c51b39a654b239dc",
         "events_len": "a222c06bc91e3d35",
-        "global": "a5bdb5930d6d0762",
+        "global": "35560c52d38df640",
         "legal": "f3c8c6e091f64731",
         "reward": "2ea9ab9198d16380",
         "seat": "abf750c14bb3089c"
@@ -1439,7 +1439,7 @@
         "event_cards": "cda03425db759eb9",
         "events": "5cbc5cc385006749",
         "events_len": "9f4c8fd27d82f19a",
-        "global": "6087575202bc0780",
+        "global": "29c3a4b230509137",
         "legal": "ebd7d4c3a3d02b83",
         "reward": "2ea9ab9198d16380",
         "seat": "a650f439c9d8fd53"
@@ -1458,7 +1458,7 @@
         "event_cards": "242c3047ad600e4d",
         "events": "eeb3aebbc6adf396",
         "events_len": "676270107d771bae",
-        "global": "367de58817c7c205",
+        "global": "88722172985237b2",
         "legal": "0b426020a2f6dff0",
         "reward": "2ea9ab9198d16380",
         "seat": "b5a8b2c7bc0b58fa"
@@ -1477,7 +1477,7 @@
         "event_cards": "edfb2b8fcf8f4fbe",
         "events": "fd056751530781ce",
         "events_len": "175406b562b9939a",
-        "global": "8839827888edd7ef",
+        "global": "e4fbe256f85cf21e",
         "legal": "6b6d7c3ce4c56a52",
         "reward": "2ea9ab9198d16380",
         "seat": "df26e696f3cd38db"
@@ -1496,7 +1496,7 @@
         "event_cards": "0953bab785d13543",
         "events": "798216c41886ed00",
         "events_len": "288762e0cc133b54",
-        "global": "f7cad43eb2914d5d",
+        "global": "8773acd9b302fe58",
         "legal": "cb4cc18efe54e4f0",
         "reward": "2ea9ab9198d16380",
         "seat": "ca888f40c3caca80"
@@ -1515,7 +1515,7 @@
         "event_cards": "910736fdefd3095e",
         "events": "576f4dbd35c914bc",
         "events_len": "f0957f1feacc3a2a",
-        "global": "14aa84ed5ebf5226",
+        "global": "59cdc64a4d2624b9",
         "legal": "1139ad5864cccf4c",
         "reward": "2ea9ab9198d16380",
         "seat": "11047585fe102fbb"
@@ -1534,7 +1534,7 @@
         "event_cards": "1ddcf9ae9a54d8b9",
         "events": "1ed0ee4e33653495",
         "events_len": "98d0131851d066cf",
-        "global": "adfd2a0bb52bdfe3",
+        "global": "cc0ec22c179c769a",
         "legal": "3e7811e45cfb6103",
         "reward": "2ea9ab9198d16380",
         "seat": "782486f75e626020"
@@ -1553,7 +1553,7 @@
         "event_cards": "e382e2ea01c6091d",
         "events": "71deaa1446a794e4",
         "events_len": "b87a26679f85303c",
-        "global": "a2eb61b51b26ba0c",
+        "global": "e1ce0f17f337fd90",
         "legal": "a12aea435a6e1e80",
         "reward": "2ea9ab9198d16380",
         "seat": "105ca179e176b2d6"
@@ -1572,7 +1572,7 @@
         "event_cards": "6deec845403b0580",
         "events": "681ec42e805b82f6",
         "events_len": "01b001859f5e346a",
-        "global": "2a83e681c0c4f4c7",
+        "global": "494b7acf9d43b896",
         "legal": "1f0eca7eb68cc89b",
         "reward": "2ea9ab9198d16380",
         "seat": "a17981e267e92a06"
@@ -1591,7 +1591,7 @@
         "event_cards": "7498d241ed6ce0d6",
         "events": "b2b96bbb6289338d",
         "events_len": "cb57f35cc99f0686",
-        "global": "4d3fbdc08cfc26ca",
+        "global": "2c2d0634b04b238d",
         "legal": "c09951f6f37bca73",
         "reward": "2ea9ab9198d16380",
         "seat": "860bc8bc2e67b67a"
@@ -1610,7 +1610,7 @@
         "event_cards": "9fd1342e4bc0ba63",
         "events": "b76a3c6a2f60c68b",
         "events_len": "9fe4b2ea04113050",
-        "global": "d90457be159d2675",
+        "global": "2adb34c81f9ecebf",
         "legal": "88e99d56b46d997f",
         "reward": "2ea9ab9198d16380",
         "seat": "b780f8e8229017f6"
@@ -1629,7 +1629,7 @@
         "event_cards": "e248553a36c06237",
         "events": "06a686bf8e5d7c79",
         "events_len": "074e56679b775bac",
-        "global": "c5a58983f61f8eba",
+        "global": "6eadea7298239f84",
         "legal": "1112b61c4439d983",
         "reward": "2ea9ab9198d16380",
         "seat": "673c9f932c48b9fb"
@@ -1648,7 +1648,7 @@
         "event_cards": "66c9ec8de62fdc8b",
         "events": "2ac810674c10d699",
         "events_len": "cdef1e570e20f948",
-        "global": "f4571e4f46aedfbc",
+        "global": "71abc2ce941a6ede",
         "legal": "126a53f41ec2285b",
         "reward": "2ea9ab9198d16380",
         "seat": "ea648521f3a332ba"
@@ -1667,7 +1667,7 @@
         "event_cards": "1d674e1027b2ac32",
         "events": "df4a71ed1ca282f2",
         "events_len": "fb1613b754d6fd17",
-        "global": "a00e270efbd6ae7d",
+        "global": "bf95fdcbec849d30",
         "legal": "c8a99dbae43ec2d1",
         "reward": "2ea9ab9198d16380",
         "seat": "8be77d9aea1fa1f7"
@@ -1686,7 +1686,7 @@
         "event_cards": "e11137eec3d44bfa",
         "events": "802538cc86c3595b",
         "events_len": "c6122358c0135e81",
-        "global": "3ed14f94dc34733c",
+        "global": "3652d5fd50265e62",
         "legal": "2bd149d27c80bf1f",
         "reward": "2ea9ab9198d16380",
         "seat": "45adb8cb9992e0cb"
@@ -1705,7 +1705,7 @@
         "event_cards": "22915c351f5b8959",
         "events": "26fcf6728d244868",
         "events_len": "6666402c2ce89941",
-        "global": "3129d0d886cf9c94",
+        "global": "0b40d8c68f3ab737",
         "legal": "357f1f716aa53a7a",
         "reward": "2ea9ab9198d16380",
         "seat": "636952d3023d8cf5"
@@ -1724,7 +1724,7 @@
         "event_cards": "48e5d3b3352c956f",
         "events": "63baf6856ad1b65a",
         "events_len": "a21a83f7ae6cd73a",
-        "global": "5275bbd6919b4d5b",
+        "global": "2d1802b6270767a2",
         "legal": "45aaab730a018797",
         "reward": "2ea9ab9198d16380",
         "seat": "02433989dc22cf3b"
@@ -1743,7 +1743,7 @@
         "event_cards": "4310d18209cd00e4",
         "events": "54da899c0df8bd15",
         "events_len": "f792e0e0858d8f06",
-        "global": "fbef8299320d757e",
+        "global": "b32ab34e78f3664e",
         "legal": "8cb02fe2b8dbf38c",
         "reward": "2ea9ab9198d16380",
         "seat": "2afc299ae2c44dba"
@@ -1762,7 +1762,7 @@
         "event_cards": "8ab77b1394a54139",
         "events": "87364339209fd4a1",
         "events_len": "57e8aba33cfcb0b9",
-        "global": "cf2daf6f83c9785a",
+        "global": "5764119b392b41d3",
         "legal": "c734b8873d222c78",
         "reward": "2ea9ab9198d16380",
         "seat": "1d558d820e2147b8"
@@ -1781,7 +1781,7 @@
         "event_cards": "7c85c3ab86bda5bd",
         "events": "465baea503cb1620",
         "events_len": "3e11053ca8ae893e",
-        "global": "8cc30d725f342111",
+        "global": "62e67d29122b42fc",
         "legal": "3bb5bc79e6526629",
         "reward": "2ea9ab9198d16380",
         "seat": "576f01424743fd8c"
@@ -1800,7 +1800,7 @@
         "event_cards": "3f4d9bdeece3338a",
         "events": "3a9a23c3ef7a6c32",
         "events_len": "cbd82b404e6b9c0c",
-        "global": "ed36f844a829eee5",
+        "global": "0b043fa69269626f",
         "legal": "57996b9a8b4e1fd6",
         "reward": "a380d895a4919c89",
         "seat": "4bbd25a40c7b71f3"
@@ -1819,7 +1819,7 @@
         "event_cards": "729e138f5240b391",
         "events": "b80ff4affe830903",
         "events_len": "fa0ee16990b2af15",
-        "global": "3c612c99b6e3c331",
+        "global": "1cbab48db4a48ba7",
         "legal": "5a41605fb3798b04",
         "reward": "2ea9ab9198d16380",
         "seat": "49f2dea87cdf2e91"
@@ -1838,7 +1838,7 @@
         "event_cards": "9af9bf911792faf3",
         "events": "e13a25e47cd8e2af",
         "events_len": "85ecf7c4d22ebeb7",
-        "global": "cdccc1b0ff9c27ce",
+        "global": "99623519f81f6ad8",
         "legal": "b036782ae1d4f6ce",
         "reward": "2ea9ab9198d16380",
         "seat": "fab2f21b55393f76"
@@ -1857,7 +1857,7 @@
         "event_cards": "9b867ff7c101dd02",
         "events": "bd5587bf9c370c69",
         "events_len": "76a916cc24e6cd72",
-        "global": "d88de591a0964da6",
+        "global": "89d5345ce5568e6f",
         "legal": "583730d6a662d21a",
         "reward": "2ea9ab9198d16380",
         "seat": "73c150fb3bb1a3de"
@@ -1876,7 +1876,7 @@
         "event_cards": "ca1f8f489b840ba8",
         "events": "1794719ac658a875",
         "events_len": "51966c635c007da1",
-        "global": "6c314d9b3fcc639e",
+        "global": "863be14f6ea79a3d",
         "legal": "a1de31d08cd28ba6",
         "reward": "2ea9ab9198d16380",
         "seat": "8e1704b5a8c9d31d"
@@ -1895,7 +1895,7 @@
         "event_cards": "6d61d07ccc411af9",
         "events": "aa6fa7a869ea6c28",
         "events_len": "c5d132fb3a4f8fca",
-        "global": "c10a20d7a2ec18fd",
+        "global": "4195f90e3cf2d404",
         "legal": "f72d9b20bca8a531",
         "reward": "2ea9ab9198d16380",
         "seat": "62144c2ea4f8a389"
@@ -1914,7 +1914,7 @@
         "event_cards": "a30aba37376735fc",
         "events": "9e213546679f4d5d",
         "events_len": "27ebf539b25bb55a",
-        "global": "2564059985a7df69",
+        "global": "45c65f3157b53841",
         "legal": "55f72dfc1c55ceed",
         "reward": "2ea9ab9198d16380",
         "seat": "9886637627dacb0e"
@@ -1933,7 +1933,7 @@
         "event_cards": "e10233fa36ca6e33",
         "events": "10e032ff28d7b924",
         "events_len": "47b2ceaa4880b6c2",
-        "global": "85c68d6786c7c054",
+        "global": "a276e0bcf1ad61e0",
         "legal": "43289e40e8c40832",
         "reward": "2ea9ab9198d16380",
         "seat": "57f94db345474209"
@@ -1952,7 +1952,7 @@
         "event_cards": "84832203968c58cf",
         "events": "44c299bae957c2aa",
         "events_len": "b3e5a138676e273e",
-        "global": "b791f5a0c17e77c5",
+        "global": "00691eca4b579a91",
         "legal": "82f24067b87f43a8",
         "reward": "2ea9ab9198d16380",
         "seat": "7d450465ceb49083"
@@ -1971,7 +1971,7 @@
         "event_cards": "bf1c9e0922fc434b",
         "events": "4bb96f078bddb4d8",
         "events_len": "c7b24450504522ab",
-        "global": "ad158df802842c83",
+        "global": "8455cb3ef5c2ea26",
         "legal": "eb960c47a744b1ac",
         "reward": "2ea9ab9198d16380",
         "seat": "7a4401f07925a89f"
@@ -1990,7 +1990,7 @@
         "event_cards": "848f6c22c90ed6dd",
         "events": "85a1a64c14a48dc7",
         "events_len": "bba3b657788e4351",
-        "global": "e806580927da8007",
+        "global": "66fd855df0d852b7",
         "legal": "ffc81bbc65d24ba7",
         "reward": "2ea9ab9198d16380",
         "seat": "957d268396a16ffd"
@@ -2009,7 +2009,7 @@
         "event_cards": "d8e3bf92138a79dc",
         "events": "ec04da23bcab0fc1",
         "events_len": "6b6ce80bc2024113",
-        "global": "51c4eb72fff8e333",
+        "global": "8a8f71f2f1d2a933",
         "legal": "8545c43a954dd5f0",
         "reward": "2ea9ab9198d16380",
         "seat": "66865fdfa566484c"
@@ -2028,7 +2028,7 @@
         "event_cards": "f7390510b93ecd8b",
         "events": "d9acdf8c5b5372e9",
         "events_len": "7b327a76263229ac",
-        "global": "6f37c53d3ea46ecd",
+        "global": "15be7c7921fb1547",
         "legal": "1be537aae384a70b",
         "reward": "2ea9ab9198d16380",
         "seat": "5fd5cb637f167ffc"
@@ -2047,7 +2047,7 @@
         "event_cards": "a66fe8f67b5157be",
         "events": "6414294eea485ca3",
         "events_len": "38683d14493531d5",
-        "global": "f55990122cc6b9d0",
+        "global": "abacff83040f9007",
         "legal": "11ca17676a56be6d",
         "reward": "2ea9ab9198d16380",
         "seat": "8be77d9aea1fa1f7"
@@ -2066,7 +2066,7 @@
         "event_cards": "188f1f6c8d313b74",
         "events": "2051e817f2f74f07",
         "events_len": "3dcce8a8b76959cf",
-        "global": "aa30b15170df5d91",
+        "global": "7d1e76da3e2216ea",
         "legal": "ccf39451aec45101",
         "reward": "2ea9ab9198d16380",
         "seat": "1987807b054cb667"
@@ -2085,7 +2085,7 @@
         "event_cards": "dd78355984005ade",
         "events": "421f4ca493af6141",
         "events_len": "d9420ba67fd85e19",
-        "global": "4b009c26dab31ab3",
+        "global": "1512df7c9b71394e",
         "legal": "e27193da52098b8e",
         "reward": "2ea9ab9198d16380",
         "seat": "0cf3731eacfebf9f"
@@ -2104,7 +2104,7 @@
         "event_cards": "d0b3ce992549067a",
         "events": "41d837045b4e8ece",
         "events_len": "4e66ce6fbe1ff7a8",
-        "global": "6c1b0ba0716b8f6e",
+        "global": "84699a12a5f235f9",
         "legal": "3fdc37446332910d",
         "reward": "2ea9ab9198d16380",
         "seat": "c4fde33cae1b85a1"
@@ -2123,7 +2123,7 @@
         "event_cards": "718cd347e54def3d",
         "events": "99e8ed4101c66371",
         "events_len": "84bb6f4df7a4e941",
-        "global": "d20b376054606d3b",
+        "global": "5fd04dc7b30c2c9d",
         "legal": "db7a90eca9b80b93",
         "reward": "2ea9ab9198d16380",
         "seat": "3a870f8a1460c715"
@@ -2142,7 +2142,7 @@
         "event_cards": "f213ac813e1e88a1",
         "events": "dd22d6b4d953dfcb",
         "events_len": "c4f5f111aa61e9f9",
-        "global": "870e11320096a61a",
+        "global": "ace50c466251b8d2",
         "legal": "b182a50a7fab0877",
         "reward": "2ea9ab9198d16380",
         "seat": "4bbd25a40c7b71f3"
@@ -2161,7 +2161,7 @@
         "event_cards": "ef5c44bc56534c90",
         "events": "06425dae95690e22",
         "events_len": "7166754f0bd4adcb",
-        "global": "95da68dbd744d27a",
+        "global": "26891a6850cc6586",
         "legal": "31f4095eaa95759c",
         "reward": "2ea9ab9198d16380",
         "seat": "7e059e75e2bd59ca"
@@ -2180,7 +2180,7 @@
         "event_cards": "0fcb2d5dd59b9e04",
         "events": "658b27079752e195",
         "events_len": "95f998d52c2c02a0",
-        "global": "515875955122981b",
+        "global": "8eb50abe8f04144b",
         "legal": "11167f5a5ecc0bb1",
         "reward": "2ea9ab9198d16380",
         "seat": "e64c4565ca6531b7"
@@ -2199,7 +2199,7 @@
         "event_cards": "d0f3e40d0886cc3f",
         "events": "75dbdcef3e9cee97",
         "events_len": "8a26ca682577d66b",
-        "global": "4c51357f6c8b3575",
+        "global": "6693d3b501c036ef",
         "legal": "841dc52edfb6a2a3",
         "reward": "2ea9ab9198d16380",
         "seat": "0580247cdede4c9e"
@@ -2218,7 +2218,7 @@
         "event_cards": "67b0ec68de27d974",
         "events": "af2cd26359eabb70",
         "events_len": "59ad92dc9d976560",
-        "global": "76ccc8ec07026ea2",
+        "global": "4508042897c308be",
         "legal": "d95ce08612a33ca2",
         "reward": "2ea9ab9198d16380",
         "seat": "bd88f10a164eaa73"
@@ -2237,7 +2237,7 @@
         "event_cards": "57219b94a711a342",
         "events": "5493ca908450a7c6",
         "events_len": "7fa6d13f61c46702",
-        "global": "df82297c3f0a1a3a",
+        "global": "83a9385ec4b6bf2f",
         "legal": "3d9ad577144e1b98",
         "reward": "2ea9ab9198d16380",
         "seat": "675374dfbc4f633c"
@@ -2256,7 +2256,7 @@
         "event_cards": "ef0a51245bddddac",
         "events": "ad8740d8ed3f553e",
         "events_len": "d665f6d4e7157ff1",
-        "global": "7a753715634d4584",
+        "global": "246b6eaf6e52b592",
         "legal": "6dc09c46de4187bd",
         "reward": "2ea9ab9198d16380",
         "seat": "fa2111168ab8ae62"
@@ -2275,7 +2275,7 @@
         "event_cards": "ecf9a3a41f9b43b1",
         "events": "125ec2a7c53a651f",
         "events_len": "e49d061588445e85",
-        "global": "5640997fb1d2b7b1",
+        "global": "ac979537690cf496",
         "legal": "48e6e835bd62ba83",
         "reward": "2ea9ab9198d16380",
         "seat": "8cfa3b52b2b4d520"
@@ -2294,7 +2294,7 @@
         "event_cards": "fe99eb96025e17f8",
         "events": "51191b1bc4e193cc",
         "events_len": "115e5197155c8e1a",
-        "global": "bd45ae0aefeb4ab9",
+        "global": "13dd67e6fee9e3f5",
         "legal": "0ce0c27352438e56",
         "reward": "76c1a568e94fd332",
         "seat": "0865ca4013e5543a"

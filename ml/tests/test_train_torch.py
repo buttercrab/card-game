@@ -65,7 +65,7 @@ def test_a_tiny_run_learns_and_writes_its_files(
     assert len(val) >= config.optim.epochs
     assert report.to_json()["all"]["model"]["cards"] > 0
     described = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
-    assert described["encoding"] == "mighty-3"
+    assert described["encoding"] == "mighty-4"
     assert described["kind"] == "belief"
     trained = load_belief(RunDir(tmp_path))
     assert trained.parameter_count() == described["parameters"]

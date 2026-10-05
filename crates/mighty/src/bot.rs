@@ -4,7 +4,7 @@
 
 use crate::Mighty;
 use crate::card::{ACE, Card, CardSet, Suit};
-use crate::rules::{CardPolicy, Contract, Rules};
+use crate::rules::{CardPolicy, Contract, MAX_PLAYERS, Rules};
 use crate::search::SearchBot;
 use crate::state::hand_value;
 use crate::state::{Action, FriendCall, TrickState, powered};
@@ -109,7 +109,7 @@ impl Default for SimpleBot {
 /// Bid boldness by seat, added to `bid_base`, so a table of bots does not
 /// bid as one. Halved on 2026-10-05: the bolder seats overbid under
 /// scoring G.
-pub const TEMPER: [f32; 8] = [0.0, 0.2, -0.2, 0.1, -0.1, 0.15, -0.15, 0.05];
+pub const TEMPER: [f32; MAX_PLAYERS] = [0.0, 0.2, -0.2, 0.1, -0.1, 0.15, -0.15, 0.05];
 
 /// The simple bot with `seat`'s temper, as the table seats it.
 pub fn tempered(seat: usize) -> SimpleBot {
@@ -751,7 +751,7 @@ fn follow(t: &Table, legal: &[Action], lead: Lead, plays: &[Played], called: Opt
 
     // The trick with my card added, on the stack: this runs for every card.
     let wins = |card: Card| {
-        let mut next = [plays[0]; 8];
+        let mut next = [plays[0]; MAX_PLAYERS];
         next[..plays.len()].copy_from_slice(plays);
         next[plays.len()] = trick.played(rules, t.me, card);
         trick::winner(&ctx, &next[..=plays.len()]) == plays.len()
@@ -829,7 +829,7 @@ mod tests {
     #[test]
     fn unseen_cards_are_never_undealt_cards() {
         for players in [3, 4] {
-            let rules = Rules::default().for_players(players).unwrap();
+            let rules = Rules::web_mighty().for_players(players).unwrap();
             let dealt = rules.card_set();
             let mut rng = StdRng::seed_from_u64(players as u64);
             for game in 0..20 {

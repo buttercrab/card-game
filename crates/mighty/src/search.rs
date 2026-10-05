@@ -14,7 +14,7 @@ use crate::deal::Deal;
 pub use crate::deal::Sampler;
 use crate::read::Memo;
 pub use crate::read::Reading;
-use crate::rules::Contract;
+use crate::rules::{Contract, MAX_PLAYERS};
 use crate::state::{Action, FriendCall, Phase, State};
 use crate::view::{PhaseView, Seen, View};
 use engine::{Bot, Seat, Turn, Viewer};
@@ -545,7 +545,7 @@ impl Dealer {
 }
 
 /// Cards dealt to every seat, and the cards dealt face down.
-pub(crate) type Dealt = ([CardSet; 8], Vec<Card>);
+pub(crate) type Dealt = ([CardSet; MAX_PLAYERS], Vec<Card>);
 
 /// Deals `cards` into hands of the given sizes plus `discards` face-down
 /// cards. Each card goes to a random place with room, weighted by room left.
@@ -561,12 +561,12 @@ fn deal(
     // Searches deal thousands of times a move, so this keeps to counts and
     // bit sets.
     let seats = capacity.len();
-    let mut held = [0usize; 8];
-    let mut hands = [CardSet::EMPTY; 8];
+    let mut held = [0usize; MAX_PLAYERS];
+    let mut hands = [CardSet::EMPTY; MAX_PLAYERS];
     let mut down = Vec::with_capacity(discards);
     for &card in cards {
         let suit = card.suit().map_or(0, |s| 1 << s as u8);
-        let mut rooms = [0usize; 8];
+        let mut rooms = [0usize; MAX_PLAYERS];
         for s in 0..seats {
             let lacks = respect_voids && void[s] & suit != 0;
             if held[s] < capacity[s] && !lacks {

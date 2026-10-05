@@ -13,7 +13,7 @@ def concat(batches: list[Batch]) -> Batch:
 
 def test_reads_the_metadata(dataset: Dataset) -> None:
     assert dataset.name == "tiny"
-    assert dataset.encoding == dataset.spec.version == "mighty-3"
+    assert dataset.encoding == dataset.spec.version == "mighty-4"
     assert dataset.bots == ("random", "simple", "초보")
     assert not dataset.eval_only
     assert len(dataset.shards) >= 2

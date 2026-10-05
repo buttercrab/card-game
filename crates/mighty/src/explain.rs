@@ -131,7 +131,7 @@ mod tests {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(11);
         let mut rule_sets: Vec<Rules> = Preset::ALL.iter().map(|p| p.rules()).collect();
         for _ in 0..30 {
-            rule_sets.push(Rules::default().varied(&mut rng));
+            rule_sets.push(Rules::web_mighty().varied(&mut rng));
         }
         let mut explained = 0;
         let mut kinds = std::collections::HashSet::new();

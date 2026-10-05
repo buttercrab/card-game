@@ -281,7 +281,7 @@ fn clumsy_slips_never_throw_a_joker() {
 /// and ♣A went in earlier tricks; the other seats hold only low spades and
 /// diamonds, and so do the discards.
 fn short_deck_lead(players: usize) -> (View, Vec<Action>) {
-    let rules = Rules::default().for_players(players).unwrap();
+    let rules = Rules::web_mighty().for_players(players).unwrap();
     let hand = vec![
         Card::new(Suit::Club, 13),
         Card::new(Suit::Diamond, 9),

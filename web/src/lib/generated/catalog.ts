@@ -4,7 +4,7 @@
 import type { Catalog } from './protocol';
 
 export const CATALOG: Catalog = {
-  "protocol": "4a7bb8eb0a60",
+  "protocol": "40cd2023307a",
   "presets": [
     {
       "id": "default",
@@ -67,9 +67,8 @@ export const CATALOG: Catalog = {
           ],
           "threshold": 1,
           "all_points": false,
-          "after_bidding": false,
+          "window": "BeforeFirstBid",
           "declarer": false,
-          "ask_first": true,
           "caller_deals": true
         },
         "bidding": {
@@ -182,9 +181,8 @@ export const CATALOG: Catalog = {
           ],
           "threshold": 2,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -300,9 +298,8 @@ export const CATALOG: Catalog = {
           "card_values": [],
           "threshold": 0,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -404,9 +401,8 @@ export const CATALOG: Catalog = {
           "card_values": [],
           "threshold": 0,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -508,9 +504,8 @@ export const CATALOG: Catalog = {
           "card_values": [],
           "threshold": 1,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -612,9 +607,8 @@ export const CATALOG: Catalog = {
           "card_values": [],
           "threshold": 0,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -716,9 +710,8 @@ export const CATALOG: Catalog = {
           "card_values": [],
           "threshold": 0,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -866,9 +859,8 @@ export const CATALOG: Catalog = {
           ],
           "threshold": 1,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -998,9 +990,8 @@ export const CATALOG: Catalog = {
           ],
           "threshold": 1,
           "all_points": false,
-          "after_bidding": false,
+          "window": "OwnTurnUntilBid",
           "declarer": false,
-          "ask_first": false,
           "caller_deals": false
         },
         "bidding": {
@@ -1101,9 +1092,8 @@ export const CATALOG: Catalog = {
       "card_values": [],
       "threshold": 0,
       "all_points": false,
-      "after_bidding": false,
+      "window": "OwnTurnUntilBid",
       "declarer": false,
-      "ask_first": false,
       "caller_deals": false
     },
     "bidding": {
