@@ -7,9 +7,10 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
-from loopkit import EVAL, make_layout, spec
+from loopkit import DMC, EVAL, make_layout, spec
 
 from cardgame_ml.loop.executors import (
     LocalExecutor,
@@ -20,7 +21,6 @@ from cardgame_ml.loop.executors import (
     run_folder,
     upload_argv,
 )
-from cardgame_ml.loop.fields import FieldError
 from cardgame_ml.loop.policy import Policy, parse_policy
 from cardgame_ml.loop.records import Records, RunRecord, StepRecord
 from cardgame_ml.loop.safety import (
@@ -34,6 +34,7 @@ from cardgame_ml.loop.safety import (
 from cardgame_ml.loop.spec import SpecError, parse_spec
 from cardgame_ml.loop.steps import Step
 from cardgame_ml.loop.validate import Known, check
+from cardgame_ml.schema import SchemaError
 
 CRAFTED = [
     "..",
@@ -251,10 +252,15 @@ def test_crafted_records_are_never_loaded(tmp_path: Path) -> None:
     bad = good.to_json() | {"folder": "../../../etc"}
     (layout.live / "bad.json").write_text(json.dumps(bad), encoding="utf-8")
     worse = good.to_json() | {"folder": "2026-10-06-worse"}
-    worse["steps"] = [StepRecord(Step("x", ("true",), "mac", 1)).to_json()]
-    worse["steps"][0]["step"]["name"] = "../../x"
+    step = StepRecord(Step("x", ("true",), "mac", 1)).to_json()
+    step["step"] = {**cast(dict[str, object], step["step"]), "name": "../../x"}
+    worse["steps"] = [step]
     (layout.live / "worse.json").write_text(json.dumps(worse), encoding="utf-8")
     assert [r.folder for r in records.all()] == ["2026-10-06-good"]
+    # Set aside with the reason, never deleted.
+    quarantined = sorted(p.name for p in records.quarantine.rglob("*") if p.is_file())
+    assert quarantined == ["bad.json", "bad.json.reason.txt", "worse.json", "worse.json.reason.txt"]
+    assert not (layout.live / "bad.json").exists()
     with pytest.raises(UnsafePathError):
         records.save(_run("../x"))
 
@@ -292,8 +298,44 @@ def test_crafted_hosts_are_refused(tmp_path: Path) -> None:
     for key, value in (("ssh", "-oProxyCommand=sh"), ("ssh", "home x"), ("root", "../x")):
         crafted = json.loads(json.dumps(data))
         crafted["hosts"]["home"][key] = value
-        with pytest.raises(FieldError):
+        with pytest.raises(SchemaError):
             parse_policy(crafted, "t")
+
+
+def test_hosts_come_from_the_policys_roles(tmp_path: Path) -> None:
+    """Steps go where the policy's roles say, whatever the hosts are called;
+    a train host must be this machine with a GPU."""
+    import tomllib  # noqa: PLC0415
+
+    from cardgame_ml.loop.methods import METHODS, Context  # noqa: PLC0415
+    from cardgame_ml.loop.steps import Role  # noqa: PLC0415
+
+    layout = make_layout(tmp_path)
+    with layout.policy.open("rb") as f:
+        data = tomllib.load(f)
+    for changes, message in (
+        ({"train_host": "home"}, "this machine, with a GPU"),
+        ({"cost_host": "attic"}, "no host 'attic'"),
+    ):
+        with pytest.raises(SchemaError, match=message):
+            parse_policy({**data, **changes}, "t")
+    hosts = {"studio": data["hosts"]["mac"], "rack": data["hosts"]["home"]}
+    policy = parse_policy(
+        {**data, "hosts": hosts, "train_host": "studio", "cost_host": "rack"}, "t"
+    )
+    assert policy.hosts["studio"].name == "studio"
+    dmc = parse_spec(spec(DMC, resources={"host": "studio", "eval_host": "rack"}), "t")
+    plan = METHODS["dmc"].plan(Context(dmc, policy, layout.repo, "x", None))
+    assert {s.host for s in plan.steps if s.role != Role.EVAL} == {"studio"}
+    costed = spec(EVAL, resources={"host": "studio", "eval_host": "studio"}, evals={"cost": True})
+    plan = METHODS["search-tuning"].plan(
+        Context(parse_spec(costed, "t"), policy, layout.repo, "y", "hard")
+    )
+    assert [(s.role, s.host) for s in plan.steps] == [
+        (Role.BUILD, "studio"),
+        (Role.EVAL, "studio"),
+        (Role.COST, "rack"),
+    ]
 
 
 def test_steps_never_see_secrets() -> None:

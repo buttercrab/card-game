@@ -130,6 +130,16 @@ in `methods/__init__.py`, test `check` and `plan` like
    commits `research/` records (never pushes); on any other branch it
    refuses to run unless `--no-commit`.
 
+A run's record that does not read (not JSON, an unknown key, an unsafe
+name) is never acted on: it is moved to `<store>/loop/quarantine/` with
+a `.reason.txt` beside it, and the tick goes on with the others. A tick
+that fails is logged with its traceback; after three failures in a row
+the wait between ticks doubles with each further one, up to 30 minutes.
+
+Training and every GPU step run on the policy's `train_host` (this
+machine, with the GPU; `eval` is built there first when steps run
+there); think time is measured on its `cost_host`.
+
 Only one runner works at a time (a lock in `<store>/loop/runner.lock`).
 Steps run in their own process groups and write their exit code to a
 file, so a restarted runner adopts running steps and reads finished
@@ -148,8 +158,8 @@ output and log are fetched back when it ends. Every remote command is
 `ssh home bash -s` (the login shell is fish). The loop touches nothing
 outside `~/research/card-game` (never Docker, systemd or the bot worker),
 keeps at most 6 threads there (12 for a step that has the server to
-itself), starts nothing while the load average is above 6, and keeps
-only the newest three code folders.
+itself) and starts nothing while the load average is above 6. Unpacked
+code folders are not removed by the loop (clear `code/` by hand).
 
 ## Scoring
 
@@ -162,9 +172,12 @@ The protocol is the policy's, not the spec's:
   held-out rule sets: `eval` does, from the suite), always with `hard`
   (고수) as a deal-by-deal baseline for training runs, which play at
   least ladder, presets and held-out; think time on the home server.
-- **Against the parent**: on the ladder rating (else presets, else a
-  head-to-head's pooled tables), deal by deal when the parent's bot was
-  the baseline, else the difference of the two runs' ratings.
+- **Against the parent**: on the protocol's `primary` metric only (the
+  ladder rating), deal by deal when the parent's bot was the baseline,
+  else the difference of the two runs' ratings against `baseline`; a run
+  that did not measure the primary metric is not compared. The runner
+  finds each result by its step's role (`eval` against a baseline,
+  `cost`), never by the step's name.
 - **Confirmation**: a run that beats its parent beyond the 95% interval
   is a *candidate*; the runner queues `<id>-confirm`: the same spec on
   training seed + 1000, played deal by deal against the parent's bot on

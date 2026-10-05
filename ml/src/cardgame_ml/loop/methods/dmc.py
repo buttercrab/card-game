@@ -8,20 +8,23 @@ the GPU, write the curve from the log, export to ONNX, then the suite
 as ``dmc:<model>``.
 """
 
-import importlib
-import tempfile
 from pathlib import Path
 
-from cardgame_ml.loop import tomlw
+from cardgame_ml import schema
 from cardgame_ml.loop.configs import effective_config
-from cardgame_ml.loop.methods.base import Context, Plan, check_options, eval_steps
+from cardgame_ml.loop.methods.base import (
+    CURVE_STEP,
+    Context,
+    Plan,
+    check_options,
+    check_trains_here,
+    eval_steps,
+)
 from cardgame_ml.loop.policy import Policy
 from cardgame_ml.loop.spec import Spec, SpecError
-from cardgame_ml.loop.steps import Step
-
-REQUIRED = ("name", "seed", "rules", "exclude", "budget", "model", "actors", "optim", "curve")
-"""Tables and keys a DMC config has (checked when the trainer's own
-schema cannot be imported)."""
+from cardgame_ml.loop.steps import Role, Step
+from cardgame_ml.train.dmc.config import DmcConfig
+from cardgame_ml.train.dmc.report import CURVE_FILE
 
 
 class Dmc:
@@ -30,9 +33,8 @@ class Dmc:
 
     def check(self, spec: Spec, policy: Policy, repo: Path) -> list[str]:
         problems = check_options(spec, {"temperature": float})
+        problems += check_trains_here(spec, policy, "DMC")
         b = spec.budget
-        if not b.gpu or spec.resources.host != "mac":
-            problems.append("budget: DMC trains on the Mac's GPU (gpu = true, host = mac)")
         if b.train_hours <= 0 or b.hands <= 0:
             problems.append("budget: train_hours and hands are required for training")
         if spec.config.base is None and spec.config.inline is None:
@@ -44,7 +46,10 @@ class Dmc:
             return [*problems, str(e)]
         if config.get("exclude") != policy.exclude:
             problems.append(f"config: exclude must stay {policy.exclude}")
-        problems += _schema(config)
+        try:
+            schema.read(DmcConfig, config, "effective config", defaults=False)
+        except ValueError as e:
+            problems.append(f"config: {e}")
         return problems
 
     def plan(self, ctx: Context) -> Plan:
@@ -52,19 +57,20 @@ class Dmc:
         model = f"models/{ctx.name}"
         temperature = ctx.spec.options.get("temperature")
         bot = f"dmc:{{artifacts}}/{model}" + (f":{temperature}" if temperature else "")
+        here = ctx.policy.train_host
         train = Step(
             name="train",
             argv=("{python}", "-m", "cardgame_ml.train.dmc", "--config", "{run}/config.toml"),
-            host="mac",
+            host=here,
             threads=ctx.spec.resources.threads,
             gpu=True,
             cwd="ml",
-            resumable=True,
             grace_seconds=120.0,
             clean=True,
+            role=Role.TRAIN,
         )
         curve = Step(
-            name="curve",
+            name=CURVE_STEP,
             argv=(
                 "{python}",
                 "-m",
@@ -72,19 +78,21 @@ class Dmc:
                 "--run",
                 ctx.name,
                 "--out",
-                "{out}/curve.json",
+                f"{{out}}/{CURVE_FILE}",
             ),
-            host="mac",
+            host=here,
             threads=1,
             cwd="ml",
+            role=Role.CURVE,
         )
         export = Step(
             name="export",
             argv=("{python}", "-m", "cardgame_ml.export", "--run", ctx.name),
-            host="mac",
+            host=here,
             threads=2,
             cwd="ml",
             clean=True,
+            role=Role.EXPORT,
         )
         return Plan([train, curve, export, *eval_steps(ctx, bot)], bot, model, config)
 
@@ -94,24 +102,6 @@ class Dmc:
             "seed": spec.seed,
             "budget.hours": spec.budget.train_hours,
             "budget.hands": spec.budget.hands,
-            "curve": policy.protocol.curve.to_table(),
+            "curve": schema.table(policy.protocol.curve),
         }
         return effective_config(spec, repo, decided, frozenset({"exclude"}))
-
-
-def _schema(config: dict[str, object]) -> list[str]:
-    """The trainer's own check of the config, when its code is here;
-    otherwise that the tables it needs are present."""
-    try:
-        module = importlib.import_module("cardgame_ml.train.dmc.config")
-    except ImportError:
-        missing = [key for key in REQUIRED if key not in config]
-        return [f"config: missing {', '.join(missing)}"] if missing else []
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "config.toml"
-        path.write_text(tomlw.dumps(config), encoding="utf-8")
-        try:
-            module.DmcConfig.load(path)
-        except ValueError as e:
-            return [f"config: {e}".replace(str(path), "effective config")]
-    return []

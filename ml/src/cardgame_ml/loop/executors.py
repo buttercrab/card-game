@@ -38,7 +38,6 @@ from typing import Protocol
 from cardgame_ml.loop.policy import Host
 from cardgame_ml.loop.records import RunRecord, StepRecord
 from cardgame_ml.loop.safety import (
-    COMMIT,
     UnsafePathError,
     absolute,
     commit,
@@ -49,6 +48,7 @@ from cardgame_ml.loop.safety import (
     ssh_destination,
     step_environment,
 )
+from cardgame_ml.runtime import alive
 
 RUNNING = "running"
 LOST = "lost"
@@ -142,7 +142,7 @@ class LocalExecutor:
         if record.pid is None or record.log is None:
             return LOST
         child = self._children.get(record.pid)
-        ended = child.poll() is not None if child else not _alive(record.pid)
+        ended = child.poll() is not None if child else not alive(record.pid)
         code = _read_exit(_exit_file(Path(record.log)))
         if code is not None:
             if child is not None and ended:
@@ -390,21 +390,6 @@ echo $!
             subprocess.run(argv, check=False, timeout=600)
         self._bash(f"rm -rf -- {shlex.quote(checked_workdir(root, record.workdir))}")
 
-    def prune(self, keep: set[str]) -> None:
-        """Removes unpacked code of commits no run uses (``keep``: the
-        commits of active runs), but the newest three."""
-        root = self._root()
-        if root is None:
-            return
-        kept = " ".join(shlex.quote(c[:12]) for c in sorted(keep) if COMMIT.fullmatch(c))
-        self._bash(
-            f"cd -- {shlex.quote(root)}/code 2>/dev/null || exit 0\n"
-            f"keep=({kept})\n"
-            "ls -t | tail -n +4 | while read -r d; do\n"
-            '  case " ${keep[*]:-} " in *" $d "*) ;; *) rm -rf -- "$d" ;; esac\n'
-            "done\n"
-        )
-
 
 def _exit_file(log: Path) -> Path:
     return log.with_suffix(".exit")
@@ -415,16 +400,6 @@ def _read_exit(path: Path) -> int | None:
         return int(path.read_text().strip())
     except (FileNotFoundError, ValueError):
         return None
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
 
 
 def executors(

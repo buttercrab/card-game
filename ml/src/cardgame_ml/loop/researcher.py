@@ -63,7 +63,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from cardgame_ml.loop.layout import Layout
 from cardgame_ml.loop.policy import Policy
@@ -71,6 +71,10 @@ from cardgame_ml.loop.queue import blocked, read_queue, reject, waiting_for
 from cardgame_ml.loop.records import Records, parse_stamp, stamp
 from cardgame_ml.loop.safety import UnsafePathError, inside, name, researcher_environment
 from cardgame_ml.loop.validate import Known, check_file
+from cardgame_ml.runtime import alive as process_alive
+
+if TYPE_CHECKING:
+    from cardgame_ml.loop.scheduler import Runner
 
 WITHDRAW = "research/loop/withdraw.txt"
 """Queued spec files the researcher wants dropped, one per line (it has
@@ -279,22 +283,6 @@ def spawn(argv: list[str], cwd: Path, transcript: Path) -> int:
     return child.pid
 
 
-def _alive(pid: int) -> bool:
-    try:
-        waited, _ = os.waitpid(pid, os.WNOHANG)
-        if waited:
-            return False
-    except ChildProcessError:
-        pass
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
 class Researcher:
     """The runner's hook that calls the researcher and checks its work.
     A call runs in the background; the hook looks at it every tick."""
@@ -306,11 +294,13 @@ class Researcher:
         git: Checkout,
         *,
         spawn: Spawn = spawn,
-        alive: Callable[[int], bool] = _alive,
+        alive: Callable[[int], bool] = process_alive,
     ) -> None:
         self.layout, self.policy, self.git = layout, policy, git
         self.spawn, self.alive = spawn, alive
         self.state_file = layout.researcher_call
+        self.records = Records(layout.experiments, layout.live)
+        """The runs, as the runner sees them when it calls (else read here)."""
 
     # -- when ----------------------------------------------------------
 
@@ -367,7 +357,7 @@ class Researcher:
         return None
 
     def briefing(self, now: datetime) -> Briefing:
-        runs = Records(self.layout.experiments, self.layout.live).by_id()
+        runs = self.records.by_id()
         queue = [q for q in read_queue(self.layout.queue) if q.spec is not None]
         runnable = sum(
             not blocked(waiting_for(q.spec, runs, self.layout.artifacts))
@@ -376,13 +366,8 @@ class Researcher:
         )
         recent: list[str] = []
         for record in sorted(runs.values(), key=lambda r: r.created, reverse=True)[:12]:
-            c = record.comparison or {}
-            diff = c.get("diff")
-            versus = (
-                f", vs parent {diff['mean']:+.2f} ± {diff['ci95']:.2f}"
-                if isinstance(diff, dict)
-                else ""
-            )
+            c = record.comparison
+            versus = f", vs parent {c.diff}" if c is not None else ""
             recent.append(
                 f"{record.id} ({record.method}, {record.status}{versus}): "
                 f"research/experiments/{record.folder}/summary.md"
@@ -401,7 +386,11 @@ class Researcher:
 
     # -- the hook --------------------------------------------------------
 
-    def __call__(self, _runner: object, now: datetime) -> bool:
+    def __call__(self, runner: "Runner | None", now: datetime) -> bool:
+        if runner is not None:
+            self.records = runner.records  # this tick's, read once
+        else:
+            self.records.refresh()
         if self.state_file.exists():
             return self._watch(now)
         if self.not_due(now) is None:
@@ -457,7 +446,7 @@ class Researcher:
     def settle(self, call: dict[str, Any], now: datetime, outcome: str) -> dict[str, Any]:
         before: dict[str, Any] = call["before"]
         changed = sorted(set(self.git.changed()) - set(before["changed"]))
-        folders = {r.folder for r in Records(self.layout.experiments, self.layout.live).all()}
+        folders = {r.folder for r in self.records.all()}
         violations = [
             p
             for p in changed
@@ -560,7 +549,7 @@ class Researcher:
         """Checks every spec in the inbox, in file order: the good ones move
         to the queue, the others to ``rejected/``. The inbox ends empty."""
         layout, policy = self.layout, self.policy
-        runs = Records(layout.experiments, layout.live).by_id()
+        runs = self.records.by_id()
         queue = read_queue(layout.queue)
         fresh = sorted(layout.inbox.glob("*.toml")) if layout.inbox.is_dir() else []
         inbox = read_queue(layout.inbox)

@@ -2,18 +2,32 @@
 lost steps, restarts, the lock, and confirmations, with fake hosts that
 run nothing."""
 
+import dataclasses
+import json
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from loopkit import DMC, EVAL, Clock, FakeHost, make_layout, results, spec, write, write_results
 
+from cardgame_ml.loop.evals import Estimate
 from cardgame_ml.loop.executors import LOST, HostExecutor, LocalExecutor, Places
 from cardgame_ml.loop.layout import Layout
+from cardgame_ml.loop.leaderboard import row
+from cardgame_ml.loop.methods import METHODS, Context
 from cardgame_ml.loop.policy import Policy
-from cardgame_ml.loop.records import RunRecord, StepRecord
-from cardgame_ml.loop.scheduler import Runner, RunnerLock, Usage, Want, admit
-from cardgame_ml.loop.spec import load_spec
+from cardgame_ml.loop.promotion import assess
+from cardgame_ml.loop.records import Records, RunRecord, RunStatus, StepRecord, StepStatus
+from cardgame_ml.loop.scheduler import (
+    MAX_BACKOFF_SECONDS,
+    Runner,
+    RunnerLock,
+    Usage,
+    Want,
+    admit,
+    backoff,
+)
+from cardgame_ml.loop.spec import load_spec, parse_spec
 from cardgame_ml.loop.steps import Step
 
 
@@ -359,3 +373,102 @@ def _wait(host: LocalExecutor, record: StepRecord) -> object:
             return result
         time.sleep(0.05)
     raise AssertionError("the step did not end")
+
+
+def test_a_malformed_record_is_quarantined_and_the_rest_go_on(setup: Setup) -> None:
+    write(setup.layout, spec(EVAL, id="fine"))
+    setup.runner.tick()
+    assert setup.hosts["home"].started == ["fine:eval-parent"]
+    live = setup.layout.live
+    (live / "junk.json").write_text("{not json", encoding="utf-8")
+    good = json.loads(next(live.glob("*fine.json")).read_text(encoding="utf-8"))
+    typo = {**good, "folder": "2026-10-06-typo", "colour": "red"}
+    (live / "typo.json").write_text(json.dumps(typo), encoding="utf-8")
+    setup.end("fine", "eval-parent")
+    setup.runner.tick()
+    assert setup.run("fine").status == RunStatus.SUCCEEDED
+    assert sorted(p.name for p in live.iterdir()) == []
+    quarantine = setup.layout.state / "quarantine"
+    reasons = [p.read_text(encoding="utf-8") for p in quarantine.rglob("*.reason.txt")]
+    assert len(reasons) == 2
+    assert any("unknown colour" in r for r in reasons)
+    assert sum(line.startswith("quarantined") for line in setup.said) == 2
+    # Read once a tick: a third tick finds nothing more to set aside.
+    setup.runner.tick()
+    assert sum(line.startswith("quarantined") for line in setup.said) == 2
+
+
+def test_failed_ticks_are_logged_and_back_off(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken() -> None:
+        raise OSError("disk hiccup")
+
+    monkeypatch.setattr(setup.runner, "tick", broken)
+    waits: list[float] = []
+    setup.runner.serve(10.0, sleep=waits.append, ticks=6)
+    assert waits == [10.0, 10.0, 20.0, 40.0, 80.0]
+    assert any("tick failed (3 in a row): OSError: disk hiccup" in s for s in setup.said)
+    assert any(s.startswith("Traceback") for s in setup.said)
+    assert backoff(30.0, 20) == MAX_BACKOFF_SECONDS
+    assert backoff(30.0, 0) == 30.0
+    # A tick that works again resets the wait.
+    outcomes = iter([True, True, True, True, False, False])
+
+    def flaky() -> None:
+        if next(outcomes):
+            raise OSError("x")
+
+    monkeypatch.setattr(setup.runner, "tick", flaky)
+    waits.clear()
+    setup.runner.serve(10.0, sleep=waits.append, ticks=6)
+    assert waits == [10.0, 10.0, 20.0, 40.0, 10.0]
+
+
+def test_a_slugged_baseline_is_found_by_its_role(layout: Layout, policy: Policy) -> None:
+    """A protocol baseline that is no safe step name (its step is
+    ``eval-baseline1``) is still the one runs are compared on."""
+    baseline = "hard@endgame=3"
+    policy = dataclasses.replace(
+        policy, protocol=dataclasses.replace(policy.protocol, baseline=baseline)
+    )
+    parsed = parse_spec(spec(EVAL, parent=None, evals={"baselines": [baseline]}), "t")
+    plan = METHODS["search-tuning"].plan(Context(parsed, policy, layout.repo, "x", None))
+    assert [s.name for s in plan.steps] == ["eval-baseline1"]
+    records = Records(layout.experiments, layout.live)
+
+    def run(run_id: str, parent: str | None, rating: float) -> RunRecord:
+        record = RunRecord(
+            id=run_id,
+            folder=f"2026-10-06-{run_id}",
+            method="search-tuning",
+            tags=["search"],
+            parent=parent,
+            confirms=None,
+            priority=0,
+            commit="c",
+            dirty=False,
+            created="2026-10-06T00:00:00Z",
+            deadline="2026-10-07T00:00:00Z",
+            wall_hours=4.0,
+            gpu=False,
+            steps=[StepRecord(step, StepStatus.DONE) for step in plan.steps],
+            status=RunStatus.SUCCEEDED,
+        )
+        records.save(record)
+        write_results(layout, record, "eval-baseline1", results("b", baseline, rating, 0.0))
+        return record
+
+    parent = run("parent-run", None, 1.0)
+    child = run("child-run", "parent-run", 3.0)
+    folder = records.folder(child)
+    comparison = assess(child, folder, policy, records.by_id(), layout.experiments)
+    assert comparison is not None
+    assert (comparison.metric, comparison.paired, comparison.beats) == ("ladder", False, True)
+    assert comparison.diff.mean == pytest.approx(2.0)
+    assert row(child, folder, baseline).rating == Estimate(3.0, 0.3, 1000)
+    assert row(parent, records.folder(parent), "hard").rating is None
+    # The primary metric only: without it measured there is no comparison.
+    primary = dataclasses.replace(policy.protocol, primary="heldout")
+    unmeasured = dataclasses.replace(policy, protocol=primary)
+    assert assess(child, folder, unmeasured, records.by_id(), layout.experiments) is None
