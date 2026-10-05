@@ -72,11 +72,17 @@ worker that thinks for its bots.
 [`Dockerfile`](Dockerfile) builds the web client and the server into one
 image serving port 3030. On the home server, a systemd timer runs
 [`deploy/update.sh`](deploy/update.sh) every two minutes: when `main`
-moves it rebuilds, restarts the bot worker
+moves and its CI run is green, it rebuilds, restarts the bot worker
 ([`deploy/compose.yaml`](deploy/compose.yaml)) and ships the image to
 Seoul, where [`deploy/seoul/`](deploy/seoul) runs it behind
-Caddy with an automatic certificate. Tables are saved in a `tables`
-volume, so a deploy only drops connections for a moment.
+Caddy with an automatic certificate. On a stop signal the server saves
+every table to its `tables` volume and the next start restores them, so a
+deploy only drops connections for a moment; players see "잠깐 다시 연결하는
+중" and get their seats back. The image that ran before stays as
+`card-game:previous`, and [`deploy/rollback.sh`](deploy/rollback.sh) puts
+it back in both places (run it again to undo). A second timer runs
+[`deploy/backup.sh`](deploy/backup.sh) daily, keeping 30 days of the
+Seoul data directory (stats log, tables, reports) on the home server.
 
 ```sh
 docker build -t card-game .
@@ -88,7 +94,11 @@ a Content Security Policy. The client needs a `blob:` worker (its
 background timer), `blob:` images (the share card), its own fonts and
 music, and Cloudflare's beacon; change the policy when the client starts
 loading anything new. The server itself rate-limits table creation,
-reports, client errors and WebSocket connects per client address.
+reports, client errors and WebSocket connects per client address; caps
+open tables (`--max-rooms`, 500), request bodies, WebSocket message size
+and each connection's message and hint rate; and runs at most two hint
+searches at once. `/stats` shows open tables and the bot worker's link,
+and the log warns when tables think with in-process bots instead.
 
 ### Stats and analytics
 

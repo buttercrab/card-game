@@ -45,6 +45,8 @@ const ERRORS: [RegExp, string][] = [
   [/no-trump bonus/, '노기루다 보너스는 최소 공약보다 작아야 해요'],
   [/no way to choose a friend/, '프렌드를 정하는 방법을 하나는 골라 주세요'],
   [/invalid rules/, '그 규칙으로는 게임을 할 수 없어요'],
+  [/hints are busy/, '지금은 힌트를 보는 사람이 많아요. 잠시 뒤에 다시 해 주세요'],
+  [/hints too often/, '힌트는 잠시 뒤에 다시 볼 수 있어요'],
 ];
 
 function translate(message: string): string {
@@ -119,9 +121,12 @@ export class RoomClient {
     };
   }
 
+  /** Only the server's own "not found" means the table is gone. While the
+   * server restarts (a deploy), the proxy answers 502 and the fetch may fail
+   * outright: keep retrying, and the seat token reclaims the seat after. */
   async #exists(): Promise<boolean> {
     try {
-      return (await fetch(`/api/rooms/${this.#id}`)).ok;
+      return (await fetch(`/api/rooms/${this.#id}`)).status !== 404;
     } catch {
       return true;
     }

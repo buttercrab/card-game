@@ -108,6 +108,40 @@ async fn main() -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(args.addr).await?;
     tracing::info!("listening on http://{}", listener.local_addr()?);
     // The peer address backs the rate limits when no proxy names the client.
-    let app = router(state, Some(args.web)).into_make_service_with_connect_info::<SocketAddr>();
-    axum::serve(listener, app).await
+    let app = router(state.clone(), Some(args.web)).into_make_service_with_connect_info::<SocketAddr>();
+    // Open WebSockets would hold a graceful shutdown forever, so on a stop
+    // signal the rooms save themselves and the process simply ends; the
+    // next server restores them and clients reconnect with their tokens.
+    tokio::select! {
+        served = axum::serve(listener, app) => served,
+        () = stop_signal() => {
+            let saved = state.shutdown(Duration::from_secs(5)).await;
+            tracing::info!(saved, "stopping; tables saved for the next start");
+            Ok(())
+        }
+    }
+}
+
+/// SIGTERM (`docker stop`) or Ctrl-C.
+async fn stop_signal() {
+    let ctrl_c = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    #[cfg(unix)]
+    let term = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut term) => {
+                term.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+    tokio::select! {
+        () = ctrl_c => {}
+        () = term => {}
+    }
 }

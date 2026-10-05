@@ -98,7 +98,46 @@ pub async fn stats_json(State(app): State<AppState>, uri: Uri, headers: HeaderMa
     if let Some(denied) = gate(&app, &uri, &headers) {
         return denied;
     }
-    private(axum::Json(app.stats.summary(now())).into_response())
+    let mut body = serde_json::to_value(app.stats.summary(now())).unwrap_or_default();
+    if let Ok(server) = serde_json::to_value(app.server_status()) {
+        body["server"] = server;
+    }
+    private(axum::Json(body).into_response())
+}
+
+/// What the server is doing right now, beside the logged stats.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ServerStatus {
+    pub rooms: usize,
+    pub max_rooms: usize,
+    pub worker: crate::bots::WorkerStatus,
+}
+
+/// The server section: open tables and the bot worker's link.
+fn server_section(s: &ServerStatus) -> String {
+    let w = &s.worker;
+    let link = match (w.expected, w.connected) {
+        (_, true) => "연결됨".to_string(),
+        (true, false) => "<b class=\"warn\">끊김: 봇이 이 서버에서 생각해요</b>".to_string(),
+        (false, false) => "쓰지 않음".to_string(),
+    };
+    let mut out = String::from("<section><h2>서버</h2><table>");
+    rows(
+        &mut out,
+        [
+            ("열린 테이블".to_string(), format!("{} / {}", s.rooms, s.max_rooms)),
+            ("봇 워커".to_string(), link),
+            ("연결한 때".to_string(), w.since.map(time).unwrap_or_else(|| "–".into())),
+            (
+                "마지막 응답".to_string(),
+                w.last_seen.map(time).unwrap_or_else(|| "–".into()),
+            ),
+            ("워커가 둔 수".to_string(), w.answered.to_string()),
+            ("서버가 대신 둔 수".to_string(), w.fallbacks.to_string()),
+        ],
+    );
+    out.push_str("</table><p class=\"note\">서버가 시작한 뒤로 센 값이에요.</p></section>");
+    out
 }
 
 pub async fn stats_page(State(app): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
@@ -110,7 +149,7 @@ pub async fn stats_page(State(app): State<AppState>, uri: Uri, headers: HeaderMa
         .as_deref()
         .map(|dir| recent_reports(&dir.join("reports")))
         .unwrap_or_default();
-    let html = page_with(&app.stats.summary(now()), &reports);
+    let html = page_full(&app.stats.summary(now()), &reports, Some(&app.server_status()));
     private(([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
 }
 
@@ -267,6 +306,11 @@ pub fn page(s: &Summary) -> String {
 }
 
 pub fn page_with(s: &Summary, reports: &[ReportRow]) -> String {
+    page_full(s, reports, None)
+}
+
+/// The whole page, with the server's live state on top when given.
+pub fn page_full(s: &Summary, reports: &[ReportRow], server: Option<&ServerStatus>) -> String {
     let t = &s.totals;
     let mut body = String::new();
     let _ = write!(
@@ -274,6 +318,9 @@ pub fn page_with(s: &Summary, reports: &[ReportRow]) -> String {
         "<header><h1>마이티 통계</h1><p class=\"muted\">최근 30일 · 한국 시간 · {} 기준</p></header>",
         time(s.generated)
     );
+    if let Some(server) = server {
+        body.push_str(&server_section(server));
+    }
 
     body.push_str("<section class=\"tiles\">");
     for (label, value) in [
@@ -486,6 +533,7 @@ details{margin-top:8px}
 summary{cursor:pointer;color:var(--accent);font-weight:600}
 .muted,.note{color:var(--muted)}
 .note{font-size:13px;margin:4px 0 0}
+.warn{color:var(--accent)}
 "#;
 
 #[cfg(test)]
@@ -550,6 +598,27 @@ mod tests {
         assert!(!html.contains("<script>"), "no scripts at all");
         assert!(!html.contains("http"), "no external assets");
         assert!(html.contains("prefers-color-scheme:dark"));
+    }
+
+    #[test]
+    fn the_page_warns_when_the_expected_bot_worker_is_away() {
+        let server = ServerStatus {
+            rooms: 3,
+            max_rooms: 500,
+            worker: crate::bots::WorkerStatus {
+                expected: true,
+                connected: false,
+                since: None,
+                last_seen: Some(1_791_105_000),
+                answered: 12,
+                fallbacks: 4,
+            },
+        };
+        let summary = crate::stats::Stats::in_memory().summary(1_791_105_000);
+        let html = page_full(&summary, &[], Some(&server));
+        assert!(html.contains("3 / 500"));
+        assert!(html.contains("끊김"));
+        assert!(!page(&summary).contains("봇 워커"), "only with the server's state");
     }
 
     #[test]

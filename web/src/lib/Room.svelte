@@ -158,7 +158,13 @@
   {:else if !room}
     <p class="muted center">연결하는 중…</p>
   {:else}
-    {#if inHand && seated && offline.length > 0}
+    {#if client.status !== 'open'}
+      <!-- The link dropped (a deploy restarts the server): the client
+           reconnects on its own and reclaims the seat with its token. -->
+      <div class="banner" role="status">
+        <span>잠깐 다시 연결하는 중…</span>
+      </div>
+    {:else if inHand && seated && offline.length > 0}
       <div class="banner">
         {#each offline as o (o.seat)}
           <span>{o.name} 연결이 끊겼어요.</span>

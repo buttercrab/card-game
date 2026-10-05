@@ -13,6 +13,12 @@ services:
     # A nano instance earns little sustained CPU; cap bot thinking near what
     # 200 sampled deals take, so long bot games do not drain its burst credit.
     command: ["--bot-think-ms", "150"]
+    # The instance is small; cap the server so a runaway leaves room for
+    # Caddy and the system. When stopped it saves every table (well within
+    # the grace period) and the next start restores them.
+    mem_limit: 320m
+    memswap_limit: 320m
+    stop_grace_period: 20s
     # Secrets live on the instance, next to this file, never in the repository.
     env_file:
       # BOT_TOKEN, the secret the home server's bot worker presents.
@@ -40,6 +46,8 @@ services:
   caddy:
     image: caddy:2
     container_name: caddy
+    mem_limit: 128m
+    memswap_limit: 128m
     restart: unless-stopped
     ports:
       - "80:80"
