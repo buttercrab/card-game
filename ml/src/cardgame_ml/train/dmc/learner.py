@@ -37,6 +37,7 @@ import torch
 from cardgame_env import Env
 
 from cardgame_ml.data.spec import EncodingSpec
+from cardgame_ml.models.config import QConfig
 from cardgame_ml.models.q import QModel
 from cardgame_ml.train.belief import device_for
 from cardgame_ml.train.config import from_mapping
@@ -150,12 +151,13 @@ def describe(config: DmcConfig, spec: EncodingSpec, model: QModel) -> dict[str, 
 
 
 def load(run: Path, weights: Path | None = None, device: torch.device | None = None) -> QModel:
-    """The network of run directory ``run``: ``model.pt``, or another
-    weights file of it (a snapshot), in eval mode."""
+    """The network of run directory ``run`` (or of a model directory with
+    its ``config.json``): ``model.pt``, or another weights file (a
+    snapshot), in eval mode."""
     described = json.loads((run / "config.json").read_text(encoding="utf-8"))
     spec = EncodingSpec.from_json(described["spec"])
-    config = from_mapping(DmcConfig, described["config"], str(run / "config.json"))
-    model = QModel(spec, config.model)
+    where = str(run / "config.json")
+    model = QModel(spec, from_mapping(QConfig, described["config"]["model"], where))
     device = device or torch.device("cpu")
     path = weights or run / "model.pt"
     model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
@@ -257,6 +259,7 @@ class Learner:
         last_checkpoint = time.monotonic()
         window = _Window()
         added_session = trained_session = 0
+        ready: list[Batch] = []
         while True:
             progress.seconds = base_seconds + time.monotonic() - session_start
             if progress.hands >= budget.hands or progress.seconds >= budget.hours * 3600:
@@ -280,7 +283,9 @@ class Learner:
                 started = time.monotonic()
                 for group in self.optimizer.param_groups:
                     group["lr"] = _learning_rate(config, progress.step)
-                batch = buffer.sample(config.optim.batch_size, self.rng)
+                if not ready:
+                    ready = buffer.sample(config.optim.batch_size, self.rng, config.buffer.window)
+                batch = ready.pop()
                 window.loss += _step(
                     self.model,
                     self.optimizer,

@@ -2,6 +2,7 @@
 # for byte (no CRLF on Windows).
 research/evals/** -text
 
-# The belief-model parity fixture is generated (python -m
-# cardgame_ml.export.fixture); diffs of it mean nothing to read.
+# The parity fixtures are generated (python -m cardgame_ml.export.fixture);
+# diffs of them mean nothing to read.
 crates/infer/tests/tiny/** -text -diff linguist-generated
+crates/infer/tests/tiny-q/** -text -diff linguist-generated

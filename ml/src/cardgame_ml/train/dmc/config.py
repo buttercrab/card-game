@@ -24,6 +24,9 @@ class ActorConfig:
     """PyTorch threads per actor."""
     env_threads: int
     """Rust threads per actor's environments."""
+    groups: int
+    """Each step's decisions go through the network in this many batches
+    of about one sequence length (less padding)."""
     epsilon: float
     """Share of decisions taken uniformly among the legal actions."""
     refresh_every: int
@@ -39,6 +42,8 @@ class BufferConfig:
     capacity: int
     min_fill: int
     """Decisions in the buffer before the first step."""
+    window: int
+    """Batches drawn at once and cut by sequence length (less padding)."""
     replay_ratio: float
     """At most this many decisions trained on (counted with repeats) per
     decision played: the learner waits for the actors beyond it."""

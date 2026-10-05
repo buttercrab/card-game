@@ -54,6 +54,7 @@ processes = 5
 envs = 128
 threads = 2
 env_threads = 1
+groups = 4
 epsilon = 0.02
 refresh_every = 10
 chunk = 2048
@@ -62,6 +63,7 @@ chunk = 2048
 [buffer]
 capacity = 200000
 min_fill = 20000
+window = 8
 replay_ratio = 2.0
 
 [optim]

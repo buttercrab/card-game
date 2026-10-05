@@ -86,10 +86,17 @@ class ReplayBuffer:
         self.added += len(decisions)
         self.size = min(self.size + len(decisions), self.capacity)
 
-    def sample(self, count: int, rng: np.random.Generator) -> Batch:
-        """``count`` decisions drawn uniformly (with replacement), events cut
-        to the longest among them."""
-        rows = rng.integers(0, self.size, count)
+    def sample(self, count: int, rng: np.random.Generator, batches: int = 1) -> list[Batch]:
+        """``batches`` batches of ``count`` decisions drawn uniformly (with
+        replacement), events cut to the longest in each. The draws are
+        sorted by sequence length before they are cut into batches, so a
+        batch pads little; the batches come back in random order."""
+        rows = rng.integers(0, self.size, count * batches)
+        rows = rows[np.argsort(self.events_len[rows], kind="stable")]
+        cuts = [rows[i * count : (i + 1) * count] for i in range(batches)]
+        return [self._take(cuts[int(i)]) for i in rng.permutation(batches)]
+
+    def _take(self, rows: NDArray[np.int64]) -> Batch:
         longest = max(int(self.events_len[rows].max()), 1)
         return {
             "global": self.global_[rows],

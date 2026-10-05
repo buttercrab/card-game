@@ -53,7 +53,7 @@ def play(  # noqa: PLR0913
     rng = np.random.default_rng(0)
     model.eval()
     while not finished.all():
-        actions, values = legal_values(model, step, device)
+        actions, values = legal_values(model, step, device, groups=8)
         step = env.step(choose(actions, values, 0.0, rng))
         ended = step["done"] & ~finished
         payoff[ended] = step["reward"][ended, 0]

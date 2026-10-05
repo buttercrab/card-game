@@ -143,7 +143,7 @@ def run(  # noqa: PLR0913, PLR0917
                 model.load_state_dict(shared)
                 seen = version.value
         started = time.monotonic()
-        actions, values = legal_values(model, step, device)
+        actions, values = legal_values(model, step, device, a.groups)
         chosen = choose(actions, values, a.epsilon, rng)
         hands.record(step, chosen)
         stepped = time.monotonic()

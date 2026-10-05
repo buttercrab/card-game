@@ -26,6 +26,9 @@ def legal_actions(legal: NDArray[np.bool_]) -> tuple[NDArray[np.int64], NDArray[
 type Observations = Mapping[str, Any]
 """A step's arrays (``cardgame_env.Step``) or a batch with the same keys."""
 
+OBSERVATION_KEYS = ("global", "cards", "events", "event_cards", "events_len", "legal")
+"""What a network reads of a step to play."""
+
 
 def observation_tensors(step: Observations, device: torch.device) -> tuple[torch.Tensor, ...]:
     """The trunk's inputs from a step's arrays, events cut to the longest
@@ -42,15 +45,27 @@ def observation_tensors(step: Observations, device: torch.device) -> tuple[torch
 
 
 def legal_values(
-    model: QModel, step: Observations, device: torch.device
+    model: QModel, step: Observations, device: torch.device, groups: int = 1
 ) -> tuple[NDArray[np.int64], NDArray[np.float32]]:
     """For each decision of a step: its legal actions ``[B, K]`` (as
     :func:`legal_actions`) and their values ``[B, K]``, ``-inf`` at
-    padding."""
+    padding. With ``groups`` > 1 the decisions run in that many batches
+    of about one sequence length each (fewer padding events to attend
+    over; the values are the same)."""
     actions, valid = legal_actions(np.asarray(step["legal"], np.bool_))
-    with torch.inference_mode():
-        q = model(*observation_tensors(step, device), torch.as_tensor(actions, device=device))
-    values = q.float().cpu().numpy()
+    values = np.full(actions.shape, -np.inf, np.float32)
+    order = np.argsort(np.asarray(step["events_len"]), kind="stable")
+    for rows in np.array_split(order, min(groups, len(order))):
+        if not len(rows):
+            continue
+        part = {key: np.asarray(step[key])[rows] for key in OBSERVATION_KEYS}
+        k = max(int(valid[rows].sum(axis=1).max()), 1)
+        with torch.inference_mode():
+            q = model(
+                *observation_tensors(part, device),
+                torch.as_tensor(actions[rows, :k], device=device),
+            )
+        values[rows, :k] = q.float().cpu().numpy()
     return actions, np.where(valid, values, -np.inf).astype(np.float32)
 
 
