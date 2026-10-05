@@ -25,6 +25,7 @@
   import { BACK_NAMES, TABLE_NAMES, checkHand, type Achievement } from './achievements';
   import { loadStats, recordHand } from './stats';
   import { sound } from './sound';
+  import { CATALOG, presetRules } from './catalog';
   import { tableRules } from './rulesets';
   import { ledger } from './scoring';
   import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, Rules, StateMsg, Suit, Trick } from './types';
@@ -55,30 +56,24 @@
   const blank = $derived.by((): StateMsg => {
     const n = room?.seats.length ?? 5;
     return {
-      type: 'state',
       view: {
         viewer: client.seat === null ? 'Spectator' : { Seat: client.seat },
-        rules: (room && tableRules(room.settings)) ?? blankRules(n),
+        rules: room ? tableRules(room.settings) : presetRules(CATALOG.default_preset),
         first_bidder: 0,
         hand: [],
         hand_sizes: Array.from({ length: n }, () => 0),
         points_taken: Array.from({ length: n }, () => []),
         phase: 'Dealing',
+        bids: [],
+        redealt: null,
       },
       legal: [],
       turn: 'Over',
+      out_of_turn: [],
+      grace_ms: 0,
+      version: 0,
     };
   });
-  /** Enough rules to draw an empty table by, from a server that sends none. */
-  function blankRules(n: number): Rules {
-    return {
-      players: n,
-      hand_size: 10,
-      deck: 'OneJoker',
-      bidding: { min: 13, max: 20, allow_no_trump: true, no_trump_bonus: 1, first_bidder_may_pass: true, change_trump_cost: 2 },
-      joker_call: { calls: [], mighty_defense: false, called_joker_has_power: false },
-    };
-  }
   let shown = $state(untrack(() => client.game ?? blank));
   const msg = $derived(idle ? blank : shown);
   const view = $derived(msg.view);
@@ -227,7 +222,7 @@
   const lastChance = $derived.by(() => {
     const min = view.rules.bidding.last_chance_min;
     if (!bidding || bidding.best || min == null) return null;
-    return (view.bids ?? []).length === n ? min : null;
+    return view.bids.length === n ? min : null;
   });
 
   function bubble(seat: number): string | null {
@@ -401,7 +396,7 @@
           : '많이 가진 무늬를 기루다로 골라 불러요. 자신 없으면 패스.';
     if (exchange)
       return toDiscard > 0
-        ? `필요 없는 카드 ${toDiscard}장을 버려요. 버린 점수 카드${view.rules.scoring?.discards_to_declarer === false ? '는 야당 점수가 돼요.' : '도 여당 점수예요.'}`
+        ? `필요 없는 카드 ${toDiscard}장을 버려요. 버린 점수 카드${!view.rules.scoring.discards_to_declarer ? '는 야당 점수가 돼요.' : '도 여당 점수예요.'}`
         : '프렌드를 불러요. 보통 마이티나 조커를 불러요.';
     if (play) {
       if (play.plays.length === 0) return '내가 선이에요. 아무 카드나 내도 돼요.';
@@ -422,9 +417,9 @@
   const handLegal = $derived(liveTurn ? live.legal : legal);
   /** 딜미스 outside your turn: from the moment the cards land, while your
    * hand qualifies and the rules still allow it. */
-  const misdealNow = $derived(!liveTurn && (live.out_of_turn ?? []).includes('Misdeal'));
+  const misdealNow = $derived(!liveTurn && live.out_of_turn.includes('Misdeal'));
   /** How long the first bid still waits after the deal, as last sent. */
-  const bidWait = $derived(liveTurn ? (live.grace_ms ?? 0) : 0);
+  const bidWait = $derived(liveTurn ? live.grace_ms : 0);
   const plays = $derived(handLegal.flatMap((a) => (typeof a === 'object' && 'Play' in a ? [a.Play] : [])));
   const discardable = $derived(
     handLegal.flatMap((a) => (typeof a === 'object' && 'Discard' in a ? [a.Discard] : [])),
@@ -463,7 +458,7 @@
   /** Why a tapped card cannot be played, in a few words. */
   function refuse(card: CardT) {
     const reason = (() => {
-      if (play && 'Joker' in card && play.trick_no === 0 && play.plays.length === 0 && view.rules.joker_lead?.not_first_trick) {
+      if (play && 'Joker' in card && play.trick_no === 0 && play.plays.length === 0 && view.rules.joker_lead.not_first_trick) {
         return '첫 라운드엔 조커로 선을 낼 수 없어요';
       }
       if (!play || 'Joker' in card) return '지금은 낼 수 없는 카드예요';
@@ -541,7 +536,7 @@
   $effect(() => {
     const first = untrack(() => shown);
     const phase = first.view.phase;
-    const fresh = typeof phase === 'object' && 'Bidding' in phase && (first.view.bids ?? []).length === 0;
+    const fresh = typeof phase === 'object' && 'Bidding' in phase && first.view.bids.length === 0;
     if (!fresh || settings.speed === 'off') return;
     dealing = true;
     sound.shuffle();
@@ -850,7 +845,7 @@
         was.Bidding.passed.filter(Boolean).length !== now.Bidding.passed.filter(Boolean).length;
       if (moved) {
         const raised = JSON.stringify(was.Bidding.best) !== JSON.stringify(now.Bidding.best);
-        const raises = (next.view.bids ?? []).filter((b) => b.contract !== null).length;
+        const raises = next.view.bids.filter((b) => b.contract !== null).length;
         sound.bid(raised ? raises : 0);
       }
     }
@@ -1117,10 +1112,10 @@
   const between = $derived(!(room?.in_hand ?? false) && (idle || (done !== null && folded)));
   const emptySeats = $derived(room?.seats.filter((s) => s.kind === 'empty').length ?? 0);
   /** 섞기 pressed: the seats are shuffled when the next hand starts. */
-  const shuffleNext = $derived(room?.table?.shuffle_next ?? false);
+  const shuffleNext = $derived(room?.table.shuffle_next ?? false);
   /** What everyone at the table (watchers too) is told about the next shuffle. */
   const shuffleNote = $derived(
-    room?.table?.shuffle ? '매 판 시작할 때 자리를 섞어요' : shuffleNext ? '다음 판 시작할 때 자리를 섞어요' : null,
+    room?.table.shuffle ? '매 판 시작할 때 자리를 섞어요' : shuffleNext ? '다음 판 시작할 때 자리를 섞어요' : null,
   );
   /** The seat whose choices are open, and where it is on screen. */
   let menuSeat = $state<number | null>(null);
@@ -1320,7 +1315,7 @@
     {:else if idle && room}
       <!-- No hand yet: the rules this table plays, a tap opens them. -->
       <button class="rules-chip" onclick={onrules}>{rulesName}</button>
-      {#if room.table?.turn_secs}<span class="item">턴 <strong>{room.table.turn_secs}</strong>초</span>{/if}
+      {#if room.table.turn_secs}<span class="item">턴 <strong>{room.table.turn_secs}</strong>초</span>{/if}
       {#if room.hands_played > 0}<span class="item"><strong>{room.hands_played}</strong>판 끝</span>{/if}
     {/if}
     {#if me !== null}
@@ -1553,7 +1548,7 @@
             {/if}
             {#if shuffleNote}<p class="centre-sub shuffle-note" role="status">{shuffleNote}</p>{/if}
             <div class="tools">
-              {#if room.table?.shuffle}
+              {#if room.table.shuffle}
                 <!-- 매 판 자리 섞기 is on: 섞기 is already as on as it gets; the
                      setting itself is under 설정. -->
                 <button class="tool on" aria-pressed="true" aria-label="섞기: 매 판 자리 섞기 켜짐 (설정에서 바꿔요)" onclick={onmenu}>
@@ -1862,7 +1857,7 @@
   {#if replay && done}
     <HandReplay
       tricks={done.tricks}
-      discards={done.discards ?? []}
+      discards={done.discards}
       hiddenDiscards={view.rules.reveal_discards === false && done.declarer !== me}
       declarer={done.declarer}
       friend={done.friend}

@@ -1,7 +1,7 @@
 import { errorText } from './errorText';
 import { sound } from './sound';
 import { Toasts } from './toast.svelte';
-import type { Action, BotLevel, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
+import type { Action, BotLevel, ClientMsg, Preset, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
 interface Saved {
   token: string;
@@ -61,8 +61,8 @@ export class RoomClient {
   clock = $state<{ seat: number; deadline: number; total: number } | null>(null);
 
   /** Called as seats are about to move, while the table still shows them
-   * where they were; `order[s]` is where seat `s` goes (null: unknown). */
-  onmove: ((order: number[] | null) => void) | null = null;
+   * where they were; `order[s]` is where seat `s` goes. */
+  onmove: ((order: number[]) => void) | null = null;
 
   #id: string;
   #ws: WebSocket | null = null;
@@ -192,13 +192,14 @@ export class RoomClient {
         // it slides them to their new places. `order[s]` is where seat `s` went.
         const n = this.room?.seats.length ?? 0;
         const order =
-          msg.order ??
-          (msg.seats ? Array.from({ length: n }, (_, s) => (s === msg.seats![0] ? msg.seats![1] : s === msg.seats![1] ? msg.seats![0] : s)) : null);
+          msg.how === 'shuffle'
+            ? msg.order
+            : Array.from({ length: n }, (_, s) => (s === msg.seats[0] ? msg.seats[1] : s === msg.seats[1] ? msg.seats[0] : s));
         this.onmove?.(order);
         this.#moving = true;
         // A reaction still showing moves with its seat.
         const moved: typeof this.reactions = {};
-        if (order) for (const [seat, r] of Object.entries(this.reactions)) moved[order[Number(seat)] ?? Number(seat)] = r;
+        for (const [seat, r] of Object.entries(this.reactions)) moved[order[Number(seat)] ?? Number(seat)] = r;
         this.reactions = moved;
         // The table on screen was drawn for the old seats; the next hand
         // (or the room) draws afresh.
@@ -226,7 +227,7 @@ export class RoomClient {
     }
   }
 
-  #send(msg: unknown) {
+  #send(msg: ClientMsg) {
     if (this.#ws?.readyState === WebSocket.OPEN) this.#ws.send(JSON.stringify(msg));
   }
 
@@ -286,7 +287,7 @@ export class RoomClient {
 
   /** `presetRules`: the preset's rules as the table pinned them, to keep
    * them; without it the server pins the preset as it is today. */
-  setRules(preset: string, rules: Rules | null, presetRules?: Rules) {
+  setRules(preset: Preset, rules: Rules | null, presetRules?: Rules) {
     this.#send({
       type: 'set_settings',
       settings: { preset, ...(rules ? { rules } : {}), ...(presetRules ? { preset_rules: presetRules } : {}) },

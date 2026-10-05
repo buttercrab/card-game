@@ -2,6 +2,7 @@
 //! task (see [`room`]).
 
 pub mod bots;
+pub mod catalog;
 pub mod codegen;
 pub mod dashboard;
 pub mod errors;
@@ -23,9 +24,10 @@ use futures_util::{SinkExt, StreamExt};
 use limit::{ClientIp, Limits, too_many};
 use mighty::Mighty;
 use mighty::rules::Preset;
+use protocol::ClientMsg;
 use protocol::{ErrorCode, ServerError};
 use rand::Rng;
-use room::{ClientMsg, Command, ConnId, Room};
+use room::{Command, ConnId, Room};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use session::{MightySettings, SessionGame};
@@ -605,7 +607,7 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
         }
     });
     let error = |error: ServerError| {
-        let _ = errors.send(room::error_message(&error).to_string());
+        let _ = errors.send(error.message());
     };
     let mut limits = ConnLimits::new();
     loop {

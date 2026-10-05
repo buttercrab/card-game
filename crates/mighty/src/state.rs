@@ -5,15 +5,16 @@ use engine::{Seat, Turn};
 use rand::RngCore;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct Options {
     pub rules: Rules,
     /// Usually the seat after the dealer.
     pub first_bidder: Seat,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum FriendCall {
     Card(Card),
     Seat(Seat),
@@ -22,7 +23,7 @@ pub enum FriendCall {
     Alone,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum Action {
     /// Chance: the shuffled deal.
     Deal {
@@ -53,7 +54,7 @@ pub enum Action {
 }
 
 /// One turn of the bidding, as everyone at the table heard it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Bid {
     pub seat: Seat,
     /// `None` is a pass.
@@ -61,7 +62,7 @@ pub struct Bid {
 }
 
 /// Why the last deal was thrown in and the cards dealt again.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum Redeal {
     /// A player showed a weak hand (딜미스); everyone sees it.
     Misdeal { seat: Seat, hand: Vec<Card> },
@@ -71,7 +72,7 @@ pub enum Redeal {
 
 /// The last redeal of this hand, and how many there have been, so two in a
 /// row are told apart.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Redealt {
     pub why: Redeal,
     pub count: u32,
@@ -186,7 +187,7 @@ pub(crate) struct Done {
 }
 
 /// A finished hand in brief, for the session's story.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct HandSummary {
     pub contract: Contract,
     pub declarer: Seat,

@@ -203,6 +203,19 @@ async fn cannot_start_with_empty_seats_or_act_out_of_turn() {
     assert_eq!(next(&mut ws, "error").await["code"], "no_hand");
 }
 
+/// The room says which protocol it speaks, as the client's build records
+/// it, so a page built for another one can offer to reload.
+#[tokio::test]
+async fn the_room_names_its_protocol() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    join(&mut ws, "A", None).await;
+    let msg = next(&mut ws, "room").await;
+    assert_eq!(msg["protocol"], server::protocol::version());
+    assert_eq!(server::catalog::catalog().protocol, server::protocol::version());
+}
+
 #[tokio::test]
 async fn unknown_rooms_are_not_found() {
     let addr = spawn_server().await;
@@ -719,7 +732,7 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
         send(&mut a, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
     }
     // Spectators may not move anyone.
-    send(&mut watcher, json!({ "type": "shuffle_seats" })).await;
+    send(&mut watcher, json!({ "type": "set_table", "shuffle_next": true })).await;
     next(&mut watcher, "error").await;
     send(&mut watcher, json!({ "type": "set_table", "shuffle_next": true })).await;
     next(&mut watcher, "error").await;
@@ -978,7 +991,7 @@ async fn a_shuffle_waits_for_the_next_hand_and_everyone_sees_it_coming() {
     send(&mut a, json!({ "type": "set_table", "shuffle_next": false })).await;
     next_where(&mut watcher, "room", |r| r["table"]["shuffle_next"] == false).await;
     // An older page's 섞기 marks it too.
-    send(&mut a, json!({ "type": "shuffle_seats" })).await;
+    send(&mut a, json!({ "type": "set_table", "shuffle_next": true })).await;
     let marked = next_where(&mut watcher, "room", |r| r["table"]["shuffle_next"] == true).await;
     assert_eq!(marked["seats"], full["seats"]);
 

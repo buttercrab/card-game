@@ -62,8 +62,7 @@ export function jokers(rules: Rules): Card[] {
 /** Cards in the deck: four suits from the lowest rank to A, the jokers,
  * and any cards kept below the lowest rank (4마 keeps ♣3 and ♠3). */
 export function deckSize(rules: Rules): number {
-  const lowest = rules.lowest_rank ?? 2;
-  return 4 * (15 - lowest) + jokers(rules).length + (rules.extra_cards?.length ?? 0);
+  return 4 * (15 - rules.lowest_rank) + jokers(rules).length + rules.extra_cards.length;
 }
 
 /** Cards left face down after the deal. */
@@ -108,6 +107,7 @@ export function actionLabel(action: Action, name: (seat: number) => string): str
   if ('Raise' in action) return `공약을 ${contractLabel(action.Raise)}로 올리기`;
   if ('Discard' in action) return `${cardLabel(action.Discard)} 버리기`;
   if ('CallFriend' in action) return `프렌드 ${friendCallLabel(action.CallFriend, name)}`;
+  if ('Deal' in action) return '';
   const p = action.Play;
   let label = cardLabel(p.card);
   if (p.joker_lead) label += ` · ${leadLabel(p.joker_lead)}`;

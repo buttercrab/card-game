@@ -34,7 +34,7 @@
       .catch(() => (fetched = null));
   });
   /** What the table plays by: its own rules, or its pinned preset's. */
-  const effective = $derived(tableRules({ rules: rules ?? undefined, preset_rules: pinned ?? undefined }));
+  const effective = $derived(tableRules({ preset, rules: rules ?? undefined, preset_rules: pinned ?? undefined }));
   const name = $derived(PRESET_NAME[preset] ?? preset);
   const custom = $derived(rules && base && (differences(rules, base).length || otherDifferences(rules, base)) ? rules : null);
   let comparing = $state(false);

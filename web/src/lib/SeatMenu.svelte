@@ -62,7 +62,7 @@
     info.kind === 'empty'
       ? '빈 자리'
       : info.kind === 'bot'
-        ? `봇 · ${LEVEL[info.level ?? 'hard']}`
+        ? `봇 · ${LEVEL[info.level]}`
         : !info.connected
           ? '연결 끊김'
           : info.away
@@ -169,7 +169,7 @@
   {:else if info.kind === 'bot'}
     <span class="levels" role="radiogroup" aria-label="{title} 실력">
       {#each LEVELS as l (l)}
-        <button role="radio" aria-checked={(info.level ?? 'hard') === l} onclick={() => (info.level ?? 'hard') !== l && onlevel(l)}>{LEVEL[l]}</button>
+        <button role="radio" aria-checked={info.level === l} onclick={() => info.level !== l && onlevel(l)}>{LEVEL[l]}</button>
       {/each}
     </span>
     <button class="item" onclick={onswap}><Icon name="swap" />자리 바꾸기</button>

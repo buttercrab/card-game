@@ -3,12 +3,28 @@
 //! writes them to `web/src/lib/generated/`, so the client is typed by the
 //! server's own definitions.
 
+use crate::room::TableSettings;
+use crate::session::{BotLevel, MightySettings};
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use engine::Turn;
 use mighty::rules::InvalidRules;
-use serde::Serialize;
+use mighty::{Action, HandSummary, View};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ts_rs::TS;
+
+/// Which protocol the server speaks: a digest of the generated types, so
+/// any change to a message changes it. A page built for another one (a
+/// tab left open across a deploy) offers to reload.
+pub fn version() -> &'static str {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION.get_or_init(|| {
+        use sha2::{Digest, Sha256};
+        crate::stats::hex(&Sha256::digest(crate::codegen::typescript().as_bytes())[..6])
+    })
+}
 
 /// Why the server refused something, as a code: the client words each in
 /// Korean, and the compiler makes it word every one.
@@ -109,6 +125,12 @@ impl ServerError {
         }
     }
 
+    /// The error as sent on a table's connection.
+    pub fn message(&self) -> String {
+        let message = ServerMsg::<(), (), (), ()>::Error(self.clone());
+        serde_json::to_string(&message).expect("errors serialize")
+    }
+
     /// The error as an HTTP response with `status`.
     pub fn respond(self, status: StatusCode) -> Response {
         (status, Json(self)).into_response()
@@ -139,4 +161,198 @@ impl std::fmt::Display for ServerError {
         }
         Ok(())
     }
+}
+
+/// Who sits in a seat, as everyone at the table sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SeatInfo {
+    Empty,
+    Human {
+        name: String,
+        connected: bool,
+        /// Its turn ran out and was played for it (자리 비움), or its
+        /// connection is gone under a turn limit.
+        away: bool,
+    },
+    Bot {
+        name: String,
+        level: BotLevel,
+    },
+}
+
+/// The running turn timer, as of the message that carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub struct ClockInfo {
+    pub seat: usize,
+    /// Time left, in milliseconds.
+    pub ms: u64,
+    /// The whole turn, in milliseconds.
+    pub total_ms: u64,
+}
+
+/// The table: who sits where, the scores and the table's settings. Sent to
+/// everyone after every change.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(concrete(S = MightySettings, H = HandSummary))]
+pub struct RoomMsg<S, H> {
+    /// The server's [`version`] of the protocol.
+    pub protocol: String,
+    pub id: String,
+    pub game: String,
+    /// The preset, the table's own rules if its players changed them, and
+    /// the preset's rules as pinned when the table chose it.
+    pub settings: S,
+    pub seats: Vec<SeatInfo>,
+    pub scores: Vec<i64>,
+    pub hands_played: u32,
+    pub in_hand: bool,
+    /// Each finished hand's payoffs, in order.
+    pub history: Vec<Vec<i64>>,
+    /// Each finished hand in brief, in order.
+    pub hands: Vec<H>,
+    pub table: TableSettings,
+    /// The turn timer, when one runs.
+    pub clock: Option<ClockInfo>,
+    /// Connections without a seat: people watching.
+    pub watching: usize,
+    /// Whether a hand, running or just finished, is on the table.
+    pub showing: bool,
+}
+
+/// The hand as one seat (or a spectator) may see it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(concrete(V = View, A = Action))]
+pub struct StateMsg<V, A> {
+    pub view: V,
+    /// What the seat may do, on its turn.
+    pub legal: Vec<A>,
+    pub turn: Turn,
+    /// What the seat may do although it is not its turn: a 딜미스 from the
+    /// moment the cards land, for a hand that qualifies.
+    pub out_of_turn: Vec<A>,
+    /// How long, in ms, the slowest legal action must still wait after the
+    /// deal (the first bid where 딜미스 comes first).
+    pub grace_ms: u64,
+    /// Which state of the hand this is; a hint carries the version it was
+    /// asked for, so one for an older state is dropped.
+    pub version: u64,
+}
+
+/// How the seats moved between hands. Sent before the seats change, so a
+/// table on screen can slide each seat to its new place.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "how", rename_all = "snake_case")]
+pub enum SeatsMoved {
+    /// `order[s]`: where seat `s` went.
+    Shuffle { order: Vec<usize> },
+    /// The two seats traded places.
+    Swap { seats: [usize; 2] },
+}
+
+/// Everything the server sends on a table's connection.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[ts(concrete(S = MightySettings, H = HandSummary, V = View, A = Action))]
+pub enum ServerMsg<S, H, V, A> {
+    Room(RoomMsg<S, H>),
+    State(StateMsg<V, A>),
+    /// This connection sits at `seat`; `token` reclaims it after a reconnect.
+    Welcome {
+        seat: usize,
+        token: String,
+    },
+    /// This connection's seat was given away: it watches now.
+    Unseated,
+    SeatsMoved(SeatsMoved),
+    Reaction {
+        seat: usize,
+        text: String,
+    },
+    /// What the 고수 bot would do in the seat's place, for state `version`.
+    Hint {
+        version: u64,
+        action: A,
+    },
+    Error(ServerError),
+}
+
+/// Everything a client may send on a table's connection.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ClientMsg {
+    /// Take a seat, or reclaim one with the token from an earlier `welcome`.
+    Join {
+        name: String,
+        #[serde(default)]
+        #[ts(optional = nullable)]
+        token: Option<String>,
+        #[serde(default)]
+        #[ts(optional = nullable)]
+        seat: Option<usize>,
+        /// An id the browser keeps across tables, if it sends one; only its
+        /// salted hash is kept, to count returning players.
+        #[serde(default)]
+        #[ts(optional = nullable)]
+        device: Option<String>,
+        /// Only reclaim the token's seat: a reconnecting tab whose seat is
+        /// gone (its player was moved out) watches instead of sitting
+        /// somewhere new.
+        #[serde(default)]
+        #[ts(as = "Option<bool>", optional)]
+        reclaim: bool,
+    },
+    /// Give up your seat; a bot takes over if a hand is in progress.
+    Leave,
+    /// Change the table's own settings (see [`TableSettings`]); fields left
+    /// out stay as they are.
+    SetTable {
+        #[serde(default)]
+        #[ts(optional)]
+        turn_secs: Option<u32>,
+        #[serde(default)]
+        #[ts(optional)]
+        shuffle: Option<bool>,
+        /// Between hands: shuffle the seats when the next hand starts.
+        #[serde(default)]
+        #[ts(optional)]
+        shuffle_next: Option<bool>,
+    },
+    /// Between hands: whoever sits at `a` and at `b` (maybe nobody) trade seats.
+    SwapSeats {
+        a: usize,
+        b: usize,
+    },
+    /// Between hands: send the player at `seat` back to watching.
+    ClearSeat {
+        seat: usize,
+    },
+    /// Seat a bot in an empty seat, or in place of a disconnected player.
+    /// On a bot's seat, changes how well it plays.
+    AddBot {
+        seat: usize,
+        #[serde(default)]
+        #[ts(as = "Option<BotLevel>", optional)]
+        level: BotLevel,
+    },
+    RemoveBot {
+        seat: usize,
+    },
+    /// Change the table's settings between hands. The seat count must stay.
+    SetSettings {
+        #[ts(as = "MightySettings")]
+        settings: Value,
+    },
+    /// Ask what the bot would do in your place, on your turn.
+    Hint,
+    /// Show a quick reaction from your seat to the whole table.
+    React {
+        text: String,
+    },
+    /// Deal the next hand once every seat is filled.
+    Start,
+    Act {
+        #[ts(as = "Action")]
+        action: Value,
+    },
 }

@@ -48,8 +48,8 @@
 
   /** The deck in words: 52장, or 7부터 A까지 28장과 ♣3, ♠3. */
   function deckText(r: Rules): string {
-    const lowest = r.lowest_rank ?? 2;
-    const extras = (r.extra_cards ?? []).map(cardLabel);
+    const lowest = r.lowest_rank;
+    const extras = r.extra_cards.map(cardLabel);
     const base = lowest === 2 ? '52장' : `네 무늬의 ${rankLabel(lowest)}부터 A까지 ${4 * (15 - lowest)}장`;
     return extras.length ? `${base}과 ${extras.join(', ')}` : base;
   }
@@ -74,7 +74,7 @@
   function scoringLines(r: Rules): string[] {
     const s = scoring(r);
     const noTrump = r.bidding.allow_no_trump;
-    const alone = r.friend?.alone ?? true;
+    const alone = r.friend.alone;
     const winDoubles = [
       noTrump && s.no_trump !== 'Never' && '노기루다면',
       alone && s.alone !== 'Never' && '노프렌드면',
@@ -91,7 +91,7 @@
           : 'TeamAtMost' in b
             ? ` ${b.TeamAtMost}점 이하로 가져왔다면(백런) 두 배로 잃어요.`
             : ` ${b.ShortBy}점 이상 모자라면(백런) 두 배로 잃어요.`;
-    const lose = s.lose ?? 'Shortfall';
+    const lose = s.lose;
     if (lose === 'Shortfall') lines.push(`공약을 못 채우면 모자란 만큼 잃어요.${backRun}`);
     else {
       const n = lose.PaysBack;
@@ -104,7 +104,7 @@
       alone && s.alone === 'Always' && '노프렌드',
     ].filter((x): x is string => typeof x === 'string');
     if (lossDoubles.length) lines.push(`${lossDoubles.join('와 ')}는 져도 두 배예요.`);
-    const full = s.full_contract ?? 'Never';
+    const full = s.full_contract;
     if (full !== 'Never') lines.push(`공약이 20이면 ${full === 'Always' ? '이기든 지든' : '이겼을 때'} 또 두 배예요.`);
     if (r.next_dealer === 'FriendOrDeclarer')
       lines.push('다음 판은 이번 판의 프렌드가, 프렌드가 없었으면 주공이 나누고 먼저 불러요.');
@@ -164,7 +164,7 @@
         if (last) out.push({ who, round: '마지막 라운드', text: last });
       }
     }
-    if (r.joker_lead?.not_first_trick) out.push({ who: '조커', round: '첫 라운드', text: '먼저 낼 수 없어요' });
+    if (r.joker_lead.not_first_trick) out.push({ who: '조커', round: '첫 라운드', text: '먼저 낼 수 없어요' });
     if (r.policy.trump.first === 'NoLead')
       out.push({
         who: '기루다',
@@ -417,11 +417,11 @@
         <li>
           조커로 시작하면 따라 낼 무늬를 정해요.
           {#if twoJokers}조커 색의 무늬만 정할 수 있어요.{/if}
-          {#if r.joker_lead?.by_color}
+          {#if r.joker_lead.by_color}
             무늬 대신 색(빨강, 검정)을 정할 수도 있어요. 그러면 그 색 카드가 있는 사람은 그 색 카드를 내야 해요.
           {/if}
         </li>
-        {#if r.joker_lead?.powerless_passes}
+        {#if r.joker_lead.powerless_passes}
           <li>힘이 없는 조커로 시작하면, 다음 사람이 낸 카드의 무늬가 처음 낸 무늬가 돼요.</li>
         {/if}
       </ul>

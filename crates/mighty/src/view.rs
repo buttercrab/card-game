@@ -4,10 +4,11 @@ use crate::state::{Action, Bid, FriendCall, Phase, Play, Redealt, State};
 use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Everything one viewer may know. Other hands, the kitty and (for anyone
 /// but the declarer) the discards are never included.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct View {
     pub viewer: Viewer,
     pub rules: Rules,
@@ -27,7 +28,7 @@ pub struct View {
     pub redealt: Option<Redealt>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum PhaseView {
     Dealing,
     Bidding {

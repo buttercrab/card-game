@@ -1,9 +1,14 @@
 //! The files the web client is built from, generated from the server's own
 //! definitions: `protocol.ts`, the TypeScript types of every message (see
-//! [`crate::protocol`]). `server --write-generated web/src/lib/generated`
-//! writes them; a test and CI fail when the committed ones are stale.
+//! [`crate::protocol`]), and `catalog.ts`, the presets and the table's
+//! other choices (see [`crate::catalog`]). `server --write-generated
+//! web/src/lib/generated` writes them; a test and CI fail when the
+//! committed ones are stale.
 
-use crate::protocol::ServerError;
+use crate::catalog::{Catalog, catalog};
+use crate::protocol::{ClientMsg, ServerMsg};
+use crate::session::MightySettings;
+use mighty::{Action, HandSummary, View};
 use std::any::TypeId;
 use std::collections::HashSet;
 use std::path::Path;
@@ -16,11 +21,13 @@ const HEADER: &str = "// Generated from the server's Rust types (crates/server/s
 // Do not edit: run `cargo run -p server -- --write-generated web/src/lib/generated`.\n";
 
 /// Collects the declarations of a type and everything it refers to, each
-/// once, in the order first met.
+/// once. The derive does not visit dependencies in a fixed order, so the
+/// declarations are written by name.
 struct Declarations {
     cfg: Config,
     seen: HashSet<TypeId>,
-    out: Vec<String>,
+    names: HashSet<String>,
+    out: std::collections::BTreeMap<String, String>,
 }
 
 impl TypeVisitor for Declarations {
@@ -31,8 +38,10 @@ impl TypeVisitor for Declarations {
         // Only declared types (derived ones) have a file of their own;
         // containers such as `Vec<T>` lead on to what they hold.
         if T::output_path().is_some() {
+            let name = T::ident(&self.cfg);
+            assert!(self.names.insert(name.clone()), "two types are called {name}");
             let docs = T::docs().unwrap_or_default();
-            self.out.push(format!("{docs}export {}", T::decl(&self.cfg)));
+            self.out.insert(name, format!("{docs}export {}", T::decl(&self.cfg)));
         }
         T::visit_generics(self);
         T::visit_dependencies(self);
@@ -45,11 +54,14 @@ pub fn typescript() -> String {
         // Payoffs and versions are i64/u64 but never pass 2^53.
         cfg: Config::new().with_large_int("number"),
         seen: HashSet::new(),
-        out: Vec::new(),
+        names: HashSet::new(),
+        out: Default::default(),
     };
-    d.visit::<ServerError>();
+    d.visit::<ServerMsg<MightySettings, HandSummary, View, Action>>();
+    d.visit::<ClientMsg>();
+    d.visit::<Catalog>();
     let mut ts = String::from(HEADER);
-    for decl in d.out {
+    for decl in d.out.into_values() {
         ts.push('\n');
         ts.push_str(&decl);
         ts.push('\n');
@@ -57,9 +69,16 @@ pub fn typescript() -> String {
     ts
 }
 
+/// The catalog as a TypeScript module, typed by `protocol.ts`, so the
+/// client's build checks it too.
+pub fn catalog_module() -> String {
+    let json = serde_json::to_string_pretty(&catalog()).expect("the catalog serializes");
+    format!("{HEADER}\nimport type {{ Catalog }} from './protocol';\n\nexport const CATALOG: Catalog = {json};\n")
+}
+
 /// Every generated file, by name within [`DIR`].
 pub fn files() -> Vec<(&'static str, String)> {
-    vec![("protocol.ts", typescript())]
+    vec![("protocol.ts", typescript()), ("catalog.ts", catalog_module())]
 }
 
 /// Writes every generated file into `dir`.

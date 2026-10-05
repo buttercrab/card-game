@@ -41,8 +41,8 @@
   const inHand = $derived(room.in_hand);
   /** The table's settings change between hands, by whoever sits there. */
   const editable = $derived(seated && !inHand);
-  const turnSecs = $derived(room.table?.turn_secs ?? 0);
-  const shuffle = $derived(room.table?.shuffle ?? false);
+  const turnSecs = $derived(room.table.turn_secs);
+  const shuffle = $derived(room.table.shuffle);
   /** Leaving mid-hand asks first: a bot plays your seat from then on. */
   let leaving = $state(false);
 

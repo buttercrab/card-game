@@ -19,19 +19,20 @@ use rand::RngCore;
 use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use ts_rs::TS;
 
 /// Index of a seat at the table, `0..seat_count`.
 pub type Seat = usize;
 
 /// Who is looking at the game.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum Viewer {
     Seat(Seat),
     Spectator,
 }
 
 /// Who must act next.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum Turn {
     /// The server must draw a random action (shuffle, deal) with [`Game::sample_chance`].
     Chance,

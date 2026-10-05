@@ -19,7 +19,7 @@
   let status = $state<string | null>(null);
 
   const names = $derived(room.seats.map((s, i) => occupantName(s, i) ?? `자리 ${i + 1}`));
-  const hands = $derived(room.hands ?? []);
+  const hands = $derived(room.hands);
   const shown = $derived(hands.slice(-MAX_ROWS));
   const hidden = $derived(hands.length - shown.length);
   const standings = $derived(

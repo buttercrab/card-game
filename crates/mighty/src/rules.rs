@@ -10,7 +10,7 @@ use std::fmt;
 use std::str::FromStr;
 use ts_rs::TS;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Rules {
     pub players: usize,
     pub hand_size: usize,
@@ -42,7 +42,7 @@ pub struct Rules {
 
 /// Who opens the bidding of the next hand. The first bidder doubles as the
 /// dealer where the dealer bids first.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum NextDealer {
     /// One seat on each hand.
     #[default]
@@ -63,7 +63,7 @@ fn yes() -> bool {
 /// Each card is worth `point_value` if it is a point card, `joker_value` if it
 /// is a joker, or its entry in `card_values` if listed. A hand totalling at
 /// most `threshold` qualifies.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Misdeal {
     pub point_value: i8,
     pub joker_value: i8,
@@ -90,7 +90,7 @@ pub struct Misdeal {
     pub caller_deals: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Bidding {
     /// Lowest bid, counted as for a trump contract.
     pub min: u8,
@@ -125,7 +125,7 @@ pub struct Bidding {
 }
 
 /// How the declarer may choose a friend. Each flag enables one way.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct FriendRules {
     /// Whoever holds a named card.
     pub by_card: bool,
@@ -141,7 +141,7 @@ pub struct FriendRules {
     pub alone: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum CardPolicy {
     Valid,
     /// May be played, but has no special power.
@@ -153,7 +153,7 @@ pub enum CardPolicy {
 }
 
 /// Policy on the first trick and on the last trick. Tricks between are always valid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct TrickPolicy {
     pub first: CardPolicy,
     pub last: CardPolicy,
@@ -167,7 +167,7 @@ impl TrickPolicy {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct CardPolicies {
     pub mighty: TrickPolicy,
     pub trump: TrickPolicy,
@@ -184,7 +184,7 @@ pub struct CardPolicies {
     pub release_with_mighty: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct JokerCall {
     /// One pair per joker, in [`DeckKind::jokers`] order: the card that calls
     /// it, and the card used instead when the first card's suit is trump.
@@ -196,7 +196,7 @@ pub struct JokerCall {
 }
 
 /// How a led joker sets the trick.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct JokerLead {
     /// The joker may name its colour instead of a suit; either suit of that
     /// colour then follows.
@@ -211,7 +211,7 @@ pub struct JokerLead {
 
 /// How a finished hand is scored. Groups differ more here than anywhere
 /// else; the default is web-mighty's formula.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(default)]
 pub struct Scoring {
     /// What a made contract is worth before doubling.
@@ -234,7 +234,7 @@ pub struct Scoring {
     pub discards_to_declarer: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum WinScore {
     /// Points taken − 10, at least 1.
     #[default]
@@ -253,7 +253,7 @@ pub enum WinScore {
 
 /// What a failed contract costs before doubling; the shortfall is the
 /// contract − points taken.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum LoseScore {
     /// The shortfall.
     #[default]
@@ -264,7 +264,7 @@ pub enum LoseScore {
     PaysBack(u8),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum Doubling {
     Never,
     /// Only when the contract is made.
@@ -284,7 +284,7 @@ impl Doubling {
 }
 
 /// When a failed contract counts double (백런).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum BackRun {
     Never,
     /// The declarer's side took at most this many points.
@@ -310,7 +310,7 @@ impl Default for Scoring {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Contract {
     /// `None` is no-trump.
     pub trump: Option<Suit>,
@@ -705,7 +705,7 @@ impl Rules {
 /// are written as changes to [`Rules::default`] (web-mighty's base), which
 /// therefore stays as it was, and all score a failed contract by
 /// [`LoseScore::PaysBack`]; `tests/presets.json` pins every preset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Preset {
     /// 기본 5마: the owner's written rules (RULES.md, "기본")
@@ -767,6 +767,14 @@ impl Preset {
             Preset::Skku => "성균관대",
             Preset::Sshs => "서울과고",
             Preset::Yonsei => "연세대",
+        }
+    }
+
+    /// What sets the preset apart at a glance, where its title does not.
+    pub fn note(self) -> Option<&'static str> {
+        match self {
+            Preset::Gshs => Some("조커 두 장"),
+            _ => None,
         }
     }
 

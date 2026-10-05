@@ -2,26 +2,18 @@
 // and the custom sets a group saved on this device.
 import { PRESETS } from './presets';
 import { same } from './ruleFields';
+import { CATALOG, presetRules as catalogRules, isPreset } from './catalog';
 import type { Rules } from './types';
 
-const cache = new Map<string, Promise<Rules>>();
-
-/** A preset's full rules; the same promise for every caller. */
+/** A preset's full rules, from the catalog built in. */
 export function presetRules(id: string): Promise<Rules> {
-  let p = cache.get(id);
-  if (!p) {
-    p = fetch(`/api/presets/${id}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
-    p.catch(() => cache.delete(id));
-    cache.set(id, p);
-  }
-  return p;
+  return isPreset(id) ? Promise.resolve(catalogRules(id)) : Promise.reject(new Error(`no preset ${id}`));
 }
 
 /** What a table plays by: its own rules, or its preset's as the table
- * pinned them (which may differ from the preset's today); null from a
- * server too old to say. */
-export function tableRules(settings: { rules?: Rules; preset_rules?: Rules }): Rules | null {
-  return settings.rules ?? settings.preset_rules ?? null;
+ * pinned them (which may differ from the preset's today). */
+export function tableRules(settings: { preset: string; rules?: Rules; preset_rules?: Rules }): Rules {
+  return settings.rules ?? settings.preset_rules ?? catalogRules(isPreset(settings.preset) ? settings.preset : CATALOG.default_preset);
 }
 
 /** Every preset's rules, by id. */

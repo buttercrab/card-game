@@ -1,10 +1,11 @@
 use crate::card::{Card, Color, DeckKind, Suit};
 use engine::Seat;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// What a trick's other cards must follow: a suit, or, when a joker leads
 /// and the rules allow it, a whole colour.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum Lead {
     Suit(Suit),
     Color(Color),
@@ -31,7 +32,7 @@ impl Lead {
 /// A card on the table. `powered` is false when a rule stripped its special
 /// power: a powerless mighty or trump counts as a plain card of its suit,
 /// and a powerless joker cannot win.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Played {
     pub seat: Seat,
     pub card: Card,
@@ -39,7 +40,7 @@ pub struct Played {
 }
 
 /// A completed trick. Every card in it was played face up.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Trick {
     pub plays: Vec<Played>,
     pub lead: Lead,

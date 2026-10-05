@@ -269,7 +269,7 @@ export const RULE_FIELDS: Field[] = [
     label: '공약 뒤에도 딜미스',
     help: '이미 공약한 사람도 공약이 끝나기 전엔 딜미스할 수 있어요',
     control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
-    show: (r) => !r.misdeal?.ask_first,
+    show: (r) => !r.misdeal.ask_first,
     trait: (v) => (v ? '공약 뒤에도 딜미스' : '공약 전에만 딜미스'),
     weight: 2,
   },
@@ -745,8 +745,8 @@ export function traits(r: Rules, base: Rules): string[] {
  * crates/mighty/src/rules.rs; each problem names the fields to fix. */
 export function problems(r: Rules): { paths: string[]; message: string }[] {
   const out: { paths: string[]; message: string }[] = [];
-  const lowest = r.lowest_rank ?? 2;
-  const extra = r.extra_cards ?? [];
+  const lowest = r.lowest_rank;
+  const extra = r.extra_cards;
   if (lowest < 2 || lowest > 10) out.push({ paths: [], message: RULE_TEXT.point_cards_missing });
   const rank = (c: Card) => ('Normal' in c ? c.Normal[1] : null);
   const distinct = new Set(extra.map((c) => JSON.stringify(c))).size === extra.length;
@@ -761,8 +761,8 @@ export function problems(r: Rules): { paths: string[]; message: string }[] {
     out.push({ paths: ['bidding.min', 'bidding.max'], message: RULE_TEXT.empty_bid_range });
   if (r.bidding.no_trump_bonus >= r.bidding.min)
     out.push({ paths: ['bidding.no_trump_bonus'], message: RULE_TEXT.no_trump_bonus_too_high });
-  const lose = r.scoring?.lose;
-  if (lose && lose !== 'Shortfall' && lose.PaysBack > lowestContract(r))
+  const lose = r.scoring.lose;
+  if (lose !== 'Shortfall' && lose.PaysBack > lowestContract(r))
     out.push({ paths: ['scoring.lose'], message: RULE_TEXT.pays_back_too_much });
   if (r.joker_call.calls.length !== jokers(r).length)
     out.push({ paths: ['deck'], message: RULE_TEXT.joker_call_per_joker });

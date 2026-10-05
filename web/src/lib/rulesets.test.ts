@@ -9,7 +9,7 @@ const pinned: Rules = { ...gshs, bidding: { ...gshs.bidding, min: gshs.bidding.m
 
 test("a table plays by its own rules, else its preset's as it pinned them", () => {
   const own: Rules = { ...gshs, hand_size: gshs.hand_size };
-  expect(tableRules({ rules: own, preset_rules: pinned })).toBe(own);
-  expect(tableRules({ preset_rules: pinned })).toBe(pinned);
-  expect(tableRules({})).toBeNull();
+  expect(tableRules({ preset: 'gshs', rules: own, preset_rules: pinned })).toBe(own);
+  expect(tableRules({ preset: 'gshs', preset_rules: pinned })).toBe(pinned);
+  expect(tableRules({ preset: 'gshs' })).toEqual(gshs);
 });

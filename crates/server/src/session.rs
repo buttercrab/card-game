@@ -11,6 +11,7 @@ use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use ts_rs::TS;
 
 pub trait SessionGame:
     Game<
@@ -124,7 +125,7 @@ pub enum Decision {
 pub const FIRST_BID_GRACE: Duration = Duration::from_secs(2);
 
 /// How well a seated bot plays.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum BotLevel {
     /// Plays sensibly but often slips when choosing a card.
@@ -136,15 +137,17 @@ pub enum BotLevel {
     Hard,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct MightySettings {
     pub preset: Preset,
     /// The table's own rules, when its players changed the preset's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub rules: Option<Rules>,
     /// The preset's rules as they were when the table chose it; see
     /// [`SessionGame::freeze`]. Without it, the preset's rules today.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub preset_rules: Option<Rules>,
 }
 

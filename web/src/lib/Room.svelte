@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
+  import { CATALOG, isPreset } from './catalog';
   import { RoomClient, savedName } from './client.svelte';
   import GameMenu from './GameMenu.svelte';
   import Icon from './Icon.svelte';
@@ -51,6 +52,8 @@
   let invitedTimer: ReturnType<typeof setTimeout> | undefined;
 
   const room = $derived(client.room);
+  /** The server speaks another protocol than this page was built for. */
+  const outdated = $derived(room !== null && room.protocol !== CATALOG.protocol);
   const seated = $derived(client.seat !== null);
   const inHand = $derived(room?.in_hand ?? false);
   $effect(() => keepAwake(inHand));
@@ -89,7 +92,7 @@
   $effect(() => {
     if (!room || client.seat === null || room.in_hand || client.status !== 'open') return;
     const pending = untrack(() => takePending(id));
-    if (pending) client.setRules(pending.base, pending.rules);
+    if (pending && isPreset(pending.base)) client.setRules(pending.base, pending.rules);
   });
   // What this table changed from its preset, for the rules' name: against
   // the preset as the table pinned it, not as the preset reads today.
@@ -186,7 +189,14 @@
   {:else if !room}
     <p class="muted center">연결하는 중…</p>
   {:else}
-    {#if client.status !== 'open'}
+    {#if outdated}
+      <!-- A tab left open across a deploy: the server speaks a newer
+           protocol than this page was built for. -->
+      <div class="banner" role="status">
+        <span>새 버전이 나왔어요.</span>
+        <button onclick={() => location.reload()}>새로고침</button>
+      </div>
+    {:else if client.status !== 'open'}
       <!-- The link dropped (a deploy restarts the server): the client
            reconnects on its own and reclaims the seat with its token. -->
       <div class="banner" role="status">
@@ -247,7 +257,7 @@
     base={room.settings.preset_rules ?? null}
     onsave={(base, rules) =>
       // On the same preset, the table keeps the preset's rules it pinned.
-      client.setRules(base, rules, base === room.settings.preset ? room.settings.preset_rules : undefined)}
+      isPreset(base) && client.setRules(base, rules, base === room.settings.preset ? room.settings.preset_rules : undefined)}
     onclose={() => (editRules = false)}
   />
 {/if}

@@ -17,25 +17,14 @@
   import Room from './Room.svelte';
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
+  import { CATALOG, presetRules } from './catalog';
   import type { Bid, Card, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
 
   const which = new URLSearchParams(location.search).get('state') ?? 'play';
 
   const n = (suit: 'Spade' | 'Diamond' | 'Heart' | 'Club', rank: number): Card => ({ Normal: [suit, rank] });
-  const rules: Rules = {
-    players: 5,
-    hand_size: 10,
-    deck: 'TwoJokers',
-    bidding: { min: 14, max: 20, allow_no_trump: true, no_trump_bonus: 1, first_bidder_may_pass: true, change_trump_cost: 2 },
-    joker_call: {
-      calls: [
-        [n('Club', 3), n('Spade', 3)],
-        [n('Heart', 3), n('Diamond', 3)],
-      ],
-      mighty_defense: true,
-      called_joker_has_power: false,
-    },
-  };
+  // A real preset's rules (two jokers), as the server has them.
+  const rules: Rules = presetRules('gshs');
   const hand: Card[] = [
     { Joker: 'Red' },
     n('Spade', 14),
@@ -67,6 +56,7 @@
       contract,
       call: { Card: { Joker: 'Black' } },
       friend,
+      no_friend: false,
       trick_no: trickNo,
       leader: 1,
       lead: plays.length ? { Suit: 'Club' } : null,
@@ -135,10 +125,10 @@
       },
     },
     run: {
-      Done: { declarer: 0, contract, call: 'Alone', friend: null, team_points: 20, payoffs: [160, -40, -40, -40, -40], tricks: [] },
+      Done: { declarer: 0, contract, call: 'Alone', friend: null, team_points: 20, payoffs: [160, -40, -40, -40, -40], tricks: [], discards: [] },
     },
     won: {
-      Done: { declarer: 0, contract, call: { Card: { Joker: 'Black' } }, friend: 3, team_points: 17, payoffs: [6, -2, -2, 2, -2], tricks: [] },
+      Done: { declarer: 0, contract, call: { Card: { Joker: 'Black' } }, friend: 3, team_points: 17, payoffs: [6, -2, -2, 2, -2], tricks: [], discards: [] },
     },
   };
   const legal: Record<string, StateMsg['legal']> = {
@@ -164,7 +154,6 @@
     run: [],
   };
   const msg = (phase: PhaseView, key: string, turn: StateMsg['turn']): StateMsg => ({
-    type: 'state',
     view: {
       viewer: { Seat: 0 },
       rules,
@@ -184,23 +173,25 @@
           : [[n('Club', 10)], [n('Heart', 10)], [n('Spade', 13), n('Club', 12)], [], [n('Diamond', 14)]],
       phase,
       bids: key === 'bidding' ? bids.slice(0, 3) : key === 'grace' ? [] : bids,
+      redealt: null,
     },
     legal: legal[key] ?? [],
     turn,
     out_of_turn: which === 'misdealnow' ? ['Misdeal'] : [],
     grace_ms: key === 'grace' ? 2000 : 0,
+    version: 0,
   });
   const room: RoomMsg = {
-    type: 'room',
+    protocol: CATALOG.protocol,
     id: 'preview',
     game: 'mighty',
-    settings: { preset: 'gshs' },
+    settings: { preset: 'gshs', preset_rules: rules },
     seats: [
-      { kind: 'human', name: '재용', connected: true },
-      { kind: 'bot', name: '콩떡' },
-      { kind: 'human', name: '아주긴이름의친구입니다', connected: true },
-      { kind: 'human', name: '민수', connected: false },
-      { kind: 'bot', name: '호두' },
+      { kind: 'human', name: '재용', connected: true, away: false },
+      { kind: 'bot', name: '콩떡', level: 'hard' },
+      { kind: 'human', name: '아주긴이름의친구입니다', connected: true, away: false },
+      { kind: 'human', name: '민수', connected: false, away: false },
+      { kind: 'bot', name: '호두', level: 'hard' },
     ],
     scores: [12, -3, 5, -8, -6],
     hands_played: 3,
@@ -209,6 +200,11 @@
       [-2, -2, 6, 2, -4],
       [10, -1, 0, -7, -2],
     ],
+    hands: [],
+    table: { turn_secs: 0, shuffle: false, shuffle_next: false },
+    clock: null,
+    watching: 0,
+    showing: true,
     in_hand: which !== 'done' && which !== 'won' && which !== 'run',
   };
 
@@ -250,25 +246,25 @@
   /** Between hands with nothing on the table: the lobby, or once the seats moved. */
   const idle = inRoom && !['folded', 'leave'].includes(which);
   if (which === 'timer' || which === 'mytimer' || which === 'spectate' || inRoom) {
-    room.table = { turn_secs: 20, shuffle: which === 'room' };
+    room.table = { turn_secs: 20, shuffle: which === 'room', shuffle_next: false };
     room.watching = 2;
     room.seats[2] = { kind: 'human', name: '아주긴이름의친구입니다', connected: true, away: true };
   }
   if (inRoom) {
     // Everyone is here (the offline banner is the hand's business).
-    room.seats[3] = { kind: 'human', name: '민수', connected: true };
+    room.seats[3] = { kind: 'human', name: '민수', connected: true, away: false };
     room.in_hand = which === 'leave';
     room.showing = !idle;
   }
   // 섞기 pressed: the next hand starts with a shuffle.
-  if (which === 'pending' && room.table) room.table = { ...room.table, shuffle: false, shuffle_next: true };
+  if (which === 'pending') room.table = { ...room.table, shuffle: false, shuffle_next: true };
   if (which === 'lobby' || watching || which === 'seatempty') {
     room.seats = [
-      { kind: 'human', name: '재용', connected: true },
+      { kind: 'human', name: '재용', connected: true, away: false },
       { kind: 'bot', name: '콩떡', level: 'normal' },
       { kind: 'empty' },
       { kind: 'empty' },
-      { kind: 'human', name: '아주긴이름의친구입니다', connected: true },
+      { kind: 'human', name: '아주긴이름의친구입니다', connected: true, away: false },
     ];
     room.scores = [0, 0, 0, 0, 0];
     room.hands_played = 0;

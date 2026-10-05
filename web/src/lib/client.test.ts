@@ -84,12 +84,14 @@ afterEach(() => {
 const sockets = () => FakeSocket.all.length;
 const last = () => FakeSocket.all[FakeSocket.all.length - 1];
 
-function state(version: number): StateMsg {
+function state(version: number): { type: 'state' } & StateMsg {
   return {
     type: 'state',
     view: {} as StateMsg['view'],
     legal: [],
     turn: 'Over',
+    out_of_turn: [],
+    grace_ms: 0,
     version,
   };
 }

@@ -3,7 +3,9 @@
 //! their move back as a command.
 
 use crate::bots::RemoteBots;
-use crate::protocol::{ErrorCode, ServerError};
+use crate::protocol::{
+    ClientMsg, ClockInfo, ErrorCode, RoomMsg, SeatInfo, SeatsMoved, ServerError, ServerMsg, StateMsg,
+};
 use crate::session::{BotLevel, Decision, SessionGame};
 use crate::stats::{Event, Hand, Stats};
 use engine::{Turn, Viewer};
@@ -66,7 +68,7 @@ const AWAY_SECS: u32 = 5;
 
 /// The table's own settings, apart from the game's rules: they change how
 /// the room runs, never how a hand is played or encoded.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct TableSettings {
     /// Seconds per decision, or 0 for no limit. The weightier decisions
     /// (see [`SessionGame::long_decision`]) get twice as long.
@@ -111,12 +113,13 @@ fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
     std::fs::rename(tmp, path)
 }
 
-/// A refusal as sent on a table's connection.
-pub fn error_message(error: &ServerError) -> Value {
-    let mut message = serde_json::to_value(error).expect("errors serialize");
-    message["type"] = json!("error");
-    message
-}
+/// What a room of game `G` sends.
+type Msg<G> = ServerMsg<
+    <G as SessionGame>::Settings,
+    <G as SessionGame>::Summary,
+    <G as engine::Game>::View,
+    <G as engine::Game>::Action,
+>;
 
 /// One line of JSON per move, so a hand can be replayed from the server log.
 fn log_action(action: &impl serde::Serialize) -> String {
@@ -160,78 +163,6 @@ pub enum Command {
         deal: u64,
         seat: usize,
         action: Box<dyn Any + Send>,
-    },
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ClientMsg {
-    /// Take a seat, or reclaim one with the token from an earlier `welcome`.
-    Join {
-        name: String,
-        #[serde(default)]
-        token: Option<String>,
-        #[serde(default)]
-        seat: Option<usize>,
-        /// An id the browser keeps across tables, if it sends one; only its
-        /// salted hash is kept, to count returning players.
-        #[serde(default)]
-        device: Option<String>,
-        /// Only reclaim the token's seat: a reconnecting tab whose seat is
-        /// gone (its player was moved out) watches instead of sitting
-        /// somewhere new.
-        #[serde(default)]
-        reclaim: bool,
-    },
-    /// Give up your seat; a bot takes over if a hand is in progress.
-    Leave,
-    /// Change the table's own settings (see [`TableSettings`]); fields left
-    /// out stay as they are.
-    SetTable {
-        #[serde(default)]
-        turn_secs: Option<u32>,
-        #[serde(default)]
-        shuffle: Option<bool>,
-        /// Between hands: shuffle the seats when the next hand starts.
-        #[serde(default)]
-        shuffle_next: Option<bool>,
-    },
-    /// Between hands: shuffle the seats when the next hand starts (as
-    /// `SetTable { shuffle_next: true }`; kept for pages loaded before).
-    ShuffleSeats,
-    /// Between hands: whoever sits at `a` and at `b` (maybe nobody) trade seats.
-    SwapSeats {
-        a: usize,
-        b: usize,
-    },
-    /// Between hands: send the player at `seat` back to watching.
-    ClearSeat {
-        seat: usize,
-    },
-    /// Seat a bot in an empty seat, or in place of a disconnected player.
-    /// On a bot's seat, changes how well it plays.
-    AddBot {
-        seat: usize,
-        #[serde(default)]
-        level: BotLevel,
-    },
-    RemoveBot {
-        seat: usize,
-    },
-    /// Change the table's settings between hands. The seat count must stay.
-    SetSettings {
-        settings: Value,
-    },
-    /// Ask what the bot would do in your place, on your turn.
-    Hint,
-    /// Show a quick reaction from your seat to the whole table.
-    React {
-        text: String,
-    },
-    /// Deal the next hand once every seat is filled.
-    Start,
-    Act {
-        action: Value,
     },
 }
 
@@ -639,7 +570,7 @@ impl<G: SessionGame> Room<G> {
                 // Anything a player does says they are back at the table.
                 let back = self.back(conn);
                 if let Err(error) = self.on_message(conn, msg) {
-                    self.send(conn, &error_message(&error));
+                    self.send(conn, &Msg::<G>::Error(error));
                     if !back {
                         return;
                     }
@@ -764,8 +695,8 @@ impl<G: SessionGame> Room<G> {
     /// the players. The last hand's table is put away: it no longer
     /// matches who sits where. Everyone hears `news` first, so a table on
     /// screen can note where each seat was before its own seat changes.
-    fn reseat(&mut self, new_seat: &[usize], news: &Value) {
-        self.tell_all(news);
+    fn reseat(&mut self, new_seat: &[usize], news: SeatsMoved) {
+        self.tell_all(&Msg::<G>::SeatsMoved(news));
         fn moved<T>(items: Vec<T>, new_seat: &[usize]) -> Vec<T> {
             let mut slots: Vec<Option<T>> = items.iter().map(|_| None).collect();
             for (s, item) in items.into_iter().enumerate() {
@@ -801,7 +732,13 @@ impl<G: SessionGame> Room<G> {
         // Each player's tab learns its new seat; the token stays the same.
         for (id, seat) in welcomes {
             if let Occupant::Human { token, .. } = &self.seats[seat] {
-                self.send(id, &json!({ "type": "welcome", "seat": seat, "token": token }));
+                self.send(
+                    id,
+                    &Msg::<G>::Welcome {
+                        seat,
+                        token: token.clone(),
+                    },
+                );
             }
         }
     }
@@ -826,12 +763,12 @@ impl<G: SessionGame> Room<G> {
             order = (0..n).map(|s| (s + k) % n).collect();
         }
         // `order[s]`: where the seat `s` went, so tables can slide each one there.
-        let news = json!({ "type": "seats_moved", "how": "shuffle", "order": order });
-        self.reseat(&order, &news);
+        let news = SeatsMoved::Shuffle { order: order.clone() };
+        self.reseat(&order, news);
     }
 
-    fn tell_all(&self, message: &Value) {
-        let text = message.to_string();
+    fn tell_all(&self, message: &Msg<G>) {
+        let text = serde_json::to_string(message).expect("messages serialize");
         for c in self.conns.values() {
             let _ = c.tx.send(text.clone());
         }
@@ -900,11 +837,6 @@ impl<G: SessionGame> Room<G> {
                 }
                 Ok(())
             }
-            ClientMsg::ShuffleSeats => {
-                self.may_move_seats(my_seat)?;
-                self.table.shuffle_next = true;
-                Ok(())
-            }
             ClientMsg::SwapSeats { a, b } => {
                 self.may_move_seats(my_seat)?;
                 let n = self.seats.len();
@@ -921,8 +853,7 @@ impl<G: SessionGame> Room<G> {
                         s => s,
                     })
                     .collect();
-                let news = json!({ "type": "seats_moved", "how": "swap", "seats": [a, b] });
-                self.reseat(&new_seat, &news);
+                self.reseat(&new_seat, SeatsMoved::Swap { seats: [a, b] });
                 Ok(())
             }
             ClientMsg::ClearSeat { seat } => {
@@ -937,7 +868,7 @@ impl<G: SessionGame> Room<G> {
                 self.away[seat] = false;
                 for (&id, c) in &self.conns {
                     if c.seat == Some(seat) {
-                        self.send(id, &json!({ "type": "unseated" }));
+                        self.send(id, &Msg::<G>::Unseated);
                     }
                 }
                 self.detach(seat);
@@ -1030,8 +961,8 @@ impl<G: SessionGame> Room<G> {
                         &legal,
                         &mut StdRng::seed_from_u64(seed),
                     );
-                    let msg = json!({ "type": "hint", "version": version, "action": action });
-                    let _ = tx.send(msg.to_string());
+                    let msg = Msg::<G>::Hint { version, action };
+                    let _ = tx.send(serde_json::to_string(&msg).expect("messages serialize"));
                 });
                 Ok(())
             }
@@ -1046,10 +977,7 @@ impl<G: SessionGame> Room<G> {
                     return Ok(());
                 }
                 c.reacted = Some(Instant::now());
-                let msg = json!({ "type": "reaction", "seat": seat, "text": text }).to_string();
-                for c in self.conns.values() {
-                    let _ = c.tx.send(msg.clone());
-                }
+                self.tell_all(&Msg::<G>::Reaction { seat, text });
                 Ok(())
             }
             ClientMsg::Start => {
@@ -1151,7 +1079,7 @@ impl<G: SessionGame> Room<G> {
         });
         if reclaim && reclaimed.is_none() {
             // The seat was given away while this tab was gone: it watches.
-            self.send(conn, &json!({ "type": "unseated" }));
+            self.send(conn, &Msg::<G>::Unseated);
             return Ok(());
         }
         // Between hands a newcomer may also take a bot's seat.
@@ -1205,7 +1133,7 @@ impl<G: SessionGame> Room<G> {
         if let Some(c) = self.conns.get_mut(&conn) {
             c.seat = Some(seat);
         }
-        self.send(conn, &json!({ "type": "welcome", "seat": seat, "token": token }));
+        self.send(conn, &Msg::<G>::Welcome { seat, token });
         Ok(())
     }
 
@@ -1421,46 +1349,51 @@ impl<G: SessionGame> Room<G> {
         }
     }
 
-    fn room_message(&self) -> Value {
-        let seats: Vec<Value> = self
+    fn room_message(&self) -> Msg<G> {
+        let seats = self
             .seats
             .iter()
             .enumerate()
             .map(|(i, s)| match s {
-                Occupant::Empty => json!({ "kind": "empty" }),
-                Occupant::Human { name, .. } => {
-                    json!({ "kind": "human", "name": name, "connected": self.connected(i), "away": self.is_away(i) })
-                }
-                Occupant::Bot { level, name } => json!({ "kind": "bot", "name": name, "level": level }),
+                Occupant::Empty => SeatInfo::Empty,
+                Occupant::Human { name, .. } => SeatInfo::Human {
+                    name: name.clone(),
+                    connected: self.connected(i),
+                    away: self.is_away(i),
+                },
+                Occupant::Bot { level, name } => SeatInfo::Bot {
+                    name: name.clone(),
+                    level: *level,
+                },
             })
             .collect();
-        json!({
-            "type": "room",
-            "id": self.id,
-            "game": G::NAME,
-            "settings": self.settings,
-            "seats": seats,
-            "scores": self.scores,
-            "hands_played": self.hands_played,
-            "in_hand": self.in_hand(),
-            "history": self.history,
-            "hands": self.hands,
-            "table": self.table,
-            // The time left on the turn now, as of this message.
-            "clock": self.clock.as_ref().map(|c| json!({
-                "seat": c.seat,
-                "ms": c.deadline.saturating_duration_since(tokio::time::Instant::now()).as_millis() as u64,
-                "total_ms": c.total.as_millis() as u64,
-            })),
-            // Connections without a seat: people watching.
-            "watching": self.conns.values().filter(|c| c.seat.is_none()).count(),
-            // Whether a hand, running or just finished, is on the table.
-            "showing": self.game.is_some(),
+        ServerMsg::Room(RoomMsg {
+            protocol: crate::protocol::version().to_string(),
+            id: self.id.clone(),
+            game: G::NAME.to_string(),
+            settings: self.settings.clone(),
+            seats,
+            scores: self.scores.clone(),
+            hands_played: self.hands_played,
+            in_hand: self.in_hand(),
+            history: self.history.clone(),
+            hands: self.hands.clone(),
+            table: self.table.clone(),
+            clock: self.clock.as_ref().map(|c| ClockInfo {
+                seat: c.seat,
+                ms: c
+                    .deadline
+                    .saturating_duration_since(tokio::time::Instant::now())
+                    .as_millis() as u64,
+                total_ms: c.total.as_millis() as u64,
+            }),
+            watching: self.conns.values().filter(|c| c.seat.is_none()).count(),
+            showing: self.game.is_some(),
         })
     }
 
     fn broadcast(&self) {
-        let room = self.room_message().to_string();
+        let room = serde_json::to_string(&self.room_message()).expect("messages serialize");
         for (&id, conn) in &self.conns {
             let _ = conn.tx.send(room.clone());
             if let Some(state) = self.state_message(conn.seat) {
@@ -1474,7 +1407,7 @@ impl<G: SessionGame> Room<G> {
     /// the slowest of its legal actions must still wait after the deal;
     /// `version` is the one a hint for this state carries, so the client
     /// can drop a hint that arrives after the hand moved on.
-    fn state_message(&self, seat: Option<usize>) -> Option<Value> {
+    fn state_message(&self, seat: Option<usize>) -> Option<Msg<G>> {
         let game = self.game.as_ref()?;
         let viewer = seat.map_or(Viewer::Spectator, Viewer::Seat);
         let turn = G::turn(game);
@@ -1486,15 +1419,19 @@ impl<G: SessionGame> Room<G> {
         let grace = legal.iter().map(|a| G::grace(game, a)).max().unwrap_or_default();
         let waited = self.dealt_at.map_or(grace, |t| t.elapsed());
         let grace_ms = grace.saturating_sub(waited).as_millis() as u64;
-        Some(json!({
-            "type": "state", "view": G::view(game, viewer), "legal": legal, "turn": turn,
-            "out_of_turn": out_of_turn, "grace_ms": grace_ms, "version": self.version,
+        Some(ServerMsg::State(StateMsg {
+            view: G::view(game, viewer),
+            legal,
+            turn,
+            out_of_turn,
+            grace_ms,
+            version: self.version,
         }))
     }
 
-    fn send(&self, conn: ConnId, message: &Value) {
+    fn send(&self, conn: ConnId, message: &Msg<G>) {
         if let Some(c) = self.conns.get(&conn) {
-            let _ = c.tx.send(message.to_string());
+            let _ = c.tx.send(serde_json::to_string(message).expect("messages serialize"));
         }
     }
 }
@@ -1557,9 +1494,10 @@ mod tests {
             |r: &Room<Mighty>| Mighty::hand_options(&r.settings, r.hands_played, None, r.rotation).first_bidder;
         assert_eq!(opener(&room), 3);
         // Seat 3 goes to seat 0, the rest one further round.
-        room.reseat(&[1, 2, 4, 0, 3], &Value::Null);
+        let moved = |order: &[usize]| SeatsMoved::Shuffle { order: order.to_vec() };
+        room.reseat(&[1, 2, 4, 0, 3], moved(&[1, 2, 4, 0, 3]));
         assert_eq!(opener(&room), 0);
-        room.reseat(&[4, 3, 2, 1, 0], &Value::Null);
+        room.reseat(&[4, 3, 2, 1, 0], moved(&[4, 3, 2, 1, 0]));
         assert_eq!(opener(&room), 4);
         // Saved and restored, it stays.
         let restored = Room::<Mighty>::restore(room.snapshot(), Duration::ZERO).unwrap();
