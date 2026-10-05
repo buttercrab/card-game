@@ -20,6 +20,7 @@
   import Callout from './Callout.svelte';
   import { juice } from './motion';
   import PlayerFigure from './PlayerFigure.svelte';
+  import TurnRing from './TurnRing.svelte';
   import type { Suit } from './types';
   let {
     name,
@@ -38,6 +39,8 @@
     trumpSuit = null,
     lookAt = null,
     mood = null,
+    clock = null,
+    away = false,
   }: {
     name: string;
     bot?: boolean;
@@ -67,6 +70,10 @@
     /** Where the figure's eyes glance, as a screen-direction vector. */
     lookAt?: { x: number; y: number } | null;
     mood?: 'happy' | 'down' | null;
+    /** The turn timer while this seat is to act under a time limit. */
+    clock?: { deadline: number; total: number } | null;
+    /** Its turn ran out and a bot played it (자리 비움). */
+    away?: boolean;
   } = $props();
 
 
@@ -105,6 +112,7 @@
       {mood}
       {offline}
     />
+    {#if clock}<TurnRing deadline={clock.deadline} total={clock.total} />{/if}
     <!-- A bid or 패스, beside the figure, clear of the neighbours. -->
     {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
   </div>
@@ -115,6 +123,7 @@
     {#if points > 0}
       {#key points}<span class="points bump">{points}점</span>{/key}
     {/if}
+    {#if away}<span class="away">자리 비움</span>{/if}
   </div>
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
@@ -317,6 +326,17 @@
       inset 0 0 0 1.5px var(--team-declarer),
       0 0 0 2px var(--table);
     background: var(--table);
+  }
+  /* 자리 비움: a quiet outlined pill, like a note pinned on the robe. */
+  .away {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--table);
+    color: var(--ink-muted);
+    line-height: 18px;
+    font-size: 12px;
+    box-shadow: inset 0 0 0 1px var(--ink-muted);
+    white-space: nowrap;
   }
   /* Points won: a small pill; the count only, never the cards. */
   .points {

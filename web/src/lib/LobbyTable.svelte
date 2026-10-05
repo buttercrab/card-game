@@ -17,6 +17,10 @@
     onsit,
     onaddbot,
     onremovebot,
+    onremoveplayer,
+    swapping = false,
+    picked = null,
+    onpick,
     centre,
   }: {
     room: RoomMsg;
@@ -26,6 +30,12 @@
     onsit: (seat: number) => void;
     onaddbot: (seat: number, level?: BotLevel) => void;
     onremovebot: (seat: number) => void;
+    /** Between hands: send another player back to watching (asks first). */
+    onremoveplayer?: (seat: number) => void;
+    /** Moving seats: every tile is one button, tapped two at a time. */
+    swapping?: boolean;
+    picked?: number | null;
+    onpick?: (seat: number) => void;
     /** What sits in the middle of the table: the start button, a note. */
     centre?: Snippet;
   } = $props();
@@ -43,7 +53,7 @@
     const s = room.seats[i];
     if (s.kind === 'empty') return `${i + 1}번 자리, 빈 자리`;
     if (s.kind === 'bot') return `${i + 1}번 자리, 봇 ${botName(i)}, ${LEVEL[s.level ?? 'hard']}`;
-    return `${i + 1}번 자리, ${s.name}${me === i ? ', 나' : ''}${s.connected ? '' : ', 연결 끊김'}`;
+    return `${i + 1}번 자리, ${s.name}${me === i ? ', 나' : ''}${s.connected ? '' : ', 연결 끊김'}${s.away ? ', 자리 비움' : ''}`;
   }
 
   // ---- Arrivals ------------------------------------------------------------
@@ -81,7 +91,7 @@
   <ol class="tiles">
     {#each order as i (i)}
       {@const s = room.seats[i]}
-      <li class="tile" class:me={me === i} class:empty={s.kind === 'empty'} aria-label={label(i)}>
+      <li class="tile" class:me={me === i} class:empty={s.kind === 'empty'} class:picked={swapping && picked === i} aria-label={label(i)}>
         <span class="no" aria-hidden="true">{i + 1}</span>
         <div class="body" bind:this={bodies[i]}>
           {#if s.kind === 'empty' && !seated}
@@ -102,6 +112,10 @@
               <button class="remove" onclick={() => onremovebot(i)} aria-label="{botName(i)} 빼기">
                 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3 L9 9 M9 3 L3 9" /></svg>
               </button>
+            {:else if s.kind === 'human' && seated && me !== i && !room.in_hand && onremoveplayer}
+              <button class="remove" onclick={() => onremoveplayer(i)} aria-label="{s.name} 자리에서 빼기">
+                <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3 L9 9 M9 3 L3 9" /></svg>
+              </button>
             {/if}
 
             {#if s.kind === 'empty'}
@@ -110,10 +124,11 @@
               <span class="name">{s.kind === 'bot' ? botName(i) : s.name}</span>
             {/if}
 
-            {#if me === i || (s.kind === 'human' && !s.connected)}
+            {#if me === i || (s.kind === 'human' && (!s.connected || s.away))}
               <span class="tags">
                 {#if me === i}<span class="tag">나</span>{/if}
-                {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>{/if}
+                {#if s.kind === 'human' && !s.connected}<span class="tag warn">연결 끊김</span>
+                {:else if s.kind === 'human' && s.away}<span class="tag">자리 비움</span>{/if}
               </span>
             {/if}
 
@@ -135,6 +150,10 @@
                     onclick={() => (s.level ?? 'hard') !== l && onaddbot(i, l)}>{LEVEL[l]}</button>
                 {/each}
               </span>
+            {:else if s.kind === 'bot' && !room.in_hand}
+              <!-- Between hands a watcher may take a bot's seat. -->
+              <span class="tag">{LEVEL[s.level ?? 'hard']}</span>
+              <button class="act" onclick={() => onsit(i)} aria-label="{botName(i)} 대신 {i + 1}번 자리에 앉기">대신 앉기</button>
             {:else if s.kind === 'bot'}
               <span class="tag">{LEVEL[s.level ?? 'hard']}</span>
             {:else if s.kind === 'human' && !s.connected && seated}
@@ -142,6 +161,14 @@
             {/if}
           {/if}
         </div>
+        {#if swapping && onpick}
+          <button
+            class="pick"
+            aria-pressed={picked === i}
+            onclick={() => onpick(i)}
+            aria-label="{i + 1}번 자리 {picked === null ? '옮기기' : picked === i ? '그만 고르기' : '와 바꾸기'}"
+          ></button>
+        {/if}
       </li>
     {/each}
   </ol>
@@ -349,6 +376,30 @@
     }
   }
 
+  /* Moving seats: the whole tile is one button; the first one tapped gets
+     an ink frame and lifts a little. */
+  .pick {
+    position: absolute;
+    inset: -2px;
+    z-index: 2;
+    min-height: 0;
+    padding: 0;
+    border-radius: 16px;
+    background: transparent;
+    box-shadow: none;
+  }
+  .pick:active:not(:disabled) {
+    transform: none;
+  }
+  .tile.picked {
+    border-color: var(--ink);
+    border-style: solid;
+    transform: translateY(-4px);
+    box-shadow: 0 4px 0 var(--line);
+  }
+  .tile {
+    transition: transform var(--dur-quick) var(--ease-standard);
+  }
   /* Taking a bot out: a small cross on the figure's shoulder, with a full
      44px touch target around it. */
   .remove {

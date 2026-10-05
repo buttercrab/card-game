@@ -40,7 +40,12 @@ const ERRORS: [RegExp, string][] = [
   [/every seat needs/, '빈 자리를 먼저 채워 주세요'],
   [/pick a name/, '이름을 적어 주세요'],
   [/illegal action/, '지금은 그렇게 할 수 없어요'],
+  [/seats move only between hands/, '자리는 판과 판 사이에만 바꿀 수 있어요'],
   [/only between hands/, '규칙은 판과 판 사이에만 바꿀 수 있어요'],
+  [/no such turn limit/, '그 시간으로는 정할 수 없어요'],
+  [/no player in that seat/, '그 자리에는 사람이 없어요'],
+  [/leave your own seat/, '내 자리는 직접 일어나 주세요'],
+  [/table is full/, '자리가 다 찼어요'],
   [/bidding range is empty/, '공약 최소가 최대보다 클 수 없어요'],
   [/no-trump bonus/, '노기루다 보너스는 최소 공약보다 작아야 해요'],
   [/no way to choose a friend/, '프렌드를 정하는 방법을 하나는 골라 주세요'],
@@ -74,6 +79,8 @@ export class RoomClient {
   reactions = $state<Record<number, { text: string; id: number }>>({});
   /** What the bot would do in your place, until the hand moves on. */
   hint = $state<Action | null>(null);
+  /** The turn timer, with its deadline on this page's clock (performance.now()). */
+  clock = $state<{ seat: number; deadline: number; total: number } | null>(null);
 
   #id: string;
   #ws: WebSocket | null = null;
@@ -103,7 +110,8 @@ export class RoomClient {
       this.status = 'open';
       this.#retry = 500;
       const saved = load<Saved>(this.#key);
-      if (saved) this.#send({ type: 'join', name: saved.name, token: saved.token, device: device() });
+      // Only to take back our own seat: if it was given away meanwhile, we watch.
+      if (saved?.token) this.#send({ type: 'join', name: saved.name, token: saved.token, device: device(), reclaim: true });
     };
     ws.onmessage = (event) => this.#receive(JSON.parse(event.data) as ServerMsg);
     ws.onclose = async () => {
@@ -129,9 +137,20 @@ export class RoomClient {
 
   #receive(msg: ServerMsg) {
     switch (msg.type) {
-      case 'room':
+      case 'room': {
         this.room = msg;
+        const c = msg.clock;
+        // Kept while it is the same turn, so the ring does not jump with
+        // each message's few milliseconds of travel.
+        const deadline = c ? performance.now() + c.ms : 0;
+        const was = this.clock;
+        if (!c) this.clock = null;
+        else if (!was || was.seat !== c.seat || was.total !== c.total_ms || Math.abs(was.deadline - deadline) > 400)
+          this.clock = { seat: c.seat, deadline, total: c.total_ms };
+        // The seats were moved and the last hand put away.
+        if (msg.showing === false && !msg.in_hand) this.game = null;
         break;
+      }
       case 'state':
         this.game = msg;
         this.hint = null;
@@ -145,6 +164,16 @@ export class RoomClient {
         store(this.#key, { token: msg.token, name } satisfies Saved);
         break;
       }
+      case 'unseated':
+        this.seat = null;
+        this.#forget();
+        break;
+      case 'seats_moved':
+        // The table on screen was drawn for the old seats; the next hand
+        // (or the room) draws afresh.
+        this.game = null;
+        this.notice(msg.how === 'shuffle' ? '자리를 섞었어요' : '자리를 바꿨어요');
+        break;
       case 'reaction': {
         const id = ++this.#reactionId;
         this.reactions[msg.seat] = { text: msg.text, id };
@@ -176,11 +205,35 @@ export class RoomClient {
   leave() {
     this.#send({ type: 'leave' });
     this.seat = null;
+    this.#forget();
+  }
+
+  /** Drops this table's seat token, keeping the name for the next seat. */
+  #forget() {
+    const name = load<Saved>(this.#key)?.name;
     try {
       localStorage.removeItem(this.#key);
     } catch {
       // Nothing to forget.
     }
+    if (name) store(NAME_KEY, name);
+  }
+
+  setTable(table: { turn_secs?: number; shuffle?: boolean }) {
+    this.#send({ type: 'set_table', ...table });
+  }
+
+  shuffleSeats() {
+    this.#send({ type: 'shuffle_seats' });
+  }
+
+  swapSeats(a: number, b: number) {
+    this.#send({ type: 'swap_seats', a, b });
+  }
+
+  /** Sends the player at `seat` back to watching, between hands. */
+  clearSeat(seat: number) {
+    this.#send({ type: 'clear_seat', seat });
   }
 
   /** Seats a bot, or changes the level of the one already there. */

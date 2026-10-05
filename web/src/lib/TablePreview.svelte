@@ -1,7 +1,11 @@
 <script lang="ts">
   // The real table with made-up data, for checking layout at any size:
   // /preview?state=bidding | waiting | misdeal | exchange | friend | secret | nofriend | play | watch | late | sweep | done | won | run
-  // (waiting and watch are the bidding and the play on someone else's turn).
+  // (waiting and watch are the bidding and the play on someone else's turn),
+  // and for the turn limit and the room: timer (another seat's ring, a seat
+  // away) | mytimer (your last seconds) | spectate | contract (the exchange
+  // with a trump change and raises) | room (the room between hands).
+  import Room from './Room.svelte';
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
   import type { Bid, Card, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
@@ -194,20 +198,74 @@
     in_hand: which !== 'done' && which !== 'won' && which !== 'run',
   };
 
-  const alias: Record<string, string> = { sweep: 'play', misdeal: 'bidding', waiting: 'bidding' };
+  const alias: Record<string, string> = {
+    sweep: 'play',
+    misdeal: 'bidding',
+    waiting: 'bidding',
+    timer: 'watch',
+    spectate: 'watch',
+    mytimer: 'play',
+    contract: 'exchange',
+  };
   const key = alias[which] ?? which;
   const turn: StateMsg['turn'] =
-    key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' ? { Seat: 4 } : which === 'watch' ? { Seat: 3 } : { Seat: 0 };
+    key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' ? { Seat: 4 } : key === 'watch' ? { Seat: 3 } : { Seat: 0 };
+
+  if (which === 'timer' || which === 'mytimer' || which === 'spectate' || which === 'room') {
+    room.table = { turn_secs: 20, shuffle: which === 'room' };
+    room.watching = 2;
+    room.seats[2] = { kind: 'human', name: '아주긴이름의친구입니다', connected: true, away: true };
+  }
+  if (which === 'room') {
+    room.in_hand = false;
+    room.showing = true;
+  }
+  if (which === 'contract') {
+    // 공약 올리기 on: a trump chip picks the trump, the row under it the contract.
+    rules.bidding.raise_on_exchange = true;
+    const counts = [16, 17, 18, 19, 20];
+    legal.exchange = [
+      ...legal.exchange,
+      ...(['Heart', 'Diamond', 'Club', null] as const).map((t) => ({ ChangeTrump: t })),
+      ...counts.map((count) => ({ Raise: { trump: 'Spade' as const, count } })),
+      ...counts.slice(1).map((count) => ({ Raise: { trump: 'Heart' as const, count } })),
+    ];
+  }
+  const game = key === 'exchange' ? msg(phases.bidding, 'bidding', { Seat: 0 }) : msg(phases[key] ?? phases.play, key, turn);
+  if (which === 'spectate') {
+    game.view.viewer = 'Spectator';
+    game.view.hand = [];
+    game.legal = [];
+  }
+  const noop = () => {};
   const client = $state({
     room,
     // The exchange opens on the bidding, so the table sees which cards came from the kitty.
-    game: key === 'exchange' ? msg(phases.bidding, 'bidding', { Seat: 0 }) : msg(phases[key] ?? phases.play, key, turn),
-    seat: 0,
+    game: which === 'room' ? null : game,
+    seat: which === 'spectate' ? null : 0,
     error: null,
-    act: () => {},
-    start: () => {},
-    react: () => {},
-    notice: () => {},
+    status: 'open',
+    clock:
+      which === 'timer' || which === 'spectate'
+        ? { seat: 3, deadline: performance.now() + 13000, total: 20000 }
+        : which === 'mytimer'
+          ? { seat: 0, deadline: performance.now() + 4800, total: 20000 }
+          : null,
+    act: noop,
+    start: noop,
+    react: noop,
+    notice: noop,
+    close: noop,
+    join: noop,
+    leave: noop,
+    addBot: noop,
+    removeBot: noop,
+    setRules: noop,
+    setTable: noop,
+    shuffleSeats: noop,
+    swapSeats: noop,
+    clearSeat: noop,
+    askHint: noop,
     reactions: { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
 
@@ -224,7 +282,7 @@
     }, 300);
   }
 
-  if (which === 'exchange') {
+  if (key === 'exchange') {
     Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
     setTimeout(() => (client.game = msg(phases.exchange, 'exchange', { Seat: 0 })), 300);
   }
@@ -239,11 +297,15 @@
   }
 </script>
 
-<div class="page">
-  <!-- Where the room's header sits (Room.svelte), so the table gets the same height. -->
-  <header class="mock" aria-hidden="true">← 미리보기 · {which}</header>
-  <Table client={client as unknown as RoomClient} />
-</div>
+{#if which === 'room'}
+  <Room id="preview" onleave={noop} preview={client as unknown as RoomClient} />
+{:else}
+  <div class="page">
+    <!-- Where the room's header sits (Room.svelte), so the table gets the same height. -->
+    <header class="mock" aria-hidden="true">← 미리보기 · {which}</header>
+    <Table client={client as unknown as RoomClient} onroom={noop} />
+  </div>
+{/if}
 
 <style>
   .page {
