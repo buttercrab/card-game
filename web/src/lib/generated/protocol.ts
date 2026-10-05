@@ -110,6 +110,12 @@ protocol: string,
  */
 presets: Array<PresetInfo>, default_preset: Preset, 
 /**
+ * What the server assumes for a rule that saved rules leave out (rules
+ * saved before it existed): a set kept on a device fills its gaps
+ * from these, as the server would.
+ */
+rule_defaults: Rules, 
+/**
  * From weakest to strongest.
  */
 bot_levels: Array<BotLevelInfo>, 

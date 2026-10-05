@@ -76,14 +76,11 @@ const AWAY_SECS: u32 = 5;
 pub struct TableSettings {
     /// Seconds per decision, or 0 for no limit. The weightier decisions
     /// (see [`SessionGame::long_decision`]) get twice as long.
-    #[serde(default)]
     pub turn_secs: u32,
     /// Deal the players into new seats before every hand.
-    #[serde(default)]
     pub shuffle: bool,
     /// Deal the players into new seats when the next hand starts, once
     /// (섞기 between hands); cleared when it has.
-    #[serde(default)]
     pub shuffle_next: bool,
 }
 
@@ -185,11 +182,8 @@ enum Occupant {
         player: Option<String>,
     },
     Bot {
-        #[serde(default)]
         level: Level,
-        /// Given when the bot sits down; see [`BOT_NAMES`]. Rooms saved
-        /// before bots had names get the seat's name when restored.
-        #[serde(default)]
+        /// Given when the bot sits down; see [`BOT_NAMES`].
         name: String,
     },
 }
@@ -495,15 +489,9 @@ impl<G: SessionGame> Room<G> {
             seats: Vec<Occupant>,
             scores: Vec<i64>,
             hands_played: u32,
-            #[serde(default)]
             history: Vec<Vec<i64>>,
-            #[serde(default = "Vec::new")]
             hands: Vec<T>,
-            /// Rooms saved before tables had their own settings have none.
-            #[serde(default)]
             table: TableSettings,
-            /// Rooms saved before seats could move have none.
-            #[serde(default)]
             rotation: usize,
             hand: Option<SavedHand>,
         }
@@ -516,15 +504,6 @@ impl<G: SessionGame> Room<G> {
             return Err("seat count does not match the settings".into());
         }
         room.seats = s.seats;
-        // Bots saved before they had names get one, by seat as they were shown.
-        for seat in 0..room.seats.len() {
-            if matches!(&room.seats[seat], Occupant::Bot { name, .. } if name.is_empty()) {
-                let fresh = room.new_bot_name(seat);
-                if let Occupant::Bot { name, .. } = &mut room.seats[seat] {
-                    *name = fresh;
-                }
-            }
-        }
         room.scores = s.scores;
         room.hands_played = s.hands_played;
         room.history = s.history;

@@ -200,7 +200,6 @@ impl AppState {
             let loaded = std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|text| serde_json::from_str(&text).map_err(|e| e.to_string()))
-                .map(freeze_saved::<Mighty>)
                 .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.bot_delay));
             match loaded {
                 Ok(mut room) => {
@@ -326,18 +325,6 @@ impl AppState {
     fn room(&self, id: &str) -> Option<UnboundedSender<Command>> {
         self.rooms.lock().expect("room registry poisoned").get(id).cloned()
     }
-}
-
-/// Pins the settings of a room saved before rooms pinned their rules; see
-/// [`SessionGame::freeze`]. Pinned settings, or ones that do not load, pass.
-fn freeze_saved<G: SessionGame>(mut snapshot: Value) -> Value {
-    if let Ok(mut settings) = serde_json::from_value::<G::Settings>(snapshot["settings"].clone()) {
-        G::freeze(&mut settings);
-        if let Ok(frozen) = serde_json::to_value(settings) {
-            snapshot["settings"] = frozen;
-        }
-    }
-    snapshot
 }
 
 /// The API under `/api`, plus the built web client from `web_dir` if given.

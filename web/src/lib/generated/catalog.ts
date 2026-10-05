@@ -4,7 +4,7 @@
 import type { Catalog } from './protocol';
 
 export const CATALOG: Catalog = {
-  "protocol": "044d03734b77",
+  "protocol": "4a7bb8eb0a60",
   "presets": [
     {
       "id": "default",
@@ -1089,6 +1089,104 @@ export const CATALOG: Catalog = {
     }
   ],
   "default_preset": "default",
+  "rule_defaults": {
+    "players": 5,
+    "hand_size": 10,
+    "deck": "OneJoker",
+    "lowest_rank": 2,
+    "extra_cards": [],
+    "misdeal": {
+      "point_value": 1,
+      "joker_value": 0,
+      "card_values": [],
+      "threshold": 0,
+      "all_points": false,
+      "after_bidding": false,
+      "declarer": false,
+      "ask_first": false,
+      "caller_deals": false
+    },
+    "bidding": {
+      "min": 13,
+      "max": 20,
+      "allow_no_trump": true,
+      "no_trump_bonus": 0,
+      "no_trump_wins_ties": true,
+      "first_bidder_may_pass": true,
+      "change_trump_cost": 2,
+      "change_to_no_trump_cost": null,
+      "pass_is_final": true,
+      "last_chance_min": null,
+      "raise_on_exchange": false
+    },
+    "friend": {
+      "by_card": true,
+      "by_seat": true,
+      "first_trick": true,
+      "last_trick": true,
+      "fake": true,
+      "alone": true
+    },
+    "policy": {
+      "mighty": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "trump": {
+        "first": "NoLead",
+        "last": "Valid"
+      },
+      "joker": {
+        "first": "NoEffect",
+        "last": "NoEffect"
+      },
+      "joker_call": {
+        "first": "Valid",
+        "last": "Valid"
+      },
+      "overrides": [],
+      "release_with_mighty": true
+    },
+    "joker_call": {
+      "calls": [
+        [
+          {
+            "Normal": [
+              "Club",
+              3
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              3
+            ]
+          }
+        ]
+      ],
+      "mighty_defense": true,
+      "called_joker_has_power": false
+    },
+    "joker_lead": {
+      "by_color": false,
+      "powerless_passes": false,
+      "not_first_trick": false
+    },
+    "scoring": {
+      "win": "OverTen",
+      "lose": "Shortfall",
+      "no_trump": "Win",
+      "alone": "Win",
+      "run": true,
+      "back_run": {
+        "TeamAtMost": 10
+      },
+      "full_contract": "Never",
+      "discards_to_declarer": true
+    },
+    "reveal_discards": true,
+    "next_dealer": "Rotate"
+  },
   "bot_levels": [
     {
       "id": "easy",

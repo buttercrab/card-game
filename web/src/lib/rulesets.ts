@@ -1,5 +1,6 @@
 // The custom sets a group saved on this device; the presets come with the
 // build (catalog.ts).
+import { CATALOG } from './catalog';
 import { same } from './ruleFields';
 import type { Rules } from './types';
 
@@ -19,11 +20,26 @@ export function customName(set: CustomSet): string {
   return set.name.trim() || '우리 규칙';
 }
 
+/** `saved` with every option it leaves out (rules saved before the option
+ * existed) filled from `defaults`, as the server reads them. */
+export function fillGaps<T>(saved: T, defaults: T): T {
+  if (saved === undefined) return structuredClone(defaults);
+  const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!plain(saved) || !plain(defaults)) return saved;
+  const out: Record<string, unknown> = { ...saved };
+  for (const [key, value] of Object.entries(defaults)) out[key] = fillGaps(saved[key], value);
+  return out as T;
+}
+
 /** Saved sets, the last used first. */
 export function loadCustom(): CustomSet[] {
   try {
     const list = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '[]');
-    return Array.isArray(list) ? list.filter((s) => s && typeof s.base === 'string' && s.rules) : [];
+    return Array.isArray(list)
+      ? list
+          .filter((s) => s && typeof s.base === 'string' && s.rules)
+          .map((s: CustomSet) => ({ ...s, rules: fillGaps(s.rules, CATALOG.rule_defaults) }))
+      : [];
   } catch {
     return [];
   }

@@ -208,28 +208,6 @@ async fn a_stopping_server_saves_its_tables_and_the_next_restores_them() {
 }
 
 #[tokio::test]
-async fn a_table_saved_before_rules_were_pinned_is_pinned_on_restore() {
-    let dir = temp_dir("pin");
-    std::fs::create_dir_all(&dir).unwrap();
-    let old = json!({
-        "format": 1, "id": "oldtbl", "game": "mighty",
-        "settings": { "preset": "gshs" },
-        "seats": [{ "kind": "empty" }, { "kind": "empty" }, { "kind": "empty" }, { "kind": "empty" }, { "kind": "empty" }],
-        "scores": [0, 0, 0, 0, 0], "hands_played": 0, "hand": null,
-    });
-    std::fs::write(dir.join("oldtbl.json"), old.to_string()).unwrap();
-    let state = AppState::new(Duration::ZERO).with_data(dir.clone());
-    assert_eq!(state.restore_rooms().unwrap(), 1);
-    let addr = serve(state).await;
-    let mut ws = connect(addr, "oldtbl").await;
-    join(&mut ws, "A", None).await;
-    let room = next(&mut ws, "room").await;
-    assert_eq!(room["settings"]["preset"], "gshs");
-    assert!(room["settings"]["preset_rules"].is_object(), "{room}");
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[tokio::test]
 async fn the_stats_show_the_bot_worker_link() {
     let state = AppState::new(Duration::ZERO)
         .with_stats_token("secret".into())

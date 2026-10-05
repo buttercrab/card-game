@@ -54,6 +54,10 @@ pub struct Catalog {
     /// In the order players pick them.
     pub presets: Vec<PresetInfo>,
     pub default_preset: Preset,
+    /// What the server assumes for a rule that saved rules leave out (rules
+    /// saved before it existed): a set kept on a device fills its gaps
+    /// from these, as the server would.
+    pub rule_defaults: Rules,
     /// From weakest to strongest.
     pub bot_levels: Vec<BotLevelInfo>,
     /// The level a bot sits down at unless asked for another.
@@ -88,6 +92,7 @@ pub fn catalog() -> Catalog {
             })
             .collect(),
         default_preset: DEFAULT_PRESET,
+        rule_defaults: Rules::default(),
         bot_levels: Level::ALL
             .iter()
             .map(|&id| BotLevelInfo {
@@ -109,6 +114,45 @@ pub fn catalog() -> Catalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rules saved without an option read it as `rule_defaults` has it,
+    /// so the client filling gaps from them agrees with the server.
+    #[test]
+    fn rule_defaults_are_what_the_server_assumes() {
+        let defaults = serde_json::to_value(catalog().rule_defaults).unwrap();
+        let mut saved = serde_json::to_value(Preset::Gshs.rules()).unwrap();
+        let optional = [
+            "/lowest_rank",
+            "/extra_cards",
+            "/joker_lead",
+            "/scoring",
+            "/reveal_discards",
+            "/next_dealer",
+            "/misdeal/all_points",
+            "/misdeal/after_bidding",
+            "/misdeal/declarer",
+            "/misdeal/ask_first",
+            "/misdeal/caller_deals",
+            "/bidding/change_to_no_trump_cost",
+            "/bidding/pass_is_final",
+            "/bidding/last_chance_min",
+            "/bidding/raise_on_exchange",
+            "/policy/release_with_mighty",
+        ];
+        for path in optional {
+            let (parent, key) = path.rsplit_once('/').unwrap();
+            let parent = if parent.is_empty() {
+                &mut saved
+            } else {
+                saved.pointer_mut(parent).unwrap()
+            };
+            parent.as_object_mut().unwrap().remove(key).unwrap();
+        }
+        let read = serde_json::to_value(serde_json::from_value::<Rules>(saved).unwrap()).unwrap();
+        for path in optional {
+            assert_eq!(read.pointer(path), defaults.pointer(path), "{path}");
+        }
+    }
 
     #[test]
     fn every_preset_is_offered_once() {

@@ -935,52 +935,21 @@ async fn shuffling_every_hand_reseats_before_the_deal() {
     );
 }
 
+/// A room saved by this server comes back as it was; one in an older
+/// shape (from before the last deploy but one, which tables never
+/// outlive) is refused, and the server sets its file aside.
 #[test]
-fn rooms_saved_before_table_settings_still_restore() {
+fn only_the_current_snapshot_shape_restores() {
     use mighty::Mighty;
     use server::room::Room;
     use server::session::MightySettings;
     let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), Duration::ZERO);
     let mut snapshot = room.snapshot();
-    assert_eq!(
-        snapshot["table"],
-        json!({ "turn_secs": 0, "shuffle": false, "shuffle_next": false })
-    );
-    snapshot.as_object_mut().unwrap().remove("table");
-    assert!(Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).is_ok());
-    snapshot["table"] = json!({ "turn_secs": 40, "shuffle": true });
-    let restored = Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).unwrap();
-    assert_eq!(
-        restored.snapshot()["table"],
-        json!({ "turn_secs": 40, "shuffle": true, "shuffle_next": false })
-    );
-    // A shuffle pressed for the next hand survives a restart.
     snapshot["table"]["shuffle_next"] = json!(true);
-    let restored = Room::<Mighty>::restore(snapshot, Duration::ZERO).unwrap();
-    assert_eq!(restored.snapshot()["table"]["shuffle_next"], true);
-}
-
-#[test]
-fn bots_saved_before_they_had_names_get_their_seats_names() {
-    use mighty::Mighty;
-    use server::room::Room;
-    use server::session::MightySettings;
-    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), Duration::ZERO);
-    let mut snapshot = room.snapshot();
-    snapshot["seats"] = json!([
-        { "kind": "human", "name": "A", "token": "t" },
-        { "kind": "bot", "level": "easy" },
-        { "kind": "empty" },
-        { "kind": "bot" },
-        { "kind": "bot", "level": "normal", "name": "콩떡" },
-    ]);
-    let restored = Room::<Mighty>::restore(snapshot, Duration::ZERO).unwrap().snapshot();
-    let seats = restored["seats"].as_array().unwrap();
-    assert_eq!(seats[1], json!({ "kind": "bot", "level": "easy", "name": "모과" }));
-    assert_eq!(seats[3], json!({ "kind": "bot", "level": "hard", "name": "보리" }));
-    assert_eq!(seats[4]["name"], "콩떡", "a saved name stays");
-    // Saved before seats could move: no rotation yet.
-    assert_eq!(restored["rotation"], 0);
+    let restored = Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).unwrap();
+    assert_eq!(restored.snapshot(), snapshot);
+    snapshot.as_object_mut().unwrap().remove("table");
+    assert!(Room::<Mighty>::restore(snapshot, Duration::ZERO).is_err());
 }
 
 /// Each seat's name (a person's or a bot's), and a bot's level, by seat.
