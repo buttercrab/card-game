@@ -93,7 +93,7 @@
   }
   .count {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .step {
     display: grid;

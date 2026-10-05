@@ -220,7 +220,7 @@
   /* The running total: tabular, quiet, red below zero. */
   .score {
     padding: 0 6px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--table);
     box-shadow: 0 0 0 1px var(--line);
     font-family: var(--font-display);
@@ -237,7 +237,7 @@
     gap: 4px;
     max-width: 100%;
     padding: 1px 8px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     transition:
       background-color var(--dur-quick) var(--ease-standard),
       color var(--dur-quick) var(--ease-standard);
@@ -334,7 +334,7 @@
     justify-content: center;
     align-items: center;
     gap: 4px;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
@@ -344,8 +344,8 @@
   }
   .team {
     padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 12px;
+    border-radius: var(--r-pill);
+    font-size: var(--text-caption);
     line-height: 18px;
     /* A ring of table colour keeps the badge apart from a robe of the
        same team colour behind it. */
@@ -353,7 +353,7 @@
   }
   .team.declarer {
     background: var(--team-declarer);
-    color: #1c1915;
+    color: var(--on-team-declarer);
   }
   .team.defense {
     background: var(--team-defense);
@@ -371,18 +371,18 @@
   /* 자리 비움: a quiet outlined pill, like a note pinned on the robe. */
   .away {
     padding: 0 6px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--table);
     color: var(--ink-muted);
     line-height: 18px;
-    font-size: 12px;
+    font-size: var(--text-caption);
     box-shadow: inset 0 0 0 1px var(--ink-muted);
     white-space: nowrap;
   }
   /* Points won: a small pill; the count only, never the cards. */
   .points {
     padding: 0 6px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--table);
     color: var(--ink);
     line-height: 18px;
@@ -395,12 +395,12 @@
     top: 0;
     z-index: 5;
     padding: 4px 12px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--card);
     /* The bubble is card paper in both themes, so its text is card ink. */
     color: var(--card-ink);
     box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 700;
     white-space: nowrap;
     pointer-events: none;
@@ -468,10 +468,10 @@
     top: 0;
     z-index: 4;
     padding: 2px 9px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--ink);
     color: var(--table);
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     /* A long note (노기루다 20) takes two short lines, so the

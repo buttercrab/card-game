@@ -177,7 +177,7 @@
   .caption {
     margin: 0;
     text-align: center;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
   }
   .actions > button:not(.primary) {

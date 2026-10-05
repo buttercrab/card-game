@@ -309,7 +309,7 @@
   }
   .own-head {
     margin: 4px 0 0;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .sub {
     font-weight: 400;
@@ -349,7 +349,7 @@
   }
   .change .muted {
     flex: none;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .num {
     font-variant-numeric: tabular-nums;

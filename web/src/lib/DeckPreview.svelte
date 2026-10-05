@@ -134,7 +134,7 @@
   }
   h1 {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   .themes {
     display: grid;
@@ -148,17 +148,17 @@
   .sheet {
     min-width: 0;
     padding: 16px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--table);
     color: var(--ink);
   }
   h2 {
     margin: 0 0 8px;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   h3 {
     margin: 20px 0 10px;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -203,7 +203,7 @@
     border-radius: 8px;
   }
   figcaption {
-    font-size: 12px;
+    font-size: var(--text-caption);
     color: var(--ink-muted);
   }
 </style>

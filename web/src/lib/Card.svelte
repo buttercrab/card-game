@@ -474,9 +474,9 @@
     left: 5cqw;
     bottom: 5cqw;
     padding: 5px 1px;
-    border-radius: 999px;
-    background: #645d53;
-    color: #fbf8f2;
+    border-radius: var(--r-pill);
+    background: var(--card-ink-muted);
+    color: var(--card);
     font-family: var(--font);
     font-size: 11px;
     font-weight: 700;
@@ -532,7 +532,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: repeating-linear-gradient(-45deg, transparent 0 6px, rgb(28 25 21 / 0.08) 6px 8px);
+    background: repeating-linear-gradient(-45deg, transparent 0 6px, color-mix(in srgb, var(--card-ink) 8%, transparent) 6px 8px);
   }
 
   button.card {

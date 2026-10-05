@@ -10,6 +10,7 @@
   import { blinker } from './blink';
   import { hop } from './motion';
   import { settings } from './settings.svelte';
+  import { FIXED } from './tokens';
   import type { Suit } from './types';
 
   let {
@@ -39,11 +40,11 @@
     still?: boolean;
   } = $props();
 
-  const GOLD = '#A77A12';
-  const SKIN = '#F3E3CF';
+  const GOLD = FIXED['card-gold'];
+  const SKIN = FIXED.skin;
   // Eyes are drawn darker and a little larger than on the cards: the figure
   // is small, and the face must read on a dark table too.
-  const EYE = '#2B2620';
+  const EYE = FIXED['figure-eye'];
   const GLANCE = 3.5;
 
   const moving = $derived(!still && settings.speed !== 'off' && !prefersReducedMotion.current);

@@ -57,7 +57,7 @@
     margin: 0;
   }
   .other {
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   /* Phone: the label on its own line, the two values under it. Wider: one
      line of label, value, value. */
@@ -113,7 +113,7 @@
   }
   h4 {
     margin: 0 0 2px;
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 700;
     color: var(--ink-muted);
   }
@@ -129,7 +129,7 @@
   }
   dt {
     font-weight: 700;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
   }
   dd {

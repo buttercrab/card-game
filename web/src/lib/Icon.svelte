@@ -18,15 +18,16 @@
 </script>
 
 <script lang="ts">
+  import { FIXED } from './tokens';
   // Small drawn icons for the play UI, in the flat figure language of
   // CourtArt: ink outlines in `currentColor`, the court's skin and gold
   // fixed. Used instead of system emoji, which differ on every device.
   // Decorative: the button that holds one carries the label.
   let { name, size = '1.3em' }: { name: IconName; size?: string } = $props();
 
-  const GOLD = '#A77A12';
-  const SKIN = '#F3E3CF';
-  const INK = '#2B2620';
+  const GOLD = FIXED['card-gold'];
+  const SKIN = FIXED.skin;
+  const INK = FIXED['figure-eye'];
 </script>
 
 <svg viewBox="0 0 24 24" width={size} height={size} class="icon" aria-hidden="true">

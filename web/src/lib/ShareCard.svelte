@@ -6,6 +6,7 @@
   import { occupantName } from './names';
   import { presetTitle } from './catalog';
   import { PATHS } from './SuitIcon.svelte';
+  import { FIXED, SUIT_INK, THEME } from './tokens';
   import type { HandSummary, RoomMsg, Suit } from './types';
 
   let { room, onclose }: { room: RoomMsg; onclose: () => void } = $props();
@@ -31,16 +32,16 @@
   const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
   const short = (name: string) => (name.length > 10 ? `${name.slice(0, 10)}…` : name);
 
-  const PAPER = '#efebe3';
-  const CARD = '#fbf8f2';
-  const INK = '#1c1915';
-  const MUTED = '#645d53';
-  const LINE = '#d6cfc1';
-  const DECLARER = '#e69f00';
-  const DEFENSE = '#3b4a6b';
-  const GOLD = '#a77a12';
-  const DANGER = '#b3261e';
-  const SUIT_INK: Record<Suit, string> = { Spade: INK, Heart: '#a3271f', Diamond: '#c2620a', Club: '#1d5fb0' };
+  // A picture to send around: always the light theme's paper and ink.
+  const PAPER = THEME.table.light;
+  const CARD = THEME.card.light;
+  const INK = THEME.ink.light;
+  const MUTED = THEME['ink-muted'].light;
+  const LINE = THEME.line.light;
+  const DECLARER = FIXED['team-declarer'];
+  const DEFENSE = THEME['team-defense'].light;
+  const GOLD = FIXED['card-gold'];
+  const DANGER = THEME.danger.light;
   const SUIT_TEXT: Record<Suit, string> = { Spade: '♠', Heart: '♥', Diamond: '♦', Club: '♣' };
 
   /** The session as text for a chat, with emoji squares in place of the grid. */
@@ -312,20 +313,20 @@
 <style>
   h2 {
     margin: 0 0 12px;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   img {
     display: block;
     width: 100%;
     max-height: 60dvh;
     object-fit: contain;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     box-shadow: var(--shadow-card);
     animation: fade-up 260ms var(--ease-standard) both;
   }
   .status {
     min-height: 1.4em;
     margin: 8px 0 0;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
 </style>

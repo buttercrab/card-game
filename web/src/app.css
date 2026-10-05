@@ -1,169 +1,146 @@
-/* Tokens from docs/DESIGN.md. The legacy names at the end of each block keep
-   older components working until they are restyled. */
+/* Tokens from docs/DESIGN.md. Each colour is written once, as
+   light-dark(light, dark): the theme follows the system, or a data-theme
+   attribute (DeckPreview shows both themes side by side). A custom
+   property settles light-dark() where it is declared, so the block is
+   declared again on any [data-theme] element. Code that cannot read
+   these (a canvas, SVG fills, media queries in script) takes the same
+   values from lib/tokens.ts; tokens.test.ts checks the two agree. */
 :root,
-[data-theme='light'] {
-  --table: #efebe3;
-  --panel: #e6e1d6;
-  --line: #d6cfc1;
-  --ink: #1c1915;
-  --ink-muted: #645d53;
-  --card: #fbf8f2;
-  --card-edge: #d9d1c2;
+[data-theme] {
+  color-scheme: light dark;
+
+  /* Surfaces and inks. */
+  --table: light-dark(#efebe3, #17191c);
+  --panel: light-dark(#e6e1d6, #202327);
+  --line: light-dark(#d6cfc1, #2f343a);
+  --ink: light-dark(#1c1915, #ece7dd);
+  --ink-muted: light-dark(#645d53, #9a958b);
+  /* Card paper: the brightest thing on screen; dimmed a little in the dark. */
+  --card: light-dark(#fbf8f2, #ece6da);
+  --card-edge: light-dark(#d9d1c2, #cfc8ba);
+  --card-warm: light-dark(#fbf4e6, #efe6d3);
   --card-back: #2a2622;
-  --accent: #8e2f6b;
-  --accent-deep: #6b2251;
-  --on-accent: #ffffff;
+  /* Plum: "you can act now", and nothing else. */
+  --accent: light-dark(#8e2f6b, #d27bb0);
+  --accent-deep: light-dark(#6b2251, #a2558a);
+  --on-accent: light-dark(#ffffff, #17191c);
+  --danger: light-dark(#b3261e, #ef6b62);
+  /* The hand's one huge moment (런, a big win), and earned awards. */
+  --gold: light-dark(#a77a12, #d9b04f);
+
+  /* Suits, on card faces. Cards stay light in dark mode, so these and
+     everything else drawn on card paper keep their light-theme values. */
   --suit-spade: #1c1915;
-  /* Darker than the diamond, so the two reds part by lightness too. */
   --suit-heart: #a3271f;
   --suit-diamond: #c2620a;
   --suit-club: #1d5fb0;
-  --team-declarer: #e69f00;
-  --team-defense: #3b4a6b;
-  --on-team-defense: #ffffff;
-  /* Gold and warmer stock on card faces. Cards stay light in dark mode,
-     so these do not flip with the theme. */
   --card-gold: #a77a12;
-  --card-warm: #fbf4e6;
-  /* The hand's one huge moment (런, a big win). */
-  --gold: #a77a12;
-  --danger: #b3261e;
-  --shadow-card: 0 2px 0 rgb(28 25 21 / 0.1);
-  --shadow-raised: 0 6px 0 rgb(28 25 21 / 0.07);
+  --card-ink: #1c1915;
+  --card-ink-muted: #645d53;
+  --accent-on-card: #8e2f6b;
+  --skin: #f3e3cf;
+  --figure-eye: #2b2620;
+
+  /* Teams, and what is written on them. */
+  --team-declarer: #e69f00;
+  --on-team-declarer: #1c1915;
+  --team-defense: light-dark(#3b4a6b, #8fa3c9);
+  --on-team-defense: light-dark(#ffffff, #17191c);
 
   /* Sheets: a dimmed page behind, the dialog a surface of its own. */
-  --scrim: rgb(28 25 21 / 0.4);
-  --raised: var(--panel);
-  --raised-line: var(--line);
+  --scrim: light-dark(rgb(28 25 21 / 0.4), rgb(0 0 0 / 0.62));
+  --raised: light-dark(var(--panel), color-mix(in srgb, var(--panel) 93%, #fff));
+  --raised-line: light-dark(var(--line), #3d434a);
   /* Text fields, and the plain (secondary) button with its lip. */
-  --field: var(--card);
-  --on-field: #1c1915;
-  --btn: var(--card);
-  --on-btn: #1c1915;
-  --btn-lip: var(--card-edge);
+  --field: light-dark(var(--card), color-mix(in srgb, var(--table) 80%, #000));
+  --btn: light-dark(var(--card), #31353b);
+  --btn-lip: light-dark(var(--card-edge), #0f1113);
   /* A chosen chip is filled with ink; its lip a shade darker. */
-  --chip-lip: #000;
+  --chip-lip: light-dark(#000, #9a958b);
   /* A control that cannot be used yet: no colour, no lip. */
   --off: color-mix(in srgb, var(--ink) 10%, var(--table));
 
+  /* Hard, faint offsets: "object on a table". Nothing is blurred. */
+  --shadow-card: 0 2px 0 light-dark(rgb(28 25 21 / 0.1), rgb(0 0 0 / 0.35));
+  --shadow-raised: 0 6px 0 light-dark(rgb(28 25 21 / 0.07), rgb(0 0 0 / 0.3));
+  /* Paper laid over the table (a bubble, a popover, a pill): a hairline
+     and a hard lip. */
+  --lip: 0 3px 0 light-dark(rgb(28 25 21 / 0.12), rgb(0 0 0 / 0.4));
+
+  /* Type: Pretendard for words, Wanted Sans for numbers and ranks. */
+  --font: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif;
+  --font-display: 'Wanted Sans Variable', 'Pretendard Variable', 'Apple SD Gothic Neo', sans-serif;
+  --text-display: 32px;
+  --text-headline: 22px;
+  --text-title: 17px;
+  --text-body: 15px;
+  --text-label: 13px;
+  --text-caption: 12px;
+
+  /* A 4px base. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --r-mini: 6px;
+  --r-card: 8px;
+  --r-control: 12px;
+  --r-panel: 16px;
+  --r-pill: 999px;
+
+  /* Layers, bottom to top. */
+  --z-felt: 0;
+  --z-seat: 2;
+  --z-seat-over: 5;
+  --z-controls: 7;
+  --z-status: 8;
+  --z-result: 9;
+  --z-banner: 15;
+  --z-menu: 30;
+  --z-popover: 40;
+  --z-toast: 50;
+
+  /* Motion. */
   --dur-quick: 120ms;
   --dur-move: 220ms;
   --dur-travel: 320ms;
   --dur-sweep: 400ms;
   --dur-reveal: 600ms;
+  --stagger: 40ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-settle: cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  --font: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif;
-  --font-display: 'Wanted Sans Variable', 'Pretendard Variable', 'Apple SD Gothic Neo', sans-serif;
-
-  --bg: var(--table);
-  --surface: var(--panel);
-  --surface-2: var(--panel);
-  --text: var(--ink);
-  --muted: var(--ink-muted);
-  --border: var(--line);
-  --accent-text: var(--on-accent);
-  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--table));
-  --felt: var(--panel);
-  --felt-edge: var(--line);
-  --felt-text: var(--ink);
-  --felt-muted: var(--ink-muted);
-  --card-face: var(--card);
-  --card-ink: var(--ink);
-  --card-red: var(--suit-heart);
-  --card-border: var(--card-edge);
-  --highlight: var(--accent);
-  --shadow: var(--shadow-card);
-  --radius: 12px;
+}
+:root[data-theme='light'],
+[data-theme='light'] {
   color-scheme: light;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --table: #17191c;
-    --panel: #202327;
-    --line: #2f343a;
-    --ink: #ece7dd;
-    --ink-muted: #9a958b;
-    --card: #ece6da;
-    --card-warm: #efe6d3;
-    --card-edge: #cfc8ba;
-    --card-back: #2a2622;
-    --accent: #d27bb0;
-    --gold: #d9b04f;
-    --accent-deep: #a2558a;
-    --on-accent: #17191c;
-    --team-defense: #8fa3c9;
-    --on-team-defense: #17191c;
-    --danger: #ef6b62;
-    --shadow-card: 0 2px 0 rgb(0 0 0 / 0.35);
-    --shadow-raised: 0 6px 0 rgb(0 0 0 / 0.3);
-    --card-ink: #1c1915;
-    --scrim: rgb(0 0 0 / 0.62);
-    --raised: color-mix(in srgb, var(--panel) 93%, #fff);
-    --raised-line: #3d434a;
-  --raised-line: #3d434a;
-    --field: color-mix(in srgb, var(--table) 80%, #000);
-    --on-field: var(--ink);
-    --btn: #31353b;
-    --on-btn: var(--ink);
-    --btn-lip: #0f1113;
-    --chip-lip: #9a958b;
-    color-scheme: dark;
-  }
-}
-
+:root[data-theme='dark'],
 [data-theme='dark'] {
-  --table: #17191c;
-  --panel: #202327;
-  --line: #2f343a;
-  --ink: #ece7dd;
-  --ink-muted: #9a958b;
-  --card: #ece6da;
-  --card-warm: #efe6d3;
-  --card-edge: #cfc8ba;
-  --card-back: #2a2622;
-  --accent: #d27bb0;
-  --gold: #d9b04f;
-  --accent-deep: #a2558a;
-  --on-accent: #17191c;
-  --team-defense: #8fa3c9;
-  --on-team-defense: #17191c;
-  --danger: #ef6b62;
-  --shadow-card: 0 2px 0 rgb(0 0 0 / 0.35);
-  --shadow-raised: 0 6px 0 rgb(0 0 0 / 0.3);
-    --card-ink: #1c1915;
-  --scrim: rgb(0 0 0 / 0.62);
-  --raised: color-mix(in srgb, var(--panel) 93%, #fff);
-  --raised-line: #3d434a;
-  --field: color-mix(in srgb, var(--table) 80%, #000);
-  --on-field: var(--ink);
-  --btn: #31353b;
-  --on-btn: var(--ink);
-  --btn-lip: #0f1113;
-  --chip-lip: #9a958b;
   color-scheme: dark;
 }
 
-/* Looks earned through 업적: card backs and table colours. */
+/* Looks earned through 업적: card backs and table colours (lib/tokens.ts). */
 :root[data-back='plum'] { --card-back: #5a2445; }
 :root[data-back='indigo'] { --card-back: #22305c; }
 :root[data-back='gold'] { --card-back: #6a4c10; }
 :root[data-back='ink'] { --card-back: #0d0d0e; }
 :root[data-back='jade'] { --card-back: #1e4a3e; }
 
-:root[data-table='celadon'] { --table: #e2eae2; --panel: #d6dfd7; }
-:root[data-table='indigo'] { --table: #e3e7ef; --panel: #d7dce6; }
-:root[data-table='blush'] { --table: #f1e8e4; --panel: #e7dcd7; }
-@media (prefers-color-scheme: dark) {
-  :root[data-table='celadon']:not([data-theme='light']) { --table: #151b18; --panel: #1d2621; }
-  :root[data-table='indigo']:not([data-theme='light']) { --table: #15181f; --panel: #1d222c; }
-  :root[data-table='blush']:not([data-theme='light']) { --table: #1c1718; --panel: #272022; }
+:root[data-table='celadon'] {
+  --table: light-dark(#e2eae2, #151b18);
+  --panel: light-dark(#d6dfd7, #1d2621);
 }
-:root[data-table='celadon'][data-theme='dark'] { --table: #151b18; --panel: #1d2621; }
-:root[data-table='indigo'][data-theme='dark'] { --table: #15181f; --panel: #1d222c; }
-:root[data-table='blush'][data-theme='dark'] { --table: #1c1718; --panel: #272022; }
+:root[data-table='indigo'] {
+  --table: light-dark(#e3e7ef, #15181f);
+  --panel: light-dark(#d7dce6, #1d222c);
+}
+:root[data-table='blush'] {
+  --table: light-dark(#f1e8e4, #1c1718);
+  --panel: light-dark(#e7dcd7, #272022);
+}
 
 * {
   box-sizing: border-box;
@@ -175,8 +152,8 @@ html,
 body {
   margin: 0;
   word-break: keep-all;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--table);
+  color: var(--ink);
   font-family: var(--font);
   font-size: 16px;
   line-height: 1.45;
@@ -205,11 +182,11 @@ button {
   min-height: 44px;
   padding: 10px 16px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--r-control);
   background: var(--btn);
-  color: var(--on-btn);
+  color: var(--ink);
   box-shadow: 0 3px 0 var(--btn-lip);
-  font-size: 15px;
+  font-size: var(--text-body);
   font-weight: 600;
   line-height: 1.2;
   cursor: pointer;
@@ -256,8 +233,8 @@ button.ghost {
 button.chip {
   min-height: 40px;
   padding: 8px 14px;
-  border-radius: 999px;
-  font-size: 15px;
+  border-radius: var(--r-pill);
+  font-size: var(--text-body);
   flex: none;
 }
 
@@ -299,8 +276,8 @@ textarea {
   font-size: max(16px, 1em);
   border: 1px solid var(--line);
   background: var(--field);
-  color: var(--on-field);
-  border-radius: 12px;
+  color: var(--ink);
+  border-radius: var(--r-control);
   padding: 10px 12px;
   min-height: 44px;
 }
@@ -338,7 +315,7 @@ dialog.sheet {
   max-height: calc(100dvh - 32px);
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--r-panel);
   background: var(--raised);
   color: var(--ink);
   overflow: hidden;

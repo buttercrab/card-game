@@ -34,11 +34,11 @@
     align-items: center;
     min-height: 44px;
     padding: 10px 16px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--btn);
-    color: var(--on-btn);
+    color: var(--ink);
     box-shadow: 0 3px 0 var(--btn-lip);
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 600;
     text-decoration: none;
   }

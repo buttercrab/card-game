@@ -1987,8 +1987,8 @@
      they keep looking like text, with a hairline to say they open. */
   .tag-chip {
     padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 12px;
+    border-radius: var(--r-pill);
+    font-size: var(--text-caption);
     font-weight: 700;
     white-space: nowrap;
     border: 1.5px solid var(--ink-muted);
@@ -2019,7 +2019,7 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     white-space: normal;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink);
   }
@@ -2051,12 +2051,12 @@
     min-height: 40px;
     min-width: 40px;
     padding: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font-size: 18px;
   }
   .hint-text {
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--card);
     color: var(--card-ink);
     box-shadow: 0 4px 14px rgb(0 0 0 / 0.14);
@@ -2093,7 +2093,7 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .status :global(.trump-icon) {
     width: 16px;
@@ -2110,7 +2110,7 @@
   }
   .event {
     text-align: center;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
   }
 
@@ -2291,7 +2291,7 @@
     max-height: calc(100% - 8px);
     overflow: auto;
     padding: 16px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
     box-shadow: 0 4px 0 rgb(0 0 0 / 0.08);
     z-index: 2;
@@ -2326,11 +2326,11 @@
   .thrown-in .close {
     min-height: 26px;
     padding: 2px 10px;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .thrown-title {
     margin: 0 0 0 4px;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 700;
     white-space: nowrap;
   }
@@ -2434,7 +2434,7 @@
       text-align: left;
     }
     .result .headline {
-      font-size: 22px;
+      font-size: var(--text-headline);
     }
     .result .sub.said {
       display: none;
@@ -2461,7 +2461,7 @@
   }
   .wait-seats {
     margin: 0 0 8px;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .result {
     text-align: center;
@@ -2509,7 +2509,7 @@
     padding: 0;
     list-style: none;
     font-variant-numeric: tabular-nums;
-    font-size: 15px;
+    font-size: var(--text-body);
     color: var(--ink-muted);
   }
   .ledger li {
@@ -2580,7 +2580,7 @@
     align-items: baseline;
     column-gap: 8px;
     padding: 8px 14px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--ink);
     color: var(--table);
     text-align: center;
@@ -2596,7 +2596,7 @@
     font-size: 16px;
   }
   .award .reward {
-    font-size: 12px;
+    font-size: var(--text-caption);
     color: var(--gold);
   }
   @media (prefers-reduced-motion: reduce) {
@@ -2666,7 +2666,7 @@
   }
   th {
     padding: 4px;
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -2699,14 +2699,14 @@
   .team {
     display: inline-block;
     padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 12px;
+    border-radius: var(--r-pill);
+    font-size: var(--text-caption);
     font-weight: 600;
     line-height: 18px;
   }
   .team.declarer {
     background: var(--team-declarer);
-    color: #1c1915;
+    color: var(--on-team-declarer);
   }
   .team.defense {
     background: var(--team-defense);
@@ -2740,7 +2740,7 @@
   .prompt {
     margin: 0;
     text-align: center;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   /* Half over the tray's top edge, like a label on its rim. */
   .strip .prompt {
@@ -2753,7 +2753,7 @@
   }
   .strip .pill {
     padding: 5px 14px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--card);
     color: var(--card-ink);
     font-size: 14px;
@@ -2764,7 +2764,7 @@
   }
   /* Someone else's turn is news, not a button: a plain caption. */
   .strip .caption {
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
   }
   /* 딜미스 outside your turn: whose turn it is, and a secondary button. */
@@ -2792,7 +2792,7 @@
   }
   /* On the card-paper pill, the light-theme plum keeps its contrast. */
   .strip .pill strong {
-    color: #8e2f6b;
+    color: var(--accent-on-card);
   }
   .variants,
   .next {
@@ -2821,7 +2821,7 @@
   .tray {
     position: relative;
     padding: 18px 8px 10px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     outline: 3px solid transparent;
     outline-offset: -3px;
     transition: outline-color var(--dur-quick) var(--ease-standard);
@@ -2835,11 +2835,11 @@
     top: 0;
     z-index: 6;
     padding: 4px 12px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--card);
     color: var(--card-ink);
     box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 700;
     white-space: nowrap;
     pointer-events: none;
@@ -2904,13 +2904,13 @@
     align-items: center;
     gap: 8px;
     height: 20px;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
   }
   /* Your points: the same pill as on every seat. */
   .my-points {
     padding: 0 6px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     color: var(--ink);
     font-variant-numeric: tabular-nums;
     line-height: 18px;
@@ -3041,9 +3041,9 @@
   .pane {
     flex: none;
     padding: 10px 12px 12px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .pane-empty {
     margin: 0;
@@ -3055,7 +3055,7 @@
     align-items: baseline;
     gap: 8px;
     margin: 0 0 8px;
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 700;
     color: var(--ink-muted);
   }
@@ -3171,7 +3171,7 @@
   .meter-row strong {
     color: var(--ink);
     font-family: var(--font-display);
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 800;
   }
   .meter-row .of {
@@ -3380,7 +3380,7 @@
     z-index: 3;
     min-height: 0;
     padding: 0;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: transparent;
     box-shadow: none;
   }
@@ -3419,8 +3419,8 @@
     position: relative;
     min-height: 34px;
     padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 13px;
+    border-radius: var(--r-pill);
+    font-size: var(--text-label);
     white-space: nowrap;
     box-shadow: 0 2px 0 var(--btn-lip);
   }
@@ -3459,7 +3459,7 @@
     text-wrap: balance;
   }
   .centre-sub {
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 400;
   }
   .centre-note strong,
@@ -3478,7 +3478,7 @@
     min-width: 56px;
     min-height: 56px;
     padding: 6px 8px 5px;
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 600;
   }
   /* 섞기 is on: the tool is pressed into the table, in ink, until the
@@ -3508,7 +3508,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: transparent;
     box-shadow: inset 0 0 0 1.5px var(--line);
     color: var(--ink);
@@ -3552,7 +3552,7 @@
     background: transparent;
     box-shadow: none;
     color: var(--ink-muted);
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   @media (min-width: 1024px) and (min-height: 640px) {
     .between .me-seat {

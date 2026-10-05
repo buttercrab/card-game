@@ -36,9 +36,9 @@
     height: 24px;
     padding: 0 8px;
     border: 2px solid currentColor;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--card);
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 800;
     white-space: nowrap;
     gap: 3px;

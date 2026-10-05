@@ -71,7 +71,7 @@
   }
   h2 {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   .lead {
     margin: 4px 0 12px;

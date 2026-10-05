@@ -76,7 +76,7 @@
   .picker {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    border-radius: 12px;
+    border-radius: var(--r-control);
     box-shadow: inset 0 0 0 1px var(--line);
   }
   .row {
@@ -144,18 +144,18 @@
     min-width: 0;
   }
   .name {
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 700;
     line-height: 1.35;
   }
   .sub {
     margin-left: 6px;
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 600;
     color: var(--ink-muted);
   }
   .traits {
-    font-size: 13px;
+    font-size: var(--text-label);
     line-height: 1.4;
     color: var(--ink);
     word-break: keep-all;

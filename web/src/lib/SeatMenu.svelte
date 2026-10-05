@@ -222,7 +222,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 10px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--raised);
     border: 1px solid var(--raised-line);
     box-shadow: 0 3px 0 var(--raised-line);
@@ -242,15 +242,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .muted {
     color: var(--ink-muted);
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .label {
     margin: 2px 2px 0;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -264,7 +264,7 @@
     gap: 10px;
     width: 100%;
     padding: 10px 12px;
-    font-size: 15px;
+    font-size: var(--text-body);
     text-align: left;
   }
   .danger {
@@ -281,13 +281,13 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 2px;
     padding: 2px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--table);
   }
   .levels button {
     min-height: 40px;
     padding: 2px 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: none;
     box-shadow: none;
     color: var(--ink);
@@ -305,9 +305,9 @@
     background: none;
   }
   .levels.add button {
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--btn);
-    color: var(--on-btn);
+    color: var(--ink);
     box-shadow: 0 3px 0 var(--btn-lip);
   }
   .sit {

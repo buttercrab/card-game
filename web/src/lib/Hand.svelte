@@ -7,6 +7,7 @@
   import { sameCard, type Seal } from './cards';
   import { settings } from './settings.svelte';
   import { sound } from './sound';
+  import { MEDIA } from './tokens';
   import type { Card as CardT } from './types';
 
   let {
@@ -62,8 +63,8 @@
 
   let width = $state(0);
   // Card width by screen: larger on desktops, smaller on phones held sideways.
-  const WIDE = '(min-width: 1024px)';
-  const SHORT = '(orientation: landscape) and (max-height: 520px)';
+  const WIDE = MEDIA.desktop;
+  const SHORT = MEDIA.short;
   const matches = (q: string) => typeof matchMedia === 'function' && matchMedia(q).matches;
   let wide = $state(matches(WIDE));
   let short = $state(matches(SHORT));

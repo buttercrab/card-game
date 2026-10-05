@@ -491,11 +491,11 @@
     margin-left: 8px;
     padding: 1px 8px;
     border: 1px solid var(--line);
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     color: var(--ink-muted);
     font-weight: 600;
     font-family: var(--font);
-    font-size: 13px;
+    font-size: var(--text-label);
     vertical-align: middle;
   }
   .facts {
@@ -508,9 +508,9 @@
   }
   .facts li {
     padding: 2px 10px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--tint);
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 700;
   }
   section {
@@ -557,7 +557,7 @@
     background: var(--tint);
     display: grid;
     place-items: center;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 800;
   }
   .ladder strong {
@@ -580,17 +580,17 @@
     align-items: center;
     min-height: 44px;
     padding: 10px 16px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--btn);
-    color: var(--on-btn);
+    color: var(--ink);
     box-shadow: 0 3px 0 var(--btn-lip);
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 600;
     text-decoration: none;
   }
   .example {
     padding: 10px 14px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--tint);
     font-size: 14px;
   }

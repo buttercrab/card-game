@@ -56,7 +56,7 @@
     min-height: 40px;
     min-width: 40px;
     padding: 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font-size: 18px;
     line-height: 1;
   }
@@ -70,7 +70,7 @@
     width: max-content;
     max-width: min(300px, 90vw);
     padding: 10px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
   }

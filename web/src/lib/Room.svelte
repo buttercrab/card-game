@@ -282,7 +282,7 @@
     gap: 8px;
     min-height: 40px;
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font-size: 14px;
     font-weight: 700;
     color: var(--ink);
@@ -297,7 +297,7 @@
   }
   .watching {
     flex: none;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -333,7 +333,7 @@
 
   .panel {
     padding: 16px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
   }
   .center {
@@ -341,7 +341,7 @@
   }
   h2 {
     margin: 0;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .banner {
     position: fixed;
@@ -354,7 +354,7 @@
     align-items: center;
     gap: 8px 12px;
     padding: 8px 12px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--panel);
     font-size: 14px;
   }
@@ -365,7 +365,7 @@
     transform: translateX(-50%);
     max-width: calc(100% - 32px);
     padding: 10px 16px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--ink);
     color: var(--table);
     font-weight: 600;

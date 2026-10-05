@@ -66,11 +66,11 @@
     align-items: center;
     min-height: 40px;
     padding: 8px 14px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--btn);
-    color: var(--on-btn);
+    color: var(--ink);
     box-shadow: 0 3px 0 var(--btn-lip);
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 600;
     text-decoration: none;
   }

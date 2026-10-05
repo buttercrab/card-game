@@ -4,6 +4,7 @@
   import Icon from './Icon.svelte';
   import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './achievements';
   import { settings, type Speed } from './settings.svelte';
+  import { TABLE_TONE } from './tokens';
 
   const unlocked = loadUnlocked();
   const BACKS = Object.keys(BACK_NAMES) as CardBack[];
@@ -122,6 +123,7 @@
           {@const open = isUnlocked({ kind: 'table', id }, unlocked)}
           <button
             class="swatch table-{id}"
+            style:background={TABLE_TONE[id].table.light}
             role="radio"
             aria-checked={settings.tableTone === id}
             aria-disabled={!open}
@@ -154,7 +156,7 @@
 <style>
   h2 {
     margin: 0 0 12px;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   .row {
     display: flex;
@@ -168,7 +170,7 @@
     display: grid;
   }
   .row .muted {
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   input[type='checkbox'] {
     flex: none;
@@ -241,7 +243,7 @@
     border-radius: 8px;
     box-shadow: none;
     border: 2px solid var(--line);
-    color: #1c1915;
+    color: var(--card-ink);
     font-size: 11px;
   }
   /* Chosen: an ink ring set off by a gap, so it shows on a pale swatch in
@@ -288,12 +290,8 @@
     color: var(--ink);
   }
   .swatch[class*='table-'] .lock {
-    color: #1c1915;
+    color: var(--card-ink);
   }
-  .table-hanji { background: #efebe3; }
-  .table-celadon { background: #e2eae2; }
-  .table-indigo { background: #e3e7ef; }
-  .table-blush { background: #f1e8e4; }
   .chips {
     display: flex;
     gap: 6px;

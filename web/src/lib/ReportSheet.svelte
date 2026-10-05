@@ -84,7 +84,7 @@
   }
   h2 {
     margin: 0 0 8px;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   p {
     margin: 0 0 12px;
@@ -93,7 +93,7 @@
     display: block;
     width: 100%;
     padding: 10px 12px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     resize: vertical;
   }
   .error {

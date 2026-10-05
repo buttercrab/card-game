@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // tokens.test.ts reads app.css as text.
+    css: { include: [/app\.css/] },
   },
 });

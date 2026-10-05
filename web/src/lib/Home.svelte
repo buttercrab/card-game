@@ -255,7 +255,7 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     padding: 20px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
   }
   .small {
@@ -272,7 +272,7 @@
     justify-items: start;
     justify-content: start;
     padding: 14px 20px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
     color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--line);
@@ -304,10 +304,10 @@
   }
   h2 {
     margin: 0;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .head-note {
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   /* Quiet tools under the list; the panel's one loud button is below. */
   .rule-tools {

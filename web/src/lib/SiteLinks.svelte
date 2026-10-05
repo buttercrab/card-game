@@ -26,9 +26,9 @@
     align-items: center;
     min-height: 44px;
     padding: 0 10px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     color: var(--ink-muted);
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     text-decoration: none;
   }

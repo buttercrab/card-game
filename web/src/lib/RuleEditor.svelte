@@ -315,7 +315,7 @@
   }
   h2 {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   .lead {
     margin: 4px 0 0;
@@ -347,14 +347,14 @@
     flex-wrap: wrap;
     gap: 2px 8px;
     min-width: 0;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .small-note {
-    font-size: 12px;
+    font-size: var(--text-caption);
   }
   .start-traits {
     margin: -6px 0 0;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
   }
   /* What differs from the start, always in view above the rows. */
@@ -386,10 +386,10 @@
   .tag {
     min-height: 28px;
     padding: 2px 10px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: transparent;
     box-shadow: inset 0 0 0 1px var(--ink);
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 600;
   }
   .tag:active:not(:disabled) {
@@ -401,11 +401,11 @@
   }
   h3 {
     margin: 0 0 4px;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .group-note {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .field {
     display: grid;
@@ -440,7 +440,7 @@
     min-width: 0;
   }
   .label {
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 600;
   }
   .help {
@@ -461,14 +461,14 @@
     min-height: 32px;
     margin-right: -10px;
     padding: 2px 10px;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink);
     text-decoration: underline;
     text-underline-offset: 3px;
   }
   .problem {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--danger);
   }
@@ -484,7 +484,7 @@
     padding: 0 0 0 6px;
     background: transparent;
     box-shadow: none;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -498,7 +498,7 @@
     position: relative;
     width: 42px;
     height: 26px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--off);
     box-shadow: inset 0 0 0 1.5px var(--ink-muted);
     transition: background-color var(--dur-quick) var(--ease-standard);
@@ -549,7 +549,7 @@
     grid-auto-flow: column;
     gap: 2px;
     padding: 2px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: color-mix(in srgb, var(--ink) 8%, transparent);
   }
   /* Long choices, such as a scoring formula, one per line. */
@@ -572,7 +572,7 @@
     background: transparent;
     box-shadow: none;
     color: var(--ink-muted);
-    font-size: 13px;
+    font-size: var(--text-label);
     line-height: 1.25;
     word-break: keep-all;
   }
@@ -605,7 +605,7 @@
   .way {
     min-height: 36px;
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: transparent;
     color: var(--ink-muted);
     box-shadow: inset 0 0 0 1px var(--line);
@@ -614,7 +614,7 @@
   }
   .way[aria-pressed='true'] {
     background: var(--btn);
-    color: var(--on-btn);
+    color: var(--ink);
     box-shadow:
       inset 0 0 0 1.5px var(--ink),
       0 2px 0 var(--btn-lip);

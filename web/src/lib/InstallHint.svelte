@@ -70,7 +70,7 @@
     align-items: center;
     gap: 12px;
     padding: 12px 12px 12px 16px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
     animation: fade-up 0.3s ease-out both;
   }
@@ -82,10 +82,10 @@
     display: grid;
     flex: 1;
     margin: 0;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .muted {
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .primary {
     min-height: 40px;

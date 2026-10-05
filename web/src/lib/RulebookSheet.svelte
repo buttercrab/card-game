@@ -77,12 +77,12 @@
     gap: 10px;
     margin-bottom: 24px;
     padding: 14px 16px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     box-shadow: inset 0 0 0 1.5px var(--ink);
   }
   .changes h2 {
     margin: 0;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   /* The diff's sticky header sits inside this box, not at the sheet's top. */
   .changes :global(.head) {

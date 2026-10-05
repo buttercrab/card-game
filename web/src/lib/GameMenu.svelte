@@ -148,14 +148,14 @@
     align-items: baseline;
     gap: 8px;
     margin: 0 0 12px;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .code {
     font-variant-numeric: tabular-nums;
   }
   .watching {
     margin-left: auto;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -190,7 +190,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     text-align: right;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -202,7 +202,7 @@
     gap: 10px;
     margin: 16px 0;
     padding: 12px 14px 14px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--table);
   }
   h3 {
@@ -217,18 +217,18 @@
   }
   .set-label {
     flex: none;
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 600;
   }
   .note,
   .read {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
     word-break: keep-all;
   }
   .read {
-    font-size: 15px;
+    font-size: var(--text-body);
     color: var(--ink);
   }
   .seg {
@@ -237,13 +237,13 @@
     flex: 1;
     gap: 2px;
     padding: 2px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--raised);
   }
   .seg button {
     min-height: 40px;
     padding: 2px 0;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: none;
     box-shadow: none;
     color: var(--ink-muted);
@@ -262,7 +262,7 @@
     padding: 8px 2px;
     background: none;
     box-shadow: none;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .check .box {
     width: 18px;
@@ -288,7 +288,7 @@
   .confirm p {
     flex: 1 1 100%;
     margin: 0 0 4px;
-    font-size: 15px;
+    font-size: var(--text-body);
     font-weight: 600;
   }
   .confirm button {

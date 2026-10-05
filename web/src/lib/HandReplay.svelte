@@ -147,8 +147,8 @@
     max-height: min(100% - 32px, 860px);
     padding: 0;
     border: none;
-    border-radius: 16px;
-    background: var(--bg);
+    border-radius: var(--r-panel);
+    background: var(--table);
     color: var(--ink);
     overflow: hidden;
   }
@@ -157,7 +157,7 @@
     grid-template-rows: minmax(0, 1fr) auto;
   }
   dialog::backdrop {
-    background: rgb(23 25 28 / 0.4);
+    background: var(--scrim);
   }
   .body {
     display: grid;
@@ -176,7 +176,7 @@
   }
   h2 {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   .chips {
     display: flex;
@@ -194,10 +194,10 @@
   .stepper strong {
     display: grid;
     justify-items: center;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .stepper .muted {
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 600;
   }
   .plays {
@@ -212,7 +212,7 @@
     align-items: center;
     gap: 12px;
     padding: 6px 12px 6px 6px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--panel);
   }
   .plays li.won {
@@ -239,13 +239,13 @@
   .team {
     flex: none;
     padding: 1px 7px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font-size: 11px;
     font-weight: 700;
   }
   .team.declarer {
     background: var(--team-declarer);
-    color: #1c1915;
+    color: var(--on-team-declarer);
   }
   .team.defense {
     background: var(--team-defense);
@@ -253,7 +253,7 @@
   }
   .took {
     color: var(--accent);
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 800;
   }
   .sum {

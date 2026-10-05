@@ -18,10 +18,10 @@
     z-index: 6;
     display: inline-flex;
     padding: 1px 9px 2px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--ink);
     color: var(--table);
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 800;
     letter-spacing: 0.02em;
     white-space: nowrap;

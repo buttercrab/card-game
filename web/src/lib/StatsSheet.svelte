@@ -92,15 +92,15 @@
 <style>
   h2 {
     margin: 0;
-    font-size: 22px;
+    font-size: var(--text-headline);
   }
   h3 {
     margin: 16px 0 8px;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .note {
     margin: 2px 0 14px;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .big {
     display: grid;
@@ -112,8 +112,8 @@
     display: grid;
     justify-items: center;
     padding: 10px 4px;
-    border-radius: 12px;
-    background: var(--bg);
+    border-radius: var(--r-control);
+    background: var(--table);
   }
   .big strong {
     font-family: var(--font-display);
@@ -121,7 +121,7 @@
     font-variant-numeric: tabular-nums;
   }
   .big span {
-    font-size: 12px;
+    font-size: var(--text-caption);
     color: var(--ink-muted);
   }
   table {
@@ -140,7 +140,7 @@
   }
   thead th {
     border-top: none;
-    font-size: 12px;
+    font-size: var(--text-caption);
     color: var(--ink-muted);
   }
   .neg {
@@ -158,9 +158,9 @@
     min-width: 36px;
     padding: 2px 6px;
     border-radius: 8px;
-    background: var(--bg);
+    background: var(--table);
     color: var(--danger);
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 700;
     text-align: center;
     font-variant-numeric: tabular-nums;
@@ -181,7 +181,7 @@
     display: grid;
     padding: 6px 10px;
     border-radius: 10px;
-    background: var(--bg);
+    background: var(--table);
   }
   /* Locked: a dashed edge, a lock, muted text; still readable. */
   .achievements li:not(.got) {
