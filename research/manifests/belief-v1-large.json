@@ -1,0 +1,34 @@
+{
+  "artifacts": [
+    {
+      "bytes": 22893,
+      "path": "models/belief-v1-large/config.json",
+      "sha256": "2e44c58dde87e284367c73f92c17294cd011b2ee61a3842ff60ddef5c41b7dfd"
+    },
+    {
+      "bytes": 64175,
+      "path": "models/belief-v1-large/log.jsonl",
+      "sha256": "918b64e641b523097e31e6223fe4be9306113e47f1dbcf164d56148ad4eee5fe"
+    },
+    {
+      "bytes": 1782,
+      "path": "models/belief-v1-large/metrics.json",
+      "sha256": "df7d773170eb6c7d594f6223aa0c6652c21b1f6b4c52d815f3dfc98d4005f048"
+    },
+    {
+      "bytes": 8773614,
+      "path": "models/belief-v1-large/model.pt",
+      "sha256": "b996292617dcfd4c8e7b2f3d8cadf74ce8700d7b9564a6e9ad44b91208df0a44"
+    }
+  ],
+  "commit": "2cdabfd5c1fd9123c7c661a6116d54620ef879fd",
+  "config": "research/experiments/2026-10-05-belief-v1-large/config.toml",
+  "created": "2026-10-05",
+  "encoding": "mighty-1",
+  "kind": "weights",
+  "name": "belief-v1-large",
+  "seeds": [
+    20261005,
+    1
+  ]
+}
