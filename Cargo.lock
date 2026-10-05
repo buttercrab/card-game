@@ -439,6 +439,7 @@ dependencies = [
  "engine",
  "flate2",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "rayon",
@@ -497,6 +498,7 @@ dependencies = [
  "clap",
  "engine",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "serde",
@@ -792,6 +794,7 @@ dependencies = [
  "clap",
  "engine",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "serde",
@@ -940,6 +943,18 @@ dependencies = [
  "serde_json",
  "thiserror",
  "ts-rs",
+]
+
+[[package]]
+name = "mighty-ai"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "mighty",
+ "rand 0.9.5",
+ "rand_chacha",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1601,6 +1616,7 @@ dependencies = [
  "engine",
  "futures-util",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rustls",
  "serde",
@@ -1671,6 +1687,7 @@ dependencies = [
  "engine",
  "infer",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "serde",

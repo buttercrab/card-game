@@ -20,41 +20,39 @@
 //!
 //! Every setting off, it is the search itself (but for the baseline
 //! always being a candidate). The network can be any whose encoding is
-//! Mighty's; nothing here knows how it was trained.
+//! Mighty's; nothing here knows how it was trained. A network that fails
+//! to answer leaves the search without it: its candidates and baseline at
+//! the root, and the baseline's move when it cannot value the leaves.
 //!
-//! [`SimpleBot`]: crate::bot::SimpleBot
+//! [`SimpleBot`]: crate::SimpleBot
 
-use crate::Mighty;
-use crate::search::{self, SearchBot};
-use crate::state::{Action, Phase, State};
-use crate::view::{PhaseView, Seen, View};
-use engine::{ActionValues, Bot, Encode, Game, Observation, Seat, Turn, Viewer};
+use crate::pimc::confident_best;
+use crate::search::{self, Leaf, SearchBot};
+use crate::seen::Seen;
+use engine::{ActionValues, Bot, Encode};
+use mighty::{Action, Mighty, View};
 use rand::RngCore;
 use std::fmt;
-
-/// Positions valued by one network call at the leaves.
-const LEAF_BATCH: usize = 256;
+use std::sync::Arc;
 
 /// The choice a candidate must beat, and the move made when the search
 /// has nothing to go on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Baseline {
-    /// [`crate::bot::SimpleBot`]'s, as [`SearchBot`] does.
+    /// [`crate::SimpleBot`]'s, as [`SearchBot`] does.
     Simple,
     /// The legal action the network values most.
     Network,
 }
 
 /// [`SearchBot`] with a Q network: see the module docs.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct HybridBot {
-    /// Deals, reading, threads, the playouts' policy and the confidence a
-    /// candidate needs. Its time budget is not used: the hybrid deals
-    /// `samples` worlds every decision.
+    /// Deals, reading, threads, the playouts' policy, the confidence a
+    /// candidate needs and the time budget.
     pub search: SearchBot,
-    /// The network. Loaded once for the life of the process (leak a `Box`),
-    /// which keeps the bot `Copy`.
-    pub values: &'static dyn ActionValues,
+    /// The network, shared by every seat and thread that plays by it.
+    pub values: Arc<dyn ActionValues>,
     /// Weigh the `prior` legal actions the network values most; 0 weighs
     /// the search's own candidates ([`search::candidates`]).
     pub prior: usize,
@@ -80,37 +78,22 @@ impl fmt::Debug for HybridBot {
 impl PartialEq for HybridBot {
     fn eq(&self, other: &HybridBot) -> bool {
         self.search == other.search
-            && std::ptr::addr_eq(self.values, other.values)
+            && Arc::ptr_eq(&self.values, &other.values)
             && self.prior == other.prior
             && self.baseline == other.baseline
             && self.leaf == other.leaf
     }
 }
 
-/// How a playout ended: a payoff, or a position for the network.
-enum Outcome {
-    Payoff(f64),
-    Leaf(Observation),
-}
-
 impl Bot<Mighty> for HybridBot {
     fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
-        let searched = matches!(
-            (&view.viewer, &view.phase),
-            (
-                Viewer::Seat(_),
-                PhaseView::Bidding { .. } | PhaseView::Exchange { .. } | PhaseView::Play { .. }
-            )
-        );
         if legal.len() == 1 {
             return legal[0].clone();
         }
-        if !searched {
-            return self.search.policy.act(view, legal, rng);
+        let simple = |bot: &HybridBot| bot.search.policy.decide(&Seen::of_view(view), legal);
+        if !search::searched(view) {
+            return simple(self);
         }
-        let Viewer::Seat(me) = view.viewer else {
-            unreachable!("matched above")
-        };
         // A network that fails to answer leaves the search as it would be
         // without it.
         let network = (self.prior > 0 || self.baseline == Baseline::Network)
@@ -122,7 +105,7 @@ impl Bot<Mighty> for HybridBot {
         };
         let base = match (&network, self.baseline) {
             (Some(values), Baseline::Network) => values[0].0.clone(),
-            _ => self.search.policy.act(view, legal, rng),
+            _ => simple(self),
         };
         if !candidates.contains(&base) {
             candidates.push(base.clone());
@@ -130,20 +113,20 @@ impl Bot<Mighty> for HybridBot {
         if candidates.len() == 1 {
             return base;
         }
-        let worlds = self.search.worlds(view, self.search.samples, rng);
-        if worlds.is_empty() {
-            return base;
-        }
-        // Leaves the network fails to value leave nothing to go on.
-        let Some(scores) = self.scores(&worlds, me, &candidates) else {
+        let leaf = self.leaf.map(|more| Leaf {
+            more,
+            values: &*self.values,
+        });
+        // No world to play out, or leaves the network fails to value,
+        // leave nothing to go on.
+        let Some(scored) = self.search.evaluate(view, legal, &candidates, leaf, rng) else {
             return base;
         };
-        let weights: Vec<f64> = worlds.iter().map(|(_, w)| *w).collect();
         let at = candidates
             .iter()
             .position(|a| *a == base)
             .expect("the baseline is a candidate");
-        candidates[confident_best(&scores, &weights, at, self.search.confidence)].clone()
+        candidates[confident_best(&scored.scores, &scored.weights, at, self.search.confidence)].clone()
     }
 }
 
@@ -161,154 +144,17 @@ impl HybridBot {
         out.sort_by(|a, b| b.1.total_cmp(&a.1));
         (!out.is_empty()).then_some(out)
     }
-
-    /// Every candidate played out on every world: `[candidate][world]`,
-    /// `me`'s payoff or the network's value at the leaf. Worlds are split
-    /// between the search's threads, each valuing its own leaves.
-    /// `None` when the network fails to value leaves.
-    fn scores(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Option<Vec<Vec<f64>>> {
-        let threads = self.search.threads.clamp(1, worlds.len());
-        if threads == 1 {
-            return self.score_part(worlds, me, candidates);
-        }
-        let share = worlds.len().div_ceil(threads);
-        let parts: Vec<Option<Vec<Vec<f64>>>> = std::thread::scope(|scope| {
-            let handles: Vec<_> = worlds
-                .chunks(share)
-                .map(|part| scope.spawn(move || self.score_part(part, me, candidates)))
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| h.join().expect("hybrid search thread panicked"))
-                .collect()
-        });
-        // Contiguous runs of worlds, joined in order: scores stay paired
-        // with the worlds' weights.
-        let mut scores = vec![Vec::with_capacity(worlds.len()); candidates.len()];
-        for part in parts {
-            for (all, part) in scores.iter_mut().zip(part?) {
-                all.extend(part);
-            }
-        }
-        Some(scores)
-    }
-
-    fn score_part(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Option<Vec<Vec<f64>>> {
-        let mut scores = vec![vec![0.0; worlds.len()]; candidates.len()];
-        let mut pending: Vec<(usize, usize, Observation)> = Vec::new();
-        for (w, (world, _)) in worlds.iter().enumerate() {
-            for (c, action) in candidates.iter().enumerate() {
-                match self.playout(world, action, me) {
-                    Outcome::Payoff(p) => scores[c][w] = p,
-                    Outcome::Leaf(obs) => {
-                        pending.push((c, w, obs));
-                        if pending.len() >= LEAF_BATCH {
-                            self.value_leaves(&mut pending, &mut scores)?;
-                        }
-                    }
-                }
-            }
-        }
-        self.value_leaves(&mut pending, &mut scores)?;
-        Some(scores)
-    }
-
-    /// Values the pending leaves in one network call: each the value of
-    /// its seat's best legal action. `None` when the network fails.
-    fn value_leaves(&self, pending: &mut Vec<(usize, usize, Observation)>, scores: &mut [Vec<f64>]) -> Option<()> {
-        if pending.is_empty() {
-            return Some(());
-        }
-        let observations: Vec<&Observation> = pending.iter().map(|(_, _, o)| o).collect();
-        let values = self.values.action_values(&observations).ok()?;
-        if values.len() != pending.len() {
-            return None;
-        }
-        for ((c, w, _), values) in pending.iter().zip(values) {
-            let best = values
-                .iter()
-                .map(|&(_, v)| f64::from(v))
-                .fold(f64::NEG_INFINITY, f64::max);
-            scores[*c][*w] = if best.is_finite() { best } else { 0.0 };
-        }
-        pending.clear();
-        Some(())
-    }
-
-    /// Plays `action` in `world`, then the simple bots until the hand ends
-    /// or, with a [`HybridBot::leaf`], until `me`'s first turn once that
-    /// many more tricks are done.
-    fn playout(&self, world: &State, action: &Action, me: Seat) -> Outcome {
-        let SearchBot { policy, endgame, .. } = self.search;
-        let mut state = world.clone();
-        state.step(me, action.clone());
-        let Some(more) = self.leaf else {
-            return Outcome::Payoff(search::finish(policy, endgame, state, me) as f64);
-        };
-        let horizon = tricks_done(world) + more;
-        // As `search::finish`, which also gives up on endless redeals.
-        for _ in 0..2000 {
-            match state.turn() {
-                Turn::Over => return Outcome::Payoff(state.payoffs().map_or(0, |p| p[me]) as f64),
-                // A hand thrown in: the search's own playouts score the redeal.
-                Turn::Chance => return Outcome::Payoff(search::finish(policy, endgame, state, me) as f64),
-                Turn::Seat(seat) => {
-                    if seat == me && tricks_done(&state) >= horizon {
-                        let view = Mighty::view(&state, Viewer::Seat(me));
-                        let legal = state.legal_actions();
-                        return Outcome::Leaf(Mighty::encode(&view, &legal));
-                    }
-                    if endgame > 0
-                        && let Some(payoffs) = crate::endgame::solve(&state, endgame)
-                    {
-                        return Outcome::Payoff(payoffs[me] as f64);
-                    }
-                    let legal = state.legal_actions();
-                    let choice = policy.decide(&Seen::of_state(&state, seat), &legal);
-                    state.step(seat, choice);
-                }
-            }
-        }
-        Outcome::Payoff(0.0)
-    }
-}
-
-/// Tricks finished in the hand under way.
-fn tricks_done(state: &State) -> usize {
-    match state.phase() {
-        Phase::Play(p) => p.tricks.len(),
-        Phase::Done(_) => usize::MAX,
-        _ => 0,
-    }
-}
-
-/// The candidate that beats `base` by the most on the same deals, among
-/// those that beat it by more than `z` standard errors; else `base`. As
-/// the search's own rule, on real-valued scores (leaf values are not
-/// whole points). Deals count by `weights`, which sum to 1.
-fn confident_best(scores: &[Vec<f64>], weights: &[f64], base: usize, z: f64) -> usize {
-    let n = 1.0 / weights.iter().map(|w| w * w).sum::<f64>();
-    let mut best = (0.0, base);
-    for (i, s) in scores.iter().enumerate() {
-        let diffs: Vec<f64> = s.iter().zip(&scores[base]).map(|(a, b)| a - b).collect();
-        let mean = diffs.iter().zip(weights).map(|(d, w)| d * w).sum::<f64>();
-        let spread = diffs
-            .iter()
-            .zip(weights)
-            .map(|(d, w)| (w * (d - mean)).powi(2))
-            .sum::<f64>();
-        let se = (spread * n / (n - 1.0).max(1.0)).sqrt();
-        if mean > best.0 && mean > z * se {
-            best = (mean, i);
-        }
-    }
-    best.1
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engine::{BeliefError, Spec};
+    use crate::search::LEAF_BATCH;
+    use crate::simple::SimpleBot;
+    use engine::{BeliefError, Game, Observation, Seat, Spec, Turn, Viewer};
+    use mighty::State;
+    use mighty::rules::Preset;
+    use mighty::world::Phase;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -342,27 +188,31 @@ mod tests {
         }
     }
 
-    fn fake(favourite: Option<usize>) -> &'static Fake {
-        let options = crate::Options {
-            rules: crate::rules::Preset::Gshs.rules(),
+    fn spec() -> Spec {
+        let options = mighty::Options {
+            rules: Preset::Gshs.rules(),
             first_bidder: 0,
         };
-        Box::leak(Box::new(Fake {
-            spec: Mighty::spec(&options).unwrap(),
+        Mighty::spec(&options).unwrap()
+    }
+
+    fn fake(favourite: Option<usize>) -> Arc<Fake> {
+        Arc::new(Fake {
+            spec: spec(),
             favourite,
             asked: AtomicUsize::new(0),
             calls: AtomicUsize::new(0),
-        }))
+        })
     }
 
-    fn bot(values: &'static Fake, prior: usize, baseline: Baseline, leaf: Option<usize>) -> HybridBot {
+    fn bot(values: &Arc<Fake>, prior: usize, baseline: Baseline, leaf: Option<usize>) -> HybridBot {
         HybridBot {
             search: SearchBot {
                 samples: 12,
                 budget: None,
                 ..SearchBot::default()
             },
-            values,
+            values: values.clone(),
             prior,
             baseline,
             leaf,
@@ -372,13 +222,13 @@ mod tests {
     /// A position mid-play of 경기과고, by random play from a seeded deal.
     fn mid_play(seed: u64) -> (State, Seat) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let options = crate::Options {
-            rules: crate::rules::Preset::Gshs.rules(),
+        let options = mighty::Options {
+            rules: Preset::Gshs.rules(),
             first_bidder: 0,
         };
         loop {
             let mut state = Mighty::new_game(&options).unwrap();
-            let mut simple = crate::bot::SimpleBot::default();
+            let mut simple = SimpleBot::default();
             loop {
                 match Mighty::turn(&state) {
                     Turn::Chance => {
@@ -413,12 +263,12 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(2);
 
         let net = fake(None);
-        let choice = bot(net, 0, Baseline::Simple, None).act(&view, &legal, &mut rng);
+        let choice = bot(&net, 0, Baseline::Simple, None).act(&view, &legal, &mut rng);
         assert!(legal.contains(&choice));
         assert_eq!(net.asked.load(Ordering::Relaxed), 0, "no network without its settings");
 
         let net = fake(None);
-        let mut hybrid = bot(net, 0, Baseline::Simple, Some(1));
+        let mut hybrid = bot(&net, 0, Baseline::Simple, Some(1));
         let candidates = search::candidates(&view, &legal).len().max(1);
         let choice = hybrid.act(&view, &legal, &mut rng);
         assert!(legal.contains(&choice));
@@ -447,12 +297,12 @@ mod tests {
             // value would give every deal the same margin, which no
             // confidence can outweigh.
             let net = fake(Some(index));
-            let mut hybrid = bot(net, 2, Baseline::Network, None);
+            let mut hybrid = bot(&net, 2, Baseline::Network, None);
             hybrid.search.confidence = 1e9;
             assert_eq!(&hybrid.act(&view, &legal, &mut rng), pick);
             // A prior of one weighs nothing but the favourite: one call.
             let net = fake(Some(index));
-            let mut hybrid = bot(net, 1, Baseline::Network, Some(0));
+            let mut hybrid = bot(&net, 1, Baseline::Network, Some(0));
             assert_eq!(&hybrid.act(&view, &legal, &mut rng), pick);
             assert_eq!(net.calls.load(Ordering::Relaxed), 1);
         }
@@ -466,7 +316,7 @@ mod tests {
         let view = Mighty::view(&state, Viewer::Seat(seat));
         let legal = Mighty::legal_actions(&state);
         let net = fake(None);
-        let mut hybrid = bot(net, 3, Baseline::Network, Some(1));
+        let mut hybrid = bot(&net, 3, Baseline::Network, Some(1));
         hybrid.search.threads = 3;
         let a = hybrid.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(9));
         let b = hybrid.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(9));
@@ -492,20 +342,16 @@ mod tests {
     /// asked for.
     #[test]
     fn a_failing_network_falls_back_to_the_simple_bot() {
-        let options = crate::Options {
-            rules: crate::rules::Preset::Gshs.rules(),
-            first_bidder: 0,
-        };
-        let broken: &'static Broken = Box::leak(Box::new(Broken(Mighty::spec(&options).unwrap())));
+        let broken: Arc<dyn ActionValues> = Arc::new(Broken(spec()));
         for seed in 0..3 {
             let (state, seat) = mid_play(seed);
             let view = Mighty::view(&state, Viewer::Seat(seat));
             let legal = Mighty::legal_actions(&state);
-            let simple = crate::bot::SimpleBot::default().act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(0));
+            let simple = SimpleBot::default().act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(0));
             for (prior, baseline, leaf) in [(2, Baseline::Network, None), (0, Baseline::Simple, Some(1))] {
                 let mut hybrid = HybridBot {
-                    values: broken,
-                    ..bot(fake(None), prior, baseline, leaf)
+                    values: broken.clone(),
+                    ..bot(&fake(None), prior, baseline, leaf)
                 };
                 let choice = hybrid.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(seed));
                 if leaf.is_some() {

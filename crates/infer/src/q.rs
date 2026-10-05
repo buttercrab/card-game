@@ -157,9 +157,10 @@ impl ActionValues for QNet {
 /// fits: the legal action of highest value or, with a `temperature` (in
 /// points), one drawn with probability proportional to `exp(value /
 /// temperature)`: weaker, and less predictable.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct QBot {
-    pub net: &'static QNet,
+    /// Shared by every seat and thread that plays by it.
+    pub net: Arc<QNet>,
     /// 0 plays the best action.
     pub temperature: f32,
 }
@@ -212,7 +213,7 @@ mod tests {
     fn bot(temperature: f32) -> QBot {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tiny-q");
         QBot {
-            net: Box::leak(Box::new(QNet::open(&dir).unwrap())),
+            net: Arc::new(QNet::open(&dir).unwrap()),
             temperature,
         }
     }

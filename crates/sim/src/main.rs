@@ -1,8 +1,8 @@
 use clap::{Parser, ValueEnum};
 use engine::{Bot, RandomBot};
-use mighty::bot::SimpleBot;
 use mighty::rules::Preset;
 use mighty::{Mighty, Options};
+use mighty_ai::SimpleBot;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sim::spec::Spec;
@@ -91,7 +91,7 @@ fn table(
     args: &Args,
     seats: usize,
     game: u64,
-    focus_bot: Spec,
+    focus_bot: &Spec,
     clock: &Rc<RefCell<Clock>>,
 ) -> (Vec<Box<dyn Bot<Mighty>>>, Option<usize>) {
     // The first bidder is `game % seats`; cycling this separately covers
@@ -147,7 +147,7 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
             rules,
             first_bidder: game as usize % seats,
         };
-        let one = |focus_bot: Spec| {
+        let one = |focus_bot: &Spec| {
             let clock = Rc::new(RefCell::new(Clock::default()));
             let (mut bots, focus) = table(args, seats, game, focus_bot, &clock);
             sim::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
@@ -158,8 +158,8 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                 baseline_payoff: None,
             })
         };
-        one(args.focus).and_then(|mut outcome| {
-            if let Some(baseline) = args.baseline {
+        one(&args.focus).and_then(|mut outcome| {
+            if let Some(baseline) = &args.baseline {
                 let base = one(baseline)?;
                 outcome.baseline_payoff = base.focus_payoff;
                 outcome.baseline_clock = base.clock;

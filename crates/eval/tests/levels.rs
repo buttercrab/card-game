@@ -8,6 +8,7 @@ use engine::{Bot, Game, RandomBot, Turn, Viewer};
 use mighty::bot::Level;
 use mighty::rules::Preset;
 use mighty::{Mighty, Options};
+use mighty_ai::LevelBots;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sim::spec::Spec;

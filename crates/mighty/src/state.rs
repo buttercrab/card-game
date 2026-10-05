@@ -123,8 +123,9 @@ pub struct State {
     redealt: Option<Redealt>,
 }
 
+/// Where a hand stands, with everything the game knows of it ([`State::phase`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Phase {
+pub enum Phase {
     Dealing,
     Bidding(Bidding),
     Exchange(Exchange),
@@ -132,8 +133,9 @@ pub(crate) enum Phase {
     Done(Done),
 }
 
+/// The bidding under way.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Bidding {
+pub struct Bidding {
     pub to_act: Seat,
     pub best: Option<(Seat, Contract)>,
     pub passed: Vec<bool>,
@@ -143,7 +145,7 @@ pub(crate) struct Bidding {
 /// What the bidding settled and the exchange added to: every phase after
 /// the bidding carries it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Declared {
+pub struct Declared {
     pub declarer: Seat,
     pub contract: Contract,
     /// The cards the declarer has put back; as many as the kitty held once
@@ -151,14 +153,16 @@ pub(crate) struct Declared {
     pub discards: Vec<Card>,
 }
 
+/// The declarer taking the kitty, discarding and calling a friend.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Exchange {
+pub struct Exchange {
     pub declared: Declared,
     pub trump_changed: bool,
 }
 
+/// The tricks under way.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Play {
+pub struct Play {
     pub declared: Declared,
     pub call: FriendCall,
     /// Set once the friend is publicly known.
@@ -174,7 +178,8 @@ pub(crate) struct Play {
 }
 
 impl Play {
-    pub(crate) fn trick(&self) -> TrickState {
+    /// The trick under way, as the rules see it.
+    pub fn trick(&self) -> TrickState {
         TrickState {
             trump: self.declared.contract.trump,
             trick_no: self.trick_no,
@@ -188,7 +193,7 @@ impl Play {
 /// trick so far. The game ([`State::step`]) and the endgame solver, which
 /// plays tricks out without a [`State`], move it on alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TrickState {
+pub struct TrickState {
     pub trump: Option<Suit>,
     pub trick_no: usize,
     /// What the trick follows; `None` before its first card.
@@ -201,7 +206,7 @@ impl TrickState {
     /// The trick once `card` leads it: what it follows, and the joker it
     /// calls when `call_joker` asks and a call is possible. `gone` tells
     /// whether a joker was won in a finished trick.
-    pub(crate) fn led(
+    pub fn led(
         self,
         rules: &Rules,
         card: Card,
@@ -224,7 +229,7 @@ impl TrickState {
     }
 
     /// `card`, from `seat`, as it lies in this trick.
-    pub(crate) fn played(self, rules: &Rules, seat: Seat, card: Card) -> Played {
+    pub fn played(self, rules: &Rules, seat: Seat, card: Card) -> Played {
         Played {
             seat,
             card,
@@ -234,13 +239,13 @@ impl TrickState {
 
     /// The index into `plays`, this trick's cards so far, of the card
     /// winning it; `None` before the first card.
-    pub(crate) fn winner(self, rules: &Rules, plays: &[Played]) -> Option<usize> {
+    pub fn winner(self, rules: &Rules, plays: &[Played]) -> Option<usize> {
         let lead = self.lead.filter(|_| !plays.is_empty())?;
         Some(trick::winner(&rules.trick_context(self.trump, lead), plays))
     }
 
     /// The next trick, before its first card.
-    pub(crate) fn next(self) -> TrickState {
+    pub fn next(self) -> TrickState {
         TrickState {
             trump: self.trump,
             trick_no: self.trick_no + 1,
@@ -250,8 +255,9 @@ impl TrickState {
     }
 }
 
+/// The hand over and scored.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Done {
+pub struct Done {
     pub declared: Declared,
     pub call: FriendCall,
     pub friend: Option<Seat>,
@@ -302,7 +308,7 @@ impl State {
     /// with [`State::fill_hidden`]), and the cards won in tricks as they
     /// were won. While bidding, exchanging and playing; `None` otherwise
     /// and for spectators.
-    pub(crate) fn from_public(view: &View) -> Option<State> {
+    pub fn from_public(view: &View) -> Option<State> {
         let Viewer::Seat(_) = view.viewer else { return None };
         let seats = view.rules.players;
         let mut taken = vec![Vec::new(); seats];
@@ -384,7 +390,7 @@ impl State {
     /// Deals the cards a world from [`State::from_public`] lacks: `me`
     /// holds `own`, every other seat its set in `hands`, and `down` lie face
     /// down (the kitty while bidding; the discards in play, when unseen).
-    pub(crate) fn fill_hidden(&mut self, me: Seat, own: &[Card], hands: &[CardSet], down: Vec<Card>) {
+    pub fn fill_hidden(&mut self, me: Seat, own: &[Card], hands: &[CardSet], down: Vec<Card>) {
         let seats = self.seats();
         self.hands.resize(seats, Vec::new());
         for (seat, hand) in self.hands.iter_mut().enumerate() {
@@ -408,7 +414,7 @@ impl State {
     /// seat holding `hands` (as the play began), the discards made, nothing
     /// won yet. Replaying the call and the cards since through
     /// [`State::step`] brings it back to the trick under way.
-    pub(crate) fn before_call(&self, hands: Vec<Vec<Card>>) -> Option<State> {
+    pub fn before_call(&self, hands: Vec<Vec<Card>>) -> Option<State> {
         let Phase::Play(p) = &self.phase else { return None };
         Some(State {
             rules: self.rules.clone(),
@@ -426,38 +432,40 @@ impl State {
         })
     }
 
-    pub(crate) fn seats(&self) -> usize {
+    pub fn seats(&self) -> usize {
         self.rules.players
     }
 
-    pub(crate) fn phase(&self) -> &Phase {
+    pub fn phase(&self) -> &Phase {
         &self.phase
     }
 
-    #[cfg(test)]
-    pub(crate) fn phase_mut(&mut self) -> &mut Phase {
+    /// The phase, to change by hand: for tests that build positions the
+    /// game would not reach on its own.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn phase_mut(&mut self) -> &mut Phase {
         &mut self.phase
     }
 
-    pub(crate) fn first_bidder(&self) -> Seat {
+    pub fn first_bidder(&self) -> Seat {
         self.first_bidder
     }
 
     /// Every seat's hand, each sorted.
-    pub(crate) fn hands(&self) -> &[Vec<Card>] {
+    pub fn hands(&self) -> &[Vec<Card>] {
         &self.hands
     }
 
-    pub(crate) fn kitty(&self) -> &[Card] {
+    pub fn kitty(&self) -> &[Card] {
         &self.kitty
     }
 
     /// Every card each seat won in tricks.
-    pub(crate) fn taken(&self) -> &[Vec<Card>] {
+    pub fn taken(&self) -> &[Vec<Card>] {
         &self.taken
     }
 
-    pub(crate) fn bids(&self) -> &[Bid] {
+    pub fn bids(&self) -> &[Bid] {
         &self.bids
     }
 
@@ -755,8 +763,11 @@ impl State {
         self.taken.iter().any(|t| t.contains(&joker))
     }
 
-    /// Applies an action already known to be legal.
-    pub(crate) fn step(&mut self, seat: Seat, action: Action) {
+    /// Applies `action` by `seat` without checking it: for searches, which
+    /// play out thousands of hands and take each action from the game's
+    /// own legal actions. Anything else applies through [`engine::Game`],
+    /// which checks.
+    pub fn step(&mut self, seat: Seat, action: Action) {
         let phase = std::mem::replace(&mut self.phase, Phase::Dealing);
         self.phase = match (phase, action) {
             (Phase::Bidding(_) | Phase::Exchange(_), Action::Misdeal) => {
@@ -954,7 +965,7 @@ impl State {
     }
 
     /// What the bidding settled, once it is over.
-    pub(crate) fn declared(&self) -> Option<&Declared> {
+    pub fn declared(&self) -> Option<&Declared> {
         match &self.phase {
             Phase::Exchange(e) => Some(&e.declared),
             Phase::Play(p) => Some(&p.declared),
@@ -1141,7 +1152,7 @@ impl State {
 /// The legal plays from `hand` into trick `t`. `gone` tells whether a
 /// joker was won in a finished trick, which ends calling it. Shared by the
 /// game and by [`crate::endgame`], which plays tricks out without a [`State`].
-pub(crate) fn legal_plays(rules: &Rules, hand: &[Card], t: TrickState, gone: impl Fn(Card) -> bool) -> Vec<Action> {
+pub fn legal_plays(rules: &Rules, hand: &[Card], t: TrickState, gone: impl Fn(Card) -> bool) -> Vec<Action> {
     let trump = t.trump;
     let mighty = rules.mighty(trump);
     let policy = |c: &Card| rules.policy(*c, trump, t.trick_no);
@@ -1223,7 +1234,7 @@ pub(crate) fn legal_plays(rules: &Rules, hand: &[Card], t: TrickState, gone: imp
 
 /// The joker that leading `card` into trick `t` would call, if a call is
 /// possible then.
-pub(crate) fn callable_joker(rules: &Rules, t: TrickState, card: Card, gone: impl Fn(Card) -> bool) -> Option<Card> {
+pub fn callable_joker(rules: &Rules, t: TrickState, card: Card, gone: impl Fn(Card) -> bool) -> Option<Card> {
     if rules.on_trick(rules.policy.joker_call, t.trick_no) != CardPolicy::Valid {
         return None;
     }
@@ -1237,7 +1248,7 @@ pub(crate) fn callable_joker(rules: &Rules, t: TrickState, card: Card, gone: imp
 
 /// Whether `card` keeps its power when played into trick `t` (its lead and
 /// call already set).
-pub(crate) fn powered(rules: &Rules, t: TrickState, card: Card) -> bool {
+pub fn powered(rules: &Rules, t: TrickState, card: Card) -> bool {
     let called_and_powerless = t.called_joker == Some(card) && !rules.joker_call.called_joker_has_power;
     rules.policy(card, t.trump, t.trick_no) != CardPolicy::NoEffect && !called_and_powerless
 }
@@ -1251,7 +1262,7 @@ pub(crate) fn hand_value(rules: &Rules, contract: Contract, alone: bool, team_po
 
 /// The points the declarer's side counts from its discards: their point
 /// cards, unless the rules give them to the defence.
-pub(crate) fn discard_points(rules: &Rules, discards: &[Card]) -> usize {
+pub fn discard_points(rules: &Rules, discards: &[Card]) -> usize {
     if rules.scoring.discards_to_declarer {
         discards.iter().filter(|c| c.is_point()).count()
     } else {
@@ -1263,7 +1274,7 @@ pub(crate) fn discard_points(rules: &Rules, discards: &[Card]) -> usize {
 /// for this contract: then the side's best play for points is its best
 /// play for payoff too. Scoring against the minimum can break this (a
 /// made contract worth less than a narrowly failed one).
-pub(crate) fn payoff_rises_with_points(rules: &Rules, contract: Contract, alone: bool) -> bool {
+pub fn payoff_rises_with_points(rules: &Rules, contract: Contract, alone: bool) -> bool {
     let values: Vec<i64> = (0..=20)
         .map(|points| hand_value(rules, contract, alone, points))
         .collect();

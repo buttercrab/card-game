@@ -22,5 +22,8 @@ thiserror.workspace = true
 toml.workspace = true
 zip.workspace = true
 
+[dev-dependencies]
+mighty-ai.workspace = true
+
 [lints]
 workspace = true

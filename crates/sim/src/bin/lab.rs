@@ -205,7 +205,7 @@ fn named(variants: &[String]) -> Vec<(String, String)> {
 }
 
 /// The Q network of a `dmc:MODEL_DIR` spec.
-fn network(s: &str) -> &'static dyn engine::ActionValues {
+fn network(s: &str) -> std::sync::Arc<dyn engine::ActionValues> {
     let spec: sim::spec::Spec = s.parse().unwrap_or_else(|e| panic!("{e}"));
     match spec.kind {
         #[cfg(feature = "dmc")]
@@ -233,7 +233,7 @@ fn main() {
             let bot = actor(bot);
             let deals: Vec<u64> = (*start..start + deals).collect();
             run(&deals, threads, &args.out, |&deal| {
-                vec![lab::generate(&rules, deal, bot)]
+                vec![lab::generate(&rules, deal, &bot)]
             });
         }
         Command::Declare {
@@ -245,7 +245,7 @@ fn main() {
             let (bot, field) = (actor(bot), actor(field));
             let deals: Vec<u64> = (*start..start + deals).collect();
             run(&deals, threads, &args.out, |&deal| {
-                vec![lab::declare(&rules, deal, bot, field)]
+                vec![lab::declare(&rules, deal, &bot, &field)]
             });
         }
         Command::BidSignal {
@@ -256,9 +256,11 @@ fn main() {
             worlds,
             search_every,
         } => {
+            let bot = actor(bot);
+            let net = net.as_deref().map(network);
             let setup = SignalSetup {
-                bot: actor(bot),
-                net: net.as_deref().map(network),
+                bot: &bot,
+                net: net.as_deref(),
                 worlds: *worlds,
                 search_every: *search_every,
             };
@@ -306,8 +308,8 @@ fn main() {
                 for &seat in &focus {
                     for (name, v) in &variants {
                         out.push(match from_trick {
-                            Some(t) => lab::play_from(&rules, record, base, seat, (name, *v), t - 1),
-                            None => lab::play_variant(&rules, record, base, seat, (name, *v)),
+                            Some(t) => lab::play_from(&rules, record, &base, seat, (name, v), t - 1),
+                            None => lab::play_variant(&rules, record, &base, seat, (name, v)),
                         });
                     }
                 }
@@ -323,7 +325,7 @@ fn main() {
             let records = load(records, *limit);
             let bot = actor(bot);
             run(&records, threads, &args.out, |record| {
-                vec![lab::bid_experiment(&rules, record, bot, *worlds)]
+                vec![lab::bid_experiment(&rules, record, &bot, *worlds)]
             });
         }
         Command::Regret { records, endgame } => {
@@ -374,7 +376,7 @@ fn main() {
             run(&records, threads, &args.out, |record| {
                 variants
                     .iter()
-                    .map(|(name, how)| lab::exchange_variant(&rules, record, play, name, *how))
+                    .map(|(name, how)| lab::exchange_variant(&rules, record, &play, name, how))
                     .collect()
             });
         }

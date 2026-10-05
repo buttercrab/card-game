@@ -1,7 +1,7 @@
 use engine::{Bot, RandomBot};
-use mighty::bot::SimpleBot;
 use mighty::rules::Preset;
 use mighty::{Mighty, Options};
+use mighty_ai::SimpleBot;
 use sim::Checks;
 
 fn run(preset: Preset, games: u64, bot: fn(usize) -> Box<dyn Bot<Mighty>>) {

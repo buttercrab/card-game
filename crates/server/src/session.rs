@@ -8,6 +8,7 @@ use mighty::bot::Level;
 use mighty::card::Card;
 use mighty::explain::Refusal;
 use mighty::rules::{Contract, Preset, Rules};
+use mighty_ai::LevelBots;
 use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};

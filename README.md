@@ -9,7 +9,8 @@ before anyone plays it.
 | Part | What it is |
 | --- | --- |
 | [`engine`](crates/engine) | The `Game` trait every game implements and the `Bot` trait; `Encode` (positions as model inputs) and `DynGame` (any game through JSON) |
-| [`mighty`](crates/mighty) | Mighty rules, nine regional presets, bots (a simple one and a search bot that plays at the table) and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
+| [`mighty`](crates/mighty) | Mighty rules, nine regional presets and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
+| [`mighty-ai`](crates/mighty-ai) | Mighty's bots: a simple one, the search bot that plays at the table (PIMC, with an exact endgame and a reading of the other players) and the search with a Q network |
 | [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
 | [`env`](crates/env) | The batched RL environment over any game with an encoding, and the self-play data generator |
 | [`env-py`](crates/env-py) | The environment in Python (`cardgame_env`, PyO3), which `ml` depends on |

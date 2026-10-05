@@ -12,6 +12,7 @@ clap.workspace = true
 engine.workspace = true
 futures-util.workspace = true
 mighty.workspace = true
+mighty-ai.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# `State::phase_mut`, for tests elsewhere that build positions by hand.
+test-support = []
+
 [dependencies]
 engine.workspace = true
 rand.workspace = true

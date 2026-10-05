@@ -195,7 +195,7 @@ pub fn value(rules: &Rules, contract: Contract, alone: bool, team_points: u8) ->
 }
 
 /// [`value`], with every step that led to it.
-pub fn breakdown(rules: &Rules, contract: Contract, alone: bool, team_points: u8) -> HandValue {
+pub(crate) fn breakdown(rules: &Rules, contract: Contract, alone: bool, team_points: u8) -> HandValue {
     let mut steps = Vec::new();
     let value = score(rules, contract, alone, team_points, &mut |step| steps.push(step));
     HandValue {

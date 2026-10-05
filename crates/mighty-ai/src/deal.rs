@@ -9,34 +9,30 @@
 //! Both deal card by card, each to a seat with room or face down, and
 //! keep every constraint: exact hand sizes and face-down count, the cards
 //! the viewer knows, the suits a seat has shown it lacks; the search then
-//! redeals until the bidding agrees ([`crate::search`]). Uniformly, a card
+//! redeals until the bidding agrees ([`crate::SearchBot`]). Uniformly, a card
 //! goes to a place in proportion to the room left there. By beliefs, in
 //! proportion to `room × exp(logit)`, the model's logits being relative to
 //! the counts alone (see `cardgame_ml.models.belief`): so a model that
 //! says nothing deals exactly as uniformly does.
 
-use crate::Mighty;
-use crate::card::{Card, CardSet, SLOTS};
-use crate::encode::{BURIED, MAX_SEATS};
-use crate::search::{Dealer, Dealt};
-use crate::state::Action;
-use crate::view::View;
+use crate::pimc::{Deal, Dealer, Dealt};
 use engine::{Belief, Encode};
+use mighty::card::{Card, CardSet, SLOTS};
+use mighty::encode::{BURIED, MAX_SEATS};
+use mighty::{Action, Mighty, View};
 use rand::{Rng, RngCore};
 use std::fmt;
+use std::sync::Arc;
 
 /// How a search deals the cards it cannot see.
-///
-/// A model is loaded once and kept for the life of the process (leak a
-/// `Box` for the `'static` reference), which keeps search bots, and the
-/// bot specs built on them, `Copy`.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub enum Sampler {
     /// Every deal the view allows alike: the table's 고수.
     #[default]
     Uniform,
-    /// By a belief model's predictions, from the seat's observation.
-    Belief(&'static dyn Belief),
+    /// By a belief model's predictions, from the seat's observation. The
+    /// model is loaded once and shared by every bot and thread using it.
+    Belief(Arc<dyn Belief>),
 }
 
 impl fmt::Debug for Sampler {
@@ -54,18 +50,10 @@ impl PartialEq for Sampler {
     fn eq(&self, other: &Sampler) -> bool {
         match (self, other) {
             (Sampler::Uniform, Sampler::Uniform) => true,
-            (Sampler::Belief(a), Sampler::Belief(b)) => std::ptr::addr_eq(*a, *b),
+            (Sampler::Belief(a), Sampler::Belief(b)) => Arc::ptr_eq(a, b),
             _ => false,
         }
     }
-}
-
-/// Deals a world's unseen cards: what a [`Sampler`] sets up for one
-/// decision.
-pub(crate) trait Deal: Sync {
-    /// Every seat's hand (`me`'s empty) and the cards face down, or `None`
-    /// when no deal was found.
-    fn hands(&self, dealer: &Dealer, rng: &mut dyn RngCore) -> Option<Dealt>;
 }
 
 impl Sampler {
@@ -198,11 +186,12 @@ impl ByBelief {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{Preset, Rules};
-    use crate::search::SearchBot;
-    use crate::state::{Phase, State};
-    use crate::{Options, card::Suit};
+    use crate::SearchBot;
     use engine::{BeliefError, Bot, Game, Observation, Turn, Viewer};
+    use mighty::card::Suit;
+    use mighty::rules::{Preset, Rules};
+    use mighty::world::Phase;
+    use mighty::{Options, State};
     use rand::SeedableRng;
     use rand::seq::IndexedRandom;
     use rand_chacha::ChaCha8Rng;
@@ -223,11 +212,11 @@ mod tests {
         }
     }
 
-    fn fixed(logits: Vec<f32>) -> &'static Fixed {
-        Box::leak(Box::new(Fixed {
+    fn fixed(logits: Vec<f32>) -> Arc<Fixed> {
+        Arc::new(Fixed {
             logits,
             calls: AtomicUsize::new(0),
-        }))
+        })
     }
 
     /// Positions a seat decides in, from random play: every bidding,
@@ -294,7 +283,7 @@ mod tests {
                     dealer.fill(&mut world, (hands, down));
                     Mighty::check_invariants(&world).unwrap();
                     assert_eq!(Mighty::view(&world, Viewer::Seat(seat)), view);
-                    assert_eq!(world.legal_actions(), state.legal_actions());
+                    assert_eq!(Mighty::legal_actions(&world), Mighty::legal_actions(state));
                 }
             });
         }
@@ -334,7 +323,7 @@ mod tests {
         for preset in [Preset::Default, Preset::Gshs, Preset::Kmla] {
             let mut picked: Vec<View> = Vec::new();
             positions(&preset.rules(), 2, |state, seat| {
-                if picked.len() < 6 && (state.legal_actions().len() > 1) {
+                if picked.len() < 6 && (Mighty::legal_actions(state).len() > 1) {
                     picked.push(Mighty::view(state, Viewer::Seat(seat)));
                 }
             });
@@ -377,8 +366,8 @@ mod tests {
         });
         let view = view.unwrap();
         let dealer = Dealer::new(&view).unwrap();
-        let joker = Card::Joker(crate::card::Color::Black).slot();
-        if view.hand.contains(&Card::Joker(crate::card::Color::Black)) {
+        let joker = Card::Joker(mighty::card::Color::Black).slot();
+        if view.hand.contains(&Card::Joker(mighty::card::Color::Black)) {
             return;
         }
         let mut logits = vec![0.0; SLOTS * CLASSES];
@@ -400,13 +389,13 @@ mod tests {
             samples: 12,
             threads: 3,
             budget: None,
-            sampler: Sampler::Belief(model),
+            sampler: Sampler::Belief(model.clone()),
             ..SearchBot::default()
         };
         let mut asked = 0;
         positions(&Preset::Gshs.rules(), 1, |state, seat| {
             let view = Mighty::view(state, Viewer::Seat(seat));
-            let legal = state.legal_actions();
+            let legal = Mighty::legal_actions(state);
             let before = model.calls.load(Ordering::Relaxed);
             let action = bot.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(3));
             assert!(legal.contains(&action));
@@ -420,8 +409,8 @@ mod tests {
     #[test]
     fn samplers_compare_by_model() {
         let (a, b) = (fixed(Vec::new()), fixed(Vec::new()));
-        assert_eq!(Sampler::Belief(a), Sampler::Belief(a));
-        assert_ne!(Sampler::Belief(a), Sampler::Belief(b));
+        assert_eq!(Sampler::Belief(a.clone()), Sampler::Belief(a.clone()));
+        assert_ne!(Sampler::Belief(a.clone()), Sampler::Belief(b));
         assert_eq!(Sampler::default(), Sampler::Uniform);
         assert_ne!(Sampler::Uniform, Sampler::Belief(a));
     }

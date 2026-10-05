@@ -9,15 +9,15 @@
 
 use engine::{Bot, RandomBot, Seat};
 use mighty::Mighty;
-use mighty::bot::{Clumsy, Level, SimpleBot};
-use mighty::search::{Reading, Sampler, SearchBot};
+use mighty::bot::Level;
+use mighty_ai::{Clumsy, LevelBots, Reading, Sampler, SearchBot, SimpleBot};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::str::FromStr;
 use std::time::Duration;
 
 /// A bot by name, built afresh for each seat it fills.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Spec {
     pub kind: Kind,
     /// Bid a little bolder or more carefully by seat, as the server's
@@ -25,7 +25,7 @@ pub struct Spec {
     pub temper: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum Kind {
     Random,
     Simple(SimpleBot),
@@ -36,15 +36,14 @@ pub enum Kind {
     /// A Q network's choice (`dmc:MODEL_DIR[:TEMPERATURE]`).
     #[cfg(feature = "dmc")]
     Dmc(infer::QBot),
-    /// The search with a Q network (`hybrid:MODEL_DIR:SAMPLES@...`);
-    /// leaked, as its network is, to keep specs small and `Copy`.
+    /// The search with a Q network (`hybrid:MODEL_DIR:SAMPLES@...`).
     #[cfg(feature = "dmc")]
-    Hybrid(&'static mighty::hybrid::HybridBot),
+    Hybrid(Box<mighty_ai::HybridBot>),
     /// One bot per phase of the hand (`phased:BID+EXCHANGE+PLAY`).
-    Phased(&'static crate::phased::Phased),
+    Phased(Box<crate::phased::Phased>),
 }
 
-pub use mighty::bot::{EASY_SLIPS, TEMPER};
+pub use mighty_ai::{EASY_SLIPS, TEMPER};
 
 impl FromStr for Spec {
     type Err = String;
@@ -52,7 +51,7 @@ impl FromStr for Spec {
     fn from_str(s: &str) -> Result<Spec, String> {
         if let Some(rest) = s.strip_prefix("phased:") {
             let phased = crate::phased::Phased::parse(rest)?;
-            let kind = Kind::Phased(Box::leak(Box::new(phased)));
+            let kind = Kind::Phased(Box::new(phased));
             return Ok(Spec { kind, temper: false });
         }
         let (name, settings) = s.split_once('@').unwrap_or((s, ""));
@@ -69,9 +68,9 @@ impl FromStr for Spec {
         // The table's levels (`hard` or `고수`), as mighty::bot::Level
         // defines them: 고수 without a clock, so runs reproduce.
         let level = name.parse::<Level>().ok();
-        let mut policy = level.map_or_else(SimpleBot::default, Level::policy);
-        let mut slips = level.and_then(Level::slips);
-        let base_search = level.and_then(Level::search).unwrap_or_default();
+        let mut policy = level.map_or_else(SimpleBot::default, LevelBots::policy);
+        let mut slips = level.and_then(LevelBots::slips);
+        let base_search = level.and_then(LevelBots::search).unwrap_or_default();
         let temper = level.is_some();
         let which = match (level, name) {
             (Some(level), _) if level.search().is_some() => Which::Search,
@@ -198,20 +197,20 @@ fn belief_search<'a>(rest: &'a str, settings: &str) -> Result<(&'a str, Spec), S
 }
 
 /// The belief model in directory `dir`, checked to read Mighty's encoding.
-/// Loaded once per directory and kept for the life of the process.
+/// Loaded once per directory and shared by every spec naming it.
 #[cfg(feature = "belief")]
 fn load_belief(dir: &str) -> Result<Sampler, String> {
     use std::collections::BTreeMap;
-    use std::sync::{Mutex, PoisonError};
-    static LOADED: Mutex<BTreeMap<String, &'static infer::BeliefNet>> = Mutex::new(BTreeMap::new());
+    use std::sync::{Arc, Mutex, PoisonError};
+    static LOADED: Mutex<BTreeMap<String, Arc<infer::BeliefNet>>> = Mutex::new(BTreeMap::new());
     let mut loaded = LOADED.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(&net) = loaded.get(dir) {
-        return Ok(Sampler::Belief(net));
+    if let Some(net) = loaded.get(dir) {
+        return Ok(Sampler::Belief(net.clone()));
     }
     let net = infer::BeliefNet::open(std::path::Path::new(dir)).map_err(|e| e.to_string())?;
     check_encoding(dir, net.spec())?;
-    let net: &'static infer::BeliefNet = Box::leak(Box::new(net));
-    loaded.insert(dir.to_string(), net);
+    let net = Arc::new(net);
+    loaded.insert(dir.to_string(), net.clone());
     Ok(Sampler::Belief(net))
 }
 
@@ -244,20 +243,20 @@ fn dmc<'a>(rest: &'a str, settings: &str) -> Result<(&'a str, f32), String> {
 }
 
 /// The Q network in directory `dir`, checked to read Mighty's encoding.
-/// Loaded once per directory and kept for the life of the process.
+/// Loaded once per directory and shared by every spec naming it.
 #[cfg(feature = "dmc")]
-fn load_q(dir: &str) -> Result<&'static infer::QNet, String> {
+fn load_q(dir: &str) -> Result<std::sync::Arc<infer::QNet>, String> {
     use std::collections::BTreeMap;
-    use std::sync::{Mutex, PoisonError};
-    static LOADED: Mutex<BTreeMap<String, &'static infer::QNet>> = Mutex::new(BTreeMap::new());
+    use std::sync::{Arc, Mutex, PoisonError};
+    static LOADED: Mutex<BTreeMap<String, Arc<infer::QNet>>> = Mutex::new(BTreeMap::new());
     let mut loaded = LOADED.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(&net) = loaded.get(dir) {
-        return Ok(net);
+    if let Some(net) = loaded.get(dir) {
+        return Ok(net.clone());
     }
     let net = infer::QNet::open(std::path::Path::new(dir)).map_err(|e| e.to_string())?;
     check_encoding(dir, net.spec())?;
-    let net: &'static infer::QNet = Box::leak(Box::new(net));
-    loaded.insert(dir.to_string(), net);
+    let net = Arc::new(net);
+    loaded.insert(dir.to_string(), net.clone());
     Ok(net)
 }
 
@@ -281,7 +280,7 @@ fn load_dmc(dir: &str, _temperature: f32) -> Result<Spec, String> {
 
 /// `hybrid:MODEL_DIR:SAMPLES@SETTINGS`: the table's 고수 (seat temper
 /// included) at `SAMPLES` deals, leaning on the Q network in `MODEL_DIR`
-/// ([`mighty::hybrid`]). Its own settings: `prior=K` weighs the `K` moves
+/// ([`mighty_ai::HybridBot`]). Its own settings: `prior=K` weighs the `K` moves
 /// the network values most instead of the search's candidates (0, the
 /// default, keeps those), `base=q` makes the network's choice the one to
 /// beat instead of the simple bot's (`base=simple`, the default), and
@@ -298,12 +297,12 @@ struct Hybrid<'a> {
     dir: &'a str,
     search: SearchBot,
     prior: usize,
-    baseline: mighty::hybrid::Baseline,
+    baseline: mighty_ai::Baseline,
     leaf: Option<usize>,
 }
 
 fn hybrid_parts<'a>(rest: &'a str, settings: &str) -> Result<Hybrid<'a>, String> {
-    use mighty::hybrid::Baseline;
+    use mighty_ai::Baseline;
     let (dir, samples) = rest
         .rsplit_once(':')
         .ok_or(format!("hybrid:{rest}: expected hybrid:MODEL_DIR:SAMPLES"))?;
@@ -345,17 +344,17 @@ fn load_hybrid(
     dir: &str,
     search: SearchBot,
     prior: usize,
-    baseline: mighty::hybrid::Baseline,
+    baseline: mighty_ai::Baseline,
     leaf: Option<usize>,
 ) -> Result<Spec, String> {
     Ok(Spec {
-        kind: Kind::Hybrid(Box::leak(Box::new(mighty::hybrid::HybridBot {
+        kind: Kind::Hybrid(Box::new(mighty_ai::HybridBot {
             search,
             values: load_q(dir)?,
             prior,
             baseline,
             leaf,
-        }))),
+        })),
         temper: true,
     })
 }
@@ -365,7 +364,7 @@ fn load_hybrid(
     dir: &str,
     _search: SearchBot,
     _prior: usize,
-    _baseline: mighty::hybrid::Baseline,
+    _baseline: mighty_ai::Baseline,
     _leaf: Option<usize>,
 ) -> Result<Spec, String> {
     Err(format!(
@@ -433,7 +432,7 @@ pub fn check(s: &str) -> Result<Check, String> {
         });
     }
     let spec: Spec = s.parse()?;
-    let (kind, reason) = match spec.kind {
+    let (kind, reason) = match &spec.kind {
         Kind::Random => ("random", "no search, no clock".to_string()),
         Kind::Simple(_) | Kind::Clumsy(..) => ("simple", "rules, no search, no clock".to_string()),
         Kind::Search(bot) => (
@@ -462,32 +461,32 @@ pub fn check(s: &str) -> Result<Check, String> {
 
 impl Spec {
     /// The bot for `seat`.
-    pub fn build(self, seat: Seat) -> Box<dyn Bot<Mighty> + Send> {
+    pub fn build(&self, seat: Seat) -> Box<dyn Bot<Mighty> + Send> {
         let temper = if self.temper { TEMPER[seat % TEMPER.len()] } else { 0.0 };
         let temper = |mut policy: SimpleBot| {
             policy.bid_base += temper;
             policy
         };
-        match self.kind {
+        match &self.kind {
             Kind::Random => Box::new(RandomBot),
-            Kind::Simple(bot) => Box::new(temper(bot)),
+            Kind::Simple(bot) => Box::new(temper(*bot)),
             Kind::Clumsy(bot, slips) => Box::new(Clumsy {
-                inner: temper(bot),
-                slips,
+                inner: temper(*bot),
+                slips: *slips,
             }),
             Kind::Search(bot) => Box::new(SearchBot {
                 policy: temper(bot.policy),
-                ..bot
+                ..bot.clone()
             }),
             #[cfg(feature = "dmc")]
-            Kind::Dmc(bot) => Box::new(bot),
+            Kind::Dmc(bot) => Box::new(bot.clone()),
             #[cfg(feature = "dmc")]
-            Kind::Hybrid(bot) => Box::new(mighty::hybrid::HybridBot {
+            Kind::Hybrid(bot) => Box::new(mighty_ai::HybridBot {
                 search: SearchBot {
                     policy: temper(bot.search.policy),
-                    ..bot.search
+                    ..bot.search.clone()
                 },
-                ..*bot
+                ..(**bot).clone()
             }),
             Kind::Phased(phased) => Box::new(phased.build(seat)),
         }
@@ -495,8 +494,8 @@ impl Spec {
 
     /// Whether the bot decides the same way in every run: true unless it
     /// stops thinking on a clock.
-    pub fn reproducible(self) -> bool {
-        match self.kind {
+    pub fn reproducible(&self) -> bool {
+        match &self.kind {
             Kind::Search(bot) => bot.budget.is_none(),
             Kind::Random | Kind::Simple(_) | Kind::Clumsy(..) => true,
             // Its temperature draws from the game's seeded generator.
@@ -555,7 +554,7 @@ mod tests {
         let Kind::Search(hard) = spec("hard").kind else {
             panic!("hard searches")
         };
-        assert_eq!(Some(hard), Level::Hard.search());
+        assert_eq!(Some(hard.clone()), Level::Hard.search());
         assert_eq!((hard.samples, hard.confidence, hard.budget), (200, 1.0, None));
         assert!(["easy", "normal", "hard", "고수"].iter().all(|s| spec(s).temper));
         assert!(!spec("search:200:1:0").temper);
@@ -736,7 +735,7 @@ mod tests {
     fn belief_bots_are_hard_dealing_by_a_model() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny");
         let parsed = spec(&format!("belief:{dir}:50"));
-        let Kind::Search(bot) = parsed.kind else {
+        let Kind::Search(ref bot) = parsed.kind else {
             panic!("a belief bot searches")
         };
         assert!(parsed.temper && parsed.reproducible());
@@ -759,7 +758,7 @@ mod tests {
     fn dmc_bots_play_by_a_q_network() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
         let greedy = spec(&format!("dmc:{dir}"));
-        let Kind::Dmc(bot) = greedy.kind else {
+        let Kind::Dmc(ref bot) = greedy.kind else {
             panic!("a dmc bot")
         };
         assert_eq!(bot.temperature, 0.0);
@@ -768,7 +767,7 @@ mod tests {
             panic!("a dmc bot")
         };
         assert_eq!(warm.temperature, 2.5);
-        assert!(std::ptr::eq(warm.net, bot.net), "loaded once");
+        assert!(std::sync::Arc::ptr_eq(&warm.net, &bot.net), "loaded once");
         assert!(format!("dmc:{dir}:-1").parse::<Spec>().is_err());
         assert!(format!("dmc:{dir}@threads=2").parse::<Spec>().is_err());
         assert!("dmc:/no/such/model".parse::<Spec>().is_err());
@@ -782,10 +781,10 @@ mod tests {
     #[cfg(feature = "dmc")]
     #[test]
     fn hybrid_bots_are_hard_with_a_q_network() {
-        use mighty::hybrid::Baseline;
+        use mighty_ai::Baseline;
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
         let plain = spec(&format!("hybrid:{dir}:40"));
-        let Kind::Hybrid(bot) = plain.kind else {
+        let Kind::Hybrid(ref bot) = plain.kind else {
             panic!("a hybrid bot")
         };
         assert!(plain.temper && plain.reproducible());
@@ -805,7 +804,7 @@ mod tests {
         );
         assert_eq!(tuned.search.threads, 2);
         assert!(!tuned.search.reading.on);
-        assert!(std::ptr::addr_eq(tuned.values, bot.values), "loaded once");
+        assert!(std::sync::Arc::ptr_eq(&tuned.values, &bot.values), "loaded once");
         for bad in ["base=best", "leaf=soon", "prior=-1", "nonsense=1"] {
             assert!(format!("hybrid:{dir}:40@{bad}").parse::<Spec>().is_err(), "{bad}");
         }

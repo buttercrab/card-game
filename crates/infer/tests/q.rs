@@ -10,6 +10,7 @@ use mighty::{Action, Mighty, Options};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tiny-q")
@@ -47,10 +48,13 @@ fn values_are_in_points_for_the_legal_actions_only() {
 }
 
 /// One hand with a Q bot in every seat: its payoffs and every move.
-fn play(net: &'static QNet, options: &Options, seed: u64) -> (Vec<i64>, Vec<Action>) {
+fn play(net: &Arc<QNet>, options: &Options, seed: u64) -> (Vec<i64>, Vec<Action>) {
     let mut state = Mighty::new_game(options).unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut bot = QBot { net, temperature: 1.0 };
+    let mut bot = QBot {
+        net: net.clone(),
+        temperature: 1.0,
+    };
     let mut moves = Vec::new();
     loop {
         match Mighty::turn(&state) {
@@ -74,7 +78,7 @@ fn play(net: &'static QNet, options: &Options, seed: u64) -> (Vec<i64>, Vec<Acti
 
 #[test]
 fn a_q_bot_plays_whole_hands() {
-    let net: &'static QNet = Box::leak(Box::new(QNet::open(&fixture()).unwrap()));
+    let net = Arc::new(QNet::open(&fixture()).unwrap());
     let options = Options {
         rules: Preset::ALL[0].rules(),
         first_bidder: 1,
@@ -86,10 +90,10 @@ fn a_q_bot_plays_whole_hands() {
             rules: preset.rules(),
             first_bidder: 1,
         };
-        let (payoffs, moves) = play(net, &options, 3);
+        let (payoffs, moves) = play(&net, &options, 3);
         assert_eq!(payoffs.iter().sum::<i64>(), 0, "{preset:?}");
         assert_eq!(
-            play(net, &options, 3).1,
+            play(&net, &options, 3).1,
             moves,
             "{preset:?}: the same from the same seed"
         );

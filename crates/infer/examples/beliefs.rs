@@ -26,11 +26,12 @@ use clap::Parser;
 use engine::{Bot, Encode, Game, Turn, Viewer};
 use infer::BeliefNet;
 use mighty::rules::{Preset, Rules};
-use mighty::search::{Reading, Sampler, SearchBot};
 use mighty::{Mighty, Options, PhaseView};
+use mighty_ai::{Reading, Sampler, SearchBot};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Parser)]
 struct Args {
@@ -89,7 +90,7 @@ fn shares(worlds: &[(mighty::State, f64)], seat: usize) -> Vec<[f64; CLASSES]> {
     out
 }
 
-fn play(args: &Args, net: &'static BeliefNet, rules: &[Rules], hands: impl Iterator<Item = u64>) -> Tally {
+fn play(args: &Args, net: &Arc<BeliefNet>, rules: &[Rules], hands: impl Iterator<Item = u64>) -> Tally {
     let mut tally = Tally::default();
     let hard = SearchBot {
         samples: 200,
@@ -101,16 +102,16 @@ fn play(args: &Args, net: &'static BeliefNet, rules: &[Rules], hands: impl Itera
             on: false,
             ..Reading::default()
         },
-        ..hard
+        ..hard.clone()
     };
     let (believer, believer_reading) = (
         SearchBot {
-            sampler: Sampler::Belief(net),
-            ..dealer
+            sampler: Sampler::Belief(net.clone()),
+            ..dealer.clone()
         },
         SearchBot {
-            sampler: Sampler::Belief(net),
-            ..hard
+            sampler: Sampler::Belief(net.clone()),
+            ..hard.clone()
         },
     );
     for hand in hands {
@@ -122,7 +123,7 @@ fn play(args: &Args, net: &'static BeliefNet, rules: &[Rules], hands: impl Itera
         };
         let mut rng = ChaCha8Rng::seed_from_u64(args.seed + hand);
         let mut state = Mighty::new_game(&options).expect("valid rules");
-        let mut bots = vec![hard; players];
+        let mut bots = vec![hard.clone(); players];
         loop {
             let action = match Mighty::turn(&state) {
                 Turn::Over => break,
@@ -195,7 +196,7 @@ fn play(args: &Args, net: &'static BeliefNet, rules: &[Rules], hands: impl Itera
 
 fn main() {
     let args = Args::parse();
-    let net: &'static BeliefNet = Box::leak(Box::new(BeliefNet::open(&args.model).expect("a model directory")));
+    let net = Arc::new(BeliefNet::open(&args.model).expect("a model directory"));
     let rules: Vec<Rules> = match args.rules.parse::<Preset>() {
         Ok(preset) => vec![preset.rules()],
         Err(_) => serde_json::from_str(&std::fs::read_to_string(&args.rules).expect("a rules file"))
@@ -216,7 +217,7 @@ fn main() {
     let total = std::thread::scope(|scope| {
         let workers: Vec<_> = (0..args.threads)
             .map(|t| {
-                let (args, rules) = (&args, &rules);
+                let (args, rules, net) = (&args, &rules, &net);
                 scope.spawn(move || play(args, net, rules, (t..args.hands).step_by(args.threads as usize)))
             })
             .collect();

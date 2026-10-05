@@ -7,14 +7,15 @@
 //! People are not the simple bot: every decision may be a slip, and bids
 //! are read on a sliding scale, so no single odd play rules a deal out.
 
-use crate::bot::SimpleBot;
-use crate::card::{Card, CardSet, Suit};
 use crate::endgame::Mix;
-use crate::rules::{Contract, MAX_PLAYERS, Rules};
-use crate::state::{Action, FriendCall, Phase, Play, State};
-use crate::trick::{Lead, Played};
-use crate::view::Seen;
-use engine::Seat;
+use crate::seen::Seen;
+use crate::simple::SimpleBot;
+use engine::{Game, Seat};
+use mighty::card::{Card, CardSet, Suit};
+use mighty::rules::{Contract, MAX_PLAYERS, Rules};
+use mighty::trick::{Lead, Played};
+use mighty::world::{Phase, Play};
+use mighty::{Action, FriendCall, Mighty, State};
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 
@@ -283,7 +284,7 @@ impl Reading {
         if matches!(call, FriendCall::Card(c) if state.hands()[e.declared.declarer].contains(&c)) {
             return OWN_CALL;
         }
-        let legal = state.legal_actions();
+        let legal = Mighty::legal_actions(state);
         let usual = policy.decide(&Seen::of_state(state, e.declared.declarer), &legal);
         let usual = if usual == Action::CallFriend(call) {
             1.0 - self.slip
@@ -339,7 +340,7 @@ fn replayed(
 
 /// The legal cards for `seat` in `state`, and the one the simple bot plays.
 fn decide(policy: &SimpleBot, state: &State, seat: Seat) -> (CardSet, Card) {
-    let legal = state.legal_actions();
+    let legal = Mighty::legal_actions(state);
     let cards: CardSet = legal.iter().map(card_of).collect();
     let choice = if cards.len() > 1 {
         card_of(&policy.decide(&Seen::of_state(state, seat), &legal))
@@ -380,10 +381,9 @@ fn log_sigmoid(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::search::determinize;
-    use crate::state::Options;
-    use crate::view::View;
+    use crate::pimc::determinize;
     use engine::Viewer;
+    use mighty::Options;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -415,7 +415,7 @@ mod tests {
             joker_lead: None,
             call_joker: false,
         };
-        state.apply(action).expect("legal");
+        Mighty::apply(state, action).expect("legal");
     }
 
     /// Seat 0 declares hearts, calls ♥A and leads the mighty. Seats 1 and
@@ -425,7 +425,7 @@ mod tests {
     fn whoever_feeds_the_declarer_looks_like_the_friend() {
         let rules = Rules::web_mighty();
         let options = Options { rules, first_bidder: 0 };
-        let mut state = State::new(&options).expect("valid rules");
+        let mut state = Mighty::new_game(&options).expect("valid rules");
         let mut hands: Vec<Vec<Card>> = [
             "SA HK HQ HJ H10 H9 DA CA DK D2",
             "S2 S5 D3 D4 D5 D6 C2 C4 C5 C6",
@@ -435,31 +435,31 @@ mod tests {
         ]
         .map(cards)
         .to_vec();
-        hands[4].push(Card::Joker(crate::card::Color::Black));
+        hands[4].push(Card::Joker(mighty::card::Color::Black));
         let kitty = cards("S8 S9 SJ");
         let deal = Action::Deal {
             hands,
             kitty: kitty.clone(),
         };
-        state.apply(deal).expect("a deal");
+        Mighty::apply(&mut state, deal).expect("a deal");
         let hearts = Contract {
             trump: Some(Suit::Heart),
             count: 13,
         };
-        state.apply(Action::Bid(hearts)).expect("legal");
+        Mighty::apply(&mut state, Action::Bid(hearts)).expect("legal");
         for _ in 1..5 {
-            state.apply(Action::Pass).expect("legal");
+            Mighty::apply(&mut state, Action::Pass).expect("legal");
         }
         for card in kitty {
-            state.apply(Action::Discard(card)).expect("legal");
+            Mighty::apply(&mut state, Action::Discard(card)).expect("legal");
         }
         let ace = Card::new(Suit::Heart, 14);
-        state.apply(Action::CallFriend(FriendCall::Card(ace))).expect("legal");
+        Mighty::apply(&mut state, Action::CallFriend(FriendCall::Card(ace))).expect("legal");
         for card in ["SA", "S2", "S3", "S10"] {
             play(&mut state, card);
         }
 
-        let view = View::new(&state, Viewer::Seat(4));
+        let view = Mighty::view(&state, Viewer::Seat(4));
         let reading = Reading::default();
         let policy = SimpleBot::default();
         let mut rng = ChaCha8Rng::seed_from_u64(1);
@@ -493,9 +493,8 @@ mod tests {
     /// leaves out (joker leads and calls) correctly.
     #[test]
     fn replays_reproduce_the_hand() {
-        use crate::Mighty;
-        use crate::rules::Preset;
-        use engine::{Bot, Game, Turn};
+        use engine::{Bot, Turn};
+        use mighty::rules::Preset;
         let mut rng = ChaCha8Rng::seed_from_u64(4);
         let mut rule_sets: Vec<Rules> = Preset::ALL.iter().map(|p| p.rules()).collect();
         rule_sets.extend(Preset::ALL.iter().map(|p| p.rules().varied(&mut rng)));

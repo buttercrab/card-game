@@ -63,7 +63,7 @@ pub const MAX_SEATS: usize = MAX_PLAYERS;
 
 /// The highest contract number the action space has room for. The rule
 /// editor stops at 26; [`Encode::spec`] refuses rules above this.
-pub const MAX_COUNT: u8 = 30;
+pub(crate) const MAX_COUNT: u8 = 30;
 
 /// Event rows. A hand of 기본 needs about 80; long bidding without final
 /// passes needs more.
@@ -174,7 +174,7 @@ fn relative(me: Seat, seat: Seat, players: usize) -> usize {
 /// relative seat, first trick, last trick, alone), plays (by card),
 /// plays calling the joker (by card), joker leads (joker × suit or
 /// colour named).
-pub fn action_index(me: Seat, players: usize, action: &Action) -> Option<usize> {
+pub(crate) fn action_index(me: Seat, players: usize, action: &Action) -> Option<usize> {
     Some(match *action {
         Action::Deal { .. } => return None,
         Action::Pass => PASS,

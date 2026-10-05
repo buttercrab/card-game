@@ -9,11 +9,11 @@
 
 use crate::spec::{Kind, Spec};
 use engine::{Game, Seat, Turn, Viewer};
-use mighty::bot::SimpleBot;
 use mighty::card::{ACE, Card, Suit};
 use mighty::rules::{Contract, Rules};
-use mighty::search::{SearchBot, finish, playout};
 use mighty::{Action, FriendCall, Mighty, Options, PhaseView, State, View};
+use mighty_ai::SimpleBot;
+use mighty_ai::{SearchBot, play_out};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ fn streams(deal: u64, tag: u64, seats: usize) -> Vec<ChaCha8Rng> {
 }
 
 /// Who decides for a seat.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Actor {
     Bot(Spec),
     /// Sees every hand. Plays each legal action out `rollouts` times on
@@ -78,9 +78,9 @@ impl Actor {
             return legal[0].clone();
         }
         let view = Mighty::view(state, Viewer::Seat(seat));
-        match *self {
+        match self {
             Actor::Bot(spec) => spec.build(seat).act(&view, &legal, rng),
-            Actor::Cheat { rollouts, slip } => {
+            &Actor::Cheat { rollouts, slip } => {
                 let policy = SimpleBot::default();
                 let usual = engine::Bot::act(&mut policy.clone(), &view, &legal, rng);
                 let base = legal.iter().position(|a| *a == usual).expect("legal");
@@ -120,7 +120,7 @@ impl Actor {
 fn noisy_playout(mut state: State, me: Seat, slip: f64, rng: &mut ChaCha8Rng) -> i64 {
     use rand::Rng;
     if slip <= 0.0 {
-        return playout(SimpleBot::default(), state, me);
+        return play_out(SimpleBot::default(), 0, state, me);
     }
     let mut policy = SimpleBot::default();
     for _ in 0..2000 {
@@ -145,9 +145,9 @@ fn noisy_playout(mut state: State, me: Seat, slip: f64, rng: &mut ChaCha8Rng) ->
 /// The bots at a table, by phase: one actor for every seat, except one
 /// seat that may play differently in one phase.
 #[derive(Debug, Clone, Copy)]
-pub struct Table {
-    pub all: Actor,
-    pub focus: Option<(Seat, Phase, Actor)>,
+pub struct Table<'a> {
+    pub all: &'a Actor,
+    pub focus: Option<(Seat, Phase, &'a Actor)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,8 +170,8 @@ pub fn phase(state: &State) -> Phase {
     }
 }
 
-impl Table {
-    pub fn actor(&self, seat: Seat, phase: Phase) -> Actor {
+impl<'a> Table<'a> {
+    pub fn actor(&self, seat: Seat, phase: Phase) -> &'a Actor {
         match self.focus {
             Some((s, p, actor)) if s == seat && p == phase => actor,
             _ => self.all,
@@ -285,7 +285,7 @@ pub fn simple_read(view: &View, legal: &[Action]) -> (Option<Suit>, f32, Option<
 }
 
 /// Plays hand `deal` with `bot` in every seat, recording it.
-pub fn generate(rules: &Rules, deal: u64, bot: Actor) -> Record {
+pub fn generate(rules: &Rules, deal: u64, bot: &Actor) -> Record {
     let seats = rules.players;
     let options = options(rules, deal);
     let mut state = Mighty::new_game(&options).expect("valid rules");
@@ -425,7 +425,7 @@ pub struct PlayResult {
 
 /// Replays the card play of `record` with `variant` in seat `focus` and
 /// `base` everywhere else.
-pub fn play_variant(rules: &Rules, record: &Record, base: Actor, focus: Seat, variant: (&str, Actor)) -> PlayResult {
+pub fn play_variant(rules: &Rules, record: &Record, base: &Actor, focus: Seat, variant: (&str, &Actor)) -> PlayResult {
     let seats = rules.players;
     let mut state = replay(rules, record, record.play_at);
     let table = Table {
@@ -486,15 +486,15 @@ pub fn play_variant(rules: &Rules, record: &Record, base: Actor, focus: Seat, va
 pub fn play_from(
     rules: &Rules,
     record: &Record,
-    base: Actor,
+    base: &Actor,
     focus: Seat,
-    variant: (&str, Actor),
+    variant: (&str, &Actor),
     trick: usize,
 ) -> PlayResult {
     let seats = rules.players;
     let start = replay(rules, record, record.play_at + trick * seats);
     let tag = TAG_LAB + 16 + trick as u64;
-    let finish = |actor: Actor, differing: &mut Vec<PlayDecision>, watch: bool| {
+    let finish = |actor: &Actor, differing: &mut Vec<PlayDecision>, watch: bool| {
         let mut state = start.clone();
         let table = Table {
             all: base,
@@ -572,11 +572,12 @@ pub fn bid_oracle(state: &State, seat: Seat, contract: Contract, worlds: usize, 
                 break;
             }
         }
+        let simple = Actor::Bot(Spec {
+            kind: Kind::Simple(SimpleBot::default()),
+            temper: false,
+        });
         let table = Table {
-            all: Actor::Bot(Spec {
-                kind: Kind::Simple(SimpleBot::default()),
-                temper: false,
-            }),
+            all: &simple,
             focus: None,
         };
         let mut rngs = streams(0, TAG_LAB, Mighty::seat_count(&s));
@@ -628,7 +629,7 @@ pub struct ClosePass {
     pub oracle: Oracle,
 }
 
-fn play_on(rules: &Rules, record: &Record, at: usize, action: Action, bot: Actor) -> Outcome {
+fn play_on(rules: &Rules, record: &Record, at: usize, action: Action, bot: &Actor) -> Outcome {
     let mut state = replay(rules, record, at);
     Mighty::apply(&mut state, action).expect("a legal alternative");
     let mut rngs = streams(record.deal, TAG_AFTER_BID, rules.players);
@@ -643,7 +644,7 @@ fn play_on(rules: &Rules, record: &Record, at: usize, action: Action, bot: Actor
     outcome(&state)
 }
 
-pub fn bid_experiment(rules: &Rules, record: &Record, bot: Actor, worlds: usize) -> BidResult {
+pub fn bid_experiment(rules: &Rules, record: &Record, bot: &Actor, worlds: usize) -> BidResult {
     let mut lab_rng = stream(record.deal, TAG_LAB, 99);
     let winning = record
         .bids
@@ -719,9 +720,7 @@ pub struct ExchangeResult {
 }
 
 /// How the declarer exchanges in an experiment.
-#[derive(Debug, Clone, Copy)]
-// A handful exist per run; staying `Copy` matters more than their size.
-#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
 pub enum Exchanger {
     /// The recorded bot's discards, and a bot's friend call.
     Bot(Actor),
@@ -748,7 +747,7 @@ fn discards_of(actions: &[Action]) -> Vec<Card> {
         .collect()
 }
 
-pub fn exchange_variant(rules: &Rules, record: &Record, play: Actor, name: &str, how: Exchanger) -> ExchangeResult {
+pub fn exchange_variant(rules: &Rules, record: &Record, play: &Actor, name: &str, how: &Exchanger) -> ExchangeResult {
     let seats = rules.players;
     let mut state = replay(rules, record, record.exchange_at);
     let declarer = record.declarer;
@@ -782,7 +781,7 @@ pub fn exchange_variant(rules: &Rules, record: &Record, play: Actor, name: &str,
             }
         }
         Exchanger::Joint { worlds } => {
-            for a in joint_exchange(&state, declarer, worlds, true, &mut lab_rng) {
+            for a in joint_exchange(&state, declarer, *worlds, true, &mut lab_rng) {
                 Mighty::apply(&mut state, a.clone()).expect("legal exchange");
                 log.push(a);
             }
@@ -793,7 +792,7 @@ pub fn exchange_variant(rules: &Rules, record: &Record, play: Actor, name: &str,
                 Mighty::apply(&mut state, a.clone()).expect("recorded");
                 log.push(a.clone());
             }
-            for a in joint_exchange(&state, declarer, worlds, false, &mut lab_rng) {
+            for a in joint_exchange(&state, declarer, *worlds, false, &mut lab_rng) {
                 Mighty::apply(&mut state, a.clone()).expect("legal exchange");
                 log.push(a);
             }
@@ -854,7 +853,7 @@ fn score_exchange(world: &State, actions: &[Action], call: Option<FriendCall>, m
         };
         Mighty::apply(&mut s, action).expect("legal");
     }
-    playout(policy, s, me)
+    play_out(policy, 0, s, me)
 }
 
 /// Weighted mean of each candidate's payoffs over the same worlds.
@@ -1055,11 +1054,11 @@ mod tests {
         let rules = Preset::Gshs.rules();
         let bot = Actor::parse("search:8:1:0").unwrap();
         for deal in 0..3 {
-            let record = generate(&rules, deal, bot);
-            let again = play_variant(&rules, &record, bot, 0, ("same", bot));
+            let record = generate(&rules, deal, &bot);
+            let again = play_variant(&rules, &record, &bot, 0, ("same", &bot));
             assert_eq!(again.payoff, again.base);
             assert!(again.differing.is_empty());
-            let ex = exchange_variant(&rules, &record, bot, "same", Exchanger::Bot(bot));
+            let ex = exchange_variant(&rules, &record, &bot, "same", &Exchanger::Bot(bot.clone()));
             assert_eq!(ex.payoff, ex.base);
         }
         assert_eq!(combinations(5, 2).len(), 10);
@@ -1072,8 +1071,8 @@ mod tests {
         let rules = Preset::Gshs.rules();
         let bot = Actor::parse("normal").unwrap();
         for deal in 0..30 {
-            let record = generate(&rules, deal, bot);
-            let result = declare(&rules, deal, bot, bot);
+            let record = generate(&rules, deal, &bot);
+            let result = declare(&rules, deal, &bot, &bot);
             assert_eq!(result.focus, (deal / 5 % 5) as usize);
             assert_eq!(
                 (result.declarer, result.contract, result.team_points),
@@ -1087,7 +1086,7 @@ mod tests {
                 .any(|b| b.seat == result.focus && matches!(b.action, Action::Bid(_)));
             assert_eq!(result.bid, bid);
         }
-        let report = declare_report(&[("x".into(), vec![declare(&rules, 0, bot, bot)])]);
+        let report = declare_report(&[("x".into(), vec![declare(&rules, 0, &bot, &bot)])]);
         assert!(report.contains("| x | 1 |"));
     }
 }
@@ -1281,7 +1280,7 @@ pub fn regret(rules: &Rules, record: &Record, endgame: usize) -> RegretResult {
             let value = |a: &Action| {
                 let mut s = state.clone();
                 Mighty::apply(&mut s, a.clone()).expect("legal");
-                finish(policy, endgame, s, seat)
+                play_out(policy, endgame, s, seat)
             };
             let made = value(action);
             let (best_value, best) = legal
@@ -1387,7 +1386,7 @@ pub struct DeclareResult {
 /// Plays hand `deal` from the deal on with `bot` in one seat and `field`
 /// in the others. The focus seat is `deal / seats mod seats`, so over
 /// `seats²` deals it meets every first bidder once, as in the evals.
-pub fn declare(rules: &Rules, deal: u64, bot: Actor, field: Actor) -> DeclareResult {
+pub fn declare(rules: &Rules, deal: u64, bot: &Actor, field: &Actor) -> DeclareResult {
     let seats = rules.players;
     let focus = (deal / seats as u64 % seats as u64) as usize;
     let mut state = Mighty::new_game(&options(rules, deal)).expect("valid rules");

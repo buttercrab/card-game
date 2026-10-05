@@ -16,10 +16,10 @@
 
 use crate::lab::{Actor, Phase, TAG_BID, TAG_EXCHANGE, TAG_LAB, TAG_PLAY, Table, advance, options, stream};
 use engine::{ActionValues, Encode, Game, Seat, Viewer};
-use mighty::bot::SimpleBot;
 use mighty::rules::Rules;
-use mighty::search::{SearchBot, playout};
 use mighty::{Action, Mighty, PhaseView, State};
+use mighty_ai::SimpleBot;
+use mighty_ai::{SearchBot, play_out};
 
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -69,7 +69,7 @@ pub struct SignalRow {
 /// The settings of [`bid_signal`].
 #[derive(Clone, Copy)]
 pub struct SignalSetup<'a> {
-    pub bot: Actor,
+    pub bot: &'a Actor,
     pub net: Option<&'a dyn ActionValues>,
     /// Deals per search value; 0 runs no search.
     pub worlds: usize,
@@ -201,7 +201,7 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow
                     for (world, weight) in &worlds {
                         let mut s = world.clone();
                         Mighty::apply(&mut s, a.clone()).ok()?;
-                        total += weight * playout(simple, s, seat) as f64;
+                        total += weight * play_out(simple, 0, s, seat) as f64;
                     }
                     Some(total)
                 };

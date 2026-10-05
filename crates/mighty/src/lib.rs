@@ -3,18 +3,28 @@
 
 pub mod bot;
 pub mod card;
-pub mod deal;
 pub mod encode;
-pub mod endgame;
 pub mod explain;
-pub mod hybrid;
-mod read;
 pub mod rules;
 pub mod score;
-pub mod search;
 mod state;
 pub mod trick;
 mod view;
+
+/// The whole truth of a hand, for programs that search it: bots that deal
+/// the cards they cannot see and play every candidate out (`mighty-ai`),
+/// solvers that know every hand. A [`State`] still changes only through
+/// the game's own transitions: read where it stands with
+/// [`State::phase`], build a world a seat cannot tell from the real one
+/// with [`State::from_public`] and [`State::fill_hidden`], move it on with
+/// [`State::step`], and play a trick by [`TrickState`](world::TrickState)
+/// and [`legal_plays`](world::legal_plays) as the game does.
+pub mod world {
+    pub use crate::state::{
+        Bidding, Declared, Done, Exchange, Phase, Play, TrickState, callable_joker, discard_points, legal_plays,
+        payoff_rises_with_points, powered, settle,
+    };
+}
 
 pub use state::{Action, Bid, Error, FriendCall, HandSummary, Options, Redeal, Redealt, State};
 pub use trick::Lead;

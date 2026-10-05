@@ -10,6 +10,7 @@ license.workspace = true
 clap.workspace = true
 engine.workspace = true
 mighty.workspace = true
+mighty-ai.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true

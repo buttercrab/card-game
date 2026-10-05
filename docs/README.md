@@ -57,8 +57,9 @@ defines every model's input, so it changes only on purpose:
    prints. That test fails while the spec and the last `SPECS` line
    disagree, so the spec cannot change without a new version.
 2. Rewrite every fixture built on it with `scripts/regenerate-fixtures.sh`
-   (Rust's `tests/encoding.json`, the pinned encodings and search
-   decisions in `crates/mighty/tests/pinned`, `crates/env/tests/parity.json`,
+   (Rust's `tests/encoding.json`, the pinned encodings in
+   `crates/mighty/tests/pinned` and search decisions in
+   `crates/mighty-ai/tests/pinned`, `crates/env/tests/parity.json`,
    and, with `uv`, `crates/infer/tests/tiny` and `tiny-q`), and review the
    diff. The pinned games' rules are frozen there, so changing a preset's
    house rules moves none of these, only `presets.json` and `payoffs.json`.
@@ -211,7 +212,7 @@ nice -n 10 target/release/eval run --suite v1 --bot dmc:$HOME/card-game-artifact
 ```
 
 `hybrid:<model dir>:<samples>` is 고수 at that many deals leaning on the
-network (`crates/mighty/src/hybrid.rs`): `@prior=K` weighs the K moves
+network (`crates/mighty-ai/src/hybrid.rs`): `@prior=K` weighs the K moves
 it values most instead of the search's candidates, `base=q` makes its
 choice the one a candidate must beat instead of the simple bot's, and
 `leaf=K` stops each playout K tricks on and takes the network's value

@@ -701,7 +701,7 @@ impl Rules {
     /// The lowest number a contract can have: the minimum bid, or the
     /// dealer's last chance below it, less the no-trump bonus where
     /// no-trump may be bid. Changing trump never goes lower.
-    pub fn lowest_contract(&self) -> u8 {
+    pub(crate) fn lowest_contract(&self) -> u8 {
         let b = &self.bidding;
         let min = b.last_chance_min.map_or(b.min, |m| m.min(b.min));
         let bonus = if b.allow_no_trump { b.no_trump_bonus } else { 0 };
@@ -735,7 +735,7 @@ impl Rules {
     }
 
     /// What `card` adds to a hand's total for [`Rules::is_misdeal`].
-    pub fn misdeal_value(&self, card: Card) -> i8 {
+    pub(crate) fn misdeal_value(&self, card: Card) -> i8 {
         let m = &self.misdeal;
         if let Some((_, v)) = m.card_values.iter().find(|(c, _)| *c == card) {
             *v
@@ -749,7 +749,7 @@ impl Rules {
     }
 
     /// The contract after changing trump to `trump` once the kitty is seen.
-    pub fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
+    pub(crate) fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
         if trump.is_none()
             && let Some(cost) = self.bidding.change_to_no_trump_cost
         {
@@ -780,7 +780,7 @@ impl Rules {
     }
 
     /// Orders bids: a later bid must rank strictly higher.
-    pub fn bid_rank(&self, contract: Contract) -> (u8, bool) {
+    pub(crate) fn bid_rank(&self, contract: Contract) -> (u8, bool) {
         let tie_break = contract.trump.is_none() && self.bidding.no_trump_wins_ties;
         (self.bid_value(contract), tie_break)
     }
@@ -813,7 +813,7 @@ impl Rules {
         self.on_trick(category, trick)
     }
 
-    pub fn on_trick(&self, policy: TrickPolicy, trick: usize) -> CardPolicy {
+    pub(crate) fn on_trick(&self, policy: TrickPolicy, trick: usize) -> CardPolicy {
         if trick == 0 {
             policy.first
         } else if trick + 1 == self.hand_size {

@@ -3,7 +3,7 @@
 //! in `tests/pinned/search.jsonl`, one line each. Faster searches and new
 //! settings that are off must reproduce it exactly; when a change means to
 //! decide differently, the diff shows which decisions moved. Rewrite it
-//! with `scripts/regenerate-fixtures.sh` (or `cargo test -p mighty --test
+//! with `scripts/regenerate-fixtures.sh` (or `cargo test -p mighty-ai --test
 //! search -- --ignored write`). Comparing two builds' eval digests checks
 //! many more hands; this one runs in CI.
 
@@ -11,8 +11,8 @@ mod common;
 
 use common::{PinnedGame, check_golden, pinned_games, write_golden};
 use engine::{Bot, Game, Turn, Viewer};
-use mighty::search::SearchBot;
 use mighty::{Action, Mighty};
+use mighty_ai::SearchBot;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
@@ -55,7 +55,7 @@ fn decisions() -> Vec<String> {
     };
     let mut log = Vec::new();
     for (hand, game) in pinned_games("search-games.json").iter().enumerate() {
-        play(hand, game, bot, &mut log);
+        play(hand, game, bot.clone(), &mut log);
     }
     log
 }

@@ -1,11 +1,11 @@
 //! How the rule-based bot spends its jokers, checked on hand-built views.
 
 use engine::{Bot, Viewer};
-use mighty::bot::{Clumsy, SimpleBot};
 use mighty::card::{Card, Color, Suit};
 use mighty::rules::{Contract, Preset, Rules};
 use mighty::trick::{Played, Trick};
 use mighty::{Action, FriendCall, Lead, PhaseView, View};
+use mighty_ai::{Clumsy, SimpleBot};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 

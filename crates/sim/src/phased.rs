@@ -16,7 +16,7 @@ use mighty::{Action, Mighty, PhaseView, View};
 use rand::RngCore;
 
 /// The three specs, by phase.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Phased {
     pub bid: Spec,
     pub exchange: Spec,
@@ -86,12 +86,12 @@ mod tests {
     #[test]
     fn parses_three_specs() {
         let spec: Spec = "phased:normal+random+hard@threads=2".parse().unwrap();
-        let Kind::Phased(p) = spec.kind else {
+        let Kind::Phased(ref p) = spec.kind else {
             panic!("a phased bot")
         };
         assert!(matches!(p.bid.kind, Kind::Simple(_)));
         assert!(matches!(p.exchange.kind, Kind::Random));
-        assert!(matches!(p.play.kind, Kind::Search(s) if s.threads == 2));
+        assert!(matches!(&p.play.kind, Kind::Search(s) if s.threads == 2));
         assert!(spec.reproducible());
         for bad in [
             "phased:normal+random",

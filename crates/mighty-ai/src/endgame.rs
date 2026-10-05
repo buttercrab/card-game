@@ -7,11 +7,12 @@
 //! side's points, so the sides' best play for points is their best play for
 //! payoff too.
 
-use crate::card::{Card, CardSet};
-use crate::rules::{MAX_PLAYERS, Rules};
-use crate::state::{self, Action, FriendCall, Phase, Play, State, TrickState};
-use crate::trick::{self, Lead, Played};
 use engine::Seat;
+use mighty::card::{Card, CardSet};
+use mighty::rules::{MAX_PLAYERS, Rules};
+use mighty::trick::{self, Lead, Played};
+use mighty::world::{self as state, Phase, Play, TrickState};
+use mighty::{Action, FriendCall, State};
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 
@@ -419,10 +420,10 @@ impl<'a> Solver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Mighty;
-    use crate::bot::SimpleBot;
-    use crate::rules::Preset;
+    use crate::SimpleBot;
     use engine::{Bot, Game, Turn, Viewer};
+    use mighty::Mighty;
+    use mighty::rules::Preset;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -459,7 +460,7 @@ mod tests {
         let mut game = 0;
         while out.len() < n as usize {
             game += 1;
-            let options = crate::Options {
+            let options = mighty::Options {
                 rules: rules.clone(),
                 first_bidder: game % rules.players,
             };
@@ -544,7 +545,7 @@ mod tests {
     /// less, it declines.
     #[test]
     fn matches_minimax_under_the_optional_rules() {
-        use crate::rules::{BackRun, Doubling, LoseScore, Scoring, WinScore};
+        use mighty::rules::{BackRun, Doubling, LoseScore, Scoring, WinScore};
         let mut variants = Vec::new();
         for preset in [Preset::Default, Preset::Gshs, Preset::Yonsei] {
             for players in [3, 4, 6, 7] {
@@ -667,7 +668,7 @@ mod tests {
             let solving = started.elapsed().as_secs_f64() * 1e6 / nodes.len() as f64;
             let started = std::time::Instant::now();
             for state in &states {
-                crate::search::playout(SimpleBot::default(), state.clone(), 0);
+                crate::play_out(SimpleBot::default(), 0, state.clone(), 0);
             }
             let playing = started.elapsed().as_secs_f64() * 1e6 / states.len() as f64;
             println!(
