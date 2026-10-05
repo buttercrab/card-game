@@ -108,3 +108,29 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx svelte-check --tsconfig ./tsconfig.json --threshold error
+
+  # Every page and /preview state at four sizes, light and dark, served by
+  # the real server (web/e2e). Known layout bugs are marked expected-fail
+  # until docs/FIXES.md 1.8 fixes them.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: cargo build --release -p server
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx playwright install --with-deps --only-shell chromium
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: npm run test:e2e
+        working-directory: web

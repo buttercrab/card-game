@@ -131,6 +131,7 @@ cargo run --release -p sim -- --games 2500 --bots search   # search bot vs simpl
 cargo run --release -p sim -- --preset gshs --bots search --focus search:100 --field search  # any two bots
 cargo run --release -p eval -- run --suite v1 --bot hard --quick   # the eval suite, a few deals of each part
 (cd web && npm run check)
+(cd web && npm run build && npm run test:e2e)       # every page and /preview state, 4 sizes, light and dark; needs the release server build
 cargo run --release -p env --example throughput     # the RL environment's speed
 (cd ml && uv sync --locked --extra torch && uv run ruff check && uv run pyright && uv run pytest)  # builds env-py too
 ```
