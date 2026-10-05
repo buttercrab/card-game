@@ -12,6 +12,10 @@ FROM rust:1-bookworm AS server
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
+# The commit being built (deploy/update.sh passes it), which the server
+# reports at /version and the bot worker names in its hello.
+ARG GIT_COMMIT=
+ENV GIT_COMMIT=$GIT_COMMIT
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked -p server && cp target/release/server /server \

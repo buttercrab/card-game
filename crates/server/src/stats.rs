@@ -106,6 +106,11 @@ pub enum Event {
     TurnTimedOut {
         table: String,
     },
+    /// A player left their seat with a hand in play, and a bot took it over.
+    LeftMidHand {
+        table: String,
+        seat: usize,
+    },
     Report {
         #[serde(default)]
         table: Option<String>,
@@ -308,6 +313,8 @@ pub struct Totals {
     pub reports: u32,
     pub client_errors: u32,
     pub turns_timed_out: u32,
+    /// Players who left mid-hand, a bot playing the hand out for them.
+    pub left_mid_hand: u32,
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -406,6 +413,7 @@ pub fn summarize(records: &[Record], first_seen: &HashMap<String, u64>, now: u64
             }
             Event::Report { .. } => s.totals.reports += 1,
             Event::TurnTimedOut { .. } => s.totals.turns_timed_out += 1,
+            Event::LeftMidHand { .. } => s.totals.left_mid_hand += 1,
             Event::ClientError {
                 group,
                 message,
@@ -591,6 +599,13 @@ mod tests {
             },
             Record {
                 t: at(0),
+                event: Event::LeftMidHand {
+                    table: "b".into(),
+                    seat: 0,
+                },
+            },
+            Record {
+                t: at(0),
                 event: Event::Report { table: None },
             },
         ];
@@ -614,6 +629,7 @@ mod tests {
                 reports: 1,
                 client_errors: 0,
                 turns_timed_out: 0,
+                left_mid_hand: 1,
             }
         );
         assert_eq!(s.hands_by_humans, BTreeMap::from([(1, 1), (2, 1)]));

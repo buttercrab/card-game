@@ -850,7 +850,14 @@ impl<G: SessionGame> Room<G> {
             } => self.join(conn, name, token, seat, device, reclaim),
             ClientMsg::Leave => {
                 let seat = my_seat.ok_or("you are not seated")?;
-                self.seats[seat] = if self.in_hand() {
+                let mid_hand = self.in_hand();
+                if mid_hand {
+                    self.record(Event::LeftMidHand {
+                        table: self.id.clone(),
+                        seat,
+                    });
+                }
+                self.seats[seat] = if mid_hand {
                     Occupant::Bot {
                         level: BotLevel::default(),
                         name: self.new_bot_name(seat),
@@ -1150,8 +1157,10 @@ impl<G: SessionGame> Room<G> {
                 .or_else(|| self.seats.iter().position(|s| matches!(s, Occupant::Empty)))
                 .ok_or("the table is full")?,
         };
+        // Coming back clears 자리 비움 too: the `back` check before this
+        // message ran while the connection was not yet seated.
+        self.away[seat] = false;
         if reclaimed.is_none() {
-            self.away[seat] = false;
             // Scores belong to players: whoever sat here before (a player
             // who left, a bot) took theirs with them.
             self.scores[seat] = 0;

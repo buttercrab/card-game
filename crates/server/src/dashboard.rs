@@ -133,11 +133,38 @@ fn server_section(s: &ServerStatus) -> String {
                 w.last_seen.map(time).unwrap_or_else(|| "–".into()),
             ),
             ("워커가 둔 수".to_string(), w.answered.to_string()),
+            ("워커가 못 둔 수".to_string(), w.failed.to_string()),
             ("서버가 대신 둔 수".to_string(), w.fallbacks.to_string()),
+            ("서버 빌드".to_string(), escape(&short(&w.server_commit))),
+            ("워커 빌드".to_string(), worker_build(w)),
         ],
     );
+    if let Some(r) = &w.refused {
+        let _ = write!(
+            out,
+            "<tr><th>거절한 워커</th><td><b class=\"warn\">{} · 프로토콜 {} (서버 {}) · {}</b></td></tr>",
+            time(r.at),
+            r.protocol,
+            w.protocol,
+            escape(&r.reason),
+        );
+    }
     out.push_str("</table><p class=\"note\">서버가 시작한 뒤로 센 값이에요.</p></section>");
     out
+}
+
+/// A commit, shortened to twelve characters as the deploy tags images.
+fn short(commit: &str) -> String {
+    commit.chars().take(12).collect()
+}
+
+/// The connected worker's build, flagged when it is not the server's.
+fn worker_build(w: &crate::bots::WorkerStatus) -> String {
+    match &w.commit {
+        None => "–".into(),
+        Some(c) if *c == w.server_commit => escape(&short(c)),
+        Some(c) => format!("<b class=\"warn\">{} (서버와 다름)</b>", escape(&short(c))),
+    }
 }
 
 pub async fn stats_page(State(app): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
@@ -328,6 +355,7 @@ pub fn page_full(s: &Summary, reports: &[ReportRow], server: Option<&ServerStatu
         ("끝난 판", t.hands_finished.to_string()),
         ("중단된 판", t.hands_abandoned.to_string()),
         ("시간 초과", t.turns_timed_out.to_string()),
+        ("판 중간에 나감", t.left_mid_hand.to_string()),
         ("문제 신고", t.reports.to_string()),
         ("클라이언트 오류", t.client_errors.to_string()),
     ] {
@@ -612,13 +640,25 @@ mod tests {
                 since: None,
                 last_seen: Some(1_791_105_000),
                 answered: 12,
+                failed: 2,
                 fallbacks: 4,
+                protocol: crate::bots::PROTOCOL,
+                server_commit: "0123456789abcdef".into(),
+                commit: None,
+                refused: Some(crate::bots::Refusal {
+                    at: 1_791_104_000,
+                    protocol: 1,
+                    commit: None,
+                    reason: "sent no hello (an older worker)".into(),
+                }),
             },
         };
         let summary = crate::stats::Stats::in_memory().summary(1_791_105_000);
         let html = page_full(&summary, &[], Some(&server));
         assert!(html.contains("3 / 500"));
         assert!(html.contains("끊김"));
+        assert!(html.contains("거절한 워커") && html.contains("an older worker"));
+        assert!(html.contains("0123456789ab"));
         assert!(!page(&summary).contains("봇 워커"), "only with the server's state");
     }
 
