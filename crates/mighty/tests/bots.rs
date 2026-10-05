@@ -86,7 +86,7 @@ fn view(hand: &[Card], others: &[Card], plays: &[Played]) -> View {
             tricks,
             discards: Some(discards.to_vec()),
         },
-        rules,
+        rules: rules.into(),
         bids: Vec::new(),
         redealt: None,
     }
@@ -164,7 +164,7 @@ fn bidding(preset: Preset, hand: Vec<Card>) -> (View, Vec<Action>) {
             passed: vec![false; 5],
             has_bid: vec![false; 5],
         },
-        rules,
+        rules: rules.into(),
         bids: Vec::new(),
         redealt: None,
     };
@@ -334,7 +334,7 @@ fn short_deck_lead(players: usize) -> (View, Vec<Action>) {
             tricks,
             discards: Some(discards.to_vec()),
         },
-        rules,
+        rules: rules.into(),
         bids: Vec::new(),
         redealt: None,
     };

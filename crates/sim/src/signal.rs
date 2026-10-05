@@ -193,7 +193,7 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow
             if searched && legal.len() > 1 {
                 let mut rng = stream(deal, TAG_LAB, 1000 + i);
                 let worlds = SearchBot::default().worlds(&view, setup.worlds, &mut rng);
-                let value = |a: &Action, rng: &mut ChaCha8Rng| -> Option<f64> {
+                let value = |a: &Action| -> Option<f64> {
                     if !legal.contains(a) || worlds.is_empty() {
                         return None;
                     }
@@ -201,13 +201,13 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow
                     for (world, weight) in &worlds {
                         let mut s = world.clone();
                         Mighty::apply(&mut s, a.clone()).ok()?;
-                        total += weight * playout(simple, s, seat, rng) as f64;
+                        total += weight * playout(simple, s, seat) as f64;
                     }
                     Some(total)
                 };
-                row.s_chosen = value(&action, &mut rng);
-                row.s_pass = value(&Action::Pass, &mut rng);
-                row.s_simple_bid = cheapest.and_then(|c| value(&Action::Bid(c), &mut rng));
+                row.s_chosen = value(&action);
+                row.s_pass = value(&Action::Pass);
+                row.s_simple_bid = cheapest.and_then(|c| value(&Action::Bid(c)));
             }
             row
         })

@@ -13,7 +13,7 @@ use crate::endgame::Mix;
 use crate::rules::{Contract, Rules};
 use crate::state::{Action, FriendCall, Phase, Play, State};
 use crate::trick::{Lead, Played};
-use crate::view::View;
+use crate::view::Seen;
 use engine::Seat;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
@@ -194,11 +194,11 @@ impl Reading {
         memo: &mut Memo,
     ) -> f64 {
         let rules = world.rules();
-        let trump = now.contract.trump;
-        let discards = if me == now.declarer {
+        let trump = now.declared.contract.trump;
+        let discards = if me == now.declared.declarer {
             CardSet::EMPTY
         } else {
-            now.discards.iter().collect()
+            now.declared.discards.iter().collect()
         };
         // Most of the simple bot's choices are remembered from other deals,
         // so the hand is replayed on a state only up to where one is not:
@@ -216,8 +216,8 @@ impl Reading {
         };
         let mut wound_back: Option<State> = None;
         let mut log = 0.0;
-        if me != now.declarer {
-            let key = (masks[now.declarer], now.discards.iter().collect());
+        if me != now.declared.declarer {
+            let key = (masks[now.declared.declarer], now.declared.discards.iter().collect());
             log += *memo.calls.entry(key).or_insert_with(|| {
                 let state = wound_back.insert(rewind(&mut hands));
                 self.friend_call(policy, state, now.call)
@@ -243,12 +243,16 @@ impl Reading {
                     let key = (
                         index,
                         masks[seat],
-                        if seat == now.declarer { discards } else { CardSet::EMPTY },
+                        if seat == now.declared.declarer {
+                            discards
+                        } else {
+                            CardSet::EMPTY
+                        },
                     );
                     let (legal, choice) = *memo.plays.entry(key).or_insert_with(|| {
                         let state = state.get_or_insert_with(|| {
                             let mut state = wound_back.take().unwrap_or_else(|| rewind(&mut hands));
-                            state.step(now.declarer, Action::CallFriend(now.call));
+                            state.step(now.declared.declarer, Action::CallFriend(now.call));
                             state
                         });
                         for (seat, action) in &moves[applied..] {
@@ -275,11 +279,11 @@ impl Reading {
         let Phase::Exchange(e) = state.phase() else {
             return 0.0;
         };
-        if matches!(call, FriendCall::Card(c) if state.hands()[e.declarer].contains(&c)) {
+        if matches!(call, FriendCall::Card(c) if state.hands()[e.declared.declarer].contains(&c)) {
             return OWN_CALL;
         }
         let legal = state.legal_actions();
-        let usual = policy.decide(&View::for_policy(state, e.declarer), &legal);
+        let usual = policy.decide(&Seen::of_state(state, e.declared.declarer), &legal);
         let usual = if usual == Action::CallFriend(call) {
             1.0 - self.slip
         } else {
@@ -337,7 +341,7 @@ fn decide(policy: &SimpleBot, state: &State, seat: Seat) -> (CardSet, Card) {
     let legal = state.legal_actions();
     let cards: CardSet = legal.iter().map(card_of).collect();
     let choice = if cards.len() > 1 {
-        card_of(&policy.decide(&View::for_policy(state, seat), &legal))
+        card_of(&policy.decide(&Seen::of_state(state, seat), &legal))
     } else {
         card_of(&legal[0])
     };
@@ -377,6 +381,7 @@ mod tests {
     use super::*;
     use crate::search::determinize;
     use crate::state::Options;
+    use crate::view::View;
     use engine::Viewer;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -504,8 +509,8 @@ mod tests {
                 loop {
                     if let Phase::Play(p) = state.phase() {
                         let mut replay = state.before_call(hands_before_play(&state)).unwrap();
-                        replay.step(p.declarer, Action::CallFriend(p.call));
-                        let trump = p.contract.trump;
+                        replay.step(p.declared.declarer, Action::CallFriend(p.call));
+                        let trump = p.declared.contract.trump;
                         let finished = p.tricks.iter().map(|t| (t.plays.as_slice(), Some(t.lead), None));
                         let under_way = (p.plays.as_slice(), p.lead, Some(p.called_joker.is_some()));
                         for (plays, lead, called) in finished.chain([under_way]) {

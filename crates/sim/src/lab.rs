@@ -120,7 +120,7 @@ impl Actor {
 fn noisy_playout(mut state: State, me: Seat, slip: f64, rng: &mut ChaCha8Rng) -> i64 {
     use rand::Rng;
     if slip <= 0.0 {
-        return playout(SimpleBot::default(), state, me, rng);
+        return playout(SimpleBot::default(), state, me);
     }
     let mut policy = SimpleBot::default();
     for _ in 0..2000 {
@@ -854,7 +854,7 @@ fn score_exchange(world: &State, actions: &[Action], call: Option<FriendCall>, m
         };
         Mighty::apply(&mut s, action).expect("legal");
     }
-    playout(policy, s, me, rng)
+    playout(policy, s, me)
 }
 
 /// Weighted mean of each candidate's payoffs over the same worlds.
@@ -1262,7 +1262,6 @@ pub fn regret(rules: &Rules, record: &Record, endgame: usize) -> RegretResult {
     let mut state = replay(rules, record, record.play_at);
     let side = |s: Seat| s == record.declarer || record.friend == Some(s);
     let policy = SimpleBot::default();
-    let mut rng = stream(record.deal, TAG_LAB, 11);
     let mut decisions = Vec::new();
     for action in &record.log[record.play_at..] {
         let Turn::Seat(seat) = Mighty::turn(&state) else { break };
@@ -1279,10 +1278,10 @@ pub fn regret(rules: &Rules, record: &Record, endgame: usize) -> RegretResult {
             break;
         };
         if legal.len() > 1 {
-            let mut value = |a: &Action| {
+            let value = |a: &Action| {
                 let mut s = state.clone();
                 Mighty::apply(&mut s, a.clone()).expect("legal");
-                finish(policy, endgame, s, seat, &mut rng)
+                finish(policy, endgame, s, seat)
             };
             let made = value(action);
             let (best_value, best) = legal

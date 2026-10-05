@@ -6,6 +6,7 @@ use engine::{Seat, Turn, Viewer};
 use rand::RngCore;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use ts_rs::TS;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -107,7 +108,8 @@ pub enum Error {
 /// ([`State::step`] and the constructors here) change it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
-    rules: Rules,
+    /// Shared with every view of the hand and every world a search deals.
+    rules: Arc<Rules>,
     first_bidder: Seat,
     phase: Phase,
     /// Kept sorted.
@@ -138,19 +140,26 @@ pub(crate) struct Bidding {
     pub has_bid: Vec<bool>,
 }
 
+/// What the bidding settled and the exchange added to: every phase after
+/// the bidding carries it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Exchange {
+pub(crate) struct Declared {
     pub declarer: Seat,
     pub contract: Contract,
+    /// The cards the declarer has put back; as many as the kitty held once
+    /// the exchange is over.
     pub discards: Vec<Card>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Exchange {
+    pub declared: Declared,
     pub trump_changed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Play {
-    pub declarer: Seat,
-    pub contract: Contract,
-    pub discards: Vec<Card>,
+    pub declared: Declared,
     pub call: FriendCall,
     /// Set once the friend is publicly known.
     pub friend: Option<Seat>,
@@ -167,7 +176,7 @@ pub(crate) struct Play {
 impl Play {
     pub(crate) fn trick(&self) -> TrickState {
         TrickState {
-            trump: self.contract.trump,
+            trump: self.declared.contract.trump,
             trick_no: self.trick_no,
             lead: self.lead,
             called_joker: self.called_joker,
@@ -243,9 +252,7 @@ impl TrickState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Done {
-    pub declarer: Seat,
-    pub contract: Contract,
-    pub discards: Vec<Card>,
+    pub declared: Declared,
     pub call: FriendCall,
     pub friend: Option<Seat>,
     pub team_points: u8,
@@ -272,8 +279,8 @@ pub struct HandSummary {
 
 impl State {
     pub(crate) fn new(options: &Options) -> Result<State, Error> {
-        let rules = options.rules.clone();
-        rules.validate()?;
+        options.rules.validate()?;
+        let rules = Arc::new(options.rules.clone());
         if options.first_bidder >= rules.players {
             return Err(Error::NoSuchSeat(options.first_bidder));
         }
@@ -331,10 +338,12 @@ impl State {
                     taken[t.winner].extend(t.plays.iter().map(|p| p.card));
                 }
                 Phase::Play(Play {
-                    declarer: *declarer,
-                    contract: *contract,
-                    // Dealt face down when not seen.
-                    discards: discards.clone().unwrap_or_default(),
+                    declared: Declared {
+                        declarer: *declarer,
+                        contract: *contract,
+                        // Dealt face down when not seen.
+                        discards: discards.clone().unwrap_or_default(),
+                    },
                     call: *call,
                     friend: *friend,
                     trick_no: *trick_no,
@@ -351,9 +360,11 @@ impl State {
                 trump_changed,
                 discards,
             } => Phase::Exchange(Exchange {
-                declarer: *declarer,
-                contract: *contract,
-                discards: discards.clone().unwrap_or_default(),
+                declared: Declared {
+                    declarer: *declarer,
+                    contract: *contract,
+                    discards: discards.clone().unwrap_or_default(),
+                },
                 trump_changed: *trump_changed,
             }),
             PhaseView::Dealing | PhaseView::Done { .. } => return None,
@@ -388,7 +399,7 @@ impl State {
         }
         match &mut self.phase {
             Phase::Bidding(_) => self.kitty = down,
-            Phase::Play(p) if !down.is_empty() => p.discards = down,
+            Phase::Play(p) if !down.is_empty() => p.declared.discards = down,
             _ => {}
         }
     }
@@ -403,9 +414,7 @@ impl State {
             rules: self.rules.clone(),
             first_bidder: self.first_bidder,
             phase: Phase::Exchange(Exchange {
-                declarer: p.declarer,
-                contract: p.contract,
-                discards: p.discards.clone(),
+                declared: p.declared.clone(),
                 // The call comes after any change, which no longer matters.
                 trump_changed: false,
             }),
@@ -460,7 +469,7 @@ impl State {
         match &self.phase {
             Phase::Dealing => Turn::Chance,
             Phase::Bidding(b) => Turn::Seat(b.to_act),
-            Phase::Exchange(e) => Turn::Seat(e.declarer),
+            Phase::Exchange(e) => Turn::Seat(e.declared.declarer),
             Phase::Play(p) => Turn::Seat((p.leader + p.plays.len()) % self.seats()),
             Phase::Done(_) => Turn::Over,
         }
@@ -586,13 +595,18 @@ impl State {
         &self.rules
     }
 
+    /// The rules, shared: views and searches hold them without a copy.
+    pub(crate) fn shared_rules(&self) -> &Arc<Rules> {
+        &self.rules
+    }
+
     /// The contract the declarer would play after `action` in the
     /// exchange: a trump change at its cost, or a raise. None for any
     /// other action, or outside the exchange.
     pub fn contract_after(&self, action: &Action) -> Option<Contract> {
         let Phase::Exchange(e) = &self.phase else { return None };
         match *action {
-            Action::ChangeTrump(trump) => Some(self.changed_contract(e.contract, trump)),
+            Action::ChangeTrump(trump) => Some(self.changed_contract(e.declared.contract, trump)),
             Action::Raise(contract) => Some(contract),
             _ => None,
         }
@@ -689,22 +703,22 @@ impl State {
     }
 
     fn legal_exchange(&self, e: &Exchange) -> Vec<Action> {
-        let hand = &self.hands[e.declarer];
+        let hand = &self.hands[e.declared.declarer];
         let mut actions = Vec::new();
-        if e.discards.len() < self.rules.kitty_size() {
+        if e.declared.discards.len() < self.rules.kitty_size() {
             // Holding the kitty, a hand that qualifies may still be thrown in.
-            if self.rules.misdeal.declarer && e.discards.is_empty() && self.rules.is_misdeal(hand) {
+            if self.rules.misdeal.declarer && e.declared.discards.is_empty() && self.rules.is_misdeal(hand) {
                 actions.push(Action::Misdeal);
             }
-            if !e.trump_changed && e.discards.is_empty() {
+            if !e.trump_changed && e.declared.discards.is_empty() {
                 for trump in self.trump_options() {
-                    let changed = self.changed_contract(e.contract, trump);
-                    if trump != e.contract.trump && changed.count <= self.rules.bidding.max {
+                    let changed = self.changed_contract(e.declared.contract, trump);
+                    if trump != e.declared.contract.trump && changed.count <= self.rules.bidding.max {
                         actions.push(Action::ChangeTrump(trump));
                     }
                 }
                 if self.rules.bidding.raise_on_exchange {
-                    actions.extend(self.raises(e.contract).map(Action::Raise));
+                    actions.extend(self.raises(e.declared.contract).map(Action::Raise));
                 }
             }
             actions.extend(hand.iter().map(|&c| Action::Discard(c)));
@@ -713,14 +727,14 @@ impl State {
         let f = &self.rules.friend;
         if f.by_card {
             for card in self.rules.cards() {
-                let own = hand.contains(&card) || e.discards.contains(&card);
+                let own = hand.contains(&card) || e.declared.discards.contains(&card);
                 if !own || f.fake {
                     actions.push(Action::CallFriend(FriendCall::Card(card)));
                 }
             }
         }
         if f.by_seat {
-            let others = (0..self.seats()).filter(|&s| s != e.declarer);
+            let others = (0..self.seats()).filter(|&s| s != e.declared.declarer);
             actions.extend(others.map(|s| Action::CallFriend(FriendCall::Seat(s))));
         }
         for (enabled, call) in [
@@ -810,9 +824,11 @@ impl State {
                 self.hands[declarer].extend(kitty);
                 self.hands[declarer].sort();
                 Phase::Exchange(Exchange {
-                    declarer,
-                    contract,
-                    discards: Vec::new(),
+                    declared: Declared {
+                        declarer,
+                        contract,
+                        discards: Vec::new(),
+                    },
                     trump_changed: false,
                 })
             }
@@ -829,30 +845,28 @@ impl State {
     fn step_exchange(&mut self, mut e: Exchange, action: Action) -> Phase {
         match action {
             Action::ChangeTrump(trump) => {
-                e.contract = self.changed_contract(e.contract, trump);
+                e.declared.contract = self.changed_contract(e.declared.contract, trump);
                 e.trump_changed = true;
             }
             Action::Raise(contract) => {
-                e.contract = contract;
+                e.declared.contract = contract;
                 e.trump_changed = true;
             }
             Action::Discard(card) => {
-                let hand = &mut self.hands[e.declarer];
+                let hand = &mut self.hands[e.declared.declarer];
                 hand.retain(|&c| c != card);
-                e.discards.push(card);
+                e.declared.discards.push(card);
             }
             Action::CallFriend(call) => {
                 return Phase::Play(Play {
-                    declarer: e.declarer,
-                    contract: e.contract,
-                    discards: e.discards,
+                    leader: e.declared.declarer,
+                    declared: e.declared,
                     call,
                     friend: match call {
                         FriendCall::Seat(s) => Some(s),
                         _ => None,
                     },
                     trick_no: 0,
-                    leader: e.declarer,
                     lead: None,
                     plays: Vec::new(),
                     called_joker: None,
@@ -880,7 +894,7 @@ impl State {
             p.called_joker = t.called_joker;
         }
         p.plays.push(p.trick().played(&self.rules, seat, card));
-        if p.call == FriendCall::Card(card) && seat != p.declarer {
+        if p.call == FriendCall::Card(card) && seat != p.declared.declarer {
             p.friend = Some(seat);
         }
         if p.plays.len() < self.seats() {
@@ -896,7 +910,7 @@ impl State {
             FriendCall::LastTrick => last,
             _ => false,
         };
-        if reveals && winner != p.declarer && p.friend.is_none() {
+        if reveals && winner != p.declared.declarer && p.friend.is_none() {
             p.friend = Some(winner);
         }
         let plays = std::mem::take(&mut p.plays);
@@ -914,15 +928,20 @@ impl State {
     }
 
     fn score(&self, p: Play) -> Done {
-        let team = |s: Seat| s == p.declarer || Some(s) == p.friend;
+        let team = |s: Seat| s == p.declared.declarer || Some(s) == p.friend;
         let won_points = (0..self.seats()).filter(|&s| team(s)).flat_map(|s| &self.taken[s]);
         let won = won_points.filter(|c| c.is_point()).count();
-        let team_points = (won + discard_points(&self.rules, &p.discards)) as u8;
-        let payoffs = settle(&self.rules, p.declarer, p.friend, p.contract, p.call, team_points);
+        let team_points = (won + discard_points(&self.rules, &p.declared.discards)) as u8;
+        let payoffs = settle(
+            &self.rules,
+            p.declared.declarer,
+            p.friend,
+            p.declared.contract,
+            p.call,
+            team_points,
+        );
         Done {
-            declarer: p.declarer,
-            contract: p.contract,
-            discards: p.discards,
+            declared: p.declared,
             call: p.call,
             friend: p.friend,
             team_points,
@@ -938,20 +957,21 @@ impl State {
         hand_value(&self.rules, contract, alone, team_points)
     }
 
-    pub(crate) fn discards(&self) -> Option<(&[Card], Seat)> {
+    /// What the bidding settled, once it is over.
+    pub(crate) fn declared(&self) -> Option<&Declared> {
         match &self.phase {
-            Phase::Exchange(e) => Some((&e.discards, e.declarer)),
-            Phase::Play(p) => Some((&p.discards, p.declarer)),
-            Phase::Done(d) => Some((&d.discards, d.declarer)),
+            Phase::Exchange(e) => Some(&e.declared),
+            Phase::Play(p) => Some(&p.declared),
+            Phase::Done(d) => Some(&d.declared),
             Phase::Dealing | Phase::Bidding(_) => None,
         }
     }
 
-    fn discards_mut(&mut self) -> Option<&mut Vec<Card>> {
+    fn declared_mut(&mut self) -> Option<&mut Declared> {
         match &mut self.phase {
-            Phase::Exchange(e) => Some(&mut e.discards),
-            Phase::Play(p) => Some(&mut p.discards),
-            Phase::Done(d) => Some(&mut d.discards),
+            Phase::Exchange(e) => Some(&mut e.declared),
+            Phase::Play(p) => Some(&mut p.declared),
+            Phase::Done(d) => Some(&mut d.declared),
             Phase::Dealing | Phase::Bidding(_) => None,
         }
     }
@@ -959,7 +979,7 @@ impl State {
     /// The finished hand in brief, once it is over.
     pub fn summary(&self) -> Option<HandSummary> {
         let Phase::Done(d) = &self.phase else { return None };
-        let team = |s: Seat| s == d.declarer || Some(s) == d.friend;
+        let team = |s: Seat| s == d.declared.declarer || Some(s) == d.friend;
         let rounds = d
             .tricks
             .iter()
@@ -978,10 +998,10 @@ impl State {
             FriendCall::Alone => None,
         });
         Some(HandSummary {
-            contract: d.contract,
-            declarer: d.declarer,
+            contract: d.declared.contract,
+            declarer: d.declared.declarer,
             friend: d.friend,
-            made: d.team_points >= d.contract.count,
+            made: d.team_points >= d.declared.contract.count,
             team_points: d.team_points,
             rounds,
             friend_revealed,
@@ -1002,7 +1022,7 @@ impl State {
         };
         // Everyone sees the discards once the hand is over, if the rules show them.
         let shown = matches!(self.phase, Phase::Done(_)) && self.rules.reveal_discards;
-        let sees_discards = shown || self.discards().is_some_and(|(_, declarer)| Some(declarer) == me);
+        let sees_discards = shown || self.declared().is_some_and(|d| Some(d.declarer) == me);
         let mut next = self.clone();
 
         let mut pool: Vec<Card> = Vec::new();
@@ -1013,7 +1033,7 @@ impl State {
         }
         pool.extend(&next.kitty);
         if !sees_discards {
-            pool.extend(next.discards_mut().map(|d| d.clone()).unwrap_or_default());
+            pool.extend(next.declared().map(|d| d.discards.clone()).unwrap_or_default());
         }
         pool.shuffle(rng);
 
@@ -1026,9 +1046,9 @@ impl State {
             }
         }
         next.kitty = deal(next.kitty.len());
-        if !sees_discards && let Some(d) = next.discards_mut() {
-            let n = d.len();
-            *d = pool.drain(..n).collect();
+        if !sees_discards && let Some(d) = next.declared_mut() {
+            let n = d.discards.len();
+            d.discards = pool.drain(..n).collect();
         }
         next
     }
@@ -1046,7 +1066,7 @@ impl State {
 
         let mut cards: Vec<Card> = self.hands.iter().chain(&self.taken).flatten().copied().collect();
         cards.extend(&self.kitty);
-        cards.extend(self.discards().map(|(d, _)| d.to_vec()).unwrap_or_default());
+        cards.extend(self.declared().map(|d| d.discards.clone()).unwrap_or_default());
         if let Phase::Play(p) = &self.phase {
             cards.extend(p.plays.iter().map(|pl| pl.card));
         }
@@ -1106,13 +1126,13 @@ impl State {
                 }
                 // A made contract never costs the declarer, a failed one always
                 // does; only scoring against the minimum can lose on a win.
-                let made = d.team_points >= d.contract.count;
-                let declarer = d.payoffs[d.declarer];
+                let made = d.team_points >= d.declared.contract.count;
+                let declarer = d.payoffs[d.declared.declarer];
                 let may_lose = self.rules.scoring.win == WinScore::OverMin;
                 if (made && declarer < 0 && !may_lose) || (!made && declarer >= 0) {
                     return Err(format!(
                         "declarer gets {declarer} for {} of {}",
-                        d.team_points, d.contract.count
+                        d.team_points, d.declared.contract.count
                     ));
                 }
             }
@@ -1400,12 +1420,14 @@ mod tests {
             .collect();
         s.taken[0] = won;
         let play = Play {
-            declarer: 0,
-            contract: Contract {
-                trump: DIAMOND,
-                count: 13,
+            declared: Declared {
+                declarer: 0,
+                contract: Contract {
+                    trump: DIAMOND,
+                    count: 13,
+                },
+                discards: tens[..3].to_vec(),
             },
-            discards: tens[..3].to_vec(),
             call: FriendCall::Alone,
             friend: None,
             trick_no: 10,
@@ -1417,7 +1439,7 @@ mod tests {
         };
         let done = s.score(play.clone());
         assert_eq!((done.team_points, done.payoffs[0]), (12, -4));
-        s.rules.scoring.discards_to_declarer = true;
+        Arc::make_mut(&mut s.rules).scoring.discards_to_declarer = true;
         assert_eq!(s.score(play).team_points, 15);
     }
 
@@ -1504,12 +1526,14 @@ mod tests {
         s.taken = vec![Vec::new(); 5];
         s.taken[0] = points;
         let play = Play {
-            declarer: 0,
-            contract: Contract {
-                trump: DIAMOND,
-                count: 15,
+            declared: Declared {
+                declarer: 0,
+                contract: Contract {
+                    trump: DIAMOND,
+                    count: 15,
+                },
+                discards: Vec::new(),
             },
-            discards: Vec::new(),
             call,
             friend,
             trick_no: 10,
@@ -1543,12 +1567,14 @@ mod tests {
         let mut s = basic();
         s.hands = std::iter::once(vec![hand0]).chain(others.map(|c| vec![c])).collect();
         s.phase = Phase::Play(Play {
-            declarer: 0,
-            contract: Contract {
-                trump: DIAMOND,
-                count: 14,
+            declared: Declared {
+                declarer: 0,
+                contract: Contract {
+                    trump: DIAMOND,
+                    count: 14,
+                },
+                discards: Vec::new(),
             },
-            discards: Vec::new(),
             call: FriendCall::Alone,
             friend: None,
             trick_no: 9,

@@ -1085,7 +1085,7 @@ impl Encode for Mighty {
         let buried: Vec<Card> = state
             .kitty()
             .iter()
-            .chain(state.discards().map_or(&[][..], |(d, _)| d))
+            .chain(state.declared().map_or(&[][..], |d| &d.discards))
             .copied()
             .collect();
         (0..SLOTS)

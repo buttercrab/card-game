@@ -9,8 +9,8 @@ use crate::search::SearchBot;
 use crate::state::hand_value;
 use crate::state::{Action, FriendCall, TrickState, powered};
 use crate::trick::{self, Lead, Played};
-use crate::view::{PhaseView, View};
-use engine::{Bot, Seat, Viewer};
+use crate::view::{PhaseView, Seen, SeenPhase, View};
+use engine::{Bot, Seat};
 use rand::seq::IndexedRandom;
 use rand::{Rng, RngCore};
 use std::time::Duration;
@@ -264,7 +264,7 @@ impl Clumsy {
 
 impl Bot<Mighty> for Clumsy {
     fn act(&mut self, view: &View, legal: &[Action], rng: &mut dyn RngCore) -> Action {
-        let choice = self.inner.decide(view, legal);
+        let choice = self.inner.decide(&Seen::of_view(view), legal);
         let PhaseView::Play { contract, .. } = &view.phase else {
             return choice;
         };
@@ -286,18 +286,18 @@ impl Bot<Mighty> for Clumsy {
 
 impl Bot<Mighty> for SimpleBot {
     fn act(&mut self, view: &View, legal: &[Action], _rng: &mut dyn RngCore) -> Action {
-        self.decide(view, legal)
+        self.decide(&Seen::of_view(view), legal)
     }
 }
 
 impl SimpleBot {
     /// What [`Bot::act`] chooses; it never needs randomness.
-    pub(crate) fn decide(&self, view: &View, legal: &[Action]) -> Action {
+    pub(crate) fn decide(&self, view: &Seen, legal: &[Action]) -> Action {
         let choice = match &view.phase {
-            PhaseView::Bidding { .. } => self.bid(view, legal),
-            PhaseView::Exchange { contract, .. } => self.exchange(view, legal, contract.trump),
-            PhaseView::Play { .. } => play(self, view, legal),
-            PhaseView::Dealing | PhaseView::Done { .. } => None,
+            SeenPhase::Bidding => self.bid(view, legal),
+            SeenPhase::Exchange { contract, .. } => self.exchange(view, legal, contract.trump),
+            SeenPhase::Play { .. } => play(self, view, legal),
+            SeenPhase::Idle => None,
         };
         choice.unwrap_or_else(|| legal[0].clone())
     }
@@ -351,8 +351,8 @@ impl SimpleBot {
         count + (self.bid_spread * (lost / won).ln()).max(0.0)
     }
 
-    fn bid(&self, view: &View, legal: &[Action]) -> Option<Action> {
-        let estimate = |trump: Option<Suit>| self.estimate(&view.rules, &view.hand, trump);
+    fn bid(&self, view: &Seen, legal: &[Action]) -> Option<Action> {
+        let estimate = |trump: Option<Suit>| self.estimate(view.rules, view.hand, trump);
         let trump = Suit::ALL
             .into_iter()
             .map(Some)
@@ -372,15 +372,15 @@ impl SimpleBot {
                 .min_by_key(|c| c.count)
         };
         match cheapest(trump) {
-            Some(c) if self.needed(&view.rules, c) <= estimate(trump) || !legal.contains(&Action::Pass) => {
+            Some(c) if self.needed(view.rules, c) <= estimate(trump) || !legal.contains(&Action::Pass) => {
                 Some(Action::Bid(c))
             }
             _ => Some(Action::Pass),
         }
     }
 
-    fn exchange(&self, view: &View, legal: &[Action], trump: Option<Suit>) -> Option<Action> {
-        let estimate = |trump: Option<Suit>| self.estimate(&view.rules, &view.hand, trump);
+    fn exchange(&self, view: &Seen, legal: &[Action], trump: Option<Suit>) -> Option<Action> {
+        let estimate = |trump: Option<Suit>| self.estimate(view.rules, view.hand, trump);
         if legal.iter().any(|a| matches!(a, Action::Discard(_))) {
             // The kitty may have made another trump much better.
             let change = legal
@@ -424,19 +424,16 @@ impl SimpleBot {
 
 /// The declarer's own discards, as it sees them while exchanging: calling
 /// one of them as the friend would call nobody.
-pub(crate) fn discarded(view: &View) -> &[Card] {
-    match &view.phase {
-        PhaseView::Exchange {
-            discards: Some(discards),
-            ..
-        } => discards,
+pub(crate) fn discarded<'a>(view: &Seen<'a>) -> &'a [Card] {
+    match view.phase {
+        SeenPhase::Exchange { discards, .. } => discards,
         _ => &[],
     }
 }
 
 /// How much a card is worth keeping: the mighty, then jokers, then trumps
 /// by rank, then everything else by rank.
-fn power(view: &View, trump: Option<Suit>, card: Card) -> u8 {
+fn power(view: &Seen, trump: Option<Suit>, card: Card) -> u8 {
     if card == view.rules.mighty(trump) {
         100
     } else if card.is_joker() {
@@ -451,7 +448,7 @@ fn power(view: &View, trump: Option<Suit>, card: Card) -> u8 {
 /// Discarded point cards still count for the declarer, so side-suit tens to
 /// kings are best put back: they are points banked. After them, the
 /// shortest side suits go, to make voids that trump can ruff.
-fn discard(view: &View, legal: &[Action], trump: Option<Suit>) -> Option<Action> {
+fn discard(view: &Seen, legal: &[Action], trump: Option<Suit>) -> Option<Action> {
     let mighty = view.rules.mighty(trump);
     let length = |suit: Suit| view.hand.iter().filter(|c| c.suit() == Some(suit)).count();
     let keep = |c: Card| c == mighty || c.is_joker() || c.suit() == trump || c.rank() == Some(ACE);
@@ -472,7 +469,7 @@ fn discard(view: &View, legal: &[Action], trump: Option<Suit>) -> Option<Action>
 /// What one seat knows during play.
 struct Table<'a> {
     bot: &'a SimpleBot,
-    view: &'a View,
+    view: &'a Seen<'a>,
     me: Seat,
     trump: Option<Suit>,
     mighty: Card,
@@ -520,7 +517,7 @@ impl Table<'_> {
     }
 
     fn powered(&self, card: Card, called: Option<Card>) -> bool {
-        powered(&self.view.rules, self.trick(None, called), card)
+        powered(self.view.rules, self.trick(None, called), card)
     }
 
     /// No unseen card can beat this one if it is led: it is the mighty, or
@@ -561,7 +558,7 @@ impl Table<'_> {
 
 /// Every card these rules deal that `view`'s seat has not seen: not in
 /// its hand and not played.
-fn unseen(view: &View, tricks: &[trick::Trick], plays: &[Played]) -> CardSet {
+fn unseen(view: &Seen, tricks: &[trick::Trick], plays: &[Played]) -> CardSet {
     let played = tricks.iter().flat_map(|t| &t.plays).chain(plays).map(|p| p.card);
     let seen: CardSet = played.chain(view.hand.iter().copied()).collect();
     view.rules.card_set() - seen
@@ -571,9 +568,9 @@ fn card_of(a: &Action) -> Card {
     a.played_card().expect("only plays are legal during play")
 }
 
-fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
+fn play(bot: &SimpleBot, view: &Seen, legal: &[Action]) -> Option<Action> {
     let t = table(bot, view)?;
-    let PhaseView::Play {
+    let SeenPhase::Play {
         lead,
         plays,
         called_joker,
@@ -589,8 +586,8 @@ fn play(bot: &SimpleBot, view: &View, legal: &[Action]) -> Option<Action> {
 }
 
 /// What `view`'s seat knows during play; `None` outside it.
-fn table<'a>(bot: &'a SimpleBot, view: &'a View) -> Option<Table<'a>> {
-    let PhaseView::Play {
+fn table<'a>(bot: &'a SimpleBot, view: &'a Seen<'a>) -> Option<Table<'a>> {
+    let SeenPhase::Play {
         declarer,
         contract,
         call,
@@ -603,7 +600,7 @@ fn table<'a>(bot: &'a SimpleBot, view: &'a View) -> Option<Table<'a>> {
     else {
         return None;
     };
-    let Viewer::Seat(me) = view.viewer else { return None };
+    let me = view.me?;
     let trump = contract.trump;
     let seats = view.rules.players;
     let i_am_friend = *friend == Some(me) || matches!(call, FriendCall::Card(c) if view.hand.contains(c));
@@ -821,7 +818,7 @@ fn cheapest_dump(t: &Table, cards: &[Card]) -> Card {
 mod tests {
     use super::*;
 
-    use engine::{Game, Turn};
+    use engine::{Game, Turn, Viewer};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -849,7 +846,7 @@ mod tests {
                         Turn::Seat(seat) => {
                             let view = Mighty::view(&state, Viewer::Seat(seat));
                             let bot = tempered(seat);
-                            if let Some(t) = table(&bot, &view) {
+                            if let Some(t) = table(&bot, &Seen::of_view(&view)) {
                                 plays += 1;
                                 let PhaseView::Play { tricks, plays, .. } = &view.phase else {
                                     unreachable!()

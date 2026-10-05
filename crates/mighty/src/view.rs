@@ -5,6 +5,7 @@ use crate::state::{Action, Bid, FriendCall, Phase, Play, Redealt, State};
 use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use ts_rs::TS;
 
 /// Everything one viewer may know. Other hands, the kitty and (for anyone
@@ -12,7 +13,8 @@ use ts_rs::TS;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct View {
     pub viewer: Viewer,
-    pub rules: Rules,
+    // Shared with the game's state: views are made often.
+    pub rules: Arc<Rules>,
     pub first_bidder: Seat,
     /// Empty for spectators.
     pub hand: Vec<Card>,
@@ -87,16 +89,117 @@ pub enum PhaseView {
     },
 }
 
-impl View {
-    /// The view of `seat`, without what the simple bot never looks at
-    /// (hand sizes, points taken, the bidding): playouts and reading build
-    /// one for every card played, so it should cost little.
-    pub(crate) fn for_policy(state: &State, seat: Seat) -> View {
-        let mut view = View::lean(state, Viewer::Seat(seat));
-        view.hand = state.hands()[seat].clone();
-        view
+/// What the simple bot looks at: a seat's hand and what that seat has seen
+/// of the table, borrowed from a [`View`] or straight from the game's
+/// [`State`]. Playouts and reading the table ask the bot thousands of
+/// times a decision; borrowing the state spares a view each time.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Seen<'a> {
+    /// `None` for a spectator.
+    pub me: Option<Seat>,
+    pub rules: &'a Rules,
+    pub hand: &'a [Card],
+    pub phase: SeenPhase<'a>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SeenPhase<'a> {
+    Bidding,
+    Exchange {
+        contract: Contract,
+        /// The declarer's own discards so far; empty for anyone else.
+        discards: &'a [Card],
+    },
+    Play {
+        declarer: Seat,
+        contract: Contract,
+        call: FriendCall,
+        friend: Option<Seat>,
+        trick_no: usize,
+        lead: Option<Lead>,
+        plays: &'a [Played],
+        called_joker: Option<Card>,
+        tricks: &'a [Trick],
+    },
+    /// Dealing, or the hand is over: nothing to decide.
+    Idle,
+}
+
+impl<'a> Seen<'a> {
+    pub(crate) fn of_view(view: &'a View) -> Seen<'a> {
+        let phase = match &view.phase {
+            PhaseView::Bidding { .. } => SeenPhase::Bidding,
+            PhaseView::Exchange { contract, discards, .. } => SeenPhase::Exchange {
+                contract: *contract,
+                discards: discards.as_deref().unwrap_or_default(),
+            },
+            PhaseView::Play {
+                declarer,
+                contract,
+                call,
+                friend,
+                trick_no,
+                lead,
+                plays,
+                called_joker,
+                tricks,
+                ..
+            } => SeenPhase::Play {
+                declarer: *declarer,
+                contract: *contract,
+                call: *call,
+                friend: *friend,
+                trick_no: *trick_no,
+                lead: *lead,
+                plays,
+                called_joker: *called_joker,
+                tricks,
+            },
+            PhaseView::Dealing | PhaseView::Done { .. } => SeenPhase::Idle,
+        };
+        Seen {
+            me: match view.viewer {
+                Viewer::Seat(s) => Some(s),
+                Viewer::Spectator => None,
+            },
+            rules: &view.rules,
+            hand: &view.hand,
+            phase,
+        }
     }
 
+    /// What `seat` sees of `state`: as [`Seen::of_view`] of its view.
+    pub(crate) fn of_state(state: &'a State, seat: Seat) -> Seen<'a> {
+        let own = |declarer: Seat, discards: &'a [Card]| (declarer == seat).then_some(discards);
+        let phase = match state.phase() {
+            Phase::Bidding(_) => SeenPhase::Bidding,
+            Phase::Exchange(e) => SeenPhase::Exchange {
+                contract: e.declared.contract,
+                discards: own(e.declared.declarer, &e.declared.discards).unwrap_or_default(),
+            },
+            Phase::Play(p) => SeenPhase::Play {
+                declarer: p.declared.declarer,
+                contract: p.declared.contract,
+                call: p.call,
+                friend: p.friend,
+                trick_no: p.trick_no,
+                lead: p.lead,
+                plays: &p.plays,
+                called_joker: p.called_joker,
+                tricks: &p.tricks,
+            },
+            Phase::Dealing | Phase::Done(_) => SeenPhase::Idle,
+        };
+        Seen {
+            me: Some(seat),
+            rules: state.rules(),
+            hand: &state.hands()[seat],
+            phase,
+        }
+    }
+}
+
+impl View {
     pub(crate) fn new(state: &State, viewer: Viewer) -> View {
         let me = match viewer {
             Viewer::Seat(s) => Some(s),
@@ -132,14 +235,14 @@ impl View {
                 has_bid: b.has_bid.clone(),
             },
             Phase::Exchange(e) => PhaseView::Exchange {
-                declarer: e.declarer,
-                contract: e.contract,
+                declarer: e.declared.declarer,
+                contract: e.declared.contract,
                 trump_changed: e.trump_changed,
-                discards: own_discards(e.declarer, &e.discards),
+                discards: own_discards(e.declared.declarer, &e.declared.discards),
             },
             Phase::Play(p) => PhaseView::Play {
-                declarer: p.declarer,
-                contract: p.contract,
+                declarer: p.declared.declarer,
+                contract: p.declared.contract,
                 call: p.call,
                 friend: p.friend,
                 no_friend: no_friend(state, p, me),
@@ -150,27 +253,32 @@ impl View {
                 leading: state.leading(p),
                 called_joker: p.called_joker,
                 tricks: p.tricks.clone(),
-                discards: own_discards(p.declarer, &p.discards),
+                discards: own_discards(p.declared.declarer, &p.declared.discards),
             },
             Phase::Done(d) => PhaseView::Done {
-                declarer: d.declarer,
-                contract: d.contract,
+                declarer: d.declared.declarer,
+                contract: d.declared.contract,
                 call: d.call,
                 friend: d.friend,
                 team_points: d.team_points,
                 payoffs: d.payoffs.clone(),
-                value: crate::score::breakdown(state.rules(), d.contract, d.call == FriendCall::Alone, d.team_points),
+                value: crate::score::breakdown(
+                    state.rules(),
+                    d.declared.contract,
+                    d.call == FriendCall::Alone,
+                    d.team_points,
+                ),
                 tricks: d.tricks.clone(),
                 discards: if state.rules().reveal_discards {
-                    d.discards.clone()
+                    d.declared.discards.clone()
                 } else {
-                    own_discards(d.declarer, &d.discards).unwrap_or_default()
+                    own_discards(d.declared.declarer, &d.declared.discards).unwrap_or_default()
                 },
             },
         };
         View {
             viewer,
-            rules: state.rules().clone(),
+            rules: state.shared_rules().clone(),
             first_bidder: state.first_bidder(),
             hand: Vec::new(),
             hand_sizes: Vec::new(),
@@ -248,12 +356,14 @@ impl View {
 fn no_friend(state: &State, p: &Play, me: Option<Seat>) -> bool {
     match p.call {
         FriendCall::Alone => true,
-        FriendCall::FirstTrick => p.tricks.first().is_some_and(|t| t.winner == p.declarer),
+        FriendCall::FirstTrick => p.tricks.first().is_some_and(|t| t.winner == p.declared.declarer),
         FriendCall::Card(card) => {
             let played = p.tricks.iter().flat_map(|t| &t.plays).chain(&p.plays);
-            let shown = played.clone().any(|pl| pl.card == card && pl.seat == p.declarer);
-            let own =
-                me == Some(p.declarer) && (state.hands()[p.declarer].contains(&card) || p.discards.contains(&card));
+            let shown = played
+                .clone()
+                .any(|pl| pl.card == card && pl.seat == p.declared.declarer);
+            let own = me == Some(p.declared.declarer)
+                && (state.hands()[p.declared.declarer].contains(&card) || p.declared.discards.contains(&card));
             shown || own
         }
         FriendCall::Seat(_) | FriendCall::LastTrick => false,

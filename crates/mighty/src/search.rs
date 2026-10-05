@@ -16,7 +16,7 @@ use crate::read::Memo;
 pub use crate::read::Reading;
 use crate::rules::Contract;
 use crate::state::{Action, FriendCall, Phase, State};
-use crate::view::{PhaseView, View};
+use crate::view::{PhaseView, Seen, View};
 use engine::{Bot, Seat, Turn, Viewer};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -191,7 +191,7 @@ impl SearchBot {
             };
             log_weights.push(log_weight);
             for (action, scores) in candidates.iter().zip(&mut scores) {
-                scores.push(rollout(self.policy, self.endgame, &world, action, me, rng));
+                scores.push(rollout(self.policy, self.endgame, &world, action, me));
             }
         }
         (scores, log_weights)
@@ -321,7 +321,7 @@ fn exchange_candidates(view: &View, legal: &[Action]) -> Vec<Action> {
     let out: Vec<Action> = calls
         .into_iter()
         .filter(|c| {
-            !matches!(c, FriendCall::Card(card) if view.hand.contains(card) || crate::bot::discarded(view).contains(card))
+            !matches!(c, FriendCall::Card(card) if view.hand.contains(card) || crate::bot::discarded(&Seen::of_view(view)).contains(card))
         })
         .map(Action::CallFriend)
         .filter(|a| legal.contains(a))
@@ -359,23 +359,23 @@ fn bid_candidates(legal: &[Action]) -> Vec<Action> {
 
 /// Plays `action` in `world`, then plays the hand out with simple bots,
 /// the last `endgame` tricks solved; a hand thrown in scores 0.
-fn rollout(policy: SimpleBot, endgame: usize, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> i64 {
+fn rollout(policy: SimpleBot, endgame: usize, world: &State, action: &Action, me: Seat) -> i64 {
     let mut state = world.clone();
     state.step(me, action.clone());
-    finish(policy, endgame, state, me, rng)
+    finish(policy, endgame, state, me)
 }
 
 /// Plays `state` to the end of the hand with `policy` in every seat:
 /// `me`'s payoff, 0 if the hand is thrown in. Public for
 /// experiments (`sim`'s `lab`), which use it as a perfect-information
 /// player and as an oracle.
-pub fn playout(policy: SimpleBot, state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
-    finish(policy, 0, state, me, rng)
+pub fn playout(policy: SimpleBot, state: State, me: Seat) -> i64 {
+    finish(policy, 0, state, me)
 }
 
 /// [`playout`], solving the last `endgame` tricks exactly once the sides
 /// are settled.
-pub fn finish(mut policy: SimpleBot, endgame: usize, mut state: State, me: Seat, rng: &mut dyn RngCore) -> i64 {
+pub fn finish(policy: SimpleBot, endgame: usize, mut state: State, me: Seat) -> i64 {
     loop {
         match state.turn() {
             Turn::Over => return state.payoffs().map_or(0, |p| p[me]),
@@ -388,9 +388,8 @@ pub fn finish(mut policy: SimpleBot, endgame: usize, mut state: State, me: Seat,
                 {
                     return payoffs[me];
                 }
-                let view = View::for_policy(&state, seat);
                 let legal = state.legal_actions();
-                let choice = policy.act(&view, &legal, rng);
+                let choice = policy.decide(&Seen::of_state(&state, seat), &legal);
                 state.step(seat, choice);
             }
         }
@@ -483,8 +482,11 @@ impl Dealer {
             Phase::Bidding(b) => b.best.map(|(seat, contract)| (seat, contract, Vec::new())),
             Phase::Play(p) => {
                 let played = p.tricks.iter().flat_map(|t| &t.plays).chain(&p.plays);
-                let cards = played.filter(|pl| pl.seat == p.declarer).map(|pl| pl.card).collect();
-                Some((p.declarer, p.contract, cards))
+                let cards = played
+                    .filter(|pl| pl.seat == p.declared.declarer)
+                    .map(|pl| pl.card)
+                    .collect();
+                Some((p.declared.declarer, p.declared.contract, cards))
             }
             _ => None,
         };

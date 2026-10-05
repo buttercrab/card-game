@@ -28,26 +28,28 @@ pub fn solve(state: &State, tricks: usize) -> Option<Vec<i64>> {
     }
     // Playing for points is playing for payoff only where more points
     // never pay less.
-    if !state::payoff_rises_with_points(rules, p.contract, p.call == FriendCall::Alone) {
+    if !state::payoff_rises_with_points(rules, p.declared.contract, p.call == FriendCall::Alone) {
         return None;
     }
     let friend = friend(state, p)?;
     let seats = rules.players;
-    let attack: Vec<bool> = (0..seats).map(|s| s == p.declarer || Some(s) == friend).collect();
+    let attack: Vec<bool> = (0..seats)
+        .map(|s| s == p.declared.declarer || Some(s) == friend)
+        .collect();
     let won: usize = (0..seats)
         .filter(|&s| attack[s])
         .flat_map(|s| &state.taken()[s])
         .filter(|c| c.is_point())
         .count();
-    let won = won + state::discard_points(rules, &p.discards);
+    let won = won + state::discard_points(rules, &p.declared.discards);
     let mut solver = Solver::new(state, p, attack);
     let rest = solver.trick(p.trick_no, p.leader, p.trick(), 0, solver.left);
     let team_points = (won + usize::from(rest)) as u8;
     Some(state::settle(
         rules,
-        p.declarer,
+        p.declared.declarer,
         friend,
-        p.contract,
+        p.declared.contract,
         p.call,
         team_points,
     ))
@@ -64,7 +66,7 @@ fn friend(state: &State, p: &Play) -> Option<Option<Seat>> {
         // Whoever holds the card; nobody if the declarer does, or it was
         // discarded or already played by the declarer.
         FriendCall::Card(card) => {
-            Some((0..state.seats()).find(|&s| s != p.declarer && state.hands()[s].contains(&card)))
+            Some((0..state.seats()).find(|&s| s != p.declared.declarer && state.hands()[s].contains(&card)))
         }
         FriendCall::Seat(_) | FriendCall::Alone => Some(None),
         // The declarer took the first trick itself.
@@ -159,7 +161,7 @@ impl<'a> Solver<'a> {
             *mask = hand.iter().collect();
         }
         let live = masks.iter().fold(CardSet::EMPTY, |m, &h| m | h) | p.plays.iter().map(|pl| pl.card).collect();
-        let trump = p.contract.trump;
+        let trump = p.declared.contract.trump;
         let calls = rules
             .deck
             .jokers()
@@ -495,9 +497,16 @@ mod tests {
                 let Some(payoffs) = solve(&state, 2) else { continue };
                 let Phase::Play(p) = state.phase() else { unreachable!() };
                 let friend = friend(&state, p).unwrap();
-                let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
+                let attack: Vec<bool> = (0..5).map(|s| s == p.declared.declarer || Some(s) == friend).collect();
                 let points = brute(&state, &attack);
-                let expected = state::settle(state.rules(), p.declarer, friend, p.contract, p.call, points);
+                let expected = state::settle(
+                    state.rules(),
+                    p.declared.declarer,
+                    friend,
+                    p.declared.contract,
+                    p.call,
+                    points,
+                );
                 assert_eq!(payoffs, expected, "{preset}");
             }
         }
@@ -511,11 +520,18 @@ mod tests {
                 let Some(payoffs) = solve(&state, 3) else { continue };
                 let Phase::Play(p) = state.phase() else { unreachable!() };
                 let friend = friend(&state, p).unwrap();
-                let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
+                let attack: Vec<bool> = (0..5).map(|s| s == p.declared.declarer || Some(s) == friend).collect();
                 let points = brute(&state, &attack);
                 assert_eq!(
                     payoffs,
-                    state::settle(state.rules(), p.declarer, friend, p.contract, p.call, points)
+                    state::settle(
+                        state.rules(),
+                        p.declared.declarer,
+                        friend,
+                        p.declared.contract,
+                        p.call,
+                        points
+                    )
                 );
             }
         }
@@ -568,18 +584,20 @@ mod tests {
             for state in positions_for(rules, 2, 6) {
                 let Phase::Play(p) = state.phase() else { unreachable!() };
                 let Some(friend) = friend(&state, p) else { continue };
-                let rises = state::payoff_rises_with_points(rules, p.contract, p.call == FriendCall::Alone);
+                let rises = state::payoff_rises_with_points(rules, p.declared.contract, p.call == FriendCall::Alone);
                 let Some(payoffs) = solve(&state, 2) else {
                     assert!(!rises, "declined a position it could solve");
                     declined += 1;
                     continue;
                 };
                 let seats = rules.players;
-                let attack: Vec<bool> = (0..seats).map(|s| s == p.declarer || Some(s) == friend).collect();
+                let attack: Vec<bool> = (0..seats)
+                    .map(|s| s == p.declared.declarer || Some(s) == friend)
+                    .collect();
                 let points = brute(&state, &attack);
                 assert_eq!(
                     payoffs,
-                    state::settle(rules, p.declarer, friend, p.contract, p.call, points),
+                    state::settle(rules, p.declared.declarer, friend, p.declared.contract, p.call, points),
                     "{rules:?}"
                 );
                 solved += 1;
@@ -596,7 +614,7 @@ mod tests {
             for state in positions(preset, 4, 6) {
                 let Phase::Play(p) = state.phase() else { unreachable!() };
                 let Some(friend) = friend(&state, p) else { continue };
-                let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
+                let attack: Vec<bool> = (0..5).map(|s| s == p.declared.declarer || Some(s) == friend).collect();
                 let solver = || Solver::new(&state, p, attack.clone());
                 let mut full = solver();
                 let value = full.trick(p.trick_no, p.leader, p.trick(), 0, full.left);
@@ -641,16 +659,15 @@ mod tests {
             for state in &states {
                 let Phase::Play(p) = state.phase() else { unreachable!() };
                 let Some(friend) = friend(state, p) else { continue };
-                let attack: Vec<bool> = (0..5).map(|s| s == p.declarer || Some(s) == friend).collect();
+                let attack: Vec<bool> = (0..5).map(|s| s == p.declared.declarer || Some(s) == friend).collect();
                 let mut s = Solver::new(state, p, attack);
                 s.trick(p.trick_no, p.leader, p.trick(), 0, s.left);
                 nodes.push(s.nodes);
             }
             let solving = started.elapsed().as_secs_f64() * 1e6 / nodes.len() as f64;
             let started = std::time::Instant::now();
-            let mut rng = ChaCha8Rng::seed_from_u64(1);
             for state in &states {
-                crate::search::playout(SimpleBot::default(), state.clone(), 0, &mut rng);
+                crate::search::playout(SimpleBot::default(), state.clone(), 0);
             }
             let playing = started.elapsed().as_secs_f64() * 1e6 / states.len() as f64;
             println!(

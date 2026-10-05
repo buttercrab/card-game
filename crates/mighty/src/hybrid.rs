@@ -27,10 +27,9 @@
 use crate::Mighty;
 use crate::search::{self, SearchBot};
 use crate::state::{Action, Phase, State};
-use crate::view::{PhaseView, View};
+use crate::view::{PhaseView, Seen, View};
 use engine::{ActionValues, Bot, Encode, Game, Observation, Seat, Turn, Viewer};
-use rand::rngs::StdRng;
-use rand::{RngCore, SeedableRng};
+use rand::RngCore;
 use std::fmt;
 
 /// Positions valued by one network call at the leaves.
@@ -131,7 +130,7 @@ impl Bot<Mighty> for HybridBot {
         if worlds.is_empty() {
             return base;
         }
-        let scores = self.scores(&worlds, me, &candidates, rng);
+        let scores = self.scores(&worlds, me, &candidates);
         let weights: Vec<f64> = worlds.iter().map(|(_, w)| *w).collect();
         let at = candidates
             .iter()
@@ -161,20 +160,16 @@ impl HybridBot {
     /// Every candidate played out on every world: `[candidate][world]`,
     /// `me`'s payoff or the network's value at the leaf. Worlds are split
     /// between the search's threads, each valuing its own leaves.
-    fn scores(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action], rng: &mut dyn RngCore) -> Vec<Vec<f64>> {
+    fn scores(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Vec<Vec<f64>> {
         let threads = self.search.threads.clamp(1, worlds.len());
         if threads == 1 {
-            return self.score_part(worlds, me, candidates, rng);
+            return self.score_part(worlds, me, candidates);
         }
         let share = worlds.len().div_ceil(threads);
-        let seeds: Vec<u64> = (0..threads).map(|_| rng.next_u64()).collect();
         let parts: Vec<Vec<Vec<f64>>> = std::thread::scope(|scope| {
             let handles: Vec<_> = worlds
                 .chunks(share)
-                .zip(seeds)
-                .map(|(part, seed)| {
-                    scope.spawn(move || self.score_part(part, me, candidates, &mut StdRng::seed_from_u64(seed)))
-                })
+                .map(|part| scope.spawn(move || self.score_part(part, me, candidates)))
                 .collect();
             handles
                 .into_iter()
@@ -192,18 +187,12 @@ impl HybridBot {
         scores
     }
 
-    fn score_part(
-        &self,
-        worlds: &[(State, f64)],
-        me: Seat,
-        candidates: &[Action],
-        rng: &mut dyn RngCore,
-    ) -> Vec<Vec<f64>> {
+    fn score_part(&self, worlds: &[(State, f64)], me: Seat, candidates: &[Action]) -> Vec<Vec<f64>> {
         let mut scores = vec![vec![0.0; worlds.len()]; candidates.len()];
         let mut pending: Vec<(usize, usize, Observation)> = Vec::new();
         for (w, (world, _)) in worlds.iter().enumerate() {
             for (c, action) in candidates.iter().enumerate() {
-                match self.playout(world, action, me, rng) {
+                match self.playout(world, action, me) {
                     Outcome::Payoff(p) => scores[c][w] = p,
                     Outcome::Leaf(obs) => {
                         pending.push((c, w, obs));
@@ -242,14 +231,12 @@ impl HybridBot {
     /// Plays `action` in `world`, then the simple bots until the hand ends
     /// or, with a [`HybridBot::leaf`], until `me`'s first turn once that
     /// many more tricks are done.
-    fn playout(&self, world: &State, action: &Action, me: Seat, rng: &mut dyn RngCore) -> Outcome {
-        let SearchBot {
-            mut policy, endgame, ..
-        } = self.search;
+    fn playout(&self, world: &State, action: &Action, me: Seat) -> Outcome {
+        let SearchBot { policy, endgame, .. } = self.search;
         let mut state = world.clone();
         state.step(me, action.clone());
         let Some(more) = self.leaf else {
-            return Outcome::Payoff(search::finish(policy, endgame, state, me, rng) as f64);
+            return Outcome::Payoff(search::finish(policy, endgame, state, me) as f64);
         };
         let horizon = tricks_done(world) + more;
         // As `search::finish`, which also gives up on endless redeals.
@@ -257,7 +244,7 @@ impl HybridBot {
             match state.turn() {
                 Turn::Over => return Outcome::Payoff(state.payoffs().map_or(0, |p| p[me]) as f64),
                 // A hand thrown in: the search's own playouts score the redeal.
-                Turn::Chance => return Outcome::Payoff(search::finish(policy, endgame, state, me, rng) as f64),
+                Turn::Chance => return Outcome::Payoff(search::finish(policy, endgame, state, me) as f64),
                 Turn::Seat(seat) => {
                     if seat == me && tricks_done(&state) >= horizon {
                         let view = Mighty::view(&state, Viewer::Seat(me));
@@ -269,9 +256,8 @@ impl HybridBot {
                     {
                         return Outcome::Payoff(payoffs[me] as f64);
                     }
-                    let view = View::for_policy(&state, seat);
                     let legal = state.legal_actions();
-                    let choice = policy.act(&view, &legal, rng);
+                    let choice = policy.decide(&Seen::of_state(&state, seat), &legal);
                     state.step(seat, choice);
                 }
             }
@@ -316,7 +302,7 @@ fn confident_best(scores: &[Vec<f64>], weights: &[f64], base: usize, z: f64) -> 
 mod tests {
     use super::*;
     use engine::{BeliefError, Spec};
-    use rand::Rng;
+    use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
