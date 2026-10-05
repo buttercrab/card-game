@@ -11,9 +11,41 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # Line tables keep backtraces readable for a fraction of the link time
+  # (most of a Windows or macOS test build).
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
+# Pull requests that touch only docs or research notes skip the heavy jobs.
+# A job's `if` (or, for the test matrix, each step's) skips it, so it still
+# reports success and the required checks never wait on a job that did not
+# run. Pushes to main run everything, and so does a failed `changes`.
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.files.outputs.rust }}
+      ml: ${{ steps.files.outputs.ml }}
+      web: ${{ steps.files.outputs.web }}
+      e2e: ${{ steps.files.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # The pull request's merge commit and the base it merges into.
+          fetch-depth: 2
+      - id: files
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            git diff --name-only HEAD^1 HEAD | tee /dev/stderr | bash scripts/ci-changes.sh >> "$GITHUB_OUTPUT"
+          else
+            printf 'rust=true\nml=true\nweb=true\ne2e=true\n' >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
   lint:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -24,29 +56,49 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+      # The oldest Rust the workspace says it builds with (`rust-version`).
+      - name: Check the minimum supported Rust
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$msrv" --profile minimal
+          cargo +"$msrv" check --workspace --all-targets --locked
 
-  # The deploy scripts, against stand-ins for docker, ssh, curl and gh.
+  # Every shell script through shellcheck, and the deploy scripts against
+  # stand-ins for docker, ssh, curl and gh. Cheap, so it always runs.
   scripts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: shellcheck deploy/*.sh deploy/seoul/*.sh deploy/test/*.sh deploy/test/bin/* research/loop/ops/*.sh
+      - run: bash scripts/shellcheck.sh
       - run: bash deploy/test/run.sh
 
+  # Skipped step by step rather than with a job `if`: a skipped matrix job
+  # reports one `test` check instead of the three required ones.
   test:
+    needs: changes
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    if: ${{ !cancelled() }}
+    env:
+      RUN: ${{ needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - if: env.RUN == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - if: env.RUN == 'true'
+        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - run: cargo test --workspace
+      - if: env.RUN == 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - if: env.RUN == 'true'
+        run: cargo test --workspace
 
   simulate:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -65,6 +117,8 @@ jobs:
   # A few deals of every part of eval suite v1, so the suite and the runner
   # keep working together. Too small to measure anything.
   eval:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -81,6 +135,8 @@ jobs:
   # from PyTorch's CPU-only index on Linux, so the models type-check and
   # their tests (tiny, on CPU) run here too.
   ml:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.ml == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -105,6 +161,8 @@ jobs:
       - run: uv run pytest
 
   web:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -118,7 +176,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npx svelte-check --tsconfig ./tsconfig.json --threshold error
+      - run: npx svelte-check --tsconfig ./tsconfig.json --threshold warning
       # Unit tests (vitest); the scoring test reads crates/mighty/tests/payoffs.json.
       - run: npm test
 
@@ -126,6 +184,8 @@ jobs:
   # the real server (web/e2e). Known layout bugs are marked expected-fail
   # until docs/FIXES.md 1.8 fixes them.
   e2e:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.e2e == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.91"
 license = "MIT"
 
 [workspace.dependencies]
@@ -41,6 +41,12 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 
-# Unoptimised deflate is far too slow for the tests that write shards.
-[profile.dev.package.zlib-rs]
+# Tests play thousands of hands and search deeply: unoptimised they spend
+# most of their time in the engine. A light optimisation of the workspace
+# and a full one of the dependencies (built once and cached) make the test
+# binaries several times faster for a little more compile time.
+[profile.test]
+opt-level = 1
+
+[profile.dev.package."*"]
 opt-level = 3

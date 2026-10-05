@@ -1,5 +1,5 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 O="simple@aim_joker_call=false,spare_declarer_joker=false"
 B="$O,bid_base=6.0,misdeal_below_min=true,bid_spread=0"
 N=200000
