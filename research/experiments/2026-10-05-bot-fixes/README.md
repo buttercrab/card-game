@@ -118,3 +118,21 @@ experiment's commit). Notes that lived in the code until then:
 - `TEMPER` was halved here: the bolder seats overbid under scoring G.
 - The table's 고수 deals until its time is up because more deals keep
   helping a little: 2000 beat 200 by about a third of a point a hand.
+
+The same day the simple bot stopped counting the declarer's own discards
+as unseen (the follow-up the Phase 0 review noted): the declarer knows
+them, so it no longer plays against cards it buried itself. Paired
+`sim --bots search --baseline` runs, the bot with the fix in the focus
+seat against the same bot without it, on the same deals (points per
+seat-hand, 95% intervals):
+
+| Focus bot, field | Preset | Hands | Fix minus without |
+| --- | --- | --- | --- |
+| `simple`, `simple` | 경기과고 | 400 000 | +0.000 ± 0.001 |
+| `simple`, `simple` | 기본 | 400 000 | +0.001 ± 0.000 |
+| `hard`, `simple` | 경기과고 | 4 200 | −0.026 ± 0.078 |
+| `hard`, `simple` | 기본 | 4 200 | +0.014 ± 0.050 |
+
+Neutral to slightly better, so it stays. The search's pinned decisions
+moved in two of their six hands, where the declarer's playouts now know
+its discards.
