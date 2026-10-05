@@ -229,14 +229,45 @@ B — beats live 고수 at equal think time on 경기과고 and 기본 (aim +0.3
 seat-hand) with no loss on held-out rules; C — p99 think time within budget.
 Passing B and C, with the owner's go-ahead, ships it.
 
+### P3b — Self-play RL (owner, 2026-10-05: RL right after P3)
+
+The closest published match to Mighty is DouZero (DouDizhu, 2021): pure
+self-play, no human data, modest compute. Its method, Deep Monte Carlo, fits
+our environment directly.
+
+- **Agent:** a network scores every legal action, `Q(observation, action)`:
+  the observation is the `mighty-1` encoding (shared with the belief model's
+  token layout), each action an embedding of its index plus features of the
+  card or contract it names. Play picks the best legal action, with
+  ε-greedy exploration while learning.
+- **Learning:** many actors play self-play hands in the batched environment
+  with the current network; when a hand ends, every decision in it is
+  labelled with that seat's final payoff (Monte Carlo return), and the
+  network regresses `Q` onto it. No search, no value bootstrapping; an
+  actor/learner split so the Mac's CPU plays while its GPU learns.
+- **Rules:** training samples rule sets (presets, `Rules::varied`, 3–7
+  players), excluding the held-out sets; one model plays all of them.
+- **Phases of the hand:** one network for bidding, exchange, friend call and
+  play (the encoding already marks the phase); if one phase lags, a head per
+  phase.
+- **Measured** with suite v1 against random, 초보, 보통 and 고수, presets and
+  held-out rules, plus checkpoints played against each other over time.
+- **Uses:** a fast search-free bot (natural 초보/보통 levels by temperature),
+  and as the policy inside 고수's playouts or to order its candidates.
+
+Exit: a self-play agent that beats 보통 on suite v1, with its learning curve
+(rating against fixed opponents by games played) in `research/`; whether it
+beats 고수, alone or inside the search, is the report's headline.
+
 ### P4 — Scaling study
 
-- Sweep model size (~0.1M–10M parameters) × data (1M–100M decisions) ×
-  compute on belief log-loss; fit curves; spot-check that log-loss tracks
-  points per hand.
+- How the RL agent's strength grows with self-play games, model size and
+  compute (rating against fixed opponents), plus the belief model's log-loss
+  against model size and data (~0.1M–10M parameters, 1M–100M decisions),
+  with spot checks that log-loss tracks points per hand.
 
-Exit: a report in `research/` choosing the served model size under the
-think-time budget and the cheaper next step (data or size).
+Exit: a report in `research/` choosing the served model sizes under the
+think-time budget and the cheaper next step (games, size or compute).
 
 ### P5 — Experiment loop
 
@@ -269,7 +300,8 @@ model work for it unchanged.
 
 ### Later
 
-- Policy and value from search-guided self-play (model-guided 고수).
+- Search guided by the RL agent's policy and value (AlphaZero-style
+  improvement on top of P3b), and ReBeL-style search over belief states.
 - Search-free bots for 초보 and 보통, levels set by temperature.
 - Optional research question, nothing depends on it: whether one model
   trained on several games transfers to a new one.
