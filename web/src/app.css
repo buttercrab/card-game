@@ -167,6 +167,8 @@
 
 * {
   box-sizing: border-box;
+  /* No double-tap zoom: playing a card is two taps. Pinch zoom still works. */
+  touch-action: manipulation;
 }
 
 html,
@@ -293,6 +295,8 @@ button.chip[aria-pressed='true'] {
 input,
 select,
 textarea {
+  /* 16px or more, or iOS zooms the page in when the field takes focus. */
+  font-size: max(16px, 1em);
   border: 1px solid var(--line);
   background: var(--field);
   color: var(--on-field);
