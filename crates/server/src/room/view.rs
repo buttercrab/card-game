@@ -38,7 +38,6 @@ impl<G: SessionGame> Room<G> {
                 },
             })
             .collect();
-        let session = &self.session;
         ServerMsg::Room(RoomMsg {
             protocol: crate::protocol::version().to_string(),
             id: self.id.clone(),
@@ -47,11 +46,7 @@ impl<G: SessionGame> Room<G> {
             rules: G::table_rules(&self.settings),
             customized: G::customized(&self.settings),
             seats,
-            scores: session.scores.clone(),
-            hands_played: session.hands_played,
             in_hand: self.hand.in_hand(),
-            history: session.history.clone(),
-            hands: session.hands.clone(),
             table: self.table.clone(),
             clock: self.clock.info(),
             watching: self.seating.watching(),
@@ -86,8 +81,13 @@ impl<G: SessionGame> Room<G> {
         }))
     }
 
-    /// Sends everyone the table, and each connection the hand as it may see it.
-    pub(super) fn broadcast(&self) {
+    /// Sends everyone the session if it changed since they were last sent
+    /// it, then the table, and each connection the hand as it may see it.
+    pub(super) fn broadcast(&mut self) {
+        if self.session.revision != self.session_sent {
+            self.session_sent = self.session.revision;
+            self.tell_all(&ServerMsg::Session(self.session.message()));
+        }
         let room = serde_json::to_string(&self.room_message()).expect("messages serialize");
         for (&id, conn) in &self.seating.conns {
             let _ = conn.tx.send(room.clone());
@@ -95,6 +95,11 @@ impl<G: SessionGame> Room<G> {
                 self.send(id, &state);
             }
         }
+    }
+
+    /// Sends a new connection the session so far; the table follows.
+    pub(super) fn greet(&self, conn: ConnId) {
+        self.send(conn, &ServerMsg::Session(self.session.message()));
     }
 
     pub(super) fn tell_all(&self, message: &Msg<G>) {

@@ -139,7 +139,7 @@ impl<G: SessionGame> Room<G> {
             persister.save(self.snapshot_text());
             self.dirty = false;
         }
-        if changed {
+        if changed || self.session.revision != self.session_sent {
             self.broadcast();
         }
     }
@@ -153,6 +153,7 @@ impl<G: SessionGame> Room<G> {
         match cmd {
             Command::Connect { conn, tx } => {
                 self.seating.conns.insert(conn, Conn::new(tx));
+                self.greet(conn);
                 Effects::CHANGED
             }
             Command::Disconnect { conn } => {

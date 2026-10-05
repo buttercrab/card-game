@@ -3,7 +3,7 @@
   // table's own settings, this device's settings, and the way out.
   import { CATALOG } from './catalog';
   import Icon from './Icon.svelte';
-  import type { RoomMsg } from './types';
+  import type { RoomView } from './types';
 
   let {
     room,
@@ -20,7 +20,7 @@
     onshuffle,
     onleave,
   }: {
-    room: RoomMsg;
+    room: RoomView;
     seated: boolean;
     /** The rules' name, with how many this table changed. */
     rulesName: string;

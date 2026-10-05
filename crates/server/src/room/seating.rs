@@ -260,7 +260,7 @@ impl<G: SessionGame> Room<G> {
         if reclaimed.is_none() {
             // Scores belong to players: whoever sat here before (a player
             // who left, a bot) took theirs with them.
-            self.session.scores[seat] = 0;
+            self.session.reset_score(seat);
         }
         // A newer connection for the same seat wins; the old tab becomes a spectator.
         self.seating.detach(seat);
@@ -364,7 +364,7 @@ impl<G: SessionGame> Room<G> {
                 // A bot in an empty seat starts from nothing; one standing
                 // in for a player who dropped plays on from their score.
                 if matches!(occupant, Occupant::Empty) {
-                    self.session.scores[seat] = 0;
+                    self.session.reset_score(seat);
                 }
                 self.record(Event::SeatFilled {
                     table: self.id.clone(),

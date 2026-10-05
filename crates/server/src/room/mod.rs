@@ -151,6 +151,8 @@ pub struct Room<G: SessionGame> {
     persister: Option<snapshot::Persister>,
     /// Whether the room changed since it was last handed to the persister.
     dirty: bool,
+    /// The session's revision everyone was last sent.
+    session_sent: u64,
 }
 
 impl<G: SessionGame> Room<G> {
@@ -162,6 +164,7 @@ impl<G: SessionGame> Room<G> {
             inbox: Some(inbox),
             persister: None,
             dirty: true,
+            session_sent: 0,
             id,
             settings,
             table: TableSettings::default(),

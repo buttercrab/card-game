@@ -29,6 +29,8 @@ struct Client {
     conn: ConnId,
     rx: UnboundedReceiver<String>,
     tx: UnboundedSender<Command>,
+    /// The latest session message it was sent.
+    session: Value,
 }
 
 impl Table {
@@ -58,6 +60,7 @@ impl Table {
             conn,
             rx,
             tx: self.tx.clone(),
+            session: Value::Null,
         }
     }
 
@@ -73,12 +76,23 @@ impl Client {
         self.tx.send(Command::Message { conn, msg }).unwrap();
     }
 
-    /// The next message of type `kind` that satisfies `pred`.
+    /// The next message of type `kind` that satisfies `pred`. Kind
+    /// `table` is a room message with the latest session's fields added, as
+    /// the web client keeps it.
     async fn next_where(&mut self, kind: &str, pred: impl Fn(&Value) -> bool) -> Value {
         let wait = async {
             loop {
                 let text = self.rx.recv().await.expect("the room hung up");
-                let msg: Value = serde_json::from_str(&text).unwrap();
+                let mut msg: Value = serde_json::from_str(&text).unwrap();
+                if msg["type"] == "session" {
+                    self.session = msg.clone();
+                }
+                if kind == "table" && msg["type"] == "room" {
+                    for field in ["scores", "hands_played", "history", "hands"] {
+                        msg[field] = self.session[field].clone();
+                    }
+                    msg["type"] = json!("table");
+                }
                 if msg["type"] == kind && pred(&msg) {
                     return msg;
                 }
@@ -152,9 +166,40 @@ async fn a_turn_that_runs_out_is_played_for_the_seat_and_marks_it_away() {
     a.next_where("room", |r| r["seats"][0]["away"] == false).await;
 
     // The hand finishes on its own, the stand-in playing every late turn.
-    let done = a.next_where("room", |r| r["hands_played"] == 1).await;
+    let done = a.next_where("table", |r| r["hands_played"] == 1).await;
     assert_eq!(done["in_hand"], false);
     assert!(done["clock"].is_null());
+}
+
+/// The session (scores and hands) goes to a connection when it opens and
+/// to everyone when it changes, just before the room; not otherwise.
+#[tokio::test(start_paused = true)]
+async fn the_session_is_sent_only_when_it_changes() {
+    let mut table = Table::open(MightySettings::new(Preset::Gshs));
+    let mut a = table.connect();
+    let first = a.rx.recv().await.unwrap();
+    assert!(first.starts_with(r#"{"type":"session""#), "{first}");
+    assert!(a.rx.recv().await.unwrap().starts_with(r#"{"type":"room""#));
+    a.send(json!({ "type": "join", "name": "A" }));
+    a.next("welcome").await;
+    for seat in 1..5 {
+        a.send(json!({ "type": "add_bot", "seat": seat, "level": "easy" }));
+    }
+    a.send(json!({ "type": "set_table", "turn_secs": 20 }));
+    a.send(json!({ "type": "start" }));
+    // Nothing until the hand is over changes the session.
+    let mut kinds = Vec::new();
+    loop {
+        let msg: Value = serde_json::from_str(&a.rx.recv().await.unwrap()).unwrap();
+        kinds.push(msg["type"].as_str().unwrap().to_string());
+        if msg["type"] == "session" {
+            assert_eq!(msg["hands_played"], 1);
+            let room: Value = serde_json::from_str(&a.rx.recv().await.unwrap()).unwrap();
+            assert_eq!((&room["type"], &room["in_hand"]), (&json!("room"), &json!(false)));
+            break;
+        }
+    }
+    assert!(kinds.len() > 20, "{kinds:?}");
 }
 
 #[tokio::test(start_paused = true)]
@@ -222,7 +267,7 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     b.next_where("room", |r| r["in_hand"] == true).await;
     b.send(json!({ "type": "swap_seats", "a": 0, "b": 1 }));
     assert_eq!(b.next("error").await["code"], "seats_between_hands");
-    let before = a.next_where("room", |r| r["hands_played"] == 1).await;
+    let before = a.next_where("table", |r| r["hands_played"] == 1).await;
     assert_eq!(before["showing"], true);
     let score = |r: &Value, name: &str| -> (usize, i64) {
         let seats = r["seats"].as_array().unwrap();
@@ -245,7 +290,7 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     let b_news = b.next("seats_moved").await;
     let b_welcome = b.next("welcome").await;
     let after = watcher
-        .next_where("room", |r| r["hands_played"] == 1 && r["in_hand"] == true)
+        .next_where("table", |r| r["hands_played"] == 1 && r["in_hand"] == true)
         .await;
     assert_eq!(after["table"]["shuffle_next"], false, "a shuffle is used once");
     let (a_seat, a_after) = score(&after, "A");
@@ -262,7 +307,7 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     assert_eq!(b_welcome["seat"].as_u64().unwrap() as usize, b_seat);
 
     // That hand plays itself out too before the seats move again.
-    watcher.next_where("room", |r| r["hands_played"] == 2).await;
+    watcher.next_where("table", |r| r["hands_played"] == 2).await;
     b.leave_table();
     watcher
         .next_where("room", |r| r["seats"][b_seat]["connected"] == false)

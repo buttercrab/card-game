@@ -3,6 +3,7 @@
 //! seat, which follows the players when they move).
 
 use super::seating::moved;
+use crate::protocol::SessionMsg;
 use crate::session::SessionGame;
 
 pub(super) struct Session<G: SessionGame> {
@@ -16,6 +17,9 @@ pub(super) struct Session<G: SessionGame> {
     /// How many seats on the opening seat is from where the hand number
     /// alone puts it: moving seats moves the rotation with the players.
     pub rotation: usize,
+    /// Bumped whenever the scores or the hands change, so the room sends
+    /// the session only then.
+    pub revision: u64,
 }
 
 impl<G: SessionGame> Session<G> {
@@ -26,6 +30,26 @@ impl<G: SessionGame> Session<G> {
             history: Vec::new(),
             hands: Vec::new(),
             rotation: 0,
+            revision: 1,
+        }
+    }
+
+    /// The session as the clients see it.
+    pub fn message(&self) -> SessionMsg<G::Summary> {
+        SessionMsg {
+            scores: self.scores.clone(),
+            hands_played: self.hands_played,
+            history: self.history.clone(),
+            hands: self.hands.clone(),
+        }
+    }
+
+    /// Whoever sits at `seat` starts from nothing: the score there went
+    /// with whoever earned it.
+    pub fn reset_score(&mut self, seat: usize) {
+        if self.scores[seat] != 0 {
+            self.scores[seat] = 0;
+            self.revision += 1;
         }
     }
 
@@ -48,6 +72,7 @@ impl<G: SessionGame> Session<G> {
         self.history.push(payoffs);
         self.hands.extend(summary);
         self.hands_played += 1;
+        self.revision += 1;
     }
 
     /// Whoever sat at seat `s` now sits at `new_seat[s]`: their score and
@@ -65,6 +90,7 @@ impl<G: SessionGame> Session<G> {
         for summary in &mut self.hands {
             G::reseat(summary, new_seat);
         }
+        self.revision += 1;
     }
 }
 

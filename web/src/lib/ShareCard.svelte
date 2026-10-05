@@ -6,9 +6,9 @@
   import { occupantName } from './names';
   import { presetTitle } from './catalog';
   import { PATHS } from './SuitIcon.svelte';
-  import type { HandSummary, RoomMsg, Suit } from './types';
+  import type { HandSummary, RoomView, Suit } from './types';
 
-  let { room, onclose }: { room: RoomMsg; onclose: () => void } = $props();
+  let { room, onclose }: { room: RoomView; onclose: () => void } = $props();
 
   const W = 1080;
   const H = 1350;

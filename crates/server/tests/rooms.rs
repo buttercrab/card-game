@@ -46,11 +46,21 @@ async fn one_player_and_four_bots_finish_a_hand() {
             send(&mut ws, json!({ "type": "act", "action": action })).await;
         }
     }
-    // The room update for the finished hand went out just before the final state.
+    // Dealing the next hand changes the table but not the session, so only
+    // the table is sent again.
     send(&mut ws, json!({ "type": "start" })).await;
-    let room = next_where(&mut ws, "room", |r| r["hands_played"] == 1).await;
-    assert_eq!(room["in_hand"], true, "the next hand deals");
-    let history = room["history"].as_array().expect("hands are remembered");
+    let next_msg = next_text(&mut ws).await.unwrap();
+    assert_eq!(
+        (&next_msg["type"], &next_msg["in_hand"]),
+        (&json!("room"), &json!(true))
+    );
+    // Whoever comes to the table hears the session so far first.
+    let mut watcher = connect(addr, &room).await;
+    let session = next_text(&mut watcher).await.unwrap();
+    assert_eq!(session["type"], "session");
+    assert_eq!(session["hands_played"], 1);
+    assert_eq!(next_text(&mut watcher).await.unwrap()["type"], "room");
+    let history = session["history"].as_array().expect("hands are remembered");
     assert_eq!(history.len(), 1);
     assert_eq!(
         history[0]
@@ -61,7 +71,7 @@ async fn one_player_and_four_bots_finish_a_hand() {
             .sum::<i64>(),
         0
     );
-    let hands = room["hands"].as_array().expect("hands are summarized");
+    let hands = session["hands"].as_array().expect("hands are summarized");
     assert_eq!(hands.len(), 1);
     let rounds: Vec<i64> = serde_json::from_value(hands[0]["rounds"].clone()).unwrap();
     assert_eq!(rounds.len(), 10, "one entry per trick");

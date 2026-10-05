@@ -205,6 +205,54 @@ describe('hints', () => {
   });
 });
 
+describe('the session', () => {
+  const room = (names: string[]) => ({
+    type: 'room',
+    protocol: 'x',
+    id: 'abc',
+    game: 'mighty',
+    settings: { preset: 'gshs' },
+    rules: {},
+    customized: false,
+    seats: names.map((name) => ({ kind: 'human', name, connected: true, away: false })),
+    in_hand: false,
+    table: { turn_secs: 0, shuffle: false, shuffle_next: false },
+    clock: null,
+    watching: 0,
+    showing: false,
+  });
+  const session = (scores: number[]) => ({ type: 'session', scores, hands_played: 1, history: [scores], hands: [] });
+
+  test('the table keeps the last session sent, through rooms without one', () => {
+    const client = new RoomClient('abc');
+    last().open();
+    last().receive(session([3, -3]));
+    last().receive(room(['A', 'B']));
+    expect(client.room?.scores).toEqual([3, -3]);
+    expect(client.room?.hands_played).toBe(1);
+    last().receive(room(['A', 'C']));
+    expect(client.room?.seats[1]).toMatchObject({ name: 'C' });
+    expect(client.room?.scores).toEqual([3, -3]);
+    // A session on its own updates the table at once.
+    last().receive(session([5, -5]));
+    expect(client.room?.scores).toEqual([5, -5]);
+    client.close();
+  });
+
+  test('while seats move, the scores move with the room that moves them', () => {
+    const client = new RoomClient('abc');
+    last().open();
+    last().receive(session([3, -3]));
+    last().receive(room(['A', 'B']));
+    last().receive({ type: 'seats_moved', how: 'swap', seats: [0, 1] });
+    last().receive(session([-3, 3]));
+    expect(client.room?.scores).toEqual([3, -3]);
+    last().receive(room(['B', 'A']));
+    expect(client.room?.scores).toEqual([-3, 3]);
+    client.close();
+  });
+});
+
 describe('toasts', () => {
   test('notices are quiet; errors sound, each time', () => {
     const client = new RoomClient('abc');

@@ -2,7 +2,7 @@
   // /share: the session share card with made-up hands, to check its drawing.
   import { CATALOG, presetRules } from './catalog';
   import ShareCard from './ShareCard.svelte';
-  import type { HandSummary, RoomMsg, Suit } from './types';
+  import type { HandSummary, RoomView, Suit } from './types';
 
   const hand = (trump: Suit | null, count: number, made: boolean, rounds: number[], friend_revealed: number | null): HandSummary => ({
     contract: { trump, count },
@@ -24,7 +24,7 @@
     hand('Diamond', 15, false, [-2, 1, -3, 0, 2, -1, -2, 1, 0, 3], 3),
     hand('Club', 14, true, [3, 0, 2, 1, -1, 2, 3, 0, 1, 2], 5),
   ];
-  const room: RoomMsg = {
+  const room: RoomView = {
     protocol: CATALOG.protocol,
     id: 'preview',
     game: 'mighty',
