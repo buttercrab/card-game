@@ -6,8 +6,10 @@
 //! committed ones are stale.
 
 use crate::catalog::{Catalog, catalog};
-use crate::protocol::{ClientMsg, ServerMsg};
-use crate::session::MightySettings;
+use crate::protocol::{ClientMsg, CreateRoom, CreatedRoom, ServerMsg};
+use crate::session::{MightyNotes, MightySettings};
+use mighty::rules::Rules;
+use mighty::score::Examples;
 use mighty::{Action, HandSummary, View};
 use std::any::TypeId;
 use std::collections::HashSet;
@@ -57,7 +59,10 @@ pub fn typescript() -> String {
         names: HashSet::new(),
         out: Default::default(),
     };
-    d.visit::<ServerMsg<MightySettings, HandSummary, View, Action>>();
+    d.visit::<ServerMsg<MightySettings, HandSummary, Rules, View, Action, MightyNotes>>();
+    d.visit::<Examples>();
+    d.visit::<CreateRoom>();
+    d.visit::<CreatedRoom>();
     d.visit::<ClientMsg>();
     d.visit::<Catalog>();
     let mut ts = String::from(HEADER);

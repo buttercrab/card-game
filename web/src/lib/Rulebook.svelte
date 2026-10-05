@@ -3,9 +3,8 @@
   // actual rule values so the book can never disagree with the game.
   import Card from './Card.svelte';
   import { cardLabel, jokers, kittyCount, rankLabel } from './cards';
-  import { PRESET_NAME } from './presets';
-  import { bidValue, handValue, scoring } from './scoring';
-  import type { Card as CardT, CardPolicy, Contract, Rules, TrickPolicy } from './types';
+  import { isPreset, presetRules, presetTitle } from './catalog';
+  import type { Card as CardT, CardPolicy, Contract, Examples, Rules, TrickPolicy } from './types';
 
   /** `rules` overrides the preset's: a table's own, or the preset's as the
    * table pinned them. `changed`: the table's players changed them (by
@@ -16,28 +15,26 @@
     changed = given !== null,
   }: { preset: string; rules?: Rules | null; changed?: boolean } = $props();
 
-  let rules = $state<Rules | null>(null);
-  /** Why the rules are missing: an id no preset has, or a failed fetch. */
-  let failed = $state<'unknown' | 'network' | null>(null);
-  let attempt = $state(0);
-  const known = $derived(preset in PRESET_NAME);
+  /** The rules, or null for an id no preset has. */
+  const rules = $derived(given ?? (isPreset(preset) ? presetRules(preset) : null));
   // On its own page (/rules/…) the book offers a way home; in a sheet the
   // sheet's own footer does that.
   const standalone = typeof location !== 'undefined' && location.pathname.startsWith('/rules/');
 
+  // The worked example is scored by the server, under these rules.
+  let examples = $state<Examples | null>(null);
   $effect(() => {
-    void attempt;
-    rules = given;
-    failed = null;
-    if (given) return;
-    if (!known) {
-      failed = 'unknown';
-      return;
-    }
-    fetch(`/api/presets/${preset}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((r: Rules) => (rules = r))
-      .catch((status) => (failed = status === 404 ? 'unknown' : 'network'));
+    const body = rules && JSON.stringify($state.snapshot(rules));
+    examples = null;
+    if (!body) return;
+    let live = true;
+    fetch('/api/rules/examples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((e: Examples | null) => live && (examples = e))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   });
 
   const n = (suit: 'Spade' | 'Diamond' | 'Heart' | 'Club', rank: number): CardT => ({ Normal: [suit, rank] });
@@ -57,7 +54,7 @@
   /** A made contract's worth: the formula, and a note after it. */
   function winFormula(r: Rules): [string, string] {
     const min = r.bidding.min;
-    const w = scoring(r).win;
+    const w = r.scoring.win;
     if (typeof w === 'object') {
       const n = w.BothOver;
       return [`(가져온 점수 − ${n}) + (공약 − ${n})`, '(적어도 1)'];
@@ -72,7 +69,7 @@
 
   /** The rest of the scoring rules as sentences. */
   function scoringLines(r: Rules): string[] {
-    const s = scoring(r);
+    const s = r.scoring;
     const noTrump = r.bidding.allow_no_trump;
     const alone = r.friend.alone;
     const winDoubles = [
@@ -190,7 +187,7 @@
           Never: '노프렌드: 혼자 해요. 야당 모두와 혼자 주고받아요.',
           Win: '노프렌드: 혼자 해요. 이기면 점수가 두 배예요.',
           Always: '노프렌드: 혼자 해요. 이기든 지든 점수가 두 배예요.',
-        }[scoring(r).alone],
+        }[r.scoring.alone],
       f.fake && '자기가 가진 카드를 불러서 몰래 혼자 할 수도 있어요.',
     ].filter((x): x is string => typeof x === 'string');
   }
@@ -230,7 +227,7 @@
 <article class="book">
   <header>
     <h1>
-      {#if failed === 'unknown'}규칙을 찾을 수 없어요{:else}{PRESET_NAME[preset] ?? preset} 규칙{/if}{#if changed}<span
+      {#if !rules}규칙을 찾을 수 없어요{:else}{presetTitle(preset)} 규칙{/if}{#if changed}<span
           class="changed">바꾼 규칙</span
         >{/if}
     </h1>
@@ -244,32 +241,17 @@
     {/if}
   </header>
 
-  {#if failed}
+  {#if !rules}
     <div class="failed" role="alert">
-      <p class="muted">
-        {#if failed === 'unknown'}
-          ‘{preset}’라는 규칙은 없어요. 주소를 다시 확인해 주세요.
-        {:else}
-          규칙을 불러오지 못했어요. 연결을 확인하고 다시 해 보세요.
-        {/if}
-      </p>
+      <p class="muted">‘{preset}’라는 규칙은 없어요. 주소를 다시 확인해 주세요.</p>
       <div class="failed-actions">
         {#if standalone}<a class="home" href="/">홈으로</a>{/if}
-        {#if failed === 'network'}<button onclick={() => attempt++}>다시 시도</button>{/if}
       </div>
     </div>
-  {:else if !rules}
-    <p class="muted">불러오는 중…</p>
   {:else}
     {@const r = rules}
     {@const twoJokers = jokers(r).length === 2}
     {@const [formula, note] = winFormula(r)}
-    {@const f = r.friend}
-    {@const withFriend = !f || f.by_card || f.by_seat || f.first_trick || f.last_trick}
-    {@const opponents = r.players - (withFriend ? 2 : 1)}
-    {@const bid = { trump: 'Spade' as const, count: r.bidding.min + 1 }}
-    {@const v = handValue(r, bid, !withFriend, bid.count + 2)}
-    {@const lost = handValue(r, bid, !withFriend, bid.count - 2)}
     <section>
       <h2>목표</h2>
       <p>
@@ -343,7 +325,7 @@
       <ul>
         <li>
           주공이 키티 {kitty(r)}장을 가져가고 {kitty(r)}장을 버려요. 버린 점수 카드는
-          {scoring(r).discards_to_declarer ? '여당' : '야당'} 점수가 돼요.
+          {r.scoring.discards_to_declarer ? '여당' : '야당'} 점수가 돼요.
           {r.reveal_discards === false ? '버린 카드는 끝나도 보여 주지 않아요.' : ''}
         </li>
         {#if r.bidding.raise_on_exchange}
@@ -470,11 +452,16 @@
           모두 더하면 항상 0이에요.
         </li>
       </ul>
-      <p class="example">
-        예: ♠ {bid.count} 공약에 {bid.count + 2}점을 가져오면 한 몫이 {v}점. 야당 {opponents}명이 {signed(-v)}씩,
-        {#if withFriend}프렌드 {signed(v)}, 주공 {signed(v * (opponents - 1))}.{:else}주공 {signed(v * opponents)}.{/if}
-        {bid.count - 2}점에 그치면 한 몫이 {signed(lost)}점이에요.
-      </p>
+      {#if examples}
+        {@const { made, failed: lost, contract: bid } = examples}
+        {@const opponents = r.players - (examples.alone ? 1 : 2)}
+        <p class="example">
+          예: ♠ {bid.count} 공약에 {made.value.team_points}점을 가져오면 한 몫이 {made.value.value}점. 야당 {opponents}명이
+          {signed(made.payoffs[r.players - 1])}씩,
+          {#if !examples.alone}프렌드 {signed(made.payoffs[1])},{/if} 주공 {signed(made.payoffs[0])}.
+          {lost.value.team_points}점에 그치면 한 몫이 {signed(lost.value.value)}점이에요.
+        </p>
+      {/if}
     </section>
   {/if}
 </article>

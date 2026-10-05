@@ -2,18 +2,12 @@
 // and the custom sets a group saved on this device.
 import { PRESETS } from './presets';
 import { same } from './ruleFields';
-import { CATALOG, presetRules as catalogRules, isPreset } from './catalog';
+import { presetRules as catalogRules, isPreset } from './catalog';
 import type { Rules } from './types';
 
 /** A preset's full rules, from the catalog built in. */
 export function presetRules(id: string): Promise<Rules> {
   return isPreset(id) ? Promise.resolve(catalogRules(id)) : Promise.reject(new Error(`no preset ${id}`));
-}
-
-/** What a table plays by: its own rules, or its preset's as the table
- * pinned them (which may differ from the preset's today). */
-export function tableRules(settings: { preset: string; rules?: Rules; preset_rules?: Rules }): Rules {
-  return settings.rules ?? settings.preset_rules ?? catalogRules(isPreset(settings.preset) ? settings.preset : CATALOG.default_preset);
 }
 
 /** Every preset's rules, by id. */
@@ -71,27 +65,4 @@ export function saveCustom(set: Omit<CustomSet, 'id'> & { id?: string }): Custom
 
 export function removeCustom(id: string) {
   store(loadCustom().filter((s) => s.id !== id));
-}
-
-// A table made from home with custom rules starts on the preset; the rules
-// are set once its maker sits down, since only seated players may.
-const PENDING_KEY = 'mighty.rules.pending';
-
-export function setPending(room: string, base: string, rules: Rules) {
-  try {
-    sessionStorage.setItem(PENDING_KEY, JSON.stringify({ room, base, rules }));
-  } catch {
-    // The table just keeps its preset.
-  }
-}
-
-export function takePending(room: string): { base: string; rules: Rules } | null {
-  try {
-    const p = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? 'null');
-    if (!p || p.room !== room) return null;
-    sessionStorage.removeItem(PENDING_KEY);
-    return { base: p.base, rules: p.rules };
-  } catch {
-    return null;
-  }
 }

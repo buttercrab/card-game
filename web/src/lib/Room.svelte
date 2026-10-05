@@ -1,18 +1,15 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { CATALOG, isPreset } from './catalog';
+  import { CATALOG, isPreset, presetTitle } from './catalog';
   import { RoomClient, savedName } from './client.svelte';
   import GameMenu from './GameMenu.svelte';
   import Icon from './Icon.svelte';
   import { invite } from './invite';
   import { closeTop } from './layers';
-  import { PRESET_NAME } from './presets';
   import ReportSheet from './ReportSheet.svelte';
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import { differences } from './ruleFields';
-  import { presetRules, takePending } from './rulesets';
-  import type { Rules } from './types';
   import SettingsSheet from './SettingsSheet.svelte';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
@@ -88,30 +85,14 @@
     if (empty >= 0) client.addBot(empty, 'easy');
     else client.start();
   });
-  // Rules picked on the home page start once their maker sits down.
-  $effect(() => {
-    if (!room || client.seat === null || room.in_hand || client.status !== 'open') return;
-    const pending = untrack(() => takePending(id));
-    if (pending && isPreset(pending.base)) client.setRules(pending.base, pending.rules);
-  });
   // What this table changed from its preset, for the rules' name: against
   // the preset as the table pinned it, not as the preset reads today.
-  let fetchedBase = $state<Rules | null>(null);
-  const presetBase = $derived(room?.settings.preset_rules ?? fetchedBase);
-  $effect(() => {
-    const preset = room?.settings.preset;
-    // A server too old to say: the preset as it is today.
-    if (!preset || room?.settings.preset_rules) return;
-    presetRules(preset)
-      .then((r) => (fetchedBase = r))
-      .catch(() => (fetchedBase = null));
-  });
   const changedCount = $derived(
-    room?.settings.rules && presetBase ? differences(room.settings.rules, presetBase).length : 0,
+    room?.customized && room.settings.preset_rules ? differences(room.rules, room.settings.preset_rules).length : 0,
   );
   const rulesName = $derived(
     room
-      ? `${PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙${changedCount ? ` · 바꾼 것 ${changedCount}개` : room.settings.rules ? ' · 바꾼 규칙' : ''}`
+      ? `${presetTitle(room.settings.preset)} 규칙${changedCount ? ` · 바꾼 것 ${changedCount}개` : room.customized ? ' · 바꾼 규칙' : ''}`
       : '',
   );
   const offline = $derived(

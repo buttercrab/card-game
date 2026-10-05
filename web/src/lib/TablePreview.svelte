@@ -18,7 +18,7 @@
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
   import { CATALOG, presetRules } from './catalog';
-  import type { Bid, Card, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
+  import type { Bid, Card, ContractChange, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
 
   const which = new URLSearchParams(location.search).get('state') ?? 'play';
 
@@ -116,7 +116,9 @@
         call: { Card: { Joker: 'Black' } },
         friend: 3,
         team_points: 16,
-        payoffs: [-1, -1, 4, 2, -4],
+        payoffs: [-6, -6, 12, 6, -6],
+        // As the server scores it under these rules (points − 10).
+        value: { contract, team_points: 16, made: true, steps: [{ OverTen: { points: 16, total: 6 } }], value: 6 },
         tricks: [
           { plays: [2, 3, 4, 0, 1].map((seat, i) => ({ seat, card: [n('Spade', 14), n('Spade', 9), n('Spade', 2), n('Spade', 10), n('Heart', 4)][i], powered: true })), lead: { Suit: 'Spade' }, winner: 2 },
           { plays: [2, 3, 4, 0, 1].map((seat, i) => ({ seat, card: [{ Joker: 'Red' } as Card, n('Heart', 13), n('Diamond', 12), n('Heart', 3), n('Diamond', 2)][i], powered: true })), lead: { Color: 'Red' }, winner: 2 },
@@ -125,10 +127,36 @@
       },
     },
     run: {
-      Done: { declarer: 0, contract, call: 'Alone', friend: null, team_points: 20, payoffs: [160, -40, -40, -40, -40], tricks: [], discards: [] },
+      Done: {
+        declarer: 0,
+        contract,
+        call: 'Alone',
+        friend: null,
+        team_points: 20,
+        payoffs: [160, -40, -40, -40, -40],
+        value: {
+          contract,
+          team_points: 20,
+          made: true,
+          steps: [{ OverTen: { points: 20, total: 10 } }, { Doubled: { why: 'Alone', total: 20 } }, { Doubled: { why: 'Run', total: 40 } }],
+          value: 40,
+        },
+        tricks: [],
+        discards: [],
+      },
     },
     won: {
-      Done: { declarer: 0, contract, call: { Card: { Joker: 'Black' } }, friend: 3, team_points: 17, payoffs: [6, -2, -2, 2, -2], tricks: [], discards: [] },
+      Done: {
+        declarer: 0,
+        contract,
+        call: { Card: { Joker: 'Black' } },
+        friend: 3,
+        team_points: 17,
+        payoffs: [14, -7, -7, 7, -7],
+        value: { contract, team_points: 17, made: true, steps: [{ OverTen: { points: 17, total: 7 } }], value: 7 },
+        tricks: [],
+        discards: [],
+      },
     },
   };
   const legal: Record<string, StateMsg['legal']> = {
@@ -153,6 +181,22 @@
     won: [],
     run: [],
   };
+  /** What the server would say about the cards and contracts on offer. */
+  const notes = (key: string): StateMsg['notes'] => {
+    const plays = (legal[key] ?? []).flatMap((a) => (typeof a === 'object' && 'Play' in a ? [a.Play.card] : []));
+    const unplayable = plays.length
+      ? hand.filter((c) => !plays.includes(c)).map((card) => ({ card, why: { MustFollow: { Suit: 'Club' as const } } }))
+      : [];
+    // Spades 15 under these rules: another suit costs 2, 노기루다 counts one more.
+    const contracts = (legal[key] ?? []).flatMap((action): ContractChange[] =>
+      typeof action === 'object' && 'ChangeTrump' in action
+        ? [{ action, contract: { trump: action.ChangeTrump, count: action.ChangeTrump === null ? 16 : 17 } }]
+        : typeof action === 'object' && 'Raise' in action
+          ? [{ action, contract: action.Raise }]
+          : [],
+    );
+    return { unplayable, contracts };
+  };
   const msg = (phase: PhaseView, key: string, turn: StateMsg['turn']): StateMsg => ({
     view: {
       viewer: { Seat: 0 },
@@ -176,6 +220,7 @@
       redealt: null,
     },
     legal: legal[key] ?? [],
+    notes: notes(key),
     turn,
     out_of_turn: which === 'misdealnow' ? ['Misdeal'] : [],
     grace_ms: key === 'grace' ? 2000 : 0,
@@ -186,6 +231,8 @@
     id: 'preview',
     game: 'mighty',
     settings: { preset: 'gshs', preset_rules: rules },
+    rules,
+    customized: false,
     seats: [
       { kind: 'human', name: '재용', connected: true, away: false },
       { kind: 'bot', name: '콩떡', level: 'hard' },

@@ -4,7 +4,8 @@
   import Rulebook from './Rulebook.svelte';
   import RuleDiff from './RuleDiff.svelte';
   import { differences, otherDifferences } from './ruleFields';
-  import { loadCustom, presetRules, tableRules } from './rulesets';
+  import { isPreset, presetRules } from './catalog';
+  import { loadCustom } from './rulesets';
   import type { Rules } from './types';
 
   let {
@@ -25,16 +26,9 @@
     onclose: () => void;
   } = $props();
 
-  let fetched = $state<Rules | null>(null);
-  const base = $derived(pinned ?? fetched);
-  $effect(() => {
-    if (pinned) return;
-    presetRules(preset)
-      .then((r) => (fetched = r))
-      .catch(() => (fetched = null));
-  });
+  const base = $derived(pinned ?? (isPreset(preset) ? presetRules(preset) : null));
   /** What the table plays by: its own rules, or its pinned preset's. */
-  const effective = $derived(tableRules({ preset, rules: rules ?? undefined, preset_rules: pinned ?? undefined }));
+  const effective = $derived(rules ?? pinned ?? (isPreset(preset) ? presetRules(preset) : null));
   const name = $derived(PRESET_NAME[preset] ?? preset);
   const custom = $derived(rules && base && (differences(rules, base).length || otherDifferences(rules, base)) ? rules : null);
   let comparing = $state(false);

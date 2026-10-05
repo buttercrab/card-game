@@ -29,6 +29,8 @@
     id: 'preview',
     game: 'mighty',
     settings: { preset: 'gshs', preset_rules: presetRules('gshs') },
+    rules: presetRules('gshs'),
+    customized: false,
     seats: [
       { kind: 'human', name: '재용', connected: true, away: false },
       { kind: 'bot', name: '콩떡', level: 'hard' },

@@ -5,7 +5,9 @@ use crate::protocol::ServerError;
 use engine::{Bot, Game, Viewer};
 use mighty::Mighty;
 use mighty::bot::{Clumsy, tempered};
-use mighty::rules::{Preset, Rules};
+use mighty::card::Card;
+use mighty::explain::Refusal;
+use mighty::rules::{Contract, Preset, Rules};
 use mighty::search::SearchBot;
 use rand::RngCore;
 use serde::de::DeserializeOwned;
@@ -51,6 +53,20 @@ pub trait SessionGame:
 
     /// A finished hand in brief, for the session's story.
     type Summary: Clone + Serialize + DeserializeOwned + Send + 'static;
+
+    /// The rules a table plays by, as the room message carries them.
+    type TableRules: Clone + Serialize + Send + 'static;
+
+    /// The rules `settings` play by: the table's own, or its preset's.
+    fn table_rules(settings: &Self::Settings) -> Self::TableRules;
+
+    /// What a seat's table says beyond the view and the legal actions, so
+    /// the client never works out the rules itself (why a card can't be
+    /// played, say).
+    type Notes: Clone + Serialize + Send + 'static;
+
+    /// The notes for `seat`, given what it may do now.
+    fn notes(state: &Self::State, seat: Option<usize>, legal: &[Self::Action]) -> Self::Notes;
 
     /// The hand in brief, once it is over.
     fn summary(state: &Self::State) -> Option<Self::Summary>;
@@ -137,6 +153,27 @@ pub enum BotLevel {
     Hard,
 }
 
+/// What a Mighty table says beyond the view, on the seat's turn.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
+pub struct MightyNotes {
+    /// In play: each card in hand that may not be played, with why.
+    pub unplayable: Vec<Unplayable>,
+    /// In the exchange: the contract each trump change or raise sets.
+    pub contracts: Vec<ContractChange>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub struct Unplayable {
+    pub card: Card,
+    pub why: Refusal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ContractChange {
+    pub action: mighty::Action,
+    pub contract: Contract,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct MightySettings {
     pub preset: Preset,
@@ -179,6 +216,35 @@ impl Default for MightySettings {
 impl SessionGame for Mighty {
     type Settings = MightySettings;
     type Summary = mighty::HandSummary;
+    type TableRules = Rules;
+    type Notes = MightyNotes;
+
+    fn table_rules(settings: &MightySettings) -> Rules {
+        settings.rules()
+    }
+
+    fn notes(state: &mighty::State, seat: Option<usize>, legal: &[mighty::Action]) -> MightyNotes {
+        if seat.is_none() || legal.is_empty() {
+            return MightyNotes::default();
+        }
+        MightyNotes {
+            unplayable: state
+                .unplayable()
+                .into_iter()
+                .map(|(card, why)| Unplayable { card, why })
+                .collect(),
+            contracts: legal
+                .iter()
+                .filter_map(|action| {
+                    let contract = state.contract_after(action)?;
+                    Some(ContractChange {
+                        action: action.clone(),
+                        contract,
+                    })
+                })
+                .collect(),
+        }
+    }
 
     const NAME: &'static str = "mighty";
 
@@ -348,5 +414,62 @@ mod tests {
         // Both real and obvious choices come up in twenty hands.
         let follows = seen.iter().filter(|d| **d == Decision::Follow).count();
         assert!(follows > 0 && seen.contains(&Decision::Obvious));
+    }
+
+    /// On every turn the notes say what the table would otherwise work out
+    /// for itself: every card in hand is either played or explained, and
+    /// every contract change or raise says what it sets. Others get none.
+    #[test]
+    fn notes_explain_every_unplayable_card_and_contract_change() {
+        use mighty::Action;
+        let (mut explained, mut changes) = (0, 0);
+        for (seed, preset) in [Preset::Default, Preset::Gshs, Preset::Skku, Preset::Yonsei]
+            .into_iter()
+            .cycle()
+            .take(24)
+            .enumerate()
+        {
+            let settings = MightySettings::new(preset);
+            let mut state = Mighty::new_game(&Mighty::hand_options(&settings, 0, None, 0)).unwrap();
+            let mut rng = StdRng::seed_from_u64(seed as u64);
+            loop {
+                let action = match Mighty::turn(&state) {
+                    Turn::Over => break,
+                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                    Turn::Seat(seat) => {
+                        let legal = Mighty::legal_actions(&state);
+                        let notes = Mighty::notes(&state, Some(seat), &legal);
+                        let other = (seat + 1) % 5;
+                        assert_eq!(Mighty::notes(&state, Some(other), &[]), MightyNotes::default());
+                        let view = Mighty::view(&state, Viewer::Seat(seat));
+                        if let mighty::PhaseView::Play { .. } = view.phase {
+                            for card in &view.hand {
+                                let playable = legal
+                                    .iter()
+                                    .any(|a| matches!(a, Action::Play { card: c, .. } if c == card));
+                                let refused = notes.unplayable.iter().any(|u| u.card == *card);
+                                assert!(playable != refused, "{card} is either played or explained");
+                            }
+                            explained += notes.unplayable.len();
+                        }
+                        for a in &legal {
+                            let change = notes.contracts.iter().find(|c| c.action == *a);
+                            match a {
+                                Action::ChangeTrump(trump) => {
+                                    let c = change.expect("a trump change says what it sets");
+                                    assert_eq!(c.contract.trump, *trump);
+                                    changes += 1;
+                                }
+                                Action::Raise(contract) => assert_eq!(change.unwrap().contract, *contract),
+                                _ => assert!(change.is_none()),
+                            }
+                        }
+                        Mighty::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
+                    }
+                };
+                Mighty::apply(&mut state, action).unwrap();
+            }
+        }
+        assert!(explained > 0 && changes > 0, "{explained} {changes}");
     }
 }

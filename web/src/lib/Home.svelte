@@ -12,7 +12,7 @@
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import { PRESET_NAME } from './presets';
-  import { customName, loadCustom, setPending } from './rulesets';
+  import { customName, loadCustom } from './rulesets';
   import { responseError } from './errorText';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
@@ -61,14 +61,14 @@
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preset: practice ? 'default' : preset }),
+        // Rules of its own start with the table, checked by the server.
+        body: JSON.stringify({ preset: practice ? 'default' : preset, rules: practice ? undefined : chosen?.rules }),
       });
       if (!res.ok) {
         error = await responseError(res);
         return;
       }
       const id: string = (await res.json()).id;
-      if (!practice && chosen) setPending(id, chosen.base, chosen.rules);
       if (!practice) {
         try {
           localStorage.setItem('mighty.preset', choice);

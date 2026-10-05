@@ -117,8 +117,10 @@ fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
 type Msg<G> = ServerMsg<
     <G as SessionGame>::Settings,
     <G as SessionGame>::Summary,
+    <G as SessionGame>::TableRules,
     <G as engine::Game>::View,
     <G as engine::Game>::Action,
+    <G as SessionGame>::Notes,
 >;
 
 /// One line of JSON per move, so a hand can be replayed from the server log.
@@ -1372,6 +1374,8 @@ impl<G: SessionGame> Room<G> {
             id: self.id.clone(),
             game: G::NAME.to_string(),
             settings: self.settings.clone(),
+            rules: G::table_rules(&self.settings),
+            customized: G::customized(&self.settings),
             seats,
             scores: self.scores.clone(),
             hands_played: self.hands_played,
@@ -1419,8 +1423,10 @@ impl<G: SessionGame> Room<G> {
         let grace = legal.iter().map(|a| G::grace(game, a)).max().unwrap_or_default();
         let waited = self.dealt_at.map_or(grace, |t| t.elapsed());
         let grace_ms = grace.saturating_sub(waited).as_millis() as u64;
+        let notes = G::notes(game, seat, &legal);
         Some(ServerMsg::State(StateMsg {
             view: G::view(game, viewer),
+            notes,
             legal,
             turn,
             out_of_turn,

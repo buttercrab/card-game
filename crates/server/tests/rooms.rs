@@ -108,10 +108,19 @@ async fn one_player_and_four_bots_finish_a_hand() {
         let msg = next_where(&mut ws, "state", |_| true).await;
         let view = &msg["view"];
         if view["phase"].get("Done").is_some() {
-            let payoffs: Vec<i64> = serde_json::from_value(view["phase"]["Done"]["payoffs"].clone()).unwrap();
+            let done = &view["phase"]["Done"];
+            let payoffs: Vec<i64> = serde_json::from_value(done["payoffs"].clone()).unwrap();
             assert_eq!(payoffs.iter().sum::<i64>(), 0);
+            // The count the table shows comes with the hand.
+            let value = done["value"]["value"].as_i64().unwrap();
+            let declarer = done["declarer"].as_u64().unwrap() as usize;
+            let friend = done["friend"].as_u64().map(|f| f as usize);
+            let opponent = (0..5).find(|&s| s != declarer && Some(s) != friend).unwrap();
+            assert_eq!(payoffs[opponent], -value);
+            assert!(!done["value"]["steps"].as_array().unwrap().is_empty());
             break;
         }
+        assert!(msg["notes"]["unplayable"].is_array() && msg["notes"]["contracts"].is_array());
         let hand = view["hand"].as_array().unwrap();
         assert!(hand.len() <= 14, "a seat never holds more than a hand plus the kitty");
         if let Some(action) = msg["legal"].as_array().and_then(|l| l.first()) {
@@ -201,6 +210,75 @@ async fn cannot_start_with_empty_seats_or_act_out_of_turn() {
 
     send(&mut ws, json!({ "type": "act", "action": "Pass" })).await;
     assert_eq!(next(&mut ws, "error").await["code"], "no_hand");
+}
+
+/// A table can start on rules of its own, which must hold together; the
+/// room says what it plays by and that its players changed the preset.
+#[tokio::test]
+async fn a_table_starts_on_rules_of_its_own() {
+    let addr = spawn_server().await;
+    let (_, rules) = http(addr, "GET", "/api/presets/gshs", "").await;
+    let mut rules: Value = serde_json::from_str(&rules).unwrap();
+    rules["bidding"]["min"] = json!(15);
+    let body = json!({ "preset": "gshs", "rules": rules }).to_string();
+    let (status, body) = http(addr, "POST", "/api/rooms", &body).await;
+    assert_eq!(status, 200, "{body}");
+    let id = serde_json::from_str::<Value>(&body).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let mut ws = connect(addr, &id).await;
+    join(&mut ws, "A", None).await;
+    let room = next(&mut ws, "room").await;
+    assert_eq!(room["rules"]["bidding"]["min"], 15);
+    assert_eq!(room["settings"]["rules"]["bidding"]["min"], 15);
+    assert_eq!(room["customized"], true);
+
+    // The preset's own rules are no change at all.
+    let id = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &id).await;
+    join(&mut ws, "A", None).await;
+    let room = next(&mut ws, "room").await;
+    assert_eq!(
+        (&room["customized"], &room["rules"]["bidding"]["min"]),
+        (&json!(false), &json!(14))
+    );
+
+    rules["bidding"]["min"] = json!(30);
+    let body = json!({ "preset": "gshs", "rules": rules }).to_string();
+    let (status, body) = http(addr, "POST", "/api/rooms", &body).await;
+    assert_eq!(status, 400);
+    let error: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        (&error["code"], &error["rule"]),
+        (&json!("invalid_rules"), &json!("empty_bid_range"))
+    );
+    let (status, body) = http(addr, "POST", "/api/rooms", "{\"preset\": 3}").await;
+    assert_eq!(status, 400);
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["code"], "bad_message");
+}
+
+/// The rulebook's examples come from the engine's own scoring, for any
+/// rules a table could play.
+#[tokio::test]
+async fn the_rulebook_examples_are_scored_by_the_server() {
+    let addr = spawn_server().await;
+    let (_, rules) = http(addr, "GET", "/api/presets/default", "").await;
+    let (status, body) = http(addr, "POST", "/api/rules/examples", &rules).await;
+    assert_eq!(status, 200, "{body}");
+    let examples: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(examples["contract"]["count"], 15);
+    assert_eq!(examples["made"]["value"]["team_points"], 17);
+    let made = examples["made"]["value"]["value"].as_i64().unwrap();
+    assert!(made > 0);
+    assert_eq!(examples["made"]["payoffs"][4], -made);
+    assert!(examples["failed"]["value"]["value"].as_i64().unwrap() < 0);
+
+    let mut rules: Value = serde_json::from_str(&rules).unwrap();
+    rules["friend"] = json!({ "by_card": false, "by_seat": false, "first_trick": false, "last_trick": false, "fake": false, "alone": false });
+    let (status, body) = http(addr, "POST", "/api/rules/examples", &rules.to_string()).await;
+    assert_eq!(status, 400);
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["rule"], "no_friend_rule");
 }
 
 /// The room says which protocol it speaks, as the client's build records

@@ -4,12 +4,12 @@
 //! server's own definitions.
 
 use crate::room::TableSettings;
-use crate::session::{BotLevel, MightySettings};
+use crate::session::{BotLevel, MightyNotes, MightySettings};
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use engine::Turn;
-use mighty::rules::InvalidRules;
+use mighty::rules::{InvalidRules, Preset, Rules};
 use mighty::{Action, HandSummary, View};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -127,7 +127,7 @@ impl ServerError {
 
     /// The error as sent on a table's connection.
     pub fn message(&self) -> String {
-        let message = ServerMsg::<(), (), (), ()>::Error(self.clone());
+        let message = ServerMsg::<(), (), (), (), (), ()>::Error(self.clone());
         serde_json::to_string(&message).expect("errors serialize")
     }
 
@@ -163,6 +163,25 @@ impl std::fmt::Display for ServerError {
     }
 }
 
+/// `POST /api/rooms`: a new table, on a preset (기본 by default) or on
+/// rules of its own, which must hold together.
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+pub struct CreateRoom {
+    #[serde(default)]
+    #[ts(optional)]
+    pub preset: Option<Preset>,
+    /// The table's own rules, changed from the preset's.
+    #[serde(default)]
+    #[ts(optional)]
+    pub rules: Option<Rules>,
+}
+
+/// The answer to [`CreateRoom`]: the table's id, which is its link.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct CreatedRoom {
+    pub id: String,
+}
+
 /// Who sits in a seat, as everyone at the table sees it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -194,8 +213,8 @@ pub struct ClockInfo {
 /// The table: who sits where, the scores and the table's settings. Sent to
 /// everyone after every change.
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(concrete(S = MightySettings, H = HandSummary))]
-pub struct RoomMsg<S, H> {
+#[ts(concrete(S = MightySettings, H = HandSummary, R = Rules))]
+pub struct RoomMsg<S, H, R> {
     /// The server's [`version`] of the protocol.
     pub protocol: String,
     pub id: String,
@@ -203,6 +222,10 @@ pub struct RoomMsg<S, H> {
     /// The preset, the table's own rules if its players changed them, and
     /// the preset's rules as pinned when the table chose it.
     pub settings: S,
+    /// The rules the table plays by.
+    pub rules: R,
+    /// Whether its players changed the preset's rules.
+    pub customized: bool,
     pub seats: Vec<SeatInfo>,
     pub scores: Vec<i64>,
     pub hands_played: u32,
@@ -222,8 +245,8 @@ pub struct RoomMsg<S, H> {
 
 /// The hand as one seat (or a spectator) may see it.
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(concrete(V = View, A = Action))]
-pub struct StateMsg<V, A> {
+#[ts(concrete(V = View, A = Action, N = MightyNotes))]
+pub struct StateMsg<V, A, N> {
     pub view: V,
     /// What the seat may do, on its turn.
     pub legal: Vec<A>,
@@ -237,6 +260,9 @@ pub struct StateMsg<V, A> {
     /// Which state of the hand this is; a hint carries the version it was
     /// asked for, so one for an older state is dropped.
     pub version: u64,
+    /// What the table needs told on the seat's turn: why a card can't be
+    /// played, what each contract change sets.
+    pub notes: N,
 }
 
 /// How the seats moved between hands. Sent before the seats change, so a
@@ -253,10 +279,10 @@ pub enum SeatsMoved {
 /// Everything the server sends on a table's connection.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[ts(concrete(S = MightySettings, H = HandSummary, V = View, A = Action))]
-pub enum ServerMsg<S, H, V, A> {
-    Room(RoomMsg<S, H>),
-    State(StateMsg<V, A>),
+#[ts(concrete(S = MightySettings, H = HandSummary, R = Rules, V = View, A = Action, N = MightyNotes))]
+pub enum ServerMsg<S, H, R, V, A, N> {
+    Room(RoomMsg<S, H, R>),
+    State(StateMsg<V, A, N>),
     /// This connection sits at `seat`; `token` reclaims it after a reconnect.
     Welcome {
         seat: usize,

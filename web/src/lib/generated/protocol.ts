@@ -144,7 +144,29 @@ export type Contract = {
  */
 trump: Suit | null, count: number, };
 
+export type ContractChange = { action: Action, contract: Contract, };
+
+/**
+ * `POST /api/rooms`: a new table, on a preset (기본 by default) or on
+ * rules of its own, which must hold together.
+ */
+export type CreateRoom = { preset?: Preset, 
+/**
+ * The table's own rules, changed from the preset's.
+ */
+rules?: Rules, };
+
+/**
+ * The answer to [`CreateRoom`]: the table's id, which is its link.
+ */
+export type CreatedRoom = { id: string, };
+
 export type DeckKind = "OneJoker" | "TwoJokers";
+
+/**
+ * Why a score doubles.
+ */
+export type Double = "NoTrump" | "Alone" | "Run" | "FullContract";
 
 export type Doubling = "Never" | "Win" | "Always";
 
@@ -153,6 +175,26 @@ export type Doubling = "Never" | "Win" | "Always";
  * Korean, and the compiler makes it word every one.
  */
 export type ErrorCode = "not_seated" | "already_seated" | "name_required" | "table_full" | "seat_taken" | "no_such_seat" | "no_player_in_seat" | "no_bot_in_seat" | "nobody_to_move" | "leave_own_seat" | "seats_between_hands" | "rules_between_hands" | "bots_stay_in_hand" | "hand_in_progress" | "empty_seats" | "no_hand" | "not_your_turn" | "illegal_action" | "wait_after_deal" | "no_such_turn_limit" | "invalid_rules" | "player_count_fixed" | "unknown_reaction" | "hints_busy" | "hints_too_often" | "bad_message" | "rate_limited" | "too_many_tables" | "unknown_preset" | "empty_report" | "too_many_reports";
+
+/**
+ * A hand scored for the rulebook: its count, and what each seat gets.
+ */
+export type Example = { value: HandValue, 
+/**
+ * Seat 0 declared; with a friend, seat 1 is the friend.
+ */
+payoffs: Array<number>, };
+
+/**
+ * The rulebook's worked examples under `rules`: a contract one over the
+ * minimum, in spades, made by two points and missed by two. The declarer
+ * plays with a friend where the rules have a way to call one.
+ */
+export type Examples = { contract: Contract, 
+/**
+ * Played alone (no way to call a friend).
+ */
+alone: boolean, made: Example, failed: Example, };
 
 export type FriendCall = { "Card": Card } | { "Seat": number } | "FirstTrick" | "LastTrick" | "Alone";
 
@@ -200,6 +242,31 @@ rounds: Array<number>,
  * called by seat, who is known from the start.
  */
 friend_revealed: number | null, };
+
+/**
+ * A hand's score worked out: what one opponent pays the declarer's side,
+ * and how.
+ */
+export type HandValue = { contract: Contract, 
+/**
+ * Points the declarer's side counts, discards included.
+ */
+team_points: number, made: boolean, 
+/**
+ * Each step in order. A made contract starts from its worth, a failed
+ * one from its shortfall; doublings follow.
+ */
+steps: Array<ScoreStep>, 
+/**
+ * What one opponent pays the declarer's side; negative when the side
+ * pays instead.
+ */
+value: number, };
+
+/**
+ * What kind of card the rules hold back.
+ */
+export type Held = "Mighty" | "Joker" | "Trump" | "Card";
 
 /**
  * Why [`Rules::validate`] refuses a set of rules. The web client words
@@ -252,6 +319,19 @@ export type Lead = { "Suit": Suit } | { "Color": Color };
  * contract − points taken.
  */
 export type LoseScore = "Shortfall" | { "PaysBack": number };
+
+/**
+ * What a Mighty table says beyond the view, on the seat's turn.
+ */
+export type MightyNotes = { 
+/**
+ * In play: each card in hand that may not be played, with why.
+ */
+unplayable: Array<Unplayable>, 
+/**
+ * In the exchange: the contract each trump change or raise sets.
+ */
+contracts: Array<ContractChange>, };
 
 export type MightySettings = { preset: Preset, 
 /**
@@ -334,7 +414,11 @@ tricks: Array<Trick>,
 /**
  * Only the declarer sees these.
  */
-discards: Array<Card> | null, } } | { "Done": { declarer: number, contract: Contract, call: FriendCall, friend: number | null, team_points: number, payoffs: Array<number>, tricks: Array<Trick>, 
+discards: Array<Card> | null, } } | { "Done": { declarer: number, contract: Contract, call: FriendCall, friend: number | null, team_points: number, payoffs: Array<number>, 
+/**
+ * How the hand was scored, step by step: what one opponent pays.
+ */
+value: HandValue, tricks: Array<Trick>, 
 /**
  * Shown to everyone once the hand is over.
  */
@@ -378,6 +462,11 @@ export type Redeal = { "Misdeal": { seat: number, hand: Array<Card>, } } | "AllP
 export type Redealt = { why: Redeal, count: number, };
 
 /**
+ * Why a card in hand may not be played now.
+ */
+export type Refusal = "CalledJoker" | { "MustFollow": Lead } | "JokerFirstLead" | { "HeldBack": { card: Held, trick: TrickWhen, leading: boolean, } };
+
+/**
  * The table: who sits where, the scores and the table's settings. Sent to
  * everyone after every change.
  */
@@ -390,7 +479,15 @@ protocol: string, id: string, game: string,
  * The preset, the table's own rules if its players changed them, and
  * the preset's rules as pinned when the table chose it.
  */
-settings: MightySettings, seats: Array<SeatInfo>, scores: Array<number>, hands_played: number, in_hand: boolean, 
+settings: MightySettings, 
+/**
+ * The rules the table plays by.
+ */
+rules: Rules, 
+/**
+ * Whether its players changed the preset's rules.
+ */
+customized: boolean, seats: Array<SeatInfo>, scores: Array<number>, hands_played: number, in_hand: boolean, 
 /**
  * Each finished hand's payoffs, in order.
  */
@@ -431,6 +528,13 @@ reveal_discards: boolean,
  * Who opens the bidding next hand.
  */
 next_dealer: NextDealer, };
+
+/**
+ * One step of a hand's score. `total` is the amount so far: what the
+ * declarer's side wins when made, what it owes (as a positive number)
+ * when failed.
+ */
+export type ScoreStep = { "OverTen": { points: number, total: number, } } | { "OverMin": { points: number, min: number, total: number, } } | { "OverBid": { points: number, contract: number, total: number, } } | { "BidBonus": { points: number, contract: number, bonus: number, total: number, } } | { "BothOver": { points: number, contract: number, n: number, total: number, } } | { "Short": { contract: number, short: number, total: number, } } | { "PaysBack": { contract: number, n: number, short: number, total: number, } } | { "BackRun": { rule: BackRun, total: number, } } | { "Doubled": { why: Double, total: number, } };
 
 /**
  * How a finished hand is scored. Groups differ more here than anywhere
@@ -529,7 +633,12 @@ grace_ms: number,
  * Which state of the hand this is; a hint carries the version it was
  * asked for, so one for an older state is dropped.
  */
-version: number, };
+version: number, 
+/**
+ * What the table needs told on the seat's turn: why a card can't be
+ * played, what each contract change sets.
+ */
+notes: MightyNotes, };
 
 export type Suit = "Spade" | "Diamond" | "Heart" | "Club";
 
@@ -564,9 +673,16 @@ export type Trick = { plays: Array<Played>, lead: Lead, winner: number, };
 export type TrickPolicy = { first: CardPolicy, last: CardPolicy, };
 
 /**
+ * The tricks the rules single out.
+ */
+export type TrickWhen = "First" | "Last";
+
+/**
  * Who must act next.
  */
 export type Turn = "Chance" | { "Seat": number } | "Over";
+
+export type Unplayable = { card: Card, why: Refusal, };
 
 /**
  * Everything one viewer may know. Other hands, the kitty and (for anyone

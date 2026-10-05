@@ -23,9 +23,9 @@ use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use limit::{ClientIp, Limits, too_many};
 use mighty::Mighty;
-use mighty::rules::Preset;
+use mighty::rules::{Preset, Rules};
 use protocol::ClientMsg;
-use protocol::{ErrorCode, ServerError};
+use protocol::{CreateRoom, CreatedRoom, ErrorCode, ServerError};
 use rand::Rng;
 use room::{Command, ConnId, Room};
 use serde::Deserialize;
@@ -348,7 +348,11 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .route("/version", get(version))
         .route("/api/presets", get(presets))
         .route("/api/presets/{id}", get(preset_rules))
-        .route("/api/rooms", post(create_room).layer(DefaultBodyLimit::max(4 * 1024)))
+        .route("/api/rooms", post(create_room).layer(DefaultBodyLimit::max(16 * 1024)))
+        .route(
+            "/api/rules/examples",
+            post(rule_examples).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
         .route("/api/reports", post(report).layer(DefaultBodyLimit::max(REPORT_BODY)))
@@ -413,6 +417,19 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// The rulebook's worked examples (see [`mighty::score::Examples`]) under
+/// the rules in the body, which may be any a table could play.
+async fn rule_examples(body: axum::body::Bytes) -> Response {
+    let rules: Rules = match serde_json::from_slice(&body) {
+        Ok(rules) => rules,
+        Err(e) => return ServerError::with_detail(ErrorCode::BadMessage, e).respond(StatusCode::BAD_REQUEST),
+    };
+    if let Err(e) = rules.validate() {
+        return ServerError::rules(e).respond(StatusCode::BAD_REQUEST);
+    }
+    Json(mighty::score::Examples::new(&rules)).into_response()
+}
+
 /// The full rules of a preset, for the rulebook.
 async fn preset_rules(Path(id): Path<String>) -> Response {
     match id.parse::<Preset>() {
@@ -421,19 +438,32 @@ async fn preset_rules(Path(id): Path<String>) -> Response {
     }
 }
 
-#[derive(Deserialize, Default)]
-struct CreateRoom {
-    #[serde(default)]
-    preset: Option<Preset>,
+/// A JSON body, or what was wrong with it as a [`ServerError`]. An empty
+/// body is the type's default.
+fn parse_body<T: serde::de::DeserializeOwned + Default>(body: &[u8]) -> Result<T, ServerError> {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return Ok(T::default());
+    }
+    serde_json::from_slice(body).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))
 }
 
-async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: Option<Json<CreateRoom>>) -> Response {
+async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: axum::body::Bytes) -> Response {
     if !app.limits.tables.allow(ip) {
         return too_many();
     }
-    let preset = body.and_then(|Json(b)| b.preset).unwrap_or(Preset::Gshs);
-    match app.create_room::<Mighty>(MightySettings::new(preset)) {
-        Some(id) => Json(json!({ "id": id })).into_response(),
+    let request: CreateRoom = match parse_body(&body) {
+        Ok(request) => request,
+        Err(e) => return e.respond(StatusCode::BAD_REQUEST),
+    };
+    let mut settings = MightySettings::new(request.preset.unwrap_or(catalog::DEFAULT_PRESET));
+    Mighty::freeze(&mut settings);
+    // Rules no different from the preset's are the preset's.
+    settings.rules = request.rules.filter(|r| Some(r) != settings.preset_rules.as_ref());
+    if let Err(e) = Mighty::validate(&settings) {
+        return e.respond(StatusCode::BAD_REQUEST);
+    }
+    match app.create_room::<Mighty>(settings) {
+        Some(id) => Json(CreatedRoom { id }).into_response(),
         None => {
             tracing::warn!(max = app.max_rooms, "refused a table: too many are open");
             ServerError::new(ErrorCode::TooManyTables).respond(StatusCode::SERVICE_UNAVAILABLE)

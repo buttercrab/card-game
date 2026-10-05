@@ -1,5 +1,5 @@
 use crate::card::{Card, Color, Suit};
-use crate::rules::{BackRun, CardPolicy, Contract, InvalidRules, LoseScore, Rules, WinScore};
+use crate::rules::{CardPolicy, Contract, InvalidRules, Rules, WinScore};
 use crate::trick::{self, Lead, Played, Trick, TrickContext};
 use engine::{Seat, Turn};
 use rand::RngCore;
@@ -355,6 +355,26 @@ impl State {
     /// The rules this hand is played by.
     pub fn rules(&self) -> &Rules {
         &self.rules
+    }
+
+    /// The contract the declarer would play after `action` in the
+    /// exchange: a trump change at its cost, or a raise. None for any
+    /// other action, or outside the exchange.
+    pub fn contract_after(&self, action: &Action) -> Option<Contract> {
+        let Phase::Exchange(e) = &self.phase else { return None };
+        match *action {
+            Action::ChangeTrump(trump) => Some(self.changed_contract(e.contract, trump)),
+            Action::Raise(contract) => Some(contract),
+            _ => None,
+        }
+    }
+
+    /// Why each card in the hand of the seat to play may not be played
+    /// now (see [`crate::explain`]); empty outside play.
+    pub fn unplayable(&self) -> Vec<(Card, crate::explain::Refusal)> {
+        let Phase::Play(p) = &self.phase else { return Vec::new() };
+        let seat = (p.leader + p.plays.len()) % self.seats();
+        crate::explain::refusals(&self.rules, &self.hands[seat], p.trick(), |j| self.joker_gone(j))
     }
 
     /// Whether the bidding is on and nobody has bid yet (passes aside).
@@ -992,45 +1012,9 @@ pub(crate) fn powered(rules: &Rules, t: TrickState, card: Card) -> bool {
 
 /// What one opponent pays the declarer's side (negative: receives) when
 /// the side took `team_points`. Shared by the game and by
-/// [`crate::endgame`].
+/// [`crate::endgame`]; see [`crate::score`].
 pub(crate) fn hand_value(rules: &Rules, contract: Contract, alone: bool, team_points: u8) -> i64 {
-    let s = &rules.scoring;
-    let (count, points) = (i64::from(contract.count), i64::from(team_points));
-    let min = i64::from(rules.bidding.min);
-    let made = points >= count;
-    let base = if made {
-        match s.win {
-            WinScore::OverTen => (points - 10).max(1),
-            WinScore::OverMin => points - min,
-            WinScore::OverBid => points - count,
-            // A bid under the minimum (the dealer's last chance) earns no bonus,
-            // never a penalty: a made contract never costs the declarer.
-            WinScore::BidBonus => points - count + 2 * (i64::from(rules.bid_value(contract)) - min).max(0),
-            WinScore::BothOver(n) => (points - i64::from(n) + count - i64::from(n)).max(1),
-        }
-    } else {
-        let short = count - points;
-        let back_run = match s.back_run {
-            BackRun::Never => false,
-            BackRun::TeamAtMost(n) => points <= i64::from(n),
-            BackRun::ShortBy(n) => short >= i64::from(n),
-            // Every point the side did not take went to the defence.
-            BackRun::DefenceReachesBid => 20 - points >= count,
-        };
-        let owed = match s.lose {
-            LoseScore::Shortfall => short,
-            // Validated to be at most the lowest contract: never a gain.
-            LoseScore::PaysBack(n) => count - i64::from(n) + short,
-        };
-        -owed * if back_run { 2 } else { 1 }
-    };
-    let doubles = [
-        s.no_trump.applies(made) && contract.trump.is_none(),
-        s.alone.applies(made) && alone,
-        s.run && made && points == 20,
-        s.full_contract.applies(made) && count == 20,
-    ];
-    base * 2_i64.pow(doubles.iter().filter(|d| **d).count() as u32)
+    crate::score::value(rules, contract, alone, team_points)
 }
 
 /// The points the declarer's side counts from its discards: their point
@@ -1055,7 +1039,7 @@ pub(crate) fn payoff_rises_with_points(rules: &Rules, contract: Contract, alone:
 }
 
 /// Every seat's payoff when the declarer's side ends with `team_points`.
-pub(crate) fn settle(
+pub fn settle(
     rules: &Rules,
     declarer: Seat,
     friend: Option<Seat>,
@@ -1090,7 +1074,7 @@ fn joker_color(card: Card) -> Option<Color> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{Doubling, Scoring};
+    use crate::rules::{BackRun, Doubling, LoseScore, Scoring};
 
     fn state(rules: Rules) -> State {
         State::new(&Options { rules, first_bidder: 0 }).unwrap()
@@ -1409,9 +1393,9 @@ mod tests {
         assert_eq!(d.tricks[0].winner, 0);
     }
 
-    /// Hands scored by [`settle`], for the web client's copies of the
-    /// scoring (`web/src/lib/scoring.ts`) to check themselves against:
-    /// every preset and a few drawn rule sets, each over contracts above and
+    /// Hands scored by [`settle`], with their breakdowns, for the web
+    /// client's wording of the count (`web/src/lib/ledger.ts`) to check
+    /// itself against: every preset and a few drawn rule sets, each over contracts above and
     /// below the minimum, with and without a friend, failed, made and run.
     fn payoff_fixture() -> serde_json::Value {
         use crate::rules::Preset;
@@ -1457,6 +1441,7 @@ mod tests {
                                 "call": call,
                                 "team_points": team_points,
                                 "value": hand_value(&rules, contract, alone, team_points),
+                                "breakdown": crate::score::breakdown(&rules, contract, alone, team_points),
                                 "payoffs": settle(&rules, 0, friend, contract, call, team_points),
                             }));
                         }

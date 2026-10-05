@@ -4,11 +4,12 @@
   import Card from './Card.svelte';
   import { cardLabel, contractLabel, friendCallLabel, mightyCard, sameCard, sealOf, SUITS, trumpLabel } from './cards';
   import { scrollFade } from './scrollFade';
-  import type { Action, Card as CardT, Contract, FriendCall, Rules, Suit } from './types';
+  import type { Action, Card as CardT, Contract, ContractChange, FriendCall, Rules, Suit } from './types';
 
   let {
     legal,
     contract,
+    contracts,
     rules,
     toDiscard,
     chosen,
@@ -19,6 +20,8 @@
   }: {
     legal: Action[];
     contract: Contract;
+    /** What each trump change or raise sets, as the server works it out. */
+    contracts: ContractChange[];
     rules: Rules;
     toDiscard: number;
     chosen: number;
@@ -80,13 +83,11 @@
     chosenCall !== null && typeof chosenCall === 'object' && 'Card' in chosenCall && isMine(chosenCall.Card),
   );
 
-  /** The contract's number after the least change to `t`, as
-   * Rules::changed_contract works it out. */
+  /** The contract's number after the least change to `t`, as the server
+   * says it would be. */
   function changedCount(t: Suit | null): number {
-    const toNoTrump = rules.bidding.change_to_no_trump_cost;
-    if (t === null && toNoTrump != null) return contract.count + toNoTrump;
-    const bonus = (x: Suit | null) => (x === null ? rules.bidding.no_trump_bonus : 0);
-    return Math.max(0, contract.count + rules.bidding.change_trump_cost + bonus(contract.trump) - bonus(t));
+    const change = contracts.find((c) => typeof c.action === 'object' && 'ChangeTrump' in c.action && c.action.ChangeTrump === t);
+    return change?.contract.count ?? contract.count;
   }
 
   // Where the contract may also be raised (공약 올리기), a trump chip picks

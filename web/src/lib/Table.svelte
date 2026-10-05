@@ -26,8 +26,7 @@
   import { loadStats, recordHand } from './stats';
   import { sound } from './sound';
   import { CATALOG, presetRules } from './catalog';
-  import { tableRules } from './rulesets';
-  import { ledger } from './scoring';
+  import { ledgerLines, refusalText } from './ledger';
   import type { Action, Card as CardT, FriendCall, Lead, PhaseView, Played, PlayAction, Rules, StateMsg, Suit, Trick } from './types';
 
   let {
@@ -58,7 +57,7 @@
     return {
       view: {
         viewer: client.seat === null ? 'Spectator' : { Seat: client.seat },
-        rules: room ? tableRules(room.settings) : presetRules(CATALOG.default_preset),
+        rules: room ? room.rules : presetRules(CATALOG.default_preset),
         first_bidder: 0,
         hand: [],
         hand_sizes: Array.from({ length: n }, () => 0),
@@ -68,6 +67,7 @@
         redealt: null,
       },
       legal: [],
+      notes: { unplayable: [], contracts: [] },
       turn: 'Over',
       out_of_turn: [],
       grace_ms: 0,
@@ -235,9 +235,18 @@
   // ---- Result ledger -----------------------------------------------------------
   // The result is counted out step by step, as 맞고 and mahjong results are:
   // the points, over or short, each ×2, then everyone's payoff.
-  // The count as the rules score it (scoring.ts): what one opponent pays,
-  // then each doubling on its own line.
-  const result = $derived(done ? ledger(view.rules, done) : null);
+  // The count as the server scored it: what one opponent pays, then each
+  // doubling on its own line.
+  const result = $derived(
+    done
+      ? {
+          made: done.value.made,
+          lines: ledgerLines(done.value),
+          run: done.team_points === 20,
+          margin: done.team_points - done.contract.count,
+        }
+      : null,
+  );
 
   /** Results already counted out, so a reopened one shows at once. */
   const counted = new Set<string>();
@@ -455,28 +464,10 @@
       : [],
   );
 
-  /** Why a tapped card cannot be played, in a few words. */
+  /** Why a tapped card cannot be played, as the server explains it. */
   function refuse(card: CardT) {
-    const reason = (() => {
-      if (play && 'Joker' in card && play.trick_no === 0 && play.plays.length === 0 && view.rules.joker_lead.not_first_trick) {
-        return '첫 라운드엔 조커로 선을 낼 수 없어요';
-      }
-      if (!play || 'Joker' in card) return '지금은 낼 수 없는 카드예요';
-      if (play.called_joker && view.hand.some((c) => 'Joker' in c)) return '조커콜 · 조커를 내야 해요';
-      const trump = play.contract.trump;
-      const suit = card.Normal[0];
-      const black = (s: Suit) => s === 'Spade' || s === 'Club';
-      const lead = play.lead;
-      if (lead && play.plays.length > 0) {
-        const follows = (c: CardT) =>
-          'Normal' in c && ('Suit' in lead ? c.Normal[0] === lead.Suit : black(c.Normal[0]) === (lead.Color === 'Black'));
-        if (view.hand.some(follows)) {
-          return 'Suit' in lead ? `${leadLabel(lead)}를 따라 내야 해요` : `${leadLabel(lead)} 카드를 내야 해요`;
-        }
-      }
-      if (suit === trump && trickNo === 1) return play.plays.length === 0 ? '첫 라운드엔 기루다로 선을 낼 수 없어요' : '첫 라운드엔 기루다를 낼 수 없어요';
-      return '지금은 낼 수 없는 카드예요';
-    })();
+    const why = live.notes.unplayable.find((u) => sameCard(u.card, card))?.why;
+    const reason = why ? refusalText(why) : '지금은 낼 수 없는 카드예요';
     // Said where the turn is said, in place of the caption or the pill, so
     // it never lands on the hand or on the line it replaces.
     if (controls) return client.notice(reason);
@@ -1710,6 +1701,7 @@
             <ExchangePanel
               {legal}
               contract={exchange.contract}
+              contracts={live.notes.contracts}
               rules={view.rules}
               {toDiscard}
               chosen={chosen.length}

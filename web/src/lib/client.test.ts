@@ -89,6 +89,7 @@ function state(version: number): { type: 'state' } & StateMsg {
     type: 'state',
     view: {} as StateMsg['view'],
     legal: [],
+    notes: { unplayable: [], contracts: [] },
     turn: 'Over',
     out_of_turn: [],
     grace_ms: 0,
