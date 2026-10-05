@@ -38,6 +38,8 @@ pub enum Kind {
     /// leaked, as its network is, to keep specs small and `Copy`.
     #[cfg(feature = "dmc")]
     Hybrid(&'static mighty::hybrid::HybridBot),
+    /// One bot per phase of the hand (`phased:BID+EXCHANGE+PLAY`).
+    Phased(&'static crate::phased::Phased),
 }
 
 pub use mighty::bot::{EASY_SLIPS, TEMPER};
@@ -46,6 +48,11 @@ impl FromStr for Spec {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Spec, String> {
+        if let Some(rest) = s.strip_prefix("phased:") {
+            let phased = crate::phased::Phased::parse(rest)?;
+            let kind = Kind::Phased(Box::leak(Box::new(phased)));
+            return Ok(Spec { kind, temper: false });
+        }
         let (name, settings) = s.split_once('@').unwrap_or((s, ""));
         if let Some(rest) = name.strip_prefix("belief:") {
             return belief(rest, settings);
@@ -343,6 +350,7 @@ impl Spec {
                 },
                 ..*bot
             }),
+            Kind::Phased(phased) => Box::new(phased.build(seat)),
         }
     }
 
@@ -358,6 +366,7 @@ impl Spec {
             // Its search deals a fixed number of worlds, on no clock.
             #[cfg(feature = "dmc")]
             Kind::Hybrid(_) => true,
+            Kind::Phased(phased) => phased.reproducible(),
         }
     }
 }
