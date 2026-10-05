@@ -152,6 +152,8 @@ async fn leaving_mid_hand_is_counted() {
     // Leaving between hands is not leaving a hand.
     let mut other = connect(addr, &room).await;
     join(&mut other, "B").await;
+    // Seat 1 is empty before B sits too, so wait for B first.
+    next_where(&mut ws, "room", |r| r["seats"][1]["kind"] == "human").await;
     send(&mut other, json!({ "type": "leave" })).await;
     next_where(&mut ws, "room", |r| r["seats"][1]["kind"] == "empty").await;
     for bot in 1..5 {
@@ -159,13 +161,11 @@ async fn leaving_mid_hand_is_counted() {
     }
     send(&mut ws, json!({ "type": "start" })).await;
     next(&mut ws, "state").await;
-    // Counted from here, so other tables in this process don't matter.
-    let before = stats.summary(server::stats::now()).totals.left_mid_hand;
     send(&mut ws, json!({ "type": "leave" })).await;
     let mut watcher = connect(addr, &room).await;
     next_where(&mut watcher, "room", |r| r["seats"][0]["kind"] == "bot").await;
     let s = stats.summary(server::stats::now());
-    assert_eq!(s.totals.left_mid_hand, before + 1);
+    assert_eq!(s.totals.left_mid_hand, 1);
 }
 
 /// A stand-in for the bot worker that speaks the link by hand.
