@@ -9,16 +9,17 @@ Every ``refresh_every`` steps it publishes its weights to shared memory,
 from which the actors reload. No search, no bootstrapping: the target is
 the hand's real outcome.
 
-A run writes into its directory: ``config.json`` (the config, the spec,
-the parameter count, and its ``sessions``: each one's commit, config
-hash and seed, see ``train.sessions``), ``log.jsonl`` (throughput, losses by phase of the
-hand, the learning curve), ``checkpoint.pt`` (to resume from, every
-``checkpoint_minutes``), ``snapshots/hands-<n>.pt`` (the weights at each
-point of the learning curve) and at the end ``model.pt`` and
-``metrics.json``. Stopped and started again, it resumes from the
-checkpoint (weights, optimiser, counts; the buffer refills) with fresh
-actor seeds, provided its config is the one the run started with
-(``budget`` aside); a changed config is refused unless the caller
+A run writes into its directory (``runs.RunDir``): ``config.json`` (its
+kind, the config, the spec, the parameter count, and its ``sessions``:
+each one's commit, config hash and seed, see ``train.sessions``),
+``log.jsonl`` (throughput, losses by phase of the hand, the learning
+curve), ``checkpoint.pt`` (to resume from, every ``checkpoint_minutes``),
+``snapshots/hands-<n>.pt`` (the weights at each point of the learning
+curve) and at the end ``model.pt`` and ``metrics.json``. Stopped and
+started again, it resumes from the checkpoint (weights, optimiser,
+counts; the buffer refills) with fresh actor seeds, provided its config
+is the one the run started with (``budget`` aside) and its network reads
+this build's encoding; a changed config is refused unless the caller
 accepts it (``allow_config_change``), and the session records the change.
 
 Every iteration the learner checks that each actor is alive: an actor
@@ -33,34 +34,44 @@ its budget and passing for finished.
 # pyright: reportUnknownMemberType=false
 
 import dataclasses
-import json
+import multiprocessing.queues
 import queue
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from multiprocessing.context import SpawnProcess
+from multiprocessing.synchronize import Lock
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import torch
 from cardgame_env import Env
+from numpy.typing import NDArray
 
+from cardgame_ml.data.shards import Batch
 from cardgame_ml.data.spec import EncodingSpec
-from cardgame_ml.models.config import QConfig
+from cardgame_ml.manifest import Session
+from cardgame_ml.models.inputs import observation, to_tensors
+from cardgame_ml.models.io import check_encoding
 from cardgame_ml.models.q import QModel
-from cardgame_ml.train.belief import device_for
-from cardgame_ml.train.config import from_mapping
+from cardgame_ml.runs import Described, ModelKind, RunDir
+from cardgame_ml.runtime import Log, device_for
 from cardgame_ml.train.dmc import actor, curve
-from cardgame_ml.train.dmc.buffer import Batch, ReplayBuffer
+from cardgame_ml.train.dmc.buffer import ReplayBuffer
 from cardgame_ml.train.dmc.config import DmcConfig, curve_deals
+from cardgame_ml.train.dmc.policy import bid_mask
 from cardgame_ml.train.dmc.system import gpu_utilisation, load_average
-from cardgame_ml.train.metrics import PHASES, phases
-from cardgame_ml.train.sessions import check_resume, recorded_sessions, session, write_json
+from cardgame_ml.train.metrics import PHASES, phase_columns, phases
+from cardgame_ml.train.sessions import check_resume, session
 
-type Log = Callable[[dict[str, Any]], None]
+if TYPE_CHECKING:
+    from multiprocessing.sharedctypes import Synchronized
 
 type ActorMain = Callable[..., None]
 """An actor process's entry point (``actor.run``; tests substitute one)."""
+
+type Reports = multiprocessing.queues.Queue[actor.Report | actor.Failure]
 
 
 class ActorError(RuntimeError):
@@ -93,7 +104,7 @@ class PhaseLoss:
         self.device = device
         self.sums = torch.zeros(len(self.NAMES), 4, device=device)
 
-    def add(self, phase: np.ndarray[Any, Any], error: torch.Tensor, target: torch.Tensor) -> None:
+    def add(self, phase: NDArray[np.int64], error: torch.Tensor, target: torch.Tensor) -> None:
         index = torch.as_tensor(np.where(phase < 0, len(PHASES), phase), device=self.device)
         rows = torch.stack(
             (torch.ones_like(target), error.square(), target, target.square()), dim=1
@@ -126,16 +137,9 @@ def _step(
     """One AdamW step on the squared error of ``Q(observation, action
     taken)`` against the return; the batch's errors go to ``losses``."""
     device = losses.device
-    inputs = (
-        torch.as_tensor(batch["global"], device=device),
-        torch.as_tensor(batch["cards"], device=device).float(),
-        torch.as_tensor(batch["events"], device=device).float(),
-        torch.as_tensor(batch["event_cards"].astype(np.int64), device=device),
-        torch.as_tensor(batch["events_len"].astype(np.int64), device=device),
-        torch.as_tensor(batch["action"], device=device).unsqueeze(1),
-    )
+    actions = torch.as_tensor(batch["action"], device=device).unsqueeze(1)
     target = torch.as_tensor(batch["target"], device=device)
-    q = model(*inputs)[:, 0]
+    q = model(*to_tensors(observation(batch), device), actions)[:, 0]
     error = q - target
     loss = error.square().mean()
     optimizer.zero_grad(set_to_none=True)
@@ -157,50 +161,19 @@ def _learning_rate(config: DmcConfig, step: int) -> float:
     return o.lr * min(1.0, (step + 1) / max(o.warmup_steps, 1))
 
 
-def describe(config: DmcConfig, spec: EncodingSpec, model: QModel) -> dict[str, Any]:
-    return {
-        "config": asdict(config),
-        "encoding": spec.version,
-        "spec": spec.to_json(),
-        "parameters": model.parameter_count(),
-        "reward_scale": config.reward_scale,
-    }
-
-
-class EncodingMismatchError(ValueError):
-    """A run or model reads another encoding than this build's."""
-
-
-def current_spec() -> EncodingSpec:
-    """The encoding this build's environment writes."""
-    return EncodingSpec.from_json(Env(num_envs=1, seed=0, threads=1).spec())
-
-
-def check_encoding(where: Path, described: dict[str, Any], ours: EncodingSpec) -> None:
-    """Refuses a run or model directory (its ``config.json`` read into
-    ``described``) whose network reads another encoding than ``ours``: its
-    weights would not fit, or would silently mean something else."""
-    theirs = EncodingSpec.from_json(described["spec"])
-    if theirs != ours:
-        raise EncodingMismatchError(
-            f"{where}: the network reads {theirs.version}, not {ours.version}"
-        )
-
-
-def load(run: Path, weights: Path | None = None, device: torch.device | None = None) -> QModel:
-    """The network of run directory ``run`` (or of a model directory with
-    its ``config.json``): ``model.pt``, or another weights file (a
-    snapshot), in eval mode. Refuses one of another encoding
-    (``EncodingMismatchError``)."""
-    described = json.loads((run / "config.json").read_text(encoding="utf-8"))
-    check_encoding(run, described, current_spec())
-    spec = EncodingSpec.from_json(described["spec"])
-    where = str(run / "config.json")
-    model = QModel(spec, from_mapping(QConfig, described["config"]["model"], where))
-    device = device or torch.device("cpu")
-    path = weights or run / "model.pt"
-    model.load_state_dict(torch.load(path, map_location=device, weights_only=True))
-    return model.to(device).eval()
+def describe(
+    config: DmcConfig, spec: EncodingSpec, model: QModel, sessions: tuple[Session, ...]
+) -> Described:
+    """The run's ``config.json``."""
+    return Described(
+        kind=ModelKind.DMC,
+        config=asdict(config),
+        encoding=spec.version,
+        spec=spec.to_json(),
+        parameters=model.parameter_count(),
+        reward_scale=config.reward_scale,
+        sessions=sessions,
+    )
 
 
 class Learner:
@@ -221,13 +194,20 @@ class Learner:
     ) -> None:
         """``commit`` and ``dirty``: the checkout this session runs, for the
         record. Raises ``ConfigChangedError`` when resuming with another
-        config outside ``budget`` (unless ``allow_config_change``)."""
+        config outside ``budget`` (unless ``allow_config_change``), and
+        ``EncodingMismatchError`` when the run's network reads another
+        encoding than this build's."""
         self.config, self.out, self.exclude, self.log = config, out, exclude, log
+        self.run_dir = RunDir(out)
         self.actor_main = actor_main
         self.device = device_for(config.device)
         torch.manual_seed(config.seed)
         probe = Env(num_envs=1, seed=0, rules=config.rules, exclude=exclude, threads=1)
         self.spec = EncodingSpec.from_json(probe.spec())
+        # Game-specific names, checked here rather than in the actors.
+        phase_columns(self.spec)
+        if config.actors.declare > 0:
+            bid_mask(self.spec.actions)
         self.model = QModel(self.spec, config.model).to(self.device)
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
@@ -238,20 +218,20 @@ class Learner:
         self.progress = Progress()
         out.mkdir(parents=True, exist_ok=True)
         (out / "snapshots").mkdir(exist_ok=True)
-        checkpoint = out / "checkpoint.pt"
-        sessions: list[dict[str, Any]] = []
+        checkpoint = self.run_dir.checkpoint
+        sessions: tuple[Session, ...] = ()
         changed: list[str] = []
         if checkpoint.exists():
-            described = json.loads((out / "config.json").read_text(encoding="utf-8"))
+            described = self.run_dir.described()
             check_encoding(out, described, self.spec)
             changed = check_resume(
                 out,
-                described["config"],
+                described.config,
                 asdict(config),
                 ignore=("budget",),
                 allow_change=allow_config_change,
             )
-            sessions = recorded_sessions(described)
+            sessions = described.sessions
             state = torch.load(checkpoint, map_location=self.device, weights_only=False)
             self.model.load_state_dict(state["model"])
             self.optimizer.load_state_dict(state["optimizer"])
@@ -261,10 +241,7 @@ class Learner:
         self.session = session(
             self.progress.sessions, commit, dirty, asdict(config), config.seed, changed
         )
-        write_json(
-            out / "config.json",
-            describe(config, self.spec, self.model) | {"sessions": [*sessions, self.session]},
-        )
+        self.run_dir.describe(describe(config, self.spec, self.model, (*sessions, self.session)))
         self.buffer = ReplayBuffer(self.spec, config.buffer.capacity)
         self.rng = np.random.default_rng([config.seed, self.progress.sessions])
         self.losses = PhaseLoss(self.device)
@@ -276,9 +253,9 @@ class Learner:
         shared = QModel(self.spec, config.model)
         shared.share_memory()
         shared_state = shared.state_dict()
-        version = context.Value("q", 0)
+        version: Synchronized[int] = context.Value("q", 0)
         lock = context.Lock()
-        reports: Any = context.Queue(maxsize=4 * a.processes)
+        reports: Reports = context.Queue(maxsize=4 * a.processes)
         stop = context.Event()
         self._publish(shared_state, version, lock)
         processes = [
@@ -308,7 +285,7 @@ class Learner:
                 "device": str(self.device),
                 "actors": a.processes,
                 "parameters": self.model.parameter_count(),
-                **self.session,
+                **self.session.to_json(),
             }
         )
         try:
@@ -325,11 +302,11 @@ class Learner:
 
     def _loop(
         self,
-        reports: Any,
+        reports: Reports,
         shared: dict[str, torch.Tensor],
-        version: Any,
-        lock: Any,
-        processes: list[Any],
+        version: "Synchronized[int]",
+        lock: Lock,
+        processes: list[SpawnProcess],
     ) -> None:
         config, progress, buffer = self.config, self.progress, self.buffer
         budget = config.budget
@@ -352,7 +329,8 @@ class Learner:
             )
             taken = _take(reports, block=starved)
             self._check_actors(taken, processes, reports)
-            for report in cast(list[actor.Report], taken):
+            for report in taken:
+                assert isinstance(report, actor.Report)  # failures raised above
                 buffer.add(report.decisions)
                 added_session += len(report.decisions)
                 progress.hands += report.hands
@@ -388,10 +366,15 @@ class Learner:
                 self._checkpoint()
                 last_checkpoint = time.monotonic()
         self._curve()
-        torch.save(self.model.state_dict(), self.out / "model.pt")
+        torch.save(self.model.state_dict(), self.run_dir.model)
         self.log({"event": "end", **asdict(progress)})
 
-    def _check_actors(self, taken: list[Any], processes: list[Any], reports: Any) -> None:
+    def _check_actors(
+        self,
+        taken: list[actor.Report | actor.Failure],
+        processes: list[SpawnProcess],
+        reports: Reports,
+    ) -> None:
         """Raises ``ActorError`` when an actor failed (its report is among
         ``taken``) or exited; the failure's traceback goes to the log."""
         failures = [t for t in taken if isinstance(t, actor.Failure)]
@@ -421,7 +404,9 @@ class Learner:
         i, code = dead[0]
         raise ActorError(f"actor {i} exited with code {code} (no error report)")
 
-    def _publish(self, shared: dict[str, torch.Tensor], version: Any, lock: Any) -> None:
+    def _publish(
+        self, shared: dict[str, torch.Tensor], version: "Synchronized[int]", lock: Lock
+    ) -> None:
         with lock, torch.no_grad():
             for name, value in self.model.state_dict().items():
                 shared[name].copy_(value.detach().cpu())
@@ -434,15 +419,17 @@ class Learner:
         started = time.monotonic()
         self.model.eval()
         scores = {
-            opponent: curve.play(
-                self.model,
-                self.device,
-                rules=c.rules,
-                opponent=opponent,
-                deals=deals,
-                seed=c.seed,
-                threads=c.threads,
-            ).to_json()
+            opponent: asdict(
+                curve.play(
+                    self.model,
+                    self.device,
+                    rules=c.rules,
+                    opponent=opponent,
+                    deals=deals,
+                    seed=c.seed,
+                    threads=c.threads,
+                )
+            )
             for opponent, deals in (curve_deals(o, c.deals) for o in c.opponents)
         }
         self.model.train()
@@ -468,7 +455,7 @@ class Learner:
             "optimizer": self.optimizer.state_dict(),
             "progress": asdict(self.progress),
         }
-        path = self.out / "checkpoint.pt"
+        path = self.run_dir.checkpoint
         torch.save(state, path.with_suffix(".tmp"))
         path.with_suffix(".tmp").replace(path)
 
@@ -536,7 +523,7 @@ class _Window:
         self.reports += 1
 
 
-def _take(reports: Any, block: bool) -> list[actor.Report | actor.Failure]:
+def _take(reports: Reports, block: bool) -> list[actor.Report | actor.Failure]:
     """Every report waiting; with ``block``, at least one (or none after
     a second, so the loop stays responsive)."""
     taken: list[actor.Report | actor.Failure] = []
@@ -552,7 +539,7 @@ def _take(reports: Any, block: bool) -> list[actor.Report | actor.Failure]:
             return taken
 
 
-def _drain(reports: Any) -> None:
+def _drain(reports: Reports) -> None:
     """Empties the queue, so actors blocked on it can see they must stop."""
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
@@ -586,4 +573,4 @@ def train(  # noqa: PLR0913
     ).run()
 
 
-__all__ = ["ActorError", "Learner", "PhaseLoss", "Progress", "describe", "load", "train"]
+__all__ = ["ActorError", "Learner", "PhaseLoss", "Progress", "describe", "train"]

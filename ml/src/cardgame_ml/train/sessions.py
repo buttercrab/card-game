@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from cardgame_ml.manifest import Session
+
 
 class ConfigChangedError(ValueError):
     """A run is resumed with another config than it was started with."""
@@ -94,32 +96,14 @@ def session(  # noqa: PLR0913, PLR0917
     config: Mapping[str, Any],
     seed: int,
     changed: list[str] | None = None,
-) -> dict[str, Any]:
-    """One entry of ``sessions``."""
-    entry: dict[str, Any] = {
-        "session": number,
-        "commit": commit,
-        "dirty": dirty,
-        "config_sha256": config_sha256(json.loads(json.dumps(config))),
-        "seed": seed,
-        "started": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    if changed:
-        entry["config_changed"] = changed
-    return entry
-
-
-def recorded_sessions(described: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """The sessions a run's ``config.json`` lists (none for runs from
-    before they were recorded)."""
-    value = described.get("sessions")
-    if not isinstance(value, list):
-        return []
-    return [cast(dict[str, Any], s) for s in cast(list[object], value) if isinstance(s, dict)]
-
-
-def write_json(path: Path, value: object) -> None:
-    """Writes ``value`` to ``path`` atomically: a crash leaves the old file."""
-    tmp = path.with_name(f"{path.name}.tmp")
-    tmp.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    tmp.replace(path)
+) -> Session:
+    """One entry of a run's ``sessions``."""
+    return Session(
+        session=number,
+        commit=commit,
+        dirty=dirty,
+        config_sha256=config_sha256(json.loads(json.dumps(config))),
+        seed=seed,
+        started=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        config_changed=tuple(changed or ()),
+    )

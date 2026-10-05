@@ -10,17 +10,44 @@ predictors' log-loss (nats per hidden card) and accuracy.
 """
 
 import argparse
-import json
 from pathlib import Path
+from typing import Any
 
 import torch
 
-from cardgame_ml import runs
 from cardgame_ml.data.shards import Dataset
+from cardgame_ml.models.io import load_belief
+from cardgame_ml.runs import RunDir
+from cardgame_ml.runtime import device_for, write_json
 from cardgame_ml.store import artifact_store
 from cardgame_ml.train.batching import Split, every_row
-from cardgame_ml.train.belief import device_for, evaluate, load
-from cardgame_ml.train.config import SplitConfig
+from cardgame_ml.train.belief import evaluate
+from cardgame_ml.train.config import BeliefTrainConfig, from_mapping
+
+
+def score(run: RunDir, dataset: Dataset, dataset_path: str, device: torch.device) -> dict[str, Any]:
+    """The run's model and the counts on ``dataset`` (``dataset_path``,
+    relative to the artifact store, as the run's config names datasets)."""
+    described = run.described()
+    config = from_mapping(BeliefTrainConfig, described.config, f"{run.config_json}: config")
+    model = load_belief(run, device)
+    if dataset_path == config.dataset:
+        games = sum(s.games for s in dataset.shards)
+        rows, which = Split.draw(games, config.split).val_rows, "validation games"
+    else:
+        rows, which = every_row, "every decision"
+    scores = evaluate(model, dataset, rows).to_json()
+    decisions = sum(int(rows(dataset.load(i, ["game"])).sum()) for i in range(len(dataset.shards)))
+    return {
+        "run": run.name,
+        "dataset": dataset.name,
+        "eval_only": dataset.eval_only,
+        "decisions": which,
+        "count": decisions,
+        "parameters": model.parameter_count(),
+        "torch": torch.__version__,
+        "scores": scores,
+    }
 
 
 def main() -> None:
@@ -31,31 +58,11 @@ def main() -> None:
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
 
-    run = runs.run_dir(args.run)
-    described = json.loads((run / "config.json").read_text(encoding="utf-8"))
-    config = described["config"]
     dataset = Dataset.open(artifact_store() / args.dataset)
-    model = load(run, device_for(args.device))
-    if args.dataset == config["dataset"]:
-        games = sum(s.games for s in dataset.shards)
-        rows, which = Split.draw(games, SplitConfig(**config["split"])).val_rows, "validation games"
-    else:
-        rows, which = every_row, "every decision"
-    scores = evaluate(model, dataset, rows).to_json()
-    decisions = sum(int(rows(dataset.load(i, ["game"])).sum()) for i in range(len(dataset.shards)))
-    result = {
-        "run": args.run,
-        "dataset": dataset.name,
-        "eval_only": dataset.eval_only,
-        "decisions": which,
-        "count": decisions,
-        "parameters": model.parameter_count(),
-        "torch": torch.__version__,
-        "scores": scores,
-    }
+    result = score(RunDir.named(args.run), dataset, args.dataset, device_for(args.device))
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    for name, group in scores.items():
+    write_json(args.out, result)
+    for name, group in result["scores"].items():
         m, b = group["model"], group["baseline"]
         print(
             f"{name:13s} {m['log_loss']:.4f} vs {b['log_loss']:.4f} nats "

@@ -27,11 +27,11 @@ from torch.export import Dim
 
 from cardgame_ml.data.shards import Batch
 from cardgame_ml.models.belief import INPUTS, BeliefModel
+from cardgame_ml.models.inputs import observation, to_tensors
 from cardgame_ml.models.q import INPUTS as Q_INPUTS
 from cardgame_ml.models.q import QModel
 from cardgame_ml.models.trunk import unfused
-from cardgame_ml.train.batching import to_inputs
-from cardgame_ml.train.dmc.policy import legal_actions, legal_values, observation_tensors
+from cardgame_ml.train.dmc.policy import legal_actions, legal_values
 
 OUTPUT = "logits"
 Q_OUTPUT = "values"
@@ -45,7 +45,7 @@ def export(model: BeliefModel, batch: Batch, path: Path) -> None:
     """Writes ``model`` to ``path`` as ONNX, traced on ``batch`` (at least
     two decisions with at least two events each, so no size is taken for
     a constant)."""
-    inputs = to_inputs(batch, torch.device("cpu"))
+    inputs = to_tensors(observation(batch), torch.device("cpu"))
     count, events = _dims(model.spec.max_events)
     shapes = ({0: count}, {0: count}, {0: count, 1: events}, {0: count, 1: events}, {0: count})
     _export(model, inputs, INPUTS, shapes, OUTPUT, path)
@@ -56,7 +56,7 @@ def export_q(model: QModel, batch: Batch, path: Path) -> None:
     ``batch`` (at least two decisions with at least two events and two
     legal actions each): inputs as the belief model's plus ``actions``
     ``[n, k]`` (int64), output ``values`` ``[n, k]``."""
-    inputs = observation_tensors(batch, torch.device("cpu"))
+    inputs = to_tensors(observation(batch), torch.device("cpu"))
     actions, _ = legal_actions(np.asarray(batch["legal"], np.bool_))
     count, events = _dims(model.spec.max_events)
     k = Dim("actions", min=1, max=len(model.spec.actions))
@@ -126,7 +126,7 @@ def parity(model: BeliefModel, batch: Batch) -> dict[str, Any]:
     with torch.no_grad():
         for i in range(len(batch["events_len"])):
             one = {name: array[i : i + 1] for name, array in batch.items()}
-            row = model(*to_inputs(one, torch.device("cpu")))[0]
+            row = model(*to_tensors(observation(one), torch.device("cpu")))[0]
             logits.append([float(x) for x in row.flatten()])
     return {"tolerance": TOLERANCE, "observations": observations(batch), "logits": logits}
 
