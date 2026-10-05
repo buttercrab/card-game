@@ -4,7 +4,7 @@
 import type { Catalog } from './protocol';
 
 export const CATALOG: Catalog = {
-  "protocol": "5da433930134",
+  "protocol": "c9efbc6281c1",
   "presets": [
     {
       "id": "default",

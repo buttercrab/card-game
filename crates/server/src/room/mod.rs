@@ -138,8 +138,9 @@ pub struct Room<G: SessionGame> {
     session: session::Session<G>,
     hand: hand::Hand<G>,
     clock: clock::TurnClock,
-    /// Whether a bot is thinking about the move to make now.
-    thinking: bool,
+    /// The hand version a bot is thinking about, if any: the hand moving on
+    /// (a 딜미스, say) starts a new think without waiting for the stale one.
+    thinking: Option<u64>,
     rng: StdRng,
     /// What every room on the server shares.
     env: Arc<RoomEnv>,
@@ -172,7 +173,7 @@ impl<G: SessionGame> Room<G> {
             session: session::Session::new(n),
             hand: hand::Hand::default(),
             clock: clock::TurnClock::default(),
-            thinking: false,
+            thinking: None,
             rng: StdRng::from_os_rng(),
             env,
         }

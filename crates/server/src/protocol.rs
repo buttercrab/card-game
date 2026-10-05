@@ -86,6 +86,9 @@ pub enum ErrorCode {
     EmptyReport,
     /// Too many problem reports this hour, from everyone.
     TooManyReports,
+    /// The table closed (nobody was there for a while) as this connection
+    /// came; it hangs up after this.
+    TableGone,
 }
 
 /// A refusal: on a table's connection as `{type: "error", ...}`, over

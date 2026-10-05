@@ -70,6 +70,8 @@ export class RoomClient {
   #id: string;
   #ws: WebSocket | null = null;
   #closed = false;
+  /** The server said the table is gone: the client stays on "missing". */
+  #gone = false;
   #retry = 500;
   /** The pending reconnect, cancelled by close(). */
   #reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -121,7 +123,7 @@ export class RoomClient {
       if (!this.#closed) this.#receive(JSON.parse(event.data) as ServerMsg);
     };
     ws.onclose = async () => {
-      if (this.#closed) return;
+      if (this.#closed || this.#gone) return;
       if (!opened) {
         const exists = await this.#exists();
         // Left (or unmounted) while asking: stay closed.
@@ -232,6 +234,12 @@ export class RoomClient {
         break;
       }
       case 'error':
+        // The table closed as this tab came back: nothing to reconnect to.
+        if (msg.code === 'table_gone') {
+          this.#gone = true;
+          this.status = 'missing';
+          break;
+        }
         this.#starting = false;
         this.toasts.show('error', errorText(msg));
         break;

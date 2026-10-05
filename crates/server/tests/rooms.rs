@@ -294,7 +294,7 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     send(&mut players[0].0, json!({ "type": "start" })).await;
     // Each move reaches everyone; whoever has legal actions makes the next one.
     let mut before = Value::Null;
-    let mut last = Value::Null;
+    let mut moves = Vec::new();
     for step in 0..8 {
         let mut mover = None;
         for (i, (ws, _)) in players.iter_mut().enumerate() {
@@ -308,21 +308,21 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
             before = msg;
             break;
         }
-        last = json!({ "kind": "act", "seat": i, "action": msg["legal"][0] });
+        moves.push(json!({ "kind": "act", "seat": i, "action": msg["legal"][0] }));
         send(&mut players[i].0, json!({ "type": "act", "action": msg["legal"][0] })).await;
     }
     let seat = before["turn"]["Seat"].as_u64().unwrap() as usize;
     let token = players[seat].1.clone();
     // The room hands itself to its writer after each move; once the file
-    // holds the last move, it holds everything before it.
+    // holds every move made, it is up to date.
     let file = dir.path().join(format!("{room}.json"));
-    eventually("the last move is saved", || async {
+    eventually("every move is saved", || async {
         let saved: Value = std::fs::read_to_string(&file)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
         let log = saved["hand"]["log"].as_array().cloned().unwrap_or_default();
-        log.iter().rev().find(|e| e["kind"] == "act") == Some(&last)
+        log.into_iter().filter(|e| e["kind"] == "act").collect::<Vec<_>>() == moves
     })
     .await;
 

@@ -54,11 +54,46 @@ enum Wake<A> {
 pub(super) struct Effects {
     /// Something everyone sees changed: send the table again.
     pub changed: bool,
+    /// Something the room's file keeps changed: save it again. (Who is
+    /// connected, and who is away, it does not keep.)
+    pub saved: bool,
 }
 
 impl Effects {
-    const NONE: Effects = Effects { changed: false };
-    const CHANGED: Effects = Effects { changed: true };
+    const NONE: Effects = Effects {
+        changed: false,
+        saved: false,
+    };
+    /// The table and its file both changed.
+    const CHANGED: Effects = Effects {
+        changed: true,
+        saved: true,
+    };
+    /// Only who is there changed.
+    const PRESENCE: Effects = Effects {
+        changed: true,
+        saved: false,
+    };
+
+    /// `CHANGED` if `changed`, else `NONE`.
+    fn changed(changed: bool) -> Effects {
+        if changed { Effects::CHANGED } else { Effects::NONE }
+    }
+}
+
+/// Answers a command that came as the room closed: a connection hears the
+/// table is gone (and its socket closes when its sender is dropped), a
+/// shutdown has nothing to wait for, the rest go unanswered.
+pub(super) fn turn_away(cmd: Command) {
+    match cmd {
+        Command::Connect { tx, .. } => {
+            let _ = tx.send(ServerError::new(ErrorCode::TableGone).message());
+        }
+        Command::Shutdown { done } => {
+            let _ = done.send(());
+        }
+        Command::Disconnect { .. } | Command::Message { .. } | Command::Report { .. } | Command::Describe { .. } => {}
+    }
 }
 
 impl<G: SessionGame> Room<G> {
@@ -80,12 +115,16 @@ impl<G: SessionGame> Room<G> {
         loop {
             let now = tokio::time::Instant::now();
             let deadline = self.clock.deadline();
+            // In this order when several are ready at once: a move that came
+            // as the turn ran out counts, and so does someone arriving as
+            // the table was about to close.
             let next = tokio::select! {
+                biased;
                 cmd = rx.recv() => cmd.map_or(Wake::Closed, Wake::Command),
                 // The room holds a sender itself, so this never ends.
                 Some(message) = inbox.recv() => Wake::Internal(message),
-                () = tokio::time::sleep_until(empty_since.map_or(now, |since| since + idle)), if empty_since.is_some() => Wake::Closed,
                 () = tokio::time::sleep_until(deadline.unwrap_or(now)), if deadline.is_some() => Wake::Clock,
+                () = tokio::time::sleep_until(empty_since.map_or(now, |since| since + idle)), if empty_since.is_some() => Wake::Closed,
             };
             let effects = match next {
                 Wake::Command(Command::Shutdown { done }) => {
@@ -97,12 +136,8 @@ impl<G: SessionGame> Room<G> {
                     return;
                 }
                 Wake::Command(cmd) => self.handle(cmd),
-                Wake::Internal(message) => Effects {
-                    changed: self.on_internal(message),
-                },
-                Wake::Clock => Effects {
-                    changed: self.on_clock(),
-                },
+                Wake::Internal(message) => Effects::changed(self.on_internal(message)),
+                Wake::Clock => Effects::changed(self.on_clock()),
                 Wake::Closed => break,
             };
             self.settle(effects);
@@ -111,6 +146,13 @@ impl<G: SessionGame> Room<G> {
                 (true, since) => since,
                 (false, _) => None,
             };
+        }
+        // Closed to anything new: a connection on its way in hears the
+        // table is gone (here, or from the sender it finds closed) rather
+        // than waiting on a room that will never answer.
+        rx.close();
+        while let Ok(cmd) = rx.try_recv() {
+            turn_away(cmd);
         }
         if self.hand.in_hand() {
             self.record(Event::HandAbandoned {
@@ -125,14 +167,14 @@ impl<G: SessionGame> Room<G> {
 
     /// After every wake: the hand plays its chance actions (and is booked
     /// when over), the turn timer follows whoever is to act, a bot starts
-    /// thinking if it is to act, and, if anything changed, the room is
-    /// handed to its persister and sent to everyone.
-    fn settle(&mut self, effects: Effects) {
-        let mut changed = effects.changed;
-        changed |= self.advance();
+    /// thinking if it is to act, and what changed is handed to the
+    /// persister and sent to everyone.
+    pub(super) fn settle(&mut self, effects: Effects) {
+        let advanced = self.advance();
+        let mut changed = effects.changed | advanced;
         changed |= self.arm_clock();
         self.think();
-        self.dirty |= changed;
+        self.dirty |= effects.saved | advanced;
         if self.dirty
             && let Some(persister) = &self.persister
         {
@@ -154,11 +196,11 @@ impl<G: SessionGame> Room<G> {
             Command::Connect { conn, tx } => {
                 self.seating.conns.insert(conn, Conn::new(tx));
                 self.greet(conn);
-                Effects::CHANGED
+                Effects::PRESENCE
             }
             Command::Disconnect { conn } => {
                 self.seating.conns.remove(&conn);
-                Effects::CHANGED
+                Effects::PRESENCE
             }
             Command::Message { conn, msg } => {
                 // A reaction or a hint changes nothing the room or the hand shows.
@@ -169,8 +211,10 @@ impl<G: SessionGame> Room<G> {
                 if let Err(error) = &done {
                     self.send(conn, &Msg::<G>::Error(error.clone()));
                 }
+                let acted = done.is_ok() && !quiet;
                 Effects {
-                    changed: back || (done.is_ok() && !quiet),
+                    changed: back || acted,
+                    saved: acted,
                 }
             }
             Command::Report { reply } => {

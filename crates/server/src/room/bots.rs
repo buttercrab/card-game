@@ -65,7 +65,7 @@ impl<G: SessionGame> Room<G> {
     /// Starts a bot thinking if one is to act. Its move arrives as
     /// [`Internal::BotMove`] no sooner than its pace.
     pub(super) fn think(&mut self) {
-        if self.thinking {
+        if self.thinking == Some(self.hand.version) {
             return;
         }
         let (Some(seat), Some(game)) = (self.bot_to_act(), self.hand.game.as_ref()) else {
@@ -100,7 +100,7 @@ impl<G: SessionGame> Room<G> {
             })
         });
         let tx = self.internal.clone();
-        self.thinking = true;
+        self.thinking = Some(version);
         tokio::spawn(async move {
             let started = tokio::time::Instant::now();
             // A worker gets the move's thinking time and a grace period; past
@@ -139,14 +139,21 @@ impl<G: SessionGame> Room<G> {
     pub(super) fn on_internal(&mut self, message: Internal<G::Action>) -> bool {
         match message {
             Internal::BotMove { version, seat, action } => {
-                self.thinking = false;
+                self.done_thinking(version);
                 self.is_current(version, seat) && self.bot_move(seat, action)
             }
             Internal::BotFailed { version, seat } => {
-                self.thinking = false;
+                self.done_thinking(version);
                 self.is_current(version, seat) && self.stand_in(seat, "the bot failed; a 보통 bot moved")
             }
             Internal::BotOutOfTurn { deal, seat, action } => self.bot_out_of_turn(deal, seat, action),
+        }
+    }
+
+    /// The think for hand `version` is over; one for a later version runs on.
+    fn done_thinking(&mut self, version: u64) {
+        if self.thinking == Some(version) {
+            self.thinking = None;
         }
     }
 

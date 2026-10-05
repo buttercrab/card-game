@@ -232,8 +232,9 @@ impl AppState {
         rooms.insert(id, tx);
     }
 
+    /// The open room `id`; one closing (it stopped taking commands) is gone.
     fn room(&self, id: &str) -> Option<UnboundedSender<Command>> {
-        self.rooms.lock().get(id).cloned()
+        self.rooms.lock().get(id).filter(|tx| !tx.is_closed()).cloned()
     }
 }
 
@@ -545,19 +546,28 @@ impl ConnLimits {
 async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, conn: ConnId) {
     let (mut sink, mut stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-    let errors = tx.clone();
+    // Weak, so the connection ends once the room lets go of it (the room
+    // closed, or stopped for a restart).
+    let errors = tx.downgrade();
     if room.send(Command::Connect { conn, tx }).is_err() {
+        // The table closed between finding it and getting here.
+        let gone = ServerError::new(ErrorCode::TableGone).message();
+        let _ = sink.send(Message::Text(gone.into())).await;
+        let _ = sink.close().await;
         return;
     }
     let mut writer = tokio::spawn(async move {
         while let Some(text) = rx.recv().await {
             if sink.send(Message::Text(text.into())).await.is_err() {
-                break;
+                return;
             }
         }
+        let _ = sink.close().await;
     });
     let error = |error: ServerError| {
-        let _ = errors.send(error.message());
+        if let Some(errors) = errors.upgrade() {
+            let _ = errors.send(error.message());
+        }
     };
     let mut limits = ConnLimits::new();
     loop {

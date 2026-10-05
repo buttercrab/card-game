@@ -205,6 +205,20 @@ describe('hints', () => {
   });
 });
 
+describe('a table that closed', () => {
+  test('is missing, without a toast or a reconnect', async () => {
+    const client = new RoomClient('abc');
+    last().open();
+    last().receive({ type: 'error', code: 'table_gone' });
+    last().drop();
+    expect(client.status).toBe('missing');
+    expect(client.toasts.current).toBeNull();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(sockets()).toBe(1);
+    client.close();
+  });
+});
+
 describe('the session', () => {
   const room = (names: string[]) => ({
     type: 'room',

@@ -441,3 +441,92 @@ async fn a_failed_bot_think_is_played_by_the_stand_in() {
     assert_eq!(room.hand.log.len(), logged + 1);
     assert!(matches!(room.hand.log[logged], hand::LogEntry::Act { seat: s, .. } if s == seat));
 }
+
+/// Five bots, the first hand dealt, and a bot to act.
+fn bots_dealt() -> Room<Mighty> {
+    let env = Arc::new(RoomEnv::new(Duration::from_secs(1)));
+    let mut room = Room::<Mighty>::new("t".into(), MightySettings::new(Preset::Gshs), env);
+    for seat in 0..5 {
+        room.add_bot(seat, mighty::bot::Level::Easy).unwrap();
+    }
+    room.start().unwrap();
+    room.advance();
+    room
+}
+
+/// The hand moving on under a thinking bot (a 딜미스, say) sets it
+/// thinking about the new state at once, and the stale think, when it
+/// comes back, leaves the new one running.
+#[tokio::test(start_paused = true)]
+async fn a_bot_rethinks_at_once_when_the_hand_moves_under_it() {
+    let mut room = bots_dealt();
+    let seat = room.bot_to_act().unwrap();
+    let old = room.hand.version;
+    room.think();
+    assert_eq!(room.thinking, Some(old));
+    room.think();
+    assert_eq!(room.thinking, Some(old), "one think per state");
+    room.hand.version += 1;
+    room.think();
+    assert_eq!(room.thinking, Some(old + 1));
+    let stale = room
+        .hand
+        .game
+        .as_ref()
+        .map(|g| <Mighty as engine::Game>::legal_actions(g)[0].clone())
+        .unwrap();
+    assert!(!room.on_internal(Internal::BotMove {
+        version: old,
+        seat,
+        action: stale
+    }));
+    assert_eq!(room.thinking, Some(old + 1), "still thinking about the new state");
+}
+
+/// A timer that ran out for a state the hand has left plays nothing, and
+/// the next settle sets one for the state there is.
+#[tokio::test(start_paused = true)]
+async fn a_stale_turn_timer_plays_nothing_and_is_set_again() {
+    let mut room = bots_dealt();
+    let seat = room.bot_to_act().unwrap();
+    // The seat to act is a person's, connected, under a limit.
+    let (tx, _rx) = mpsc::unbounded_channel();
+    room.seating.conns.insert(1, seating::Conn::new(tx));
+    room.seating.seats[seat] = seating::Occupant::Human {
+        name: "A".into(),
+        token: "a".into(),
+        player: None,
+    };
+    room.table.turn_secs = 20;
+    assert!(room.arm_clock());
+    room.hand.version += 1;
+    let logged = room.hand.log.len();
+    assert!(!room.on_clock(), "a stale timer plays nothing");
+    assert_eq!(room.hand.log.len(), logged);
+    assert!(room.clock.deadline().is_none());
+    room.settle(actor::Effects::default());
+    assert!(room.clock.deadline().is_some(), "and the turn has its timer again");
+}
+
+/// Whoever reaches a table as it closes hears it is gone.
+#[tokio::test]
+async fn a_connection_to_a_closing_table_hears_it_is_gone() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    actor::turn_away(Command::Connect { conn: 1, tx });
+    let gone: Value = serde_json::from_str(&rx.recv().await.unwrap()).unwrap();
+    assert_eq!(gone, json!({ "type": "error", "code": "table_gone" }));
+    assert!(rx.recv().await.is_none(), "and the room lets go of it");
+
+    // A table closed for good refuses anyone after.
+    let mut table = Table::open_with(
+        MightySettings::new(Preset::Gshs),
+        RoomEnv {
+            idle: Duration::from_millis(10),
+            ..RoomEnv::new(Duration::ZERO)
+        },
+    );
+    (&mut table.task).await.unwrap();
+    let (tx, _rx) = mpsc::unbounded_channel();
+    assert!(table.tx.send(Command::Connect { conn: 9, tx }).is_err());
+    assert!(table.tx.is_closed());
+}

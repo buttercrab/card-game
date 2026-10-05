@@ -224,7 +224,7 @@ export type Doubling = "Never" | "Win" | "Always";
  * Why the server refused something, as a code: the client words each in
  * Korean, and the compiler makes it word every one.
  */
-export type ErrorCode = "not_seated" | "already_seated" | "name_required" | "table_full" | "seat_taken" | "no_such_seat" | "no_player_in_seat" | "no_bot_in_seat" | "nobody_to_move" | "leave_own_seat" | "seats_between_hands" | "rules_between_hands" | "bots_stay_in_hand" | "hand_in_progress" | "empty_seats" | "no_hand" | "not_your_turn" | "illegal_action" | "wait_after_deal" | "no_such_turn_limit" | "invalid_rules" | "player_count_fixed" | "unknown_reaction" | "hints_busy" | "hints_too_often" | "bad_message" | "rate_limited" | "too_many_tables" | "unknown_preset" | "empty_report" | "too_many_reports";
+export type ErrorCode = "not_seated" | "already_seated" | "name_required" | "table_full" | "seat_taken" | "no_such_seat" | "no_player_in_seat" | "no_bot_in_seat" | "nobody_to_move" | "leave_own_seat" | "seats_between_hands" | "rules_between_hands" | "bots_stay_in_hand" | "hand_in_progress" | "empty_seats" | "no_hand" | "not_your_turn" | "illegal_action" | "wait_after_deal" | "no_such_turn_limit" | "invalid_rules" | "player_count_fixed" | "unknown_reaction" | "hints_busy" | "hints_too_often" | "bad_message" | "rate_limited" | "too_many_tables" | "unknown_preset" | "empty_report" | "too_many_reports" | "table_gone";
 
 /**
  * A hand scored for the rulebook: its count, and what each seat gets.

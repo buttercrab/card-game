@@ -35,6 +35,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   unknown_preset: '그런 규칙은 없어요',
   empty_report: '어떤 문제인지 적어 주세요',
   too_many_reports: '신고가 너무 많이 들어왔어요. 잠시 뒤에 다시 해 주세요',
+  table_gone: '아무도 없어서 테이블이 닫혔어요',
 };
 
 /** Why rules cannot be played, as Rules::validate finds it. */
