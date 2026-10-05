@@ -3,6 +3,7 @@
   // trump or raise the contract, then name the friend.
   import Card from './Card.svelte';
   import { cardLabel, contractLabel, friendCallLabel, mightyCard, sameCard, sealOf, SUITS, trumpLabel } from './cards';
+  import { scrollFade } from './scrollFade';
   import type { Action, Card as CardT, Contract, FriendCall, Rules, Suit } from './types';
 
   let {
@@ -215,7 +216,7 @@
       >
     </div>
     {#if trumpChanges.length > 0 && raises.length > 0}
-      <div class="chips change" role="radiogroup" aria-label="기루다 변경">
+      <div class="chips change" use:scrollFade role="radiogroup" aria-label="기루다 변경">
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
           <button
@@ -232,7 +233,7 @@
         {/each}
       </div>
     {:else if trumpChanges.length > 0}
-      <div class="chips change" role="radiogroup" aria-label="기루다 변경">
+      <div class="chips change" use:scrollFade role="radiogroup" aria-label="기루다 변경">
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
           {@const action = { ChangeTrump: t }}
@@ -243,7 +244,7 @@
       </div>
     {/if}
     {#if offers.length > 0}
-      <div class="chips change" role="radiogroup" aria-label={picked === contract.trump ? '공약 올리기' : '바꿀 공약'}>
+      <div class="chips change" use:scrollFade role="radiogroup" aria-label={picked === contract.trump ? '공약 올리기' : '바꿀 공약'}>
         <span class="muted">{picked === contract.trump ? '공약 올리기' : `${trumpLabel(picked)}로 바꾸기`}</span>
         {#each offers as o (JSON.stringify(o.action))}
           <button class="chip num" role="radio" aria-checked={!!choice && same(choice, o.action)} onclick={() => select(o.action)}>
@@ -340,6 +341,10 @@
     font-family: var(--font-display);
     font-size: 20px;
     font-variant-numeric: tabular-nums;
+  }
+  /* When the row runs past the screen, its right edge fades to say so. */
+  .chips.change:global(.more) {
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
   }
   .change .muted {
     flex: none;

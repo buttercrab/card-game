@@ -41,6 +41,7 @@ Everything a group of friends notices in one evening. Play-test items first.
 - **What you can do there:** change rules, swap bots and levels, shuffle seats, or invite someone.
 - **Next hand:** starts from the room, the same way the first one did.
 - **Owner, 2026-10-05:** yes. In the room between hands you can reorder seats (shuffle, or move someone), and add or remove players and bots.
+- **Owner, after trying it:** it felt like a website; there should be no back button. Rebuilt: no separate room screen. The table stays between hands: the result folds away (테이블 보기), the middle of the felt holds 다음 판 (or 시작) with 섞기 and 설정, and a tap on a seat opens its choices (a bot's level, 자리 바꾸기, 비우기 / 내보내기 / 일어나기; an empty seat's 봇 앉히기 and 초대; sitting down for a watcher). Seats slide to their new places. The header is the table's code (a tap invites) and one menu: 초대하기, 규칙 보기, 테이블 설정, 소리와 화면, 문제 신고, 나가기 (asks first mid-hand). The back gesture opens the menu or closes the sheet on top; only 나가기 leaves.
 
 ### 1.6 Spectating (관전 고치기)
 1. Reproduce with a second browser first: watch a full hand, join while a hand is running, and watch with a full table.

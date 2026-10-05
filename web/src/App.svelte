@@ -12,9 +12,20 @@
 
   let path = $state(location.pathname);
 
-  function navigate(to: string) {
-    history.pushState(null, '', to);
+  function navigate(to: string, state: Record<string, unknown> | null = null) {
+    history.pushState(state, '', to);
     path = location.pathname;
+  }
+
+  /** Off a table to the home page. Opened from home, the table steps back to
+   * it, so the history is as it was before; opened from a link, its entry
+   * becomes the home page, so back does not lead to the table again. */
+  function leaveTable() {
+    if (history.state?.from === 'home') history.back();
+    else {
+      history.replaceState(null, '', '/');
+      path = location.pathname;
+    }
   }
 
   const rulesFor = $derived(path.match(/^\/rules\/([a-z]+)\/?$/)?.[1] ?? null);
@@ -65,14 +76,14 @@
   <main class="page"><Rulebook preset={rulesFor} /></main>
 {:else if roomId}
   {#key roomId}
-    <Room id={roomId} onleave={() => navigate('/')} />
+    <Room id={roomId} onleave={leaveTable} />
   {/key}
 {:else if page === '/about'}
   <main class="page"><About /></main>
 {:else if page === '/privacy'}
   <main class="page"><Privacy /></main>
 {:else if page === '/'}
-  <Home onopen={(id) => navigate(`/r/${id}`)} />
+  <Home onopen={(id) => navigate(`/r/${id}`, { from: 'home' })} />
 {:else}
   <main class="page"><NotFound /></main>
 {/if}

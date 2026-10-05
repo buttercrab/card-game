@@ -5,8 +5,12 @@
   // misdealnow is 딜미스 outside your turn, grace the first bid held back
   // after the deal), and for the turn limit and the room: timer (another
   // seat's ring, a seat away) | mytimer (your last seconds) | spectate |
-  // contract (the exchange with a trump change and raises) | room (the room
-  // between hands).
+  // contract (the exchange with a trump change and raises). Between hands,
+  // with the room's own bar and menu: lobby (the first hand, seats to fill) |
+  // lobbywatch (the same, watching) | room (the table after the seats moved)
+  // | folded (the last hand's result folded away) | seatbot | seatperson |
+  // seatme | seatempty (a seat's choices) | swap (picking a seat to swap
+  // with) | menu (the table's menu) | leave (나가기 mid-hand, asking first).
   import Room from './Room.svelte';
   import Table from './Table.svelte';
   import type { RoomClient } from './client.svelte';
@@ -215,19 +219,40 @@
     mytimer: 'play',
     contract: 'exchange',
   };
-  const key = alias[which] ?? which;
+  const key = which === 'folded' ? 'done' : which === 'leave' ? 'play' : (alias[which] ?? which);
   const turn: StateMsg['turn'] =
     key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' || which === 'misdealnow' ? { Seat: 4 } : key === 'watch' ? { Seat: 3 } : { Seat: 0 };
 
-  if (which === 'timer' || which === 'mytimer' || which === 'spectate' || which === 'room') {
+  /** States drawn by the whole room page (Room.svelte), bar and menu too. */
+  const ROOM_STATES = ['lobby', 'lobbywatch', 'room', 'folded', 'seatbot', 'seatperson', 'seatme', 'seatempty', 'swap', 'menu', 'leave'];
+  const inRoom = ROOM_STATES.includes(which);
+  /** Between hands with nothing on the table: the lobby, or once the seats moved. */
+  const idle = inRoom && !['folded', 'leave'].includes(which);
+  if (which === 'timer' || which === 'mytimer' || which === 'spectate' || inRoom) {
     room.table = { turn_secs: 20, shuffle: which === 'room' };
     room.watching = 2;
     room.seats[2] = { kind: 'human', name: '아주긴이름의친구입니다', connected: true, away: true };
   }
-  if (which === 'room') {
-    room.in_hand = false;
-    room.showing = true;
+  if (inRoom) {
+    // Everyone is here (the offline banner is the hand's business).
+    room.seats[3] = { kind: 'human', name: '민수', connected: true };
+    room.in_hand = which === 'leave';
+    room.showing = !idle;
   }
+  if (which === 'lobby' || which === 'lobbywatch' || which === 'seatempty') {
+    room.seats = [
+      { kind: 'human', name: '재용', connected: true },
+      { kind: 'bot', name: 'Bot 2', level: 'normal' },
+      { kind: 'empty' },
+      { kind: 'empty' },
+      { kind: 'human', name: '아주긴이름의친구입니다', connected: true },
+    ];
+    room.scores = [0, 0, 0, 0, 0];
+    room.hands_played = 0;
+    room.history = [];
+    room.watching = which === 'lobbywatch' ? 1 : 0;
+  }
+  if (which === 'lobbywatch') room.seats[0] = { kind: 'empty' };
   if (which === 'contract') {
     // 공약 올리기 on: a trump chip picks the trump, the row under it the contract.
     rules.bidding.raise_on_exchange = true;
@@ -249,8 +274,9 @@
   const client = $state({
     room,
     // The exchange opens on the bidding, so the table sees which cards came from the kitty.
-    game: which === 'room' ? null : game,
-    seat: which === 'spectate' ? null : 0,
+    game: idle ? null : game,
+    seat: which === 'spectate' || which === 'lobbywatch' ? null : 0,
+    onmove: null,
     error: null,
     status: 'open',
     clock:
@@ -295,6 +321,18 @@
     setTimeout(() => (client.game = msg(phases.exchange, 'exchange', { Seat: 0 })), 300);
   }
 
+  // The states that need a tap: done here, as a player would, once drawn.
+  const tapSeat = { seatbot: 1, seatperson: 2, seatme: 0, seatempty: 2, swap: 1 }[which];
+  if (tapSeat !== undefined || which === 'folded' || which === 'leave') {
+    const click = (selector: string) => document.querySelector<HTMLElement>(selector)?.click();
+    setTimeout(() => {
+      if (which === 'folded') click('.result .fold');
+      if (which === 'leave') click('dialog .leave');
+      if (tapSeat !== undefined) click(`[data-seat="${tapSeat}"] .seat-tap`);
+      if (which === 'swap') setTimeout(() => [...document.querySelectorAll<HTMLElement>('.pop-card button')].find((b) => b.textContent?.includes('자리 바꾸기'))?.click(), 50);
+    }, 200);
+  }
+
   if (which === 'sweep') {
     // Finish the trick so the table plays its sweep, holding the note on screen.
     Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
@@ -305,13 +343,13 @@
   }
 </script>
 
-{#if which === 'room'}
-  <Room id="preview" onleave={noop} preview={client as unknown as RoomClient} />
+{#if inRoom}
+  <Room id="preview" onleave={noop} preview={client as unknown as RoomClient} menu={which === 'menu' || which === 'leave'} />
 {:else}
   <div class="page">
     <!-- Where the room's header sits (Room.svelte), so the table gets the same height. -->
     <header class="mock" aria-hidden="true">← 미리보기 · {which}</header>
-    <Table client={client as unknown as RoomClient} onroom={noop} />
+    <Table client={client as unknown as RoomClient} />
   </div>
 {/if}
 

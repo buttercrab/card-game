@@ -298,7 +298,7 @@ export type ServerMsg =
   | StateMsg
   | { type: 'welcome'; seat: number; token: string }
   | { type: 'unseated' }
-  | { type: 'seats_moved'; how: 'shuffle' | 'swap'; seats?: [number, number] }
+  | { type: 'seats_moved'; how: 'shuffle' | 'swap'; seats?: [number, number]; /** Shuffle: where each seat went. */ order?: number[] }
   | { type: 'reaction'; seat: number; text: string }
   | { type: 'hint'; version: number; action: Action }
   | { type: 'error'; message: string };

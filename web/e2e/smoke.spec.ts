@@ -22,7 +22,23 @@ const STATES = [
   'done',
   'won',
   'run',
+  // Between hands (Room.svelte's own bar and menu over the table).
+  'timer',
+  'lobby',
+  'lobbywatch',
+  'room',
+  'folded',
+  'seatbot',
+  'seatperson',
+  'seatme',
+  'seatempty',
+  'swap',
+  'menu',
+  'leave',
 ];
+
+/** States with no cards in hand: the result, and the table between hands. */
+const NO_HAND = ['done', 'won', 'run', 'lobby', 'lobbywatch', 'room', 'folded', 'seatbot', 'seatperson', 'seatme', 'seatempty', 'swap', 'menu'];
 
 const PAGES: { name: string; path: string }[] = [
   { name: 'home', path: '/' },
@@ -62,7 +78,7 @@ async function settle(page: Page, name: string) {
   // The previews swap in their real state after 300 ms (exchange, misdeal,
   // sweep); give that and the deal time to land.
   if (name.startsWith('preview-')) {
-    await page.locator('.hand').first().waitFor({ state: 'attached' });
+    await page.locator('.seat .name').first().waitFor({ state: 'attached' });
     await page.waitForTimeout(900);
   } else {
     await page.waitForLoadState('networkidle');
@@ -83,10 +99,11 @@ function coveredLabels(page: Page) {
     document.head.append(style);
     // The topmost element at a point that is actually drawn: one faded out
     // to nothing (a reaction bubble after its animation) does not cover.
-    // The result is a sheet over the table, meant to hide part of it.
+    // The result is a sheet over the table, meant to hide part of it; so
+    // are a seat's popover (and the tap-away layer under it) and the menu.
     const topVisible = (x: number, y: number) =>
       document.elementsFromPoint(x, y).find((e) => {
-        if (e.closest('.result-layer')) return false;
+        if (e.closest('.result-layer, .pop-card, .scrim, dialog[open]')) return false;
         for (let a: Element | null = e; a; a = a.parentElement) {
           const cs = getComputedStyle(a);
           if (cs.opacity === '0' || cs.visibility === 'hidden') return false;
@@ -94,6 +111,11 @@ function coveredLabels(page: Page) {
         return true;
       }) ?? null;
     const out: string[] = [];
+    // A sheet open over the table (the menu) is meant to cover all of it.
+    if (document.querySelector('dialog[open]')) {
+      style.remove();
+      return out;
+    }
     try {
       for (const el of document.querySelectorAll('.seat .name, .seat .team')) {
         const r = el.getBoundingClientRect();
@@ -108,6 +130,8 @@ function coveredLabels(page: Page) {
         }
         const hit = topVisible(x, y);
         if (!hit) out.push(`${describe(el)}: off screen`);
+        // Between hands each seat is one transparent button over itself.
+        else if (hit.matches('.seat-tap') && hit.parentElement?.contains(el)) continue;
         else if (hit !== el && !el.contains(hit)) out.push(`${describe(el)} under ${describe(hit)}`);
       }
     } finally {
@@ -122,6 +146,8 @@ function coveredLabels(page: Page) {
 function hiddenCorners(page: Page) {
   return page.evaluate(() => {
     const out: string[] = [];
+    // Under an open sheet (the menu) the hand is meant to be covered.
+    if (document.querySelector('dialog[open]')) return out;
     const cards = [...document.querySelectorAll('.hand .card')];
     for (const card of cards) {
       const corner = card.querySelector('.corner.top');
@@ -179,7 +205,7 @@ for (const { name, path } of PAGES) {
     if (name.startsWith('preview-')) {
       // The checks below must have something to check.
       expect(await page.locator('.seat .name').count()).toBeGreaterThanOrEqual(5);
-      if (!['preview-done', 'preview-won', 'preview-run'].includes(name)) {
+      if (!NO_HAND.includes(name.slice('preview-'.length))) {
         expect(await page.locator('.hand .card').count()).toBeGreaterThanOrEqual(10);
       }
     }
@@ -223,4 +249,32 @@ test('replay', async ({ page }, info) => {
     for (const o of over) problems.push(`${tab}: ${o}`);
   }
   expect(problems).toEqual([]);
+});
+
+// The table from the home page: the back gesture opens the menu instead of
+// leaving, and 나가기 goes home with no table entry left behind.
+test('back stays at the table; 나가기 leaves', async ({ page }, info) => {
+  test.skip(sizeOf(info.project.name) !== '390x844', 'one size is enough');
+  await page.goto('/');
+  await page.getByRole('button', { name: '테이블 만들기' }).click();
+  await page.waitForURL(/\/r\/[a-z0-9]+$/);
+  const table = page.url();
+  await page.locator('.seat-act', { hasText: '앉기' }).first().click();
+  await page.locator('.pop-card input').fill('테스트');
+  await page.locator('.pop-card button[type=submit]').click();
+  await expect(page.locator('.seat-act', { hasText: '+ 봇' }).first()).toBeVisible();
+
+  await page.goBack();
+  await expect(page.locator('dialog[open]')).toBeVisible();
+  expect(page.url()).toBe(table);
+  // Back again closes the menu, still at the table.
+  await page.goBack();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  expect(page.url()).toBe(table);
+
+  await page.locator('.menu-btn').click();
+  await page.locator('dialog .leave').click();
+  await page.waitForURL((url) => url.pathname === '/');
+  expect(await page.evaluate(() => history.state)).toBeNull();
+  await expect(page.getByRole('button', { name: '테이블 만들기' })).toBeVisible();
 });
