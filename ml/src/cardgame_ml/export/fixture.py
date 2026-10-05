@@ -7,7 +7,10 @@ and ``tiny-q``:
 Rust's tests run ``model.onnx`` on ``parity.json``'s observations; the
 Python tests run ``model.pt``. Both must give the outputs recorded there,
 so PyTorch and the Rust runtime agree with each other through it. Rewrite
-it when the model's architecture changes.
+it when the model's architecture or the encoding changes
+(``scripts/regenerate-fixtures.sh`` rewrites every fixture). The positions
+come from rule sets frozen in ``crates/env/tests/parity-rules.json``, so a
+change to the presets leaves the fixture as it is.
 """
 
 # PyTorch leaves some of manual_seed's parameters unannotated, which strict
@@ -41,13 +44,16 @@ FIXTURE = ROOT / "crates" / "infer" / "tests" / "tiny"
 Q_FIXTURE = ROOT / "crates" / "infer" / "tests" / "tiny-q"
 """Where the Q network's lives."""
 HELD_OUT = ROOT / "research" / "evals" / "v1" / "heldout-rules.json"
+RULES = ROOT / "crates" / "env" / "tests" / "parity-rules.json"
+"""The frozen pool of rule sets the positions are played under."""
 
 
 def positions(seed: int = SEED, num_envs: int = 2, at: tuple[int, ...] = (0, 15, 45)) -> Batch:
-    """Positions from random play over varied rules (never a held-out
-    set), the steps ``at`` of ``num_envs`` hands at once: by default six,
-    from before anyone acts (no events) to deep in the play."""
-    env = Env(num_envs=num_envs, seed=seed, rules="varied", exclude=HELD_OUT, threads=1)
+    """Positions from random play over the frozen rule sets (never a
+    held-out one), the steps ``at`` of ``num_envs`` hands at once: by
+    default six, from before anyone acts (no events) to deep in the play."""
+    rules = RULES.read_text(encoding="utf-8")
+    env = Env(num_envs=num_envs, seed=seed, rules=rules, exclude=HELD_OUT, threads=1)
     rng = np.random.default_rng(seed)
     step = env.reset()
     taken: list[Batch] = []
