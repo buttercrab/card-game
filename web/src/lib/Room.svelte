@@ -164,7 +164,7 @@
   {#if client.status === 'missing'}
     <section class="panel center">
       <h2>{id} 테이블이 없어요</h2>
-      <p class="muted">아무도 없이 30분이 지나면 테이블이 닫혀요.</p>
+      <p class="muted">아무도 없이 {CATALOG.idle_minutes}분이 지나면 테이블이 닫혀요.</p>
       <button class="primary" onclick={leave}>새 테이블 만들기</button>
     </section>
   {:else if !room}

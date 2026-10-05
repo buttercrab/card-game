@@ -83,7 +83,7 @@ impl AppState {
             bot_delay,
             bot_think: None,
             max_rooms: 500,
-            idle: Duration::from_secs(30 * 60),
+            idle: Duration::from_secs(IDLE_MINUTES * 60),
             data: None,
             reports: Arc::default(),
             error_issues: Arc::default(),
@@ -483,10 +483,16 @@ struct Report {
     client: Value,
 }
 
-/// Reports kept at most this long, and accepted at most this often.
-pub(crate) const REPORT_DAYS: u64 = 14;
+/// Reports (and new client errors) kept at most this long, in days.
+pub const REPORT_DAYS: u64 = 14;
+/// The longest report kept, in characters.
+pub const REPORT_MAX: usize = 2000;
+/// A table with nobody connected closes after this many minutes, unless
+/// the server is told otherwise.
+pub const IDLE_MINUTES: u64 = 30;
+/// Reports accepted at most this often, from everyone.
 const REPORTS_PER_HOUR: usize = 30;
-/// The largest report body: 2000 characters of text and the client's description.
+/// The largest report body: [`REPORT_MAX`] characters of text and the client's description.
 const REPORT_BODY: usize = 32 * 1024;
 
 /// Saves a player's problem report with the room's state and move log under
@@ -495,7 +501,7 @@ async fn report(State(app): State<AppState>, ClientIp(ip): ClientIp, Json(r): Js
     if !app.limits.reports.allow(ip) {
         return too_many();
     }
-    let text: String = r.text.trim().chars().take(2000).collect();
+    let text: String = r.text.trim().chars().take(REPORT_MAX).collect();
     if text.is_empty() {
         return ServerError::new(ErrorCode::EmptyReport).respond(StatusCode::BAD_REQUEST);
     }

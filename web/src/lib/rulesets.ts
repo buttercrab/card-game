@@ -1,20 +1,7 @@
-// Where rule sets come from: the server's presets (fetched once and kept),
-// and the custom sets a group saved on this device.
-import { PRESETS } from './presets';
+// The custom sets a group saved on this device; the presets come with the
+// build (catalog.ts).
 import { same } from './ruleFields';
-import { presetRules as catalogRules, isPreset } from './catalog';
 import type { Rules } from './types';
-
-/** A preset's full rules, from the catalog built in. */
-export function presetRules(id: string): Promise<Rules> {
-  return isPreset(id) ? Promise.resolve(catalogRules(id)) : Promise.reject(new Error(`no preset ${id}`));
-}
-
-/** Every preset's rules, by id. */
-export async function allPresetRules(): Promise<Record<string, Rules>> {
-  const entries = await Promise.all(PRESETS.map(async (p) => [p.id, await presetRules(p.id)] as const));
-  return Object.fromEntries(entries);
-}
 
 /** Rules a group made from a preset and kept on this device. */
 export interface CustomSet {

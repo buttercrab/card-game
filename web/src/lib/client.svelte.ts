@@ -1,3 +1,4 @@
+import { CATALOG } from './catalog';
 import { errorText } from './errorText';
 import { sound } from './sound';
 import { Toasts } from './toast.svelte';
@@ -277,7 +278,7 @@ export class RoomClient {
   }
 
   /** Seats a bot, or changes the level of the one already there. */
-  addBot(seat: number, level: BotLevel = 'hard') {
+  addBot(seat: number, level: BotLevel = CATALOG.default_bot_level) {
     this.#send({ type: 'add_bot', seat, level });
   }
 

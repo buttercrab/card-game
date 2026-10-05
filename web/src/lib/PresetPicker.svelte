@@ -6,9 +6,9 @@
 <script lang="ts">
   // The rule sets a new table can play, one row each: the name, then what
   // sets it apart from 기본, worked out from the rule data (ruleFields.ts).
-  import { PRESETS } from './presets';
+  import { PRESET_RULES, PRESETS, presetTitle } from './catalog';
   import { traits } from './ruleFields';
-  import { allPresetRules, customName, type CustomSet } from './rulesets';
+  import { customName, type CustomSet } from './rulesets';
   import type { Rules } from './types';
 
   let {
@@ -23,10 +23,7 @@
     label?: string;
   } = $props();
 
-  let all = $state<Record<string, Rules> | null>(null);
-  allPresetRules()
-    .then((r) => (all = r))
-    .catch((e) => console.error('presets', e));
+  const all = PRESET_RULES;
 
   const SHOWN = 3;
 
@@ -63,13 +60,13 @@
     {@render row(
       `custom:${c.id}`,
       customName(c),
-      line(c.rules, all?.[c.base]),
+      line(c.rules, all[c.base]),
       '바뀐 것 없음',
-      `${PRESETS.find((p) => p.id === c.base)?.name ?? c.base} 바탕`,
+      `${presetTitle(c.base)} 바탕`,
     )}
   {/each}
   {#each PRESETS as p (p.id)}
-    {@render row(p.id, p.name, line(all?.[p.id], all?.default), p.id === 'default' ? '다른 규칙과 견주는 기준' : '기본과 같아요')}
+    {@render row(p.id, p.title, line(p.rules, all.default), p.id === 'default' ? '다른 규칙과 견주는 기준' : '기본과 같아요')}
   {/each}
 </div>
 

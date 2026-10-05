@@ -63,6 +63,9 @@ const SNAPSHOT_FORMAT: u32 = 1;
 /// The turn times a table may choose, in seconds; 0 is no limit.
 pub const TURN_LIMITS: [u32; 4] = [0, 20, 40, 60];
 
+/// The longest name a seat takes, in characters; longer ones are cut.
+pub const NAME_MAX: usize = 24;
+
 /// A turn's time for a seat marked away (자리 비움), in seconds.
 const AWAY_SECS: u32 = 5;
 
@@ -1067,7 +1070,7 @@ impl<G: SessionGame> Room<G> {
         device: Option<String>,
         reclaim: bool,
     ) -> Result<(), ServerError> {
-        let name = name.trim().chars().take(24).collect::<String>();
+        let name = name.trim().chars().take(NAME_MAX).collect::<String>();
         if name.is_empty() {
             return Err(ErrorCode::NameRequired.into());
         }

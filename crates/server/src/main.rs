@@ -26,7 +26,7 @@ struct Args {
     #[arg(long, default_value_t = 500)]
     max_rooms: usize,
     /// Close a table after this many minutes with nobody connected.
-    #[arg(long, default_value_t = 30)]
+    #[arg(long, default_value_t = server::IDLE_MINUTES)]
     idle_minutes: u64,
     /// Save tables here so they survive restarts and deploys.
     #[arg(long)]
@@ -46,6 +46,10 @@ struct Args {
     /// this directory, `web/src/lib/generated`, then exit.
     #[arg(long)]
     write_generated: Option<PathBuf>,
+    /// Print the catalog (presets, bot levels, the table's choices and
+    /// limits) as JSON, then exit.
+    #[arg(long)]
+    dump_catalog: bool,
 }
 
 /// Exits successfully when the server at `addr` answers /healthz.
@@ -74,6 +78,10 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     if let Some(dir) = args.write_generated {
         return server::codegen::write(&dir);
+    }
+    if args.dump_catalog {
+        println!("{}", serde_json::to_string_pretty(&server::catalog::catalog())?);
+        return Ok(());
     }
     if args.healthcheck {
         return healthcheck(args.addr).await;

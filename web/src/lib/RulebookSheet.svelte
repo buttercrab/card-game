@@ -1,10 +1,9 @@
 <script lang="ts">
   import CompareSheet from './CompareSheet.svelte';
-  import { PRESET_NAME } from './presets';
   import Rulebook from './Rulebook.svelte';
   import RuleDiff from './RuleDiff.svelte';
   import { differences, otherDifferences } from './ruleFields';
-  import { isPreset, presetRules } from './catalog';
+  import { isPreset, presetRules, presetTitle } from './catalog';
   import { loadCustom } from './rulesets';
   import type { Rules } from './types';
 
@@ -29,7 +28,7 @@
   const base = $derived(pinned ?? (isPreset(preset) ? presetRules(preset) : null));
   /** What the table plays by: its own rules, or its pinned preset's. */
   const effective = $derived(rules ?? pinned ?? (isPreset(preset) ? presetRules(preset) : null));
-  const name = $derived(PRESET_NAME[preset] ?? preset);
+  const name = $derived(presetTitle(preset));
   const custom = $derived(rules && base && (differences(rules, base).length || otherDifferences(rules, base)) ? rules : null);
   let comparing = $state(false);
 

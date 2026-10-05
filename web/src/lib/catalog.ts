@@ -2,7 +2,7 @@
 // generated into the build: the presets with their rules, and the table's
 // other choices.
 import { CATALOG } from './generated/catalog';
-import type { Preset, PresetInfo, Rules } from './types';
+import type { BotLevel, Preset, PresetInfo, Rules } from './types';
 
 export { CATALOG };
 
@@ -17,6 +17,12 @@ export function isPreset(id: string): id is Preset {
 export function presetTitle(id: string): string {
   return PRESETS.find((p) => p.id === id)?.title ?? id;
 }
+
+/** Every preset's rules, by id; not to be changed (see presetRules). */
+export const PRESET_RULES: Record<string, Rules> = Object.fromEntries(PRESETS.map((p) => [p.id, p.rules]));
+
+/** A bot level's name at the table. */
+export const LEVEL_LABEL = Object.fromEntries(CATALOG.bot_levels.map((l) => [l.id, l.label])) as Record<BotLevel, string>;
 
 /** A preset's rules, as a copy the caller may change. */
 export function presetRules(id: Preset): Rules {

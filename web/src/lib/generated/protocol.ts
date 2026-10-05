@@ -66,6 +66,12 @@ raise_on_exchange: boolean, };
  */
 export type BotLevel = "easy" | "normal" | "hard";
 
+export type BotLevelInfo = { id: BotLevel, 
+/**
+ * Its name at the table.
+ */
+label: string, };
+
 /**
  * A playing card. Ranks run from 2 to 14 (ace).
  */
@@ -101,7 +107,44 @@ protocol: string,
 /**
  * In the order players pick them.
  */
-presets: Array<PresetInfo>, default_preset: Preset, };
+presets: Array<PresetInfo>, default_preset: Preset, 
+/**
+ * From weakest to strongest.
+ */
+bot_levels: Array<BotLevelInfo>, 
+/**
+ * The level a bot sits down at unless asked for another.
+ */
+default_bot_level: BotLevel, 
+/**
+ * The turn limits a table may choose, in seconds; 0 is none.
+ */
+turn_limits: Array<number>, 
+/**
+ * The quick reactions a seat may send; anything else is refused.
+ */
+reactions: Array<string>, 
+/**
+ * The longest name a seat takes, in characters.
+ */
+name_max: number, 
+/**
+ * The longest problem report kept, in characters.
+ */
+report_max: number, 
+/**
+ * How long reports and new client errors are kept, in days.
+ */
+report_days: number, 
+/**
+ * Where 딜미스 comes first, how long the first bid waits after the
+ * deal, in milliseconds.
+ */
+first_bid_grace_ms: number, 
+/**
+ * A table with nobody connected closes after this many minutes.
+ */
+idle_minutes: number, };
 
 /**
  * Everything a client may send on a table's connection.

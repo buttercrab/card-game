@@ -4,7 +4,7 @@
 import type { Catalog } from './protocol';
 
 export const CATALOG: Catalog = {
-  "protocol": "fd0e3a5ee2de",
+  "protocol": "17355437ba94",
   "presets": [
     {
       "id": "default",
@@ -1088,5 +1088,45 @@ export const CATALOG: Catalog = {
       }
     }
   ],
-  "default_preset": "default"
+  "default_preset": "default",
+  "bot_levels": [
+    {
+      "id": "easy",
+      "label": "초보"
+    },
+    {
+      "id": "normal",
+      "label": "보통"
+    },
+    {
+      "id": "hard",
+      "label": "고수"
+    }
+  ],
+  "default_bot_level": "hard",
+  "turn_limits": [
+    0,
+    20,
+    40,
+    60
+  ],
+  "reactions": [
+    "👏",
+    "😂",
+    "😮",
+    "😭",
+    "🔥",
+    "🙏",
+    "나이스",
+    "아…",
+    "ㅋㅋㅋ",
+    "빨리요~",
+    "미안",
+    "굿"
+  ],
+  "name_max": 24,
+  "report_max": 2000,
+  "report_days": 14,
+  "first_bid_grace_ms": 2000,
+  "idle_minutes": 30
 };

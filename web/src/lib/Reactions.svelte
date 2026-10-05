@@ -1,12 +1,14 @@
 <script lang="ts">
-  // A small button that opens the table's quick reactions. The list matches
-  // the server's; it refuses anything else.
+  // A small button that opens the table's quick reactions: the server's
+  // list (it refuses anything else), emoji in a row, words as chips.
+  import { CATALOG } from './catalog';
   import Icon from './Icon.svelte';
   /** `below` opens the menu downward, for a button near the top of the screen. */
   let { onreact, below = false }: { onreact: (text: string) => void; below?: boolean } = $props();
 
-  const EMOJI = ['👏', '😂', '😮', '😭', '🔥', '🙏'];
-  const PHRASES = ['나이스', '아…', 'ㅋㅋㅋ', '빨리요~', '미안', '굿'];
+  const emoji = (r: string) => /\p{Extended_Pictographic}/u.test(r);
+  const EMOJI = CATALOG.reactions.filter(emoji);
+  const PHRASES = CATALOG.reactions.filter((r) => !emoji(r));
 
   let open = $state(false);
   let root: HTMLElement;

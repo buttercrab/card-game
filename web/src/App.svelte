@@ -8,7 +8,7 @@
   import Privacy from './lib/Privacy.svelte';
   import Room from './lib/Room.svelte';
   import Rulebook from './lib/Rulebook.svelte';
-  import { PRESET_NAME } from './lib/presets';
+  import { isPreset, presetTitle } from './lib/catalog';
 
   let path = $state(location.pathname);
 
@@ -37,7 +37,7 @@
   // keeps the title in step.
   $effect(() => {
     document.title = rulesFor
-      ? `${PRESET_NAME[rulesFor] ? `${PRESET_NAME[rulesFor]} 규칙` : '규칙'} · 마이티`
+      ? `${isPreset(rulesFor) ? `${presetTitle(rulesFor)} 규칙` : '규칙'} · 마이티`
       : roomId
         ? '마이티 · 테이블'
         : page === '/about'

@@ -2,6 +2,7 @@
   // A small card of choices for one seat, between hands, hung from the seat
   // that was tapped: a bot's level, swapping seats, sending someone to
   // watch, standing up, filling an empty seat or sitting in it.
+  import { CATALOG, LEVEL_LABEL } from './catalog';
   import { onMount, tick } from 'svelte';
   import Icon from './Icon.svelte';
   import { layer } from './layers';
@@ -49,8 +50,6 @@
     oninvite: () => void;
   } = $props();
 
-  const LEVEL: Record<BotLevel, string> = { easy: '초보', normal: '보통', hard: '고수' };
-  const LEVELS: BotLevel[] = ['easy', 'normal', 'hard'];
   const seated = $derived(me !== null);
   const mine = $derived(me === seat);
   const title = $derived.by(() => {
@@ -62,7 +61,7 @@
     info.kind === 'empty'
       ? '빈 자리'
       : info.kind === 'bot'
-        ? `봇 · ${LEVEL[info.level]}`
+        ? `봇 · ${LEVEL_LABEL[info.level]}`
         : !info.connected
           ? '연결 끊김'
           : info.away
@@ -160,7 +159,7 @@
   {:else if !seated}
     <!-- Watching: an empty seat, or a bot's between hands, is yours to take. -->
     <form class="sit" onsubmit={sit}>
-      <input bind:this={field} bind:value={name} placeholder="이름" aria-label="이름" maxlength="24" autocomplete="nickname" />
+      <input bind:this={field} bind:value={name} placeholder="이름" aria-label="이름" maxlength={CATALOG.name_max} autocomplete="nickname" />
       <button type="submit" disabled={!name.trim()}>{info.kind === 'bot' ? '대신 앉기' : '앉기'}</button>
     </form>
     {#if info.kind === 'empty'}
@@ -168,8 +167,8 @@
     {/if}
   {:else if info.kind === 'bot'}
     <span class="levels" role="radiogroup" aria-label="{title} 실력">
-      {#each LEVELS as l (l)}
-        <button role="radio" aria-checked={info.level === l} onclick={() => info.level !== l && onlevel(l)}>{LEVEL[l]}</button>
+      {#each CATALOG.bot_levels as l (l.id)}
+        <button role="radio" aria-checked={info.level === l.id} onclick={() => info.level !== l.id && onlevel(l.id)}>{l.label}</button>
       {/each}
     </span>
     <button class="item" onclick={onswap}><Icon name="swap" />자리 바꾸기</button>
@@ -177,8 +176,8 @@
   {:else if info.kind === 'empty'}
     <span class="label">봇 앉히기</span>
     <span class="levels add" role="group" aria-label="봇 앉히기">
-      {#each LEVELS as l (l)}
-        <button onclick={() => onlevel(l)} aria-label="{LEVEL[l]} 봇 앉히기">{LEVEL[l]}</button>
+      {#each CATALOG.bot_levels as l (l.id)}
+        <button onclick={() => onlevel(l.id)} aria-label="{l.label} 봇 앉히기">{l.label}</button>
       {/each}
     </span>
     <button class="item" onclick={oninvite}><Icon name="invite" />친구 초대하기</button>

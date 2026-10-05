@@ -153,6 +153,19 @@ pub enum BotLevel {
     Hard,
 }
 
+impl BotLevel {
+    pub const ALL: [BotLevel; 3] = [BotLevel::Easy, BotLevel::Normal, BotLevel::Hard];
+
+    /// The level's name at the table.
+    pub fn label(self) -> &'static str {
+        match self {
+            BotLevel::Easy => "초보",
+            BotLevel::Normal => "보통",
+            BotLevel::Hard => "고수",
+        }
+    }
+}
+
 /// What a Mighty table says beyond the view, on the seat's turn.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
 pub struct MightyNotes {
