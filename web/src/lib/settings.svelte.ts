@@ -1,7 +1,7 @@
 // Per-player preferences, kept in this browser only.
 
 import { prefersReducedMotion } from 'svelte/motion';
-import type { CardBack, TableTone } from './achievements';
+import type { CardBack, TableTone } from './games/mighty/achievements';
 
 export type Speed = 'normal' | 'fast' | 'off';
 

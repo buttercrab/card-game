@@ -4,8 +4,8 @@
   import Home from './lib/Home.svelte';
   import NotFound from './lib/NotFound.svelte';
   import Privacy from './lib/Privacy.svelte';
-  import Room from './lib/Room.svelte';
-  import Rulebook from './lib/Rulebook.svelte';
+  import Room from './lib/room/Room.svelte';
+  import Rulebook from './lib/games/mighty/Rulebook.svelte';
   import { isPreset, presetTitle } from './lib/catalog';
 
   let path = $state(location.pathname);
@@ -50,9 +50,9 @@
   // The tool pages (the deck, the table's states, the share image) load on
   // their own, so players never download them.
   const tools: Record<string, () => Promise<{ default: Component }>> = {
-    '/deck': () => import('./lib/DeckPreview.svelte'),
-    '/preview': () => import('./lib/TablePreview.svelte'),
-    '/share': () => import('./lib/SharePreview.svelte'),
+    '/deck': () => import('./lib/games/mighty/DeckPreview.svelte'),
+    '/preview': () => import('./lib/games/mighty/TablePreview.svelte'),
+    '/share': () => import('./lib/games/mighty/SharePreview.svelte'),
   };
 
   /** Links between the app's own pages move without reloading it. */

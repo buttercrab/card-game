@@ -1,9 +1,9 @@
 <script lang="ts">
-  import Card from './Card.svelte';
-  import BackArt from './CardBack.svelte';
+  import Card from './games/mighty/Card.svelte';
+  import BackArt from './games/mighty/CardBack.svelte';
   import Icon from './Icon.svelte';
   import SuitText from './SuitText.svelte';
-  import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './achievements';
+  import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './games/mighty/achievements';
   import { settings, type Speed } from './settings.svelte';
   import { TABLE_TONE } from './tokens';
   import Button from './ui/Button.svelte';

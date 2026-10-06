@@ -3,7 +3,7 @@
 // (its presets with their rules).
 import { CATALOG as SITE } from './generated/catalog';
 import { CATALOG as MIGHTY } from './generated/mighty/catalog';
-import type { BotLevel, Preset, PresetInfo, Rules } from './types';
+import type { BotLevel, Preset, PresetInfo, Rules } from './games/mighty/types';
 
 export const CATALOG = { ...SITE, ...MIGHTY };
 

@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { Suit } from './types';
+  import type { Suit } from './games/mighty/types';
 
   // Drawn on a 100 × 100 grid so every suit has the same visual weight.
   export const PATHS: Record<Suit | 'Star', string> = {

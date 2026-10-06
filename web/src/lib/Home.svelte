@@ -1,18 +1,18 @@
 <script lang="ts">
-  import Card from './Card.svelte';
+  import Card from './games/mighty/Card.svelte';
   import InstallHint from './InstallHint.svelte';
   import ReportSheet from './ReportSheet.svelte';
   import SettingsSheet from './SettingsSheet.svelte';
   import SiteLinks from './SiteLinks.svelte';
-  import StatsSheet from './StatsSheet.svelte';
-  import Tutorial from './Tutorial.svelte';
+  import StatsSheet from './games/mighty/StatsSheet.svelte';
+  import Tutorial from './games/mighty/Tutorial.svelte';
   import { settings } from './settings.svelte';
-  import CompareSheet from './CompareSheet.svelte';
-  import PresetPicker from './PresetPicker.svelte';
-  import RuleEditor from './RuleEditor.svelte';
-  import RulebookSheet from './RulebookSheet.svelte';
+  import CompareSheet from './games/mighty/CompareSheet.svelte';
+  import PresetPicker from './games/mighty/PresetPicker.svelte';
+  import RuleEditor from './games/mighty/RuleEditor.svelte';
+  import RulebookSheet from './games/mighty/RulebookSheet.svelte';
   import { CATALOG, isPreset, presetTitle } from './catalog';
-  import { customName, loadCustom, type CustomSet } from './rulesets';
+  import { customName, loadCustom, type CustomSet } from './games/mighty/rulesets';
   import { responseError } from './errorText';
   import Button from './ui/Button.svelte';
 
