@@ -103,7 +103,7 @@
 <div class="felt" bind:this={felt}>
   <!-- The seats and the trick sit in a ring no wider than the felt is tall,
        so on a wide screen the seats stay near their cards. -->
-  <div class="ring" class:watching class:lift-sides={controlsOut} bind:this={ringEl}>
+  <div class="ring" class:watching class:between class:five={n === 5} class:lift-sides={controlsOut} bind:this={ringEl}>
     {#each around as r (r)}
       {@const s = ring.seatAt(r)}
       {@const d = ring.direction(r)}
@@ -253,6 +253,17 @@
   .seat-box {
     position: relative;
   }
+  /* An empty top seat has another 38px of choices under its figure.
+     On the narrowest phones, leave that row clear of the side seat's
+     transparent menu target (not just its visible name). */
+  @media (orientation: portrait) {
+    @container (max-width: 360px) {
+      .between .spot.right,
+      .between .spot.left {
+        top: max(var(--cy), calc(var(--seat-h) * 1.5 + 68px));
+      }
+    }
+  }
   .trick {
     position: absolute;
     left: 50%;
@@ -357,5 +368,21 @@
       top: auto;
       bottom: 0;
     }
+    /* Empty seats include action rows. Two stacked seats cannot fit a
+       short felt, so between hands the four others use one ordered row. */
+    .ring.between.five {
+      --seat-figure: 20px;
+      --seat-meta-min: 0px;
+    }
+    .between.five .spot:not(.bottom) {
+      top: 0;
+      bottom: auto;
+      right: auto;
+      transform: translateX(-50%);
+    }
+    .between.five .spot.left { left: 12.5%; }
+    .between.five .spot.top-left { left: 37.5%; }
+    .between.five .spot.top-right { left: 62.5%; }
+    .between.five .spot.right { left: 87.5%; }
   }
 </style>

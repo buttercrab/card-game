@@ -637,6 +637,7 @@
   class:swapping={swapFrom !== null}
   class:result-open={done !== null && !folded}
   class:controls-out={controls}
+  class:between
   style:--over="{controls ? controlsHeight : 0}px"
   style:--tools-w="{toolsWidth}px"
 >
@@ -964,7 +965,8 @@
      so your tools sit at the end of the top line, which keeps room. */
   @media (max-width: 599px) {
     .controls-out .tools-area,
-    .controls-out .tools-area.crowded {
+    .controls-out .tools-area.crowded,
+    .between .tools-area {
       display: block;
       grid-area: status;
       align-self: center;
@@ -972,7 +974,8 @@
       z-index: calc(var(--z-status) + 1);
       margin: 0;
     }
-    .controls-out .status-area {
+    .controls-out .status-area,
+    .between .status-area {
       padding-inline-end: calc(var(--tools-w) + 4px);
     }
   }
@@ -1060,6 +1063,12 @@
     }
     .table.seated {
       --tools-room: 0px;
+    }
+    /* No decision panel between hands: use that width for the seats and
+       keep the empty tray beside the lobby's controls at the foot. */
+    .table.between {
+      grid-template-columns: minmax(0, 1fr) 120px;
+      grid-template-areas: 'status status' 'felt felt' 'strip tray';
     }
     .event {
       display: none;

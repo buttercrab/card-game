@@ -37,7 +37,7 @@
   const shuffleNext = $derived(room.table.shuffle_next);
 </script>
 
-<div class="centre">
+<div class="centre" class:seated>
   {#if swapping}
     <p class="note">바꿀 자리를 누르세요</p>
     <Button onclick={oncancelswap}>취소</Button>
@@ -45,7 +45,7 @@
     {#if full}
       <button class="btn primary go" onclick={onstart}>{room.hands_played === 0 ? '시작' : '다음 판'}</button>
     {:else}
-      <p class="note">빈 자리 <strong>{emptySeats}</strong>개 · 봇이나 친구로 채우면 시작해요</p>
+      <p class="note">빈 자리 <strong>{emptySeats}</strong>개</p>
     {/if}
     {#if shuffleNote}<p class="sub shuffle-note" role="status">{shuffleNote}</p>{/if}
     <div class="tools">
@@ -94,7 +94,13 @@
     width: max-content;
     max-width: max(150px, calc(100cqw - 2 * var(--seat-w) - 8px));
     text-align: center;
+    /* Only the controls take taps: unused space between them must not
+       cover the empty seats' buttons on a short phone. */
+    pointer-events: none;
     animation: fade-up 240ms var(--ease-standard) both;
+  }
+  .centre :global(button) {
+    pointer-events: auto;
   }
   :global(:root[data-motion='reduced']) .centre {
     animation-name: fade;
@@ -150,6 +156,17 @@
     color: var(--table);
     box-shadow: 0 1px 0 var(--btn-lip);
     translate: 0 2px;
+  }
+  @container (max-width: 360px) {
+    .tool {
+      min-width: 44px;
+      min-height: 52px;
+    }
+  }
+  @media (orientation: landscape) and (max-height: 520px) {
+    .centre.seated {
+      top: calc(100% + 40px);
+    }
   }
   /* Hung under the middle's buttons, so it takes no height from them: the
      middle stays clear of the top seats on a short phone. */

@@ -1,7 +1,12 @@
 # DMC v2: 경기과고 at five, a bigger network, exploring starts for the bidding
 
-**Status: prepared, not run.** The overnight run waits for the owner's
-go-ahead and a free Mac. The smoke run below checks the pipeline.
+**Status (2026-10-06): run, stopped and assessed.** The main run reached
+about 119k hands before the owner stopped it. The [RL assessment](../2026-10-06-rl-assessment)
+records its final weakness and restart recommendations. Training remains paused.
+
+The setup, smoke results and launch checklist below describe the original
+pre-run plan at mighty-3. They are historical context, not current instructions
+to launch or resume the run on mighty-4.
 
 **Question.** With the current rules and scoring (encoding `mighty-3`:
 the out-of-turn 딜미스; scoring G, `LoseScore::PaysBack(10)`), on one
@@ -122,7 +127,7 @@ at a time: about 2.7 ms a position for this 4.3M network, so 200 deals
 search needs fewer deals (50), a prior to cut the candidates, and
 threads. (The payoffs in this table are four hands: noise.)
 
-## Before launching
+## Original launch checklist (historical)
 
 1. The owner's go-ahead, and the Mac to itself overnight (other sessions
    starve the niced actors).

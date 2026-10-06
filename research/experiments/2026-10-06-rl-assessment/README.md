@@ -56,7 +56,7 @@ Code added (small, in `crates/sim`):
 - **`lab declare`** now also records the friend and the focus seat's
   misdeal calls (`DeclareResult.friend`, `.misdeals`), so points can be
   split by role.
-- **`lab bid-signal`** ([`crates/sim/src/signal.rs`](../../../crates/sim/src/signal.rs)):
+- **`lab bid-signal`** ([`crates/lab/src/signal.rs`](../../../crates/lab/src/signal.rs) (moved from `sim` by the cleanup)):
   every bidding decision of hands played by one bot in every seat, with
   the seat's payoff and three predictors: the simple bot's reading of
   the hand (its `estimate` in its best trump, what the cheapest bid
@@ -445,8 +445,13 @@ ReBeL/SoG is out of budget.
    ReBeL/Student of Games (budget), per-phase heads alone (the data is
    the problem, not the capacity).
 
-Reproduce: build `cargo build --release -p sim --features dmc`, then
+Reproduce at the manifest's recorded commit (`ffdcaac`), in a separate checkout:
+build `cargo build --release -p sim --features dmc`, then
 the scripts in [`scripts/`](scripts) in order (export, batch1, exch,
 signal, batch3, `replicate.py` from `ml/` with `uv run`), then
 `analyze_declare.py`, `analyze_exchange.py`, `analyze_signal.py`.
 Total compute ~2 hours of a shared Mac at nice 10, 3–8 threads.
+
+Current main uses `mighty-4`, has a separate `lab` crate and no `dmc` Cargo
+feature flag. The recipe above and its scripts target the historical
+assessment revision; see [current tool instructions](../../../docs/DEVELOPMENT.md).

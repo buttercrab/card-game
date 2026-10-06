@@ -6,7 +6,7 @@ import type { CardBack, TableTone } from './looks';
 export type Speed = 'normal' | 'fast' | 'off';
 
 interface Settings {
-  /** ♦ blue and ♣ green instead of red and black. */
+  /** ♦ orange and ♣ blue instead of red and ink. */
   fourColor: boolean;
   /** Play a card with one tap instead of raise-then-play. */
   singleTap: boolean;

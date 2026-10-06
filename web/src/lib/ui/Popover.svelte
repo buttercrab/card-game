@@ -5,7 +5,7 @@
   // viewport, which a phone's keyboard shrinks (and may scroll) while a
   // field in it has focus; too tall for what is left, it scrolls inside.
   // Escape, a tap outside and the back gesture (layers.ts) close it.
-  import { untrack, type Snippet } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { layer } from '../layers';
 
   let {
@@ -88,6 +88,9 @@
     return untrack(open);
   });
   function open() {
+    const element = card!;
+    const previous = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    let closed = false;
     const unlayer = layer(() => onclose());
     const vv = window.visualViewport;
     vv?.addEventListener('resize', place);
@@ -96,14 +99,24 @@
     const sized = new ResizeObserver(() => place());
     sized.observe(card!);
     place();
-    // Once it is where it belongs, so focusing it scrolls nothing.
-    const want = autofocus?.();
-    (want === null ? null : (want ?? card))?.focus({ preventScroll: true });
+    // Placement clears visibility:hidden on the next render. Bindings in
+    // the caller (a seat's name field) also need that render before focus.
+    void tick().then(() => {
+      if (closed || !element.isConnected) return;
+      const want = autofocus?.();
+      (want === null ? null : (want ?? element))?.focus({ preventScroll: true });
+    });
     return () => {
+      closed = true;
       unlayer();
       vv?.removeEventListener('resize', place);
       vv?.removeEventListener('scroll', place);
       sized.disconnect();
+      // Escape/back must leave a keyboard user at the opener. An outside
+      // control that already took focus keeps it; a removed opener is skipped.
+      if (previous?.isConnected && (element.contains(document.activeElement) || document.activeElement === document.body)) {
+        previous.focus({ preventScroll: true });
+      }
     };
   }
 

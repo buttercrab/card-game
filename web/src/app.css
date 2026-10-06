@@ -170,8 +170,8 @@ body {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
-/* A button is unstyled until it says what it is: `.btn` (lib/Button.svelte)
-   or `.chip` (lib/Chip.svelte), or a component's own look. */
+/* A button is unstyled until it says what it is: `.btn` (lib/ui/Button.svelte)
+   or `.chip` (lib/ui/Chip.svelte), or a component's own look. */
 @layer reset {
   button {
     appearance: none;
