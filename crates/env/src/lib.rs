@@ -16,13 +16,15 @@
 //! caller's actions ([`Hand`]), and each slot of a batch draws its hands'
 //! seeds from its own stream, whatever the batch size or thread count.
 //!
-//! Hands are played turn by turn: out-of-turn actions
-//! ([`engine::Game::out_of_turn_actions`], such as a 딜미스 called the
-//! moment the cards land) are never offered. A seat that may throw the
-//! deal in finds the misdeal among its legal actions on its own turn, as
-//! long as the rules still allow it then; with `misdeal.window` at
-//! `BeforeFirstBid` that is only the seats that speak before the first bid. The simulator and
-//! the evals play the same way.
+//! Hands are played turn by turn, for training: a seat is offered its
+//! legal actions ([`engine::Game::legal_actions`]) only on its own turn
+//! ([`engine::Game::turn`]), and the optional actions other seats have
+//! meanwhile (such as a 딜미스 called the moment the cards land) are left
+//! aside. A seat that may throw the deal in finds the misdeal among its
+//! legal actions on its own turn, as long as the rules still allow it
+//! then; with `misdeal.window` at `BeforeFirstBid` that is only the seats
+//! that speak before the first bid. The simulator and the evals play the
+//! same way.
 //!
 //! The core is generic; what differs between games is the small
 //! [`EnvGame`] trait. Mighty's is in [`mighty`].

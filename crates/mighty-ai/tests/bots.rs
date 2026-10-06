@@ -110,7 +110,10 @@ fn a_doomed_joker_is_the_cheapest_card_to_lose() {
 /// A seat bidding first under `preset` with `hand`, and what it may do.
 fn bidding(preset: Preset, hand: Vec<Card>) -> (View, Vec<Action>) {
     let state = dealt_cards(preset.rules(), 0, &[hand], &[]);
-    (Mighty::view(&state, Viewer::Seat(0)), Mighty::legal_actions(&state))
+    (
+        Mighty::view(&state, Viewer::Seat(0)),
+        engine::legal_on_turn::<Mighty>(&state),
+    )
 }
 
 fn decide(view: &View, legal: &[Action]) -> Action {

@@ -737,7 +737,9 @@ export type TrickPolicy = { first: CardPolicy, last: CardPolicy, };
 export type TrickWhen = "First" | "Last";
 
 /**
- * Who must act next.
+ * Whom the hand waits on. Legality is by seat ([`Game::legal_actions`]):
+ * this says only whose move paces the hand (a clock, a bot that should
+ * think now) and when chance must be drawn.
  */
 export type Turn = "Chance" | { "Seat": number } | "Over";
 

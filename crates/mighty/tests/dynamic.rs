@@ -49,17 +49,20 @@ fn play_both(rules: &Rules, first_bidder: usize, seed: u64) -> Vec<i64> {
                 dynamic.sample_chance(&mut dyn_rng),
                 Mighty::sample_chance(&state, &mut rng),
             ),
-            Turn::Seat(_) => {
-                let json_legal = dynamic.legal_actions();
-                let legal = Mighty::legal_actions(&state);
+            Turn::Seat(seat) => {
+                let json_legal = dynamic.legal_actions(seat);
+                let legal = engine::legal_on_turn::<Mighty>(&state);
                 assert_eq!(json_legal.len(), legal.len());
                 let i = dyn_rng.random_range(0..json_legal.len());
                 assert_eq!(rng.random_range(0..legal.len()), i);
                 (json_legal[i].clone(), legal[i].clone())
             }
         };
-        dynamic.apply(&json_action).unwrap();
-        Mighty::apply(&mut state, action).unwrap();
+        match dynamic.turn() {
+            Turn::Seat(seat) => dynamic.apply(seat, &json_action).unwrap(),
+            _ => dynamic.apply_chance(&json_action).unwrap(),
+        }
+        engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
     }
     let payoffs = Mighty::payoffs(&state).expect("the hand is over");
     assert_eq!(dynamic.payoffs(), Some(payoffs.clone()));
@@ -114,11 +117,14 @@ fn illegal_json_actions_change_nothing() {
     let options = json!({ "rules": Preset::Gshs.rules(), "first_bidder": 0 });
     let mut hand = game.new_game(&options).unwrap();
     let deal = hand.sample_chance(&mut ChaCha8Rng::seed_from_u64(0));
-    hand.apply(&deal).unwrap();
+    hand.apply_chance(&deal).unwrap();
     let before = hand.view(Viewer::Spectator);
     // A bid below the minimum, then something that is not an action.
     let low = json!({ "Bid": { "trump": "Spade", "count": 1 } });
-    assert!(matches!(hand.apply(&low), Err(DynError::Game(_))));
-    assert!(matches!(hand.apply(&json!({ "Shout": 1 })), Err(DynError::Json { .. })));
+    assert!(matches!(hand.apply(0, &low), Err(DynError::Game(_))));
+    assert!(matches!(
+        hand.apply(0, &json!({ "Shout": 1 })),
+        Err(DynError::Json { .. })
+    ));
     assert_eq!(hand.view(Viewer::Spectator), before);
 }

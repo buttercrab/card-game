@@ -276,14 +276,14 @@ fn play_on(policy: &SimpleBot, endgame: usize, mut state: State, me: Seat, horiz
             Turn::Seat(seat) => {
                 if horizon.is_some_and(|h| seat == me && tricks_done(&state) >= h) {
                     let view = Mighty::view(&state, Viewer::Seat(me));
-                    return Outcome::Leaf(Mighty::encode(&view, &Mighty::legal_actions(&state)));
+                    return Outcome::Leaf(Mighty::encode(&view, &engine::legal_on_turn::<Mighty>(&state)));
                 }
                 if endgame > 0
                     && let Some(payoffs) = endgame::solve(&state, endgame)
                 {
                     return Outcome::Payoff(payoffs[me]);
                 }
-                let legal = Mighty::legal_actions(&state);
+                let legal = engine::legal_on_turn::<Mighty>(&state);
                 let choice = policy.decide(&Seen::of_state(&state, seat), &legal);
                 state.step(seat, choice);
             }

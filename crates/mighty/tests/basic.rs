@@ -29,11 +29,11 @@ fn start(fixed: &[&str], kitty: &str) -> State {
 }
 
 fn act(state: &mut State, action: Action) {
-    Mighty::apply(state, action.clone()).unwrap_or_else(|e| panic!("{action:?}: {e}"));
+    engine::apply_on_turn::<Mighty>(state, action.clone()).unwrap_or_else(|e| panic!("{action:?}: {e}"));
 }
 
 fn legal(state: &State) -> Vec<Action> {
-    Mighty::legal_actions(state)
+    engine::legal_on_turn::<Mighty>(state)
 }
 
 /// Takes the first legal action.
@@ -116,8 +116,9 @@ fn misdeal_counts_halves() {
 
 const WEAK: &str = "S2 S3 S4 S5 S6 S7 S8 H2 H3 C2";
 
-fn out_of_turn(state: &State, seat: usize) -> Vec<Action> {
-    Mighty::out_of_turn_actions(state, seat)
+/// What `seat` may do now, its turn or not.
+fn legal_of(state: &State, seat: usize) -> Vec<Action> {
+    Mighty::legal_actions(state, seat)
 }
 
 #[test]
@@ -127,21 +128,22 @@ fn anyone_may_misdeal_until_the_first_bid() {
     // may throw the deal in from the moment the cards land.
     assert!(matches!(phase(&state), PhaseView::Bidding { to_act: 0, .. }));
     assert!(!legal(&state).contains(&Action::Misdeal));
-    assert_eq!(out_of_turn(&state, 1), vec![Action::Misdeal]);
-    assert!(out_of_turn(&state, 2).is_empty(), "seat 2's hand does not qualify");
-    assert!(
-        out_of_turn(&state, 0).is_empty(),
-        "the seat to act finds it in its legal actions"
+    assert_eq!(
+        legal_of(&state, 1),
+        vec![Action::Misdeal],
+        "off its turn, only the misdeal"
     );
+    assert!(legal_of(&state, 2).is_empty(), "seat 2's hand does not qualify");
+    assert!(!legal_of(&state, 0).contains(&Action::Misdeal), "nor does the dealer's");
     // A pass does not close the window; the first bid does.
     act(&mut state, Action::Pass);
     assert_eq!(Mighty::turn(&state), Turn::Seat(1));
     assert!(legal(&state).contains(&Action::Misdeal));
     act(&mut state, Action::Pass);
-    assert!(out_of_turn(&state, 1).is_empty(), "a seat that passed has had its say");
+    assert!(legal_of(&state, 1).is_empty(), "a seat that passed has had its say");
     act(&mut state, bid(S, 14));
     let mut late = state.clone();
-    assert!(Mighty::apply_out_of_turn(&mut late, 1, Action::Misdeal).is_err());
+    assert!(Mighty::apply(&mut late, 1, Action::Misdeal).is_err());
     assert_eq!(late, state, "a refused action changes nothing");
 }
 
@@ -149,7 +151,6 @@ fn anyone_may_misdeal_until_the_first_bid() {
 fn the_window_closes_at_the_first_bid() {
     let mut state = start(&["D2 D3 D4 D5 D6 D7 D8 D9 DA DK", WEAK], "");
     act(&mut state, bid(S, 14));
-    assert!(out_of_turn(&state, 1).is_empty());
     assert_eq!(Mighty::turn(&state), Turn::Seat(1));
     assert!(!legal(&state).contains(&Action::Misdeal));
 }
@@ -161,7 +162,7 @@ fn the_misdeal_is_shown_and_its_caller_deals() {
         "",
     );
     // Seat 2 calls it out of turn, while the dealer is still thinking.
-    Mighty::apply_out_of_turn(&mut state, 2, Action::Misdeal).unwrap();
+    Mighty::apply(&mut state, 2, Action::Misdeal).unwrap();
     assert_eq!(Mighty::turn(&state), Turn::Chance);
     let deal = Mighty::sample_chance(&state, &mut rng());
     act(&mut state, deal);

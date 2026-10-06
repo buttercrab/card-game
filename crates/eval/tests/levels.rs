@@ -33,7 +33,7 @@ fn easy_and_normal_are_the_tables_bots() {
                     Turn::Over => break,
                     Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                     Turn::Seat(seat) => {
-                        let legal = Mighty::legal_actions(&state);
+                        let legal = engine::legal_on_turn::<Mighty>(&state);
                         let view = Mighty::view(&state, Viewer::Seat(seat));
                         let ask =
                             |bot: &mut dyn Bot<Mighty>| bot.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(deal));
@@ -43,7 +43,7 @@ fn easy_and_normal_are_the_tables_bots() {
                         Bot::<Mighty>::act(&mut RandomBot, &view, &legal, &mut rng)
                     }
                 };
-                Mighty::apply(&mut state, action).expect("legal");
+                engine::apply_on_turn::<Mighty>(&mut state, action).expect("legal");
             }
         }
         assert!(decisions > 1000);

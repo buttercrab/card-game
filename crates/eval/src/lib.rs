@@ -67,9 +67,8 @@ pub trait EvalGame: JsonGame<Rules: Clone + Send + Sync, Options: Send + Sync> +
     const LOG_VERSION: u32 = 1;
 
     /// A log recorded in log version `version`, as steps that replay now:
-    /// each action with the seat taking it out of turn
-    /// ([`engine::Game::apply_out_of_turn`]), or `None` for the seat to
-    /// act. Published puzzles never change, so an old one is upgraded by
+    /// each action with the seat taking it, or `None` for whoever the hand
+    /// waits on ([`engine::Game::turn`]: chance, or the seat to act). Published puzzles never change, so an old one is upgraded by
     /// the version it was recorded in, never by trying it as it is first.
     /// By default only [`EvalGame::LOG_VERSION`] is known, replayed as it is.
     fn upgrade_log(
@@ -84,8 +83,8 @@ pub trait EvalGame: JsonGame<Rules: Clone + Send + Sync, Options: Send + Sync> +
     }
 }
 
-/// Actions to replay, each with the seat taking it out of turn, or `None`
-/// for the seat to act ([`EvalGame::upgrade_log`]).
+/// Actions to replay, each with the seat taking it, or `None` for whoever
+/// the hand waits on ([`EvalGame::upgrade_log`]).
 pub type Steps<A> = Vec<(Option<Seat>, A)>;
 
 /// A log's actions, each for the seat to act.

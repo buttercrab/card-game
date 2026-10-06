@@ -76,15 +76,15 @@ impl<G: EvalGame> Puzzle<G> {
         let mut state = G::new_game(&options).map_err(|e| fail(e.to_string()))?;
         for (i, (seat, action)) in steps.into_iter().enumerate() {
             let applied = match seat {
-                Some(seat) => G::apply_out_of_turn(&mut state, seat, action),
-                None => G::apply(&mut state, action),
+                Some(seat) => G::apply(&mut state, seat, action).map_err(|e| e.to_string()),
+                None => engine::apply_on_turn::<G>(&mut state, action).map_err(|e| e.to_string()),
             };
             applied.map_err(|e| fail(format!("{}: step {i}: {e}", replaying())))?;
         }
         let Turn::Seat(seat) = G::turn(&state) else {
             return Err(fail("no seat is to act".into()));
         };
-        let legal = G::legal_actions(&state);
+        let legal = G::legal_actions(&state, seat);
         if let Some(a) = self.acceptable.iter().find(|a| !legal.contains(a)) {
             return Err(fail(format!("acceptable {a:?} is not legal")));
         }

@@ -51,7 +51,7 @@ fn levels_play_as_the_levels_build() {
                 Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                 Turn::Seat(seat) => {
                     let view = Mighty::view(&state, Viewer::Seat(seat));
-                    let legal = Mighty::legal_actions(&state);
+                    let legal = engine::legal_on_turn::<Mighty>(&state);
                     for (name, level) in [("초보", Level::Easy), ("normal", Level::Normal)] {
                         let seed = decisions as u64;
                         let spec = Mighty::parse_bot(name).unwrap();
@@ -66,7 +66,7 @@ fn levels_play_as_the_levels_build() {
                     legal.choose(&mut rng).unwrap().clone()
                 }
             };
-            Mighty::apply(&mut state, action).unwrap();
+            engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
         }
     }
     assert!(decisions > 500);

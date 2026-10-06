@@ -130,7 +130,7 @@ fn play(args: &Args, net: &Arc<BeliefNet>, rules: &[Rules], hands: impl Iterator
                 Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                 Turn::Seat(seat) => {
                     let view = Mighty::view(&state, Viewer::Seat(seat));
-                    let legal = Mighty::legal_actions(&state);
+                    let legal = engine::legal_on_turn::<Mighty>(&state);
                     let phase = match &view.phase {
                         PhaseView::Bidding { .. } => Some(0),
                         PhaseView::Exchange { .. } => Some(1),
@@ -188,7 +188,7 @@ fn play(args: &Args, net: &Arc<BeliefNet>, rules: &[Rules], hands: impl Iterator
                     bots[seat].act(&view, &legal, &mut rng)
                 }
             };
-            Mighty::apply(&mut state, action).expect("legal");
+            engine::apply_on_turn::<Mighty>(&mut state, action).expect("legal");
         }
     }
     tally

@@ -94,7 +94,7 @@ impl<G: SessionGame> Room<G> {
         self.clock.set(key, || {
             let key = key.expect("a timer runs for a turn");
             let mut full = second * limit;
-            if game.is_some_and(|g| G::long_decision(&G::legal_actions(g))) {
+            if game.is_some_and(|g| G::long_decision(&G::legal_actions(g, key.seat))) {
                 full *= 2;
             }
             if key.away { (second * AWAY_SECS).min(full) } else { full }

@@ -61,15 +61,15 @@ fn play(net: &Arc<QNet>, options: &Options, seed: u64) -> (Vec<i64>, Vec<Action>
             Turn::Over => break,
             Turn::Chance => {
                 let deal = Mighty::sample_chance(&state, &mut rng);
-                Mighty::apply(&mut state, deal).unwrap();
+                engine::apply_on_turn::<Mighty>(&mut state, deal).unwrap();
             }
             Turn::Seat(seat) => {
                 let view = Mighty::view(&state, Viewer::Seat(seat));
-                let legal = Mighty::legal_actions(&state);
+                let legal = engine::legal_on_turn::<Mighty>(&state);
                 let action = Bot::<Mighty>::act(&mut bot, &view, &legal, &mut rng);
                 assert!(legal.contains(&action));
                 moves.push(action.clone());
-                Mighty::apply(&mut state, action).unwrap();
+                engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
             }
         }
     }

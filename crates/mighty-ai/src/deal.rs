@@ -276,7 +276,10 @@ mod tests {
                     dealer.fill(&mut world, (hands, down));
                     Mighty::check_invariants(&world).unwrap();
                     assert_eq!(Mighty::view(&world, Viewer::Seat(seat)), view);
-                    assert_eq!(Mighty::legal_actions(&world), Mighty::legal_actions(state));
+                    assert_eq!(
+                        engine::legal_on_turn::<Mighty>(&world),
+                        engine::legal_on_turn::<Mighty>(state)
+                    );
                 }
             });
         }
@@ -316,7 +319,7 @@ mod tests {
         for preset in [Preset::Default, Preset::Gshs, Preset::Kmla] {
             let mut picked: Vec<View> = Vec::new();
             positions(&preset.rules(), 2, |state, seat| {
-                if picked.len() < 6 && (Mighty::legal_actions(state).len() > 1) {
+                if picked.len() < 6 && (engine::legal_on_turn::<Mighty>(state).len() > 1) {
                     picked.push(Mighty::view(state, Viewer::Seat(seat)));
                 }
             });
@@ -388,7 +391,7 @@ mod tests {
         let mut asked = 0;
         positions(&Preset::Gshs.rules(), 1, |state, seat| {
             let view = Mighty::view(state, Viewer::Seat(seat));
-            let legal = Mighty::legal_actions(state);
+            let legal = engine::legal_on_turn::<Mighty>(state);
             let before = model.calls.load(Ordering::Relaxed);
             let action = bot.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(3));
             assert!(legal.contains(&action));

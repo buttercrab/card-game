@@ -83,7 +83,7 @@ pub fn audit(rules: &Rules, record: &Record) -> Result<Audit> {
                 ));
             }
         }
-        Mighty::apply(&mut state, action.clone()).map_err(|e| LabError::Replay {
+        engine::apply_on_turn::<Mighty>(&mut state, action.clone()).map_err(|e| LabError::Replay {
             deal: record.deal,
             step,
             action: action.clone(),

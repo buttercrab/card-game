@@ -75,9 +75,13 @@ pub fn drive<G: Game>(
     while !stop(state) {
         let action = match G::turn(state) {
             Turn::Over => return Ok(()),
-            Turn::Chance => G::sample_chance(state, chance),
+            Turn::Chance => {
+                let action = G::sample_chance(state, chance);
+                G::apply_chance(state, action.clone())?;
+                action
+            }
             Turn::Seat(seat) => {
-                let legal = G::legal_actions(state);
+                let legal = G::legal_actions(state, seat);
                 let action = decide(state, seat, &legal);
                 observer.decided(Decided {
                     step: log.len(),
@@ -86,10 +90,10 @@ pub fn drive<G: Game>(
                     legal: &legal,
                     action: &action,
                 });
+                G::apply(state, seat, action.clone())?;
                 action
             }
         };
-        G::apply(state, action.clone())?;
         log.push(action);
     }
     Ok(())
@@ -186,7 +190,7 @@ pub fn play_observed<G: Game>(
             Turn::Over => break,
             Turn::Chance => G::sample_chance(&state, &mut chance),
             Turn::Seat(seat) => {
-                let legal = G::legal_actions(&state);
+                let legal = engine::legal_on_turn::<G>(&state);
                 if legal.is_empty() {
                     return Err(fail(&log, format!("seat {seat} has no legal action")));
                 }
@@ -205,7 +209,8 @@ pub fn play_observed<G: Game>(
                 action
             }
         };
-        G::apply(&mut state, action.clone()).map_err(|e| fail(&log, format!("apply {action:?}: {e}")))?;
+        engine::apply_on_turn::<G>(&mut state, action.clone())
+            .map_err(|e| fail(&log, format!("apply {action:?}: {e}")))?;
         log.push(action);
         G::check_invariants(&state).map_err(|e| fail(&log, e))?;
         if checks.view_every > 0 && log.len() % checks.view_every == 0 {
@@ -216,7 +221,8 @@ pub fn play_observed<G: Game>(
     let payoffs = G::payoffs(&state).ok_or_else(|| fail(&log, "game over without payoffs".into()))?;
     let mut replay = G::new_game(options).map_err(|e| fail(&log, format!("replay: {e}")))?;
     for action in &log {
-        G::apply(&mut replay, action.clone()).map_err(|e| fail(&log, format!("replay {action:?}: {e}")))?;
+        engine::apply_on_turn::<G>(&mut replay, action.clone())
+            .map_err(|e| fail(&log, format!("replay {action:?}: {e}")))?;
     }
     if replay != state {
         return Err(fail(&log, "replaying the log gave a different state".into()));

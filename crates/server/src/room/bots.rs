@@ -1,12 +1,12 @@
 //! Bots at the table: how long they seem to take over a move, thinking
-//! here or on a bot worker, the out-of-turn plans they make on a deal, and
+//! here or on a bot worker, the off-turn moves they plan on a deal, and
 //! the 고수 bot's hints for players. A bot's move comes back to the room
 //! on its own typed channel ([`Internal`]).
 
 use super::{ConnId, Msg, Room, log_action};
 use crate::protocol::{ErrorCode, ServerError};
 use crate::session::{Decision, SessionGame};
-use engine::{Turn, Viewer};
+use engine::Viewer;
 use mighty::bot::Level;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -57,8 +57,9 @@ pub(super) enum Internal<A> {
     /// The bot for hand `version` failed to think (it panicked): the 보통
     /// bot moves for it instead.
     BotFailed { version: u64, seat: usize },
-    /// A bot's out-of-turn action, decided when deal number `deal` landed.
-    BotOutOfTurn { deal: u64, seat: usize, action: A },
+    /// A bot's move off its turn (a 딜미스), decided when deal number
+    /// `deal` landed.
+    BotOffTurn { deal: u64, seat: usize, action: A },
 }
 
 impl<G: SessionGame> Room<G> {
@@ -76,7 +77,7 @@ impl<G: SessionGame> Room<G> {
         };
         let bots = &self.env.bots;
         let view = G::view(game, Viewer::Seat(seat));
-        let legal = G::legal_actions(game);
+        let legal = G::legal_actions(game, seat);
         let (seed, version) = (self.rng.random::<u64>(), self.hand.version);
         // People take a moment, longer for a real choice, and every move
         // varies a little.
@@ -146,7 +147,7 @@ impl<G: SessionGame> Room<G> {
                 self.done_thinking(version);
                 self.is_current(version, seat) && self.stand_in(seat, "the bot failed; a 보통 bot moved")
             }
-            Internal::BotOutOfTurn { deal, seat, action } => self.bot_out_of_turn(deal, seat, action),
+            Internal::BotOffTurn { deal, seat, action } => self.bot_off_turn(deal, seat, action),
         }
     }
 
@@ -165,7 +166,7 @@ impl<G: SessionGame> Room<G> {
     /// Applies a bot's move. Returns whether it did.
     fn bot_move(&mut self, seat: usize, action: G::Action) -> bool {
         let logged = log_action(&action);
-        if let Err(e) = self.hand.apply(action) {
+        if let Err(e) = self.hand.apply(seat, action) {
             tracing::error!(room = %self.id, seat, action = %logged, "bot chose an illegal action: {e}");
             return false;
         }
@@ -180,10 +181,10 @@ impl<G: SessionGame> Room<G> {
             return false;
         };
         let view = G::view(game, Viewer::Seat(seat));
-        let legal = G::legal_actions(game);
+        let legal = G::legal_actions(game, seat);
         let action = G::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut self.rng);
         let logged = log_action(&action);
-        if let Err(e) = self.hand.apply(action) {
+        if let Err(e) = self.hand.apply(seat, action) {
             tracing::error!(room = %self.id, seat, action = %logged, "the stand-in chose an illegal action: {e}");
             return false;
         }
@@ -191,36 +192,46 @@ impl<G: SessionGame> Room<G> {
         true
     }
 
-    /// Applies a bot's out-of-turn action if it is still allowed. Returns
-    /// whether it did.
-    fn bot_out_of_turn(&mut self, deal: u64, seat: usize, action: G::Action) -> bool {
+    /// Applies a bot's off-turn move if it is still allowed: the same deal,
+    /// the bot still seated, still not its turn (on its turn it thinks
+    /// afresh), and still legal. Returns whether it did.
+    fn bot_off_turn(&mut self, deal: u64, seat: usize, action: G::Action) -> bool {
         let allowed = self
             .hand
             .game
             .as_ref()
-            .is_some_and(|g| G::out_of_turn_actions(g, seat).contains(&action));
+            .is_some_and(|g| !self.hand.waits_on(seat) && G::legal_actions(g, seat).contains(&action));
         if deal != self.hand.deals || self.seating.bot(seat).is_none() || !allowed {
             return false;
         }
-        self.out_of_turn(seat, action).is_ok()
+        self.apply_move(seat, action, "bot off-turn move").is_ok()
     }
 
-    /// Right after a deal, each bot decides once whether to act out of
-    /// turn (a 딜미스), and does so after a short pause, as a person would.
-    pub(super) fn plan_out_of_turn(&mut self) {
+    /// Right after a deal, each bot the hand does not wait on decides once
+    /// whether to take one of its legal actions anyway (a 딜미스), and
+    /// does so after a short pause, as a person would.
+    pub(super) fn plan_off_turn(&mut self) {
         let Some(game) = self.hand.game.as_ref() else { return };
         for seat in 0..self.seating.len() {
             let Some((level, _)) = self.seating.bot(seat) else {
                 continue;
             };
-            let Some(action) = G::bot_out_of_turn(level, seat, game, &mut self.rng) else {
+            if self.hand.waits_on(seat) {
+                continue;
+            }
+            let legal = G::legal_actions(game, seat);
+            if legal.is_empty() {
+                continue;
+            }
+            let view = G::view(game, Viewer::Seat(seat));
+            let Some(action) = G::bot_off_turn(level, seat, &view, &legal) else {
                 continue;
             };
             let pause = self.env.bots.delay.mul_f32(self.rng.random_range(1.0..1.5));
             let (tx, deal) = (self.internal.clone(), self.hand.deals);
             tokio::spawn(async move {
                 tokio::time::sleep(pause).await;
-                let _ = tx.send(Internal::BotOutOfTurn { deal, seat, action });
+                let _ = tx.send(Internal::BotOffTurn { deal, seat, action });
             });
         }
     }
@@ -228,7 +239,7 @@ impl<G: SessionGame> Room<G> {
     /// What the 고수 bot would do in `seat`'s place, sent to `conn` alone.
     pub(super) fn hint(&mut self, conn: ConnId, seat: usize) -> Result<(), ServerError> {
         let game = self.hand.game.as_ref().ok_or(ErrorCode::NoHand)?;
-        if G::turn(game) != Turn::Seat(seat) {
+        if !self.hand.waits_on(seat) {
             return Err(ErrorCode::NotYourTurn.into());
         }
         let tx = self.seating.conns.get(&conn).ok_or(ErrorCode::NotSeated)?.tx.clone();
@@ -236,7 +247,7 @@ impl<G: SessionGame> Room<G> {
         // how often one connection asks, by its own limit (`limit::ws_hints`).
         let permit = self.env.hints.try_permit().ok_or(ErrorCode::HintsBusy)?;
         let view = G::view(game, Viewer::Seat(seat));
-        let legal = G::legal_actions(game);
+        let legal = G::legal_actions(game, seat);
         let (seed, version) = (self.rng.random::<u64>(), self.hand.version);
         tokio::task::spawn_blocking(move || {
             let _permit = permit;

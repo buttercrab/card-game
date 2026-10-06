@@ -41,7 +41,7 @@ pub struct PlayResult {
 /// The focus seat's decision `d`, if `base` would have chosen otherwise
 /// on the same view and randomness: the two choices and the simple bot's.
 fn differing(record: &Record, base: &Actor, focus: Seat, d: &Decision, rng: &mut ChaCha8Rng) -> Option<PlayDecision> {
-    let legal = Mighty::legal_actions(d.state);
+    let legal = engine::legal_on_turn::<Mighty>(d.state);
     if d.seat != focus || legal.len() == 1 {
         return None;
     }

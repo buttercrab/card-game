@@ -64,7 +64,7 @@ pub fn fingerprint<G: EvalGame>(spec: &G::Spec, probes: &[(G::State, Seat)]) -> 
     let mut hash = Sha256::new();
     for (i, (state, seat)) in probes.iter().enumerate() {
         let view = G::view(state, Viewer::Seat(*seat));
-        let legal = G::legal_actions(state);
+        let legal = engine::legal_on_turn::<G>(state);
         let mut bot = G::bot(spec, *seat);
         let action = bot.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(i as u64));
         hash.update(format!("{i} {action:?}\n").as_bytes());

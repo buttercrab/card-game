@@ -59,24 +59,20 @@ impl Game for Mighty {
         state.turn()
     }
 
-    fn legal_actions(state: &State) -> Vec<Action> {
-        state.legal_actions()
+    fn legal_actions(state: &State, seat: engine::Seat) -> Vec<Action> {
+        state.legal_actions(seat)
     }
 
     fn sample_chance(state: &State, rng: &mut dyn RngCore) -> Action {
         state.sample_deal(rng)
     }
 
-    fn apply(state: &mut State, action: Action) -> Result<(), Error> {
-        state.apply(action)
+    fn apply_chance(state: &mut State, action: Action) -> Result<(), Error> {
+        state.apply_chance(action)
     }
 
-    fn out_of_turn_actions(state: &State, seat: engine::Seat) -> Vec<Action> {
-        state.out_of_turn_actions(seat)
-    }
-
-    fn apply_out_of_turn(state: &mut State, seat: engine::Seat, action: Action) -> Result<(), Error> {
-        state.apply_out_of_turn(seat, action)
+    fn apply(state: &mut State, seat: engine::Seat, action: Action) -> Result<(), Error> {
+        state.apply(seat, action)
     }
 
     fn view(state: &State, viewer: Viewer) -> View {

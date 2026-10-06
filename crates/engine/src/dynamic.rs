@@ -85,21 +85,16 @@ pub trait DynState: Send + Sync + Debug {
     fn turn(&self) -> Turn;
 
     /// See [`Game::legal_actions`].
-    fn legal_actions(&self) -> Vec<Value>;
+    fn legal_actions(&self, seat: Seat) -> Vec<Value>;
 
     /// See [`Game::sample_chance`].
     fn sample_chance(&self, rng: &mut dyn RngCore) -> Value;
 
+    /// See [`Game::apply_chance`]; on error the state is unchanged.
+    fn apply_chance(&mut self, action: &Value) -> Result<(), DynError>;
+
     /// See [`Game::apply`]; on error the state is unchanged.
-    fn apply(&mut self, action: &Value) -> Result<(), DynError>;
-
-    /// See [`Game::out_of_turn_actions`].
-    fn out_of_turn_actions(&self, seat: Seat) -> Vec<Value>;
-
-    /// See [`Game::apply_out_of_turn`]; an action not in
-    /// [`DynState::out_of_turn_actions`] is refused, and on error the state
-    /// is unchanged.
-    fn apply_out_of_turn(&mut self, seat: Seat, action: &Value) -> Result<(), DynError>;
+    fn apply(&mut self, seat: Seat, action: &Value) -> Result<(), DynError>;
 
     /// See [`Game::view`].
     fn view(&self, viewer: Viewer) -> Value;
@@ -200,29 +195,22 @@ impl<G: JsonGame> DynState for Hand<G> {
         G::turn(&self.state)
     }
 
-    fn legal_actions(&self) -> Vec<Value> {
-        G::legal_actions(&self.state).iter().map(to_json).collect()
+    fn legal_actions(&self, seat: Seat) -> Vec<Value> {
+        G::legal_actions(&self.state, seat).iter().map(to_json).collect()
     }
 
     fn sample_chance(&self, rng: &mut dyn RngCore) -> Value {
         to_json(&G::sample_chance(&self.state, rng))
     }
 
-    fn apply(&mut self, action: &Value) -> Result<(), DynError> {
+    fn apply_chance(&mut self, action: &Value) -> Result<(), DynError> {
         let action: G::Action = parse("action", action)?;
-        G::apply(&mut self.state, action).map_err(|e| DynError::Game(e.to_string()))
+        G::apply_chance(&mut self.state, action).map_err(|e| DynError::Game(e.to_string()))
     }
 
-    fn out_of_turn_actions(&self, seat: Seat) -> Vec<Value> {
-        G::out_of_turn_actions(&self.state, seat).iter().map(to_json).collect()
-    }
-
-    fn apply_out_of_turn(&mut self, seat: Seat, action: &Value) -> Result<(), DynError> {
+    fn apply(&mut self, seat: Seat, action: &Value) -> Result<(), DynError> {
         let action: G::Action = parse("action", action)?;
-        if !G::out_of_turn_actions(&self.state, seat).contains(&action) {
-            return Err(DynError::Game(format!("seat {seat} may not take {action:?} now")));
-        }
-        G::apply_out_of_turn(&mut self.state, seat, action).map_err(|e| DynError::Game(e.to_string()))
+        G::apply(&mut self.state, seat, action).map_err(|e| DynError::Game(e.to_string()))
     }
 
     fn view(&self, viewer: Viewer) -> Value {
@@ -334,9 +322,9 @@ mod tests {
             }
         }
 
-        fn legal_actions(state: &RaceState) -> Vec<u32> {
+        fn legal_actions(state: &RaceState, seat: Seat) -> Vec<u32> {
             match Race::turn(state) {
-                Turn::Seat(_) => vec![1, 2],
+                Turn::Seat(s) if s == seat => vec![1, 2],
                 _ => Vec::new(),
             }
         }
@@ -345,8 +333,12 @@ mod tests {
             unreachable!("no chance in a race")
         }
 
-        fn apply(state: &mut RaceState, action: u32) -> Result<(), RaceError> {
-            if !Race::legal_actions(state).contains(&action) {
+        fn apply_chance(_: &mut RaceState, _: u32) -> Result<(), RaceError> {
+            Err(RaceError("no chance in a race"))
+        }
+
+        fn apply(state: &mut RaceState, seat: Seat, action: u32) -> Result<(), RaceError> {
+            if !Race::legal_actions(state, seat).contains(&action) {
                 return Err(RaceError("illegal"));
             }
             state.count += action;
@@ -397,10 +389,11 @@ mod tests {
         let preset = &game.presets()[0];
         assert_eq!(preset.rules, json!({ "target": 3 }));
         let mut hand = game.new_game(&preset.rules).unwrap();
-        while let Turn::Seat(_) = hand.turn() {
-            assert_eq!(hand.legal_actions(), [json!(1), json!(2)]);
+        while let Turn::Seat(seat) = hand.turn() {
+            assert_eq!(hand.legal_actions(seat), [json!(1), json!(2)]);
+            assert!(hand.legal_actions(1 - seat).is_empty());
             let before = hand.clone();
-            hand.apply(&json!(2)).unwrap();
+            hand.apply(seat, &json!(2)).unwrap();
             assert_ne!(before.view(Viewer::Spectator), hand.view(Viewer::Spectator));
         }
         assert_eq!(hand.view(Viewer::Seat(0)), json!(4));
@@ -420,11 +413,14 @@ mod tests {
         );
         assert!(game.new_game(&json!({ "target": 0 })).is_err());
         let mut hand = game.new_game(&json!({ "target": 3 })).unwrap();
-        assert!(matches!(hand.apply(&json!("two")), Err(DynError::Json { .. })));
-        assert_eq!(hand.apply(&json!(3)), Err(DynError::Game("illegal".into())));
+        assert!(matches!(hand.apply(0, &json!("two")), Err(DynError::Json { .. })));
+        assert_eq!(hand.apply(0, &json!(3)), Err(DynError::Game("illegal".into())));
         assert_eq!(hand.view(Viewer::Seat(0)), json!(0), "a refused action changes nothing");
-        assert!(hand.out_of_turn_actions(1).is_empty(), "none by default");
-        assert!(matches!(hand.apply_out_of_turn(1, &json!(1)), Err(DynError::Game(_))));
+        assert_eq!(
+            hand.apply(1, &json!(1)),
+            Err(DynError::Game("illegal".into())),
+            "not seat 1's turn"
+        );
         assert_eq!(hand.view(Viewer::Seat(0)), json!(0));
     }
 

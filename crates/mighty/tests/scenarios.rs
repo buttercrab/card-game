@@ -23,7 +23,7 @@ fn start(rules: Rules, fixed: &[&str], kitty: &str) -> State {
 }
 
 fn act(state: &mut State, action: Action) {
-    Mighty::apply(state, action).unwrap();
+    engine::apply_on_turn::<Mighty>(state, action).unwrap();
 }
 
 /// Seat 0 wins the bid with hearts, discards three clubs and calls `call`.
@@ -57,7 +57,7 @@ fn lead(state: &mut State, card: &str) {
 }
 
 fn legal_cards(state: &State) -> Vec<Card> {
-    let mut out: Vec<Card> = Mighty::legal_actions(state)
+    let mut out: Vec<Card> = engine::legal_on_turn::<Mighty>(state)
         .into_iter()
         .filter_map(|a| match a {
             Action::Play { card, .. } => Some(card),
@@ -157,7 +157,7 @@ fn everyone_sees_why_the_cards_were_dealt_again() {
 #[test]
 fn some_presets_forbid_passing_first() {
     let state = start(Preset::Dshs.rules(), &[], "");
-    assert!(!Mighty::legal_actions(&state).contains(&Action::Pass));
+    assert!(!engine::legal_on_turn::<Mighty>(&state).contains(&Action::Pass));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn bids_must_rise_and_no_trump_wins_ties() {
             count: 14,
         }),
     );
-    let legal = Mighty::legal_actions(&state);
+    let legal = engine::legal_on_turn::<Mighty>(&state);
     assert!(!legal.contains(&Action::Bid(Contract {
         trump: Some(Suit::Heart),
         count: 14
@@ -193,19 +193,19 @@ fn gshs_no_trump_counts_one_more_and_ties_never_win() {
     };
     let state = start(Preset::Gshs.rules(), &[], "");
     // 노기루다 13 is worth 14, the minimum.
-    let legal = Mighty::legal_actions(&state);
+    let legal = engine::legal_on_turn::<Mighty>(&state);
     assert!(legal.contains(&nt(13)) && !legal.contains(&nt(12)));
 
     // 노기루다 14 is worth 15: a suit must say 16 to overrule it.
     let mut state = start(Preset::Gshs.rules(), &[], "");
     act(&mut state, nt(14));
-    let legal = Mighty::legal_actions(&state);
+    let legal = engine::legal_on_turn::<Mighty>(&state);
     assert!(!legal.contains(&spade(15)) && legal.contains(&spade(16)));
 
     // And an equal 노기루다 does not overrule a suit.
     let mut state = start(Preset::Gshs.rules(), &[], "");
     act(&mut state, spade(15));
-    let legal = Mighty::legal_actions(&state);
+    let legal = engine::legal_on_turn::<Mighty>(&state);
     assert!(!legal.contains(&nt(14)) && legal.contains(&nt(15)));
 }
 
@@ -371,7 +371,7 @@ fn gshs_a_joker_led_on_the_first_trick_may_name_trump() {
         joker_lead: Some(Lead::Suit(Suit::Spade)),
         call_joker: false,
     };
-    assert!(Mighty::legal_actions(&state).contains(&names_trump));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&names_trump));
 }
 
 #[test]
@@ -396,7 +396,7 @@ fn a_joker_may_lead_its_colour_where_allowed() {
         joker_lead: Some(Lead::Color(Color::Red)),
         call_joker: false,
     };
-    assert!(Mighty::legal_actions(&state).contains(&by_colour));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&by_colour));
     act(&mut state, by_colour);
     // Either red suit follows; trump (hearts) too, since it follows.
     assert_eq!(legal_cards(&state), sorted("SA H2 D2"));
@@ -412,7 +412,7 @@ fn joker_call_forces_the_joker_out() {
         joker_lead: None,
         call_joker: true,
     };
-    assert!(Mighty::legal_actions(&state).contains(&call));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&call));
     act(&mut state, call);
     assert_eq!(legal_cards(&state), sorted("BJ"));
 }
@@ -511,8 +511,8 @@ fn illegal_actions_change_nothing() {
         trump: Some(Suit::Spade),
         count: 12,
     });
-    assert!(Mighty::apply(&mut state, too_low).is_err());
-    assert!(Mighty::apply(&mut state, Action::Discard(cards("D2")[0])).is_err());
+    assert!(engine::apply_on_turn::<Mighty>(&mut state, too_low).is_err());
+    assert!(engine::apply_on_turn::<Mighty>(&mut state, Action::Discard(cards("D2")[0])).is_err());
     assert_eq!(state, before);
 }
 
@@ -548,7 +548,10 @@ fn a_finished_hand_sums_up_every_trick() {
                     act(&mut state, deal);
                 }
                 Turn::Seat(_) => {
-                    let action = Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone();
+                    let action = engine::legal_on_turn::<Mighty>(&state)
+                        .choose(&mut rng)
+                        .unwrap()
+                        .clone();
                     act(&mut state, action);
                 }
             }
@@ -591,7 +594,7 @@ fn a_bid_nobody_can_top_ends_the_bidding() {
             count: 20,
         }),
     );
-    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
 }
 
 fn bid(trump: Option<Suit>, count: u8) -> Action {
@@ -610,7 +613,7 @@ fn gshs_throws_in_a_hand_worth_one_point_card_or_less() {
     for (hand, misdeal) in [(lone_ten, true), (lone_jack, true), (two, false)] {
         let state = start(Preset::Gshs.rules(), &[hand], "");
         assert_eq!(
-            Mighty::legal_actions(&state).contains(&Action::Misdeal),
+            engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal),
             misdeal,
             "{hand}"
         );
@@ -623,9 +626,9 @@ fn a_hand_of_only_point_cards_may_be_thrown_in_where_allowed() {
     let mut rules = Rules::web_mighty();
     rules.misdeal.all_points = true;
     let state = start(rules, &[rich], "");
-    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
     let state = start(Rules::web_mighty(), &[rich], "");
-    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(!engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
 }
 
 #[test]
@@ -659,7 +662,7 @@ fn passing_need_not_be_final() {
         act(&mut state, action);
     }
     assert_eq!(Mighty::turn(&state), Turn::Seat(2));
-    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
 
     // When everyone else passes in a row, the last bidder declares.
     let mut state = start(rules.clone(), &[DECLARER, SECOND, WEAK], KITTY);
@@ -670,7 +673,7 @@ fn passing_need_not_be_final() {
     act(&mut state, Action::Pass);
     // Seat 1 passed before seat 2's bid, and may answer it.
     assert_eq!(Mighty::turn(&state), Turn::Seat(1));
-    assert!(Mighty::legal_actions(&state).contains(&bid(h, 15)));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&bid(h, 15)));
     act(&mut state, Action::Pass);
     assert!(matches!(
         Mighty::view(&state, Viewer::Spectator).phase,
@@ -698,7 +701,7 @@ fn passing_need_not_be_final() {
         act(&mut state, action);
     }
     assert_eq!(Mighty::turn(&state), Turn::Seat(0));
-    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(!engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
 }
 
 #[test]
@@ -709,20 +712,20 @@ fn a_weak_hand_may_misdeal_out_of_turn_until_it_bids() {
     let lone_ten = "S4 S5 S6 S7 S8 H4 H5 H6 C8 C10";
     let state = start(Preset::Gshs.rules(), &[DECLARER, lone_ten], KITTY);
     assert_eq!(Mighty::turn(&state), Turn::Seat(0));
-    assert_eq!(Mighty::out_of_turn_actions(&state, 1), vec![Action::Misdeal]);
-    assert!(Mighty::out_of_turn_actions(&state, 0).is_empty());
-    assert!((2..5).all(|s| Mighty::out_of_turn_actions(&state, s).is_empty()));
+    assert_eq!(Mighty::legal_actions(&state, 1), vec![Action::Misdeal]);
+    assert!(Mighty::legal_actions(&state, 0).contains(&Action::Pass), "seat 0 bids");
+    assert!((2..5).all(|s| Mighty::legal_actions(&state, s).is_empty()));
     // Others bidding does not close it; seat 1's own bid does.
     let mut open = state.clone();
     act(&mut open, bid(Some(Suit::Spade), 14));
-    assert!(Mighty::out_of_turn_actions(&open, 1).is_empty(), "seat 1 is to act now");
-    assert!(Mighty::legal_actions(&open).contains(&Action::Misdeal));
+    assert_eq!(Mighty::turn(&open), Turn::Seat(1), "seat 1 is to act now");
+    assert!(Mighty::legal_actions(&open, 1).contains(&Action::Misdeal));
     act(&mut open, bid(Some(Suit::Heart), 15));
     act(&mut open, Action::Pass);
-    assert!(Mighty::out_of_turn_actions(&open, 1).is_empty(), "seat 1 has bid");
+    assert!(Mighty::legal_actions(&open, 1).is_empty(), "seat 1 has bid");
     // Called out of turn, it is shown and redealt as on a turn.
     let mut thrown = state.clone();
-    Mighty::apply_out_of_turn(&mut thrown, 1, Action::Misdeal).unwrap();
+    Mighty::apply(&mut thrown, 1, Action::Misdeal).unwrap();
     assert_eq!(Mighty::turn(&thrown), Turn::Chance);
     let deal = Mighty::sample_chance(&thrown, &mut rng());
     act(&mut thrown, deal);
@@ -730,8 +733,8 @@ fn a_weak_hand_may_misdeal_out_of_turn_until_it_bids() {
     assert!(matches!(redealt.why, Redeal::Misdeal { seat: 1, .. }), "seed {SEED}");
     // Only a qualifying seat, and only a misdeal.
     let mut refused = state.clone();
-    assert!(Mighty::apply_out_of_turn(&mut refused, 2, Action::Misdeal).is_err());
-    assert!(Mighty::apply_out_of_turn(&mut refused, 1, Action::Pass).is_err());
+    assert!(Mighty::apply(&mut refused, 2, Action::Misdeal).is_err());
+    assert!(Mighty::apply(&mut refused, 1, Action::Pass).is_err());
     assert_eq!(refused, state);
 }
 
@@ -743,7 +746,7 @@ fn after_bidding_keeps_the_window_open_all_through_the_bidding() {
     let mut state = start(rules, &[DECLARER, lone_ten], KITTY);
     act(&mut state, bid(Some(Suit::Spade), 14));
     act(&mut state, bid(Some(Suit::Heart), 15));
-    assert_eq!(Mighty::out_of_turn_actions(&state, 1), vec![Action::Misdeal]);
+    assert_eq!(Mighty::legal_actions(&state, 1), vec![Action::Misdeal]);
     // Passing ends it: a seat that passed has had its say.
     act(&mut state, Action::Pass);
     act(&mut state, Action::Pass);
@@ -756,7 +759,7 @@ fn after_bidding_keeps_the_window_open_all_through_the_bidding() {
         Mighty::view(&state, Viewer::Spectator).phase,
         PhaseView::Exchange { declarer: 0, .. }
     ));
-    assert!(Mighty::out_of_turn_actions(&state, 1).is_empty(), "the bidding is over");
+    assert!(Mighty::legal_actions(&state, 1).is_empty(), "the bidding is over");
 }
 
 #[test]
@@ -773,15 +776,16 @@ fn random_out_of_turn_misdeals_keep_the_state_sound() {
                     let deal = Mighty::sample_chance(&state, &mut rng);
                     act(&mut state, deal);
                 }
-                Turn::Seat(_) => {
+                Turn::Seat(to_act) => {
                     let callers: Vec<usize> = (0..5)
-                        .filter(|&s| !Mighty::out_of_turn_actions(&state, s).is_empty())
+                        .filter(|&s| s != to_act && !Mighty::legal_actions(&state, s).is_empty())
                         .collect();
                     if !callers.is_empty() && rng.random_bool(0.3) {
                         let seat = callers[rng.random_range(0..callers.len())];
-                        Mighty::apply_out_of_turn(&mut state, seat, Action::Misdeal).unwrap();
+                        assert_eq!(Mighty::legal_actions(&state, seat), [Action::Misdeal]);
+                        Mighty::apply(&mut state, seat, Action::Misdeal).unwrap();
                     } else {
-                        let legal = Mighty::legal_actions(&state);
+                        let legal = engine::legal_on_turn::<Mighty>(&state);
                         let action = legal[rng.random_range(0..legal.len())].clone();
                         act(&mut state, action);
                     }
@@ -801,7 +805,7 @@ fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
     for _ in 1..5 {
         act(&mut state, Action::Pass);
     }
-    assert!(Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
     act(&mut state, Action::Misdeal);
     assert_eq!(Mighty::turn(&state), Turn::Chance);
     let deal = Mighty::sample_chance(&state, &mut rng());
@@ -821,13 +825,13 @@ fn the_declarer_may_throw_in_a_hand_the_kitty_left_weak() {
         act(&mut state, Action::Pass);
     }
     act(&mut state, Action::Discard(cards("C3")[0]));
-    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(!engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
     let mut state = start(Rules::web_mighty(), &[WEAK], "C3 C4 C5");
     act(&mut state, bid(Some(Suit::Spade), 13));
     for _ in 1..5 {
         act(&mut state, Action::Pass);
     }
-    assert!(!Mighty::legal_actions(&state).contains(&Action::Misdeal));
+    assert!(!engine::legal_on_turn::<Mighty>(&state).contains(&Action::Misdeal));
 }
 
 #[test]
@@ -869,7 +873,10 @@ fn other_player_counts_deal_the_whole_deck() {
             while Mighty::turn(&state) != Turn::Over {
                 let action = match Mighty::turn(&state) {
                     Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                    _ => Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone(),
+                    _ => engine::legal_on_turn::<Mighty>(&state)
+                        .choose(&mut rng)
+                        .unwrap()
+                        .clone(),
                 };
                 act(&mut state, action);
                 Mighty::check_invariants(&state).unwrap_or_else(|e| panic!("{players} players, seed {seed}: {e}"));
@@ -893,7 +900,7 @@ fn every_preset_lets_the_declarer_name_a_card_it_holds_or_discarded() {
         .unwrap();
         // Answer no misdeals, bid the cheapest, then pass; discard the first cards.
         let legal = loop {
-            let legal = Mighty::legal_actions(&state);
+            let legal = engine::legal_on_turn::<Mighty>(&state);
             if legal.iter().any(|a| matches!(a, Action::CallFriend(_))) {
                 break legal;
             }
@@ -939,7 +946,7 @@ fn sees_no_friend(state: &State, seat: usize) -> bool {
 /// The seats after the leader play their first legal card.
 fn others_follow(state: &mut State) {
     for _ in 1..5 {
-        let action = Mighty::legal_actions(state)[0].clone();
+        let action = engine::legal_on_turn::<Mighty>(state)[0].clone();
         act(state, action);
     }
 }

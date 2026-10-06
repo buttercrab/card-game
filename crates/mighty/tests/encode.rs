@@ -26,9 +26,12 @@ fn play(options: &Options, seed: u64, mut visit: impl FnMut(&State)) {
         let action = match Mighty::turn(&state) {
             Turn::Over => return,
             Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-            Turn::Seat(_) => Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone(),
+            Turn::Seat(_) => engine::legal_on_turn::<Mighty>(&state)
+                .choose(&mut rng)
+                .unwrap()
+                .clone(),
         };
-        Mighty::apply(&mut state, action).unwrap();
+        engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
     }
 }
 
@@ -49,7 +52,7 @@ fn rule_sets() -> Vec<Rules> {
 
 fn legal_for(state: &State, seat: usize) -> Vec<Action> {
     if Mighty::turn(state) == Turn::Seat(seat) {
-        Mighty::legal_actions(state)
+        engine::legal_on_turn::<Mighty>(state)
     } else {
         Vec::new()
     }
@@ -249,7 +252,7 @@ fn every_legal_action_round_trips() {
                 let Turn::Seat(seat) = Mighty::turn(state) else { return };
                 decisions += 1;
                 let view = Mighty::view(state, Viewer::Seat(seat));
-                let legal = Mighty::legal_actions(state);
+                let legal = engine::legal_on_turn::<Mighty>(state);
                 let mut seen = vec![false; ACTIONS];
                 for action in &legal {
                     let index = Mighty::action_index(&view, action).unwrap_or_else(|| panic!("{action:?}"));
@@ -355,7 +358,7 @@ fn basic_with(hand: &[Card]) -> State {
     for _ in 1..rules.players {
         hands.push(rest.drain(..rules.hand_size).collect());
     }
-    Mighty::apply(&mut state, Action::Deal { hands, kitty: rest }).unwrap();
+    engine::apply_on_turn::<Mighty>(&mut state, Action::Deal { hands, kitty: rest }).unwrap();
     state
 }
 
@@ -405,7 +408,7 @@ fn card_rows_carry_what_the_rules_make_of_a_card() {
         trump: Some(Suit::Spade),
         count: 14,
     };
-    Mighty::apply(&mut state, Action::Bid(spades)).unwrap();
+    engine::apply_on_turn::<Mighty>(&mut state, Action::Bid(spades)).unwrap();
     let obs = encode(&state, 1);
     let feature = |card, name| card_feature(&spec, &obs, card, name);
     assert_eq!(feature(c(Suit::Diamond, ACE), "mighty"), 1.0);

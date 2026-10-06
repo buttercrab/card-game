@@ -52,7 +52,7 @@ pub fn regret(rules: &Rules, record: &Record, endgame: usize) -> Result<RegretRe
         let Action::Play { card, call_joker, .. } = *action else {
             break;
         };
-        let legal = Mighty::legal_actions(&state);
+        let legal = engine::legal_on_turn::<Mighty>(&state);
         let view = Mighty::view(&state, Viewer::Seat(seat));
         let PhaseView::Play {
             trick_no,
@@ -100,7 +100,7 @@ pub fn regret(rules: &Rules, record: &Record, endgame: usize) -> Result<RegretRe
                 best: (best != action && best_value > made).then(|| best.clone()),
             });
         }
-        Mighty::apply(&mut state, action.clone()).map_err(|e| LabError::Replay {
+        engine::apply_on_turn::<Mighty>(&mut state, action.clone()).map_err(|e| LabError::Replay {
             deal: record.deal,
             step,
             action: action.clone(),

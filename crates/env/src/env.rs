@@ -145,7 +145,7 @@ impl<G: EnvGame> Slot<G> {
                     self.pending = Some(Pending {
                         seat,
                         view: G::view(state, Viewer::Seat(seat)),
-                        legal: G::legal_actions(state),
+                        legal: G::legal_actions(state, seat),
                     });
                     return Ok(ended);
                 }

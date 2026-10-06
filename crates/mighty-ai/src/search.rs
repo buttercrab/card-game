@@ -445,7 +445,10 @@ mod tests {
                         let world = determinize(&view, &mut deals).expect("a deal exists");
                         Mighty::check_invariants(&world).unwrap();
                         assert_eq!(Mighty::view(&world, Viewer::Seat(seat)), view);
-                        assert_eq!(Mighty::legal_actions(&world), Mighty::legal_actions(state));
+                        assert_eq!(
+                            engine::legal_on_turn::<Mighty>(&world),
+                            engine::legal_on_turn::<Mighty>(state)
+                        );
                     }
                     true
                 });

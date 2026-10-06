@@ -88,7 +88,7 @@ pub fn exchange_variant(
         Exchanger::Split { discard, call } => {
             let mut rngs = streams(deal, Stream::Exchange, seats);
             while phase(&state) == Phase::Exchange {
-                let calling = Mighty::legal_actions(&state)
+                let calling = engine::legal_on_turn::<Mighty>(&state)
                     .iter()
                     .any(|a| matches!(a, Action::CallFriend(_)));
                 let who = if calling { call } else { discard };
@@ -165,13 +165,13 @@ pub fn exchange_variant(
 fn score_exchange(world: &State, actions: &[Action], call: Option<FriendCall>, me: Seat, rng: &mut ChaCha8Rng) -> i64 {
     let mut s = world.clone();
     for a in actions {
-        if Mighty::apply(&mut s, a.clone()).is_err() {
+        if engine::apply_on_turn::<Mighty>(&mut s, a.clone()).is_err() {
             return i64::MIN / 4;
         }
     }
     let policy = SimpleBot::default();
     while phase(&s) == Phase::Exchange {
-        let legal = Mighty::legal_actions(&s);
+        let legal = engine::legal_on_turn::<Mighty>(&s);
         let action = match call {
             Some(c) if legal.contains(&Action::CallFriend(c)) => Action::CallFriend(c),
             _ => {
@@ -179,7 +179,7 @@ fn score_exchange(world: &State, actions: &[Action], call: Option<FriendCall>, m
                 engine::Bot::act(&mut policy.clone(), &view, &legal, rng)
             }
         };
-        Mighty::apply(&mut s, action).expect("legal");
+        engine::apply_on_turn::<Mighty>(&mut s, action).expect("legal");
     }
     play_out(policy, 0, s, me)
 }
@@ -215,14 +215,14 @@ pub fn joint_exchange(state: &State, me: Seat, worlds: usize, discard: bool, rng
         let mut usual = Vec::new();
         let mut s = state.clone();
         while phase(&s) == Phase::Exchange && discards_of(&usual).len() < kitty {
-            let legal = Mighty::legal_actions(&s);
+            let legal = engine::legal_on_turn::<Mighty>(&s);
             let v = Mighty::view(&s, Viewer::Seat(me));
             let a = engine::Bot::act(&mut policy.clone(), &v, &legal, rng);
-            Mighty::apply(&mut s, a.clone()).expect("legal");
+            engine::apply_on_turn::<Mighty>(&mut s, a.clone()).expect("legal");
             usual.push(a);
         }
         let mut plans: Vec<Vec<Action>> = vec![usual];
-        let legal = Mighty::legal_actions(state);
+        let legal = engine::legal_on_turn::<Mighty>(state);
         let current = policy.estimate(rules, &view.hand, contract.trump);
         let trumps = std::iter::once(None).chain(legal.iter().filter_map(|a| match a {
             Action::ChangeTrump(t) if t.is_some() && policy.estimate(rules, &view.hand, *t) >= current - 1.0 => {
@@ -256,9 +256,9 @@ pub fn joint_exchange(state: &State, me: Seat, worlds: usize, discard: bool, rng
     // The friend call, on the chosen discards.
     let mut after = state.clone();
     for a in &chosen {
-        Mighty::apply(&mut after, a.clone()).expect("legal");
+        engine::apply_on_turn::<Mighty>(&mut after, a.clone()).expect("legal");
     }
-    let legal = Mighty::legal_actions(&after);
+    let legal = engine::legal_on_turn::<Mighty>(&after);
     let v = Mighty::view(&after, Viewer::Seat(me));
     let usual = engine::Bot::act(&mut policy.clone(), &v, &legal, rng);
     let PhaseView::Exchange { contract, .. } = v.phase else {

@@ -183,7 +183,7 @@ impl<G: EnvGame> Hand<G> {
                     let Some(seated) = &mut self.bots[seat] else {
                         return Ok(Status::ToAct(seat));
                     };
-                    let legal = G::legal_actions(&self.state);
+                    let legal = engine::legal_on_turn::<G>(&self.state);
                     let view = G::view(&self.state, Viewer::Seat(seat));
                     let action = seated.bot.act(&view, &legal, &mut self.play);
                     record(Decision {
@@ -197,13 +197,13 @@ impl<G: EnvGame> Hand<G> {
                     action
                 }
             };
-            G::apply(&mut self.state, action).map_err(|e| Error::Game(e.to_string()))?;
+            engine::apply_on_turn::<G>(&mut self.state, action).map_err(|e| Error::Game(e.to_string()))?;
         }
     }
 
     /// Applies the caller's action for the seat to act.
     pub fn act(&mut self, action: G::Action) -> Result<(), Error> {
-        G::apply(&mut self.state, action).map_err(|e| Error::Game(e.to_string()))
+        engine::apply_on_turn::<G>(&mut self.state, action).map_err(|e| Error::Game(e.to_string()))
     }
 
     /// Each seat's payoff, once the hand is over.

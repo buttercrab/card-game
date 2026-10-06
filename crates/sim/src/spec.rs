@@ -665,7 +665,7 @@ mod tests {
         let mut asked = 0;
         testing::play_hand(&options, &mut rng, &mut testing::random, &mut |state, seat| {
             let view = Mighty::view(state, Viewer::Seat(seat));
-            let legal = Mighty::legal_actions(state);
+            let legal = engine::legal_on_turn::<Mighty>(state);
             for level in [Level::Easy, Level::Normal] {
                 let ask = |mut bot: Box<dyn Bot<Mighty> + Send>| {
                     bot.act(&view, &legal, &mut rand_chacha::ChaCha8Rng::seed_from_u64(asked))

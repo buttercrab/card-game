@@ -253,7 +253,7 @@ mod tests {
     fn leaves_are_valued_by_the_network_in_batches() {
         let (state, seat) = mid_play(1);
         let view = Mighty::view(&state, Viewer::Seat(seat));
-        let legal = Mighty::legal_actions(&state);
+        let legal = engine::legal_on_turn::<Mighty>(&state);
         let mut rng = ChaCha8Rng::seed_from_u64(2);
 
         let net = fake(None);
@@ -280,7 +280,7 @@ mod tests {
         for seed in 0..4 {
             let (state, seat) = mid_play(seed);
             let view = Mighty::view(&state, Viewer::Seat(seat));
-            let legal = Mighty::legal_actions(&state);
+            let legal = engine::legal_on_turn::<Mighty>(&state);
             if legal.len() < 2 {
                 continue;
             }
@@ -308,7 +308,7 @@ mod tests {
     fn threads_choose_legally_and_reproducibly() {
         let (state, seat) = mid_play(5);
         let view = Mighty::view(&state, Viewer::Seat(seat));
-        let legal = Mighty::legal_actions(&state);
+        let legal = engine::legal_on_turn::<Mighty>(&state);
         let net = fake(None);
         let mut hybrid = bot(&net, 3, Baseline::Network, Some(1));
         hybrid.search.threads = 3;
@@ -340,7 +340,7 @@ mod tests {
         for seed in 0..3 {
             let (state, seat) = mid_play(seed);
             let view = Mighty::view(&state, Viewer::Seat(seat));
-            let legal = Mighty::legal_actions(&state);
+            let legal = engine::legal_on_turn::<Mighty>(&state);
             let simple = SimpleBot::default().act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(0));
             for (prior, baseline, leaf) in [(2, Baseline::Network, None), (0, Baseline::Simple, Some(1))] {
                 let mut hybrid = HybridBot {

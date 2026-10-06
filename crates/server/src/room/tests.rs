@@ -473,7 +473,7 @@ async fn a_bot_rethinks_at_once_when_the_hand_moves_under_it() {
         .hand
         .game
         .as_ref()
-        .map(|g| <Mighty as engine::Game>::legal_actions(g)[0].clone())
+        .map(|g| <Mighty as engine::Game>::legal_actions(g, seat)[0].clone())
         .unwrap();
     assert!(!room.on_internal(Internal::BotMove {
         version: old,

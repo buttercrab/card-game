@@ -2,14 +2,13 @@
 //! is set up, and a bot to fill empty seats.
 
 use crate::protocol::ServerError;
-use engine::{Bot, Game, Viewer};
+use engine::{Bot, Game};
 use mighty::Mighty;
 use mighty::bot::Level;
 use mighty::card::Card;
 use mighty::explain::Refusal;
 use mighty::rules::{Contract, Preset, Rules};
 use mighty_ai::LevelBots;
-use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -81,23 +80,17 @@ pub trait SessionGame:
     fn outcome(state: &Self::State) -> &'static str;
 
     /// How long after the cards land `action` must wait, so nobody loses
-    /// an out-of-turn action ([`Game::out_of_turn_actions`]) to a fast
-    /// tap. Zero by default.
+    /// an action off their turn (one of [`Game::legal_actions`] for a seat
+    /// the hand does not wait on) to a fast tap. Zero by default.
     fn grace(_state: &Self::State, _action: &Self::Action) -> Duration {
         Duration::ZERO
     }
 
-    /// Whether a bot in `seat` takes one of its out-of-turn actions, and
-    /// which. The room asks once each deal, and plays the answer after a
-    /// short pause if it is still allowed then. None by default.
-    fn bot_out_of_turn(
-        _level: Level,
-        _seat: usize,
-        _state: &Self::State,
-        _rng: &mut dyn RngCore,
-    ) -> Option<Self::Action> {
-        None
-    }
+    /// Whether a bot in `seat`, which the hand does not wait on, takes
+    /// one of its `legal` actions anyway, and which. The room asks once
+    /// each deal, and plays the answer after a short pause if it is still
+    /// allowed then.
+    fn bot_off_turn(level: Level, seat: usize, view: &Self::View, legal: &[Self::Action]) -> Option<Self::Action>;
     /// Whether the decision these actions offer deserves twice the table's
     /// turn time (a weightier choice than playing a card).
     fn long_decision(_legal: &[Self::Action]) -> bool {
@@ -315,19 +308,15 @@ impl SessionGame for Mighty {
     /// A misdeal, when the seat's 보통 bot would call one were it its turn
     /// to bid. Every level decides as 보통 does: the 고수 bot's search
     /// plays the seat whose turn it is, which this seat is not.
-    fn bot_out_of_turn(
+    fn bot_off_turn(
         _level: Level,
         seat: usize,
-        state: &mighty::State,
-        rng: &mut dyn RngCore,
+        view: &mighty::View,
+        legal: &[mighty::Action],
     ) -> Option<mighty::Action> {
         let misdeal = mighty::Action::Misdeal;
-        if !Mighty::out_of_turn_actions(state, seat).contains(&misdeal) {
-            return None;
-        }
-        let view = Mighty::view(state, Viewer::Seat(seat));
-        let choice = Self::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &state.bids_as(seat), rng);
-        (choice == misdeal).then_some(misdeal)
+        let calls = legal.contains(&misdeal) && mighty_ai::tempered(seat).calls_misdeal(&view.rules, &view.hand);
+        calls.then_some(misdeal)
     }
 
     /// The exchange (discards, a trump change) and the friend call.
@@ -365,7 +354,7 @@ mod tests {
                     Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                     Turn::Seat(seat) => {
                         let view = Mighty::view(&state, Viewer::Seat(seat));
-                        let legal = Mighty::legal_actions(&state);
+                        let legal = Mighty::legal_actions(&state, seat);
                         let decision = Mighty::decision(&view, &legal);
                         let expected = match &view.phase {
                             _ if legal.len() == 1 => vec![Decision::Obvious],
@@ -379,7 +368,7 @@ mod tests {
                         Mighty::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
                     }
                 };
-                Mighty::apply(&mut state, action).unwrap();
+                engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
             }
         }
         // Both real and obvious choices come up in twenty hands.
@@ -408,7 +397,7 @@ mod tests {
                     Turn::Over => break,
                     Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                     Turn::Seat(seat) => {
-                        let legal = Mighty::legal_actions(&state);
+                        let legal = Mighty::legal_actions(&state, seat);
                         let notes = Mighty::notes(&state, Some(seat), &legal);
                         let other = (seat + 1) % 5;
                         assert_eq!(Mighty::notes(&state, Some(other), &[]), MightyNotes::default());
@@ -438,7 +427,7 @@ mod tests {
                         Mighty::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
                     }
                 };
-                Mighty::apply(&mut state, action).unwrap();
+                engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
             }
         }
         assert!(explained > 0 && changes > 0, "{explained} {changes}");
