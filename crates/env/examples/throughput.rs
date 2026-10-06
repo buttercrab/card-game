@@ -10,7 +10,8 @@
 //! Python gets them), then the encoder's cost per observation on one
 //! thread.
 
-use engine::{Encode, Game, Turn, Viewer};
+use engine::{Game, Turn, Viewer};
+use engine_ml::Encode;
 use env::{Batch, BotPool, Config, Env, RuleSampler, RuleSource, Setup};
 use mighty::Mighty;
 use rand::seq::IteratorRandom;

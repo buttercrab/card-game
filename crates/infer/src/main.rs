@@ -11,7 +11,7 @@
 //! `config.json` has a `reward_scale`).
 
 use clap::{Parser, Subcommand};
-use engine::Observation;
+use engine_ml::Observation;
 use infer::{Agreement, BeliefNet, Parity, QNet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

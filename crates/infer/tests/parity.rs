@@ -3,7 +3,8 @@
 //! PyTorch gave for them (`python -m cardgame_ml.export.fixture`); the
 //! Python suite checks the same logits against PyTorch.
 
-use engine::{Belief, Encode, Game, Viewer};
+use engine::{Game, Viewer};
+use engine_ml::{Belief, Encode};
 use infer::{BeliefNet, Parity};
 use mighty::rules::Preset;
 use mighty::{Mighty, Options};

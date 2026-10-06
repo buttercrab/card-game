@@ -23,7 +23,8 @@
 //! ```
 
 use clap::Parser;
-use engine::{Bot, Encode, Game, Turn, Viewer};
+use engine::{Bot, Game, Turn, Viewer};
+use engine_ml::Encode;
 use infer::BeliefNet;
 use mighty::rules::{Preset, Rules};
 use mighty::{Mighty, Options, PhaseView};

@@ -4,7 +4,8 @@
 mod common;
 
 use common::{choose, env, legal, setup};
-use engine::{Encode, Game, Turn, Viewer};
+use engine::{Game, Turn, Viewer};
+use engine_ml::Encode;
 use env::{Batch, Error};
 use mighty::Mighty;
 

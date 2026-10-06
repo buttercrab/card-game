@@ -18,6 +18,7 @@ doctest = false
 
 [dependencies]
 engine.workspace = true
+engine-ml.workspace = true
 env.workspace = true
 mighty.workspace = true
 numpy = "0.29"

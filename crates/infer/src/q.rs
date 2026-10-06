@@ -8,7 +8,8 @@
 //! [`QNet::values`] returns points.
 
 use crate::{Agreement, HasSpec, Model, ModelError, Parity, check_parity, error};
-use engine::{ActionValues, BeliefError, Bot, Encode, Observation, Spec};
+use engine::Bot;
+use engine_ml::{ActionValues, BeliefError, Encode, Observation, Spec};
 use rand::{Rng, RngCore};
 use serde::Deserialize;
 use std::path::Path;

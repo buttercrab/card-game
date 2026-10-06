@@ -10,7 +10,7 @@
 //!
 //! | Array | dtype | Shape | What |
 //! | --- | --- | --- | --- |
-//! | `global` | f32 | `[n, global]` | the observation, as the [`engine::Spec`] lays it out |
+//! | `global` | f32 | `[n, global]` | the observation, as the [`engine_ml::Spec`] lays it out |
 //! | `cards` | f32 | `[n, cards, card_features]` | |
 //! | `events` | f32 | `[rows, event_features]` | each decision's `events_len` rows, one after another (the zero padding is not stored) |
 //! | `event_cards` | i16 | `[rows]` | likewise |
@@ -43,7 +43,7 @@ use crate::Error;
 use crate::game::{EnvGame, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
 use crate::hand::{BotPool, Decision, Hand, Setup, Status, stream};
 use crate::npz::{Element, NpzWriter};
-use engine::{Observation, Spec};
+use engine_ml::{Observation, Spec};
 use flate2::{Compression, GzBuilder};
 use rand::RngCore;
 use rayon::prelude::*;

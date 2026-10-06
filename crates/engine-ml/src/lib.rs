@@ -1,4 +1,9 @@
-//! Model inputs: what one seat may see, as fixed-shape numeric arrays.
+//! Games as model inputs: what one seat may see, as fixed-shape numeric
+//! arrays, and the traits learned models answer through.
+//!
+//! Kept out of `engine` so that the game core stays what every game and
+//! the server need, and this, what the environment, the evals' models and
+//! inference need, grows on its own.
 //!
 //! A game describes its layout once, as a [`Spec`], and encodes every
 //! position into an [`Observation`] of exactly that shape. One spec covers
@@ -11,7 +16,7 @@
 //! a separate function of the full state ([`Encode::belief_targets`]), used
 //! only as a training label.
 
-use crate::{Game, Seat};
+use engine::{Game, Seat};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

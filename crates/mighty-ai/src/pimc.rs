@@ -7,7 +7,8 @@
 use crate::endgame;
 use crate::seen::Seen;
 use crate::simple::SimpleBot;
-use engine::{Encode, Game, Observation, Seat, Turn, Viewer};
+use engine::{Game, Seat, Turn, Viewer};
+use engine_ml::{Encode, Observation};
 use mighty::card::{Card, CardSet, Suit};
 use mighty::rules::{Contract, MAX_PLAYERS};
 use mighty::world::Phase;

@@ -10,6 +10,7 @@ license.workspace = true
 [dependencies]
 clap.workspace = true
 engine.workspace = true
+engine-ml.workspace = true
 harness.workspace = true
 infer.workspace = true
 mighty.workspace = true

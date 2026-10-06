@@ -29,7 +29,8 @@
 use crate::pimc::confident_best;
 use crate::search::{self, Leaf, SearchBot};
 use crate::seen::Seen;
-use engine::{ActionValues, Bot, Encode};
+use engine::Bot;
+use engine_ml::{ActionValues, Encode};
 use mighty::{Action, Mighty, View};
 use rand::RngCore;
 use std::fmt;
@@ -151,7 +152,8 @@ mod tests {
     use super::*;
     use crate::search::LEAF_BATCH;
     use crate::simple::SimpleBot;
-    use engine::{BeliefError, Game, Observation, Seat, Spec, Viewer};
+    use engine::{Game, Seat, Viewer};
+    use engine_ml::{BeliefError, Observation, Spec};
     use mighty::State;
     use mighty::rules::Preset;
     use mighty::testing;

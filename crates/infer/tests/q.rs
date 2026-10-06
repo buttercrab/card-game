@@ -3,7 +3,8 @@
 //! their legal actions (`python -m cardgame_ml.export.fixture`); the
 //! Python suite checks the same values against PyTorch.
 
-use engine::{Bot, Encode, Game, Turn, Viewer};
+use engine::{Bot, Game, Turn, Viewer};
+use engine_ml::Encode;
 use infer::{Parity, QBot, QNet};
 use mighty::rules::Preset;
 use mighty::{Action, Mighty, Options};

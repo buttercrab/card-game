@@ -2,7 +2,8 @@
 //! view, that every legal action has its own index, and that belief
 //! targets say where hidden cards really are.
 
-use engine::{Encode, Game, Observation, Spec, Turn, Viewer};
+use engine::{Game, Turn, Viewer};
+use engine_ml::{Encode, Observation, Spec};
 use mighty::card::{ACE, Card, Color, Suit};
 use mighty::encode::{ACTIONS, BURIED, MAX_EVENTS, MAX_SEATS, SLOTS};
 use mighty::rules::{Preset, Rules};

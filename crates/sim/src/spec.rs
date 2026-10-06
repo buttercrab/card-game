@@ -478,12 +478,12 @@ fn load_q(dir: &str) -> Result<Arc<infer::QNet>, String> {
 }
 
 /// Whether a model reads Mighty's encoding.
-fn check_encoding(dir: &str, spec: &engine::Spec) -> Result<(), String> {
+fn check_encoding(dir: &str, spec: &engine_ml::Spec) -> Result<(), String> {
     let options = mighty::Options {
         rules: mighty::rules::Preset::Default.rules(),
         first_bidder: 0,
     };
-    let ours = <Mighty as engine::Encode>::spec(&options).map_err(|e| e.to_string())?;
+    let ours = <Mighty as engine_ml::Encode>::spec(&options).map_err(|e| e.to_string())?;
     if spec != &ours {
         return Err(format!("{dir}: the model reads {}, not {}", spec.version, ours.version));
     }

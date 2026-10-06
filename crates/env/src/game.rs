@@ -2,7 +2,7 @@
 //! come from.
 
 use crate::Error;
-use engine::Encode;
+use engine_ml::Encode;
 use rand::seq::IndexedRandom;
 use rand::{Rng, RngCore};
 use serde::Serialize;

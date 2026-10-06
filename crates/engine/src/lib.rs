@@ -18,17 +18,15 @@
 //!   here.
 //! - [`table`]: what the server's tables need ([`Table`], [`HandReport`],
 //!   [`TableBots`]).
-//! - [`Encode`]: model inputs, for the environment, the evals' models and
-//!   inference.
+//! - `engine_ml::Encode` (crate `engine-ml`): model inputs, for the
+//!   environment, the evals' models and inference.
 //!
 //! The research tools' hooks (bots by name, rule variation) are `sim`'s
 //! `Research`.
 
-pub mod encode;
 pub mod info;
 pub mod table;
 
-pub use encode::{ActionValues, Belief, BeliefError, Encode, Features, Observation, Spec, Unsupported};
 pub use info::{GameInfo, Preset};
 pub use table::{Decision, HandReport, Table, TableBots, TableError};
 

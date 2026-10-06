@@ -1,5 +1,5 @@
 //! A batched, deterministic reinforcement-learning environment over any
-//! game with a model encoding ([`engine::Encode`]), and the self-play
+//! game with a model encoding ([`engine_ml::Encode`]), and the self-play
 //! data generator built on it.
 //!
 //! - [`Env`] steps many hands at once for a caller that plays some seats
@@ -28,7 +28,7 @@
 //!
 //! The core is generic; what differs between games is what [`EnvGame`]
 //! asks: the game's research hooks (`sim::Research`) and its model
-//! encoding (`engine::Encode`).
+//! encoding (`engine_ml::Encode`).
 
 mod env;
 pub mod game;

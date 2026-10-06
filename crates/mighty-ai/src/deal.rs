@@ -16,7 +16,7 @@
 //! says nothing deals exactly as uniformly does.
 
 use crate::pimc::{Deal, Dealer, Dealt};
-use engine::{Belief, Encode};
+use engine_ml::{Belief, Encode};
 use mighty::card::{Card, CardSet, SLOTS};
 use mighty::encode::{BURIED, MAX_SEATS};
 use mighty::{Action, Mighty, View};
@@ -187,7 +187,8 @@ impl ByBelief {
 mod tests {
     use super::*;
     use crate::SearchBot;
-    use engine::{BeliefError, Bot, Game, Observation, Viewer};
+    use engine::{Bot, Game, Viewer};
+    use engine_ml::{BeliefError, Observation};
     use mighty::State;
     use mighty::card::Suit;
     use mighty::rules::{Preset, Rules};

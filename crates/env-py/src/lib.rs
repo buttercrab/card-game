@@ -24,7 +24,7 @@ fn py_err(e: Error) -> PyErr {
 
 /// An environment of some game, without its types.
 trait AnyEnv: Send {
-    fn spec(&self) -> &engine::Spec;
+    fn spec(&self) -> &engine_ml::Spec;
     fn max_seats(&self) -> usize;
     fn reset(&mut self, seed: Option<u64>) -> Result<Batch, Error>;
     fn step(&mut self, actions: &[usize]) -> Result<Batch, Error>;
@@ -35,7 +35,7 @@ trait AnyEnv: Send {
 }
 
 impl<G: EnvGame> AnyEnv for Env<G> {
-    fn spec(&self) -> &engine::Spec {
+    fn spec(&self) -> &engine_ml::Spec {
         Env::spec(self)
     }
 
@@ -108,7 +108,7 @@ fn build<G: EnvGame>(o: Options) -> Result<Box<dyn AnyEnv>, Error> {
 struct PyEnv {
     // Steps run without the GIL; the lock keeps them one at a time.
     inner: Mutex<Box<dyn AnyEnv>>,
-    spec: engine::Spec,
+    spec: engine_ml::Spec,
     max_seats: usize,
     num_envs: usize,
 }

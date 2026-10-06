@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 clap.workspace = true
 engine.workspace = true
+engine-ml.workspace = true
 rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true

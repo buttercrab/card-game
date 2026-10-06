@@ -1,5 +1,5 @@
 //! Model inference from Rust: ONNX models trained in `ml/`, run on
-//! [`engine::Observation`]s by [tract](https://github.com/sonos/tract), a
+//! [`engine_ml::Observation`]s by [tract](https://github.com/sonos/tract), a
 //! pure-Rust runtime (no native library to install or ship, and nothing
 //! but the CPU it runs on).
 //!
@@ -19,14 +19,14 @@
 //!
 //! Both kinds share one core ([`Model`]: load, check observations against
 //! the spec, run) and one error, [`ModelError`]. [`BeliefNet`] implements
-//! [`engine::Belief`], so a search can deal hidden cards by its
+//! [`engine_ml::Belief`], so a search can deal hidden cards by its
 //! predictions; [`QBot`] plays by a [`QNet`].
 
 pub mod q;
 
 pub use q::{QBot, QNet};
 
-use engine::{Belief, BeliefError, Observation, Spec};
+use engine_ml::{Belief, BeliefError, Observation, Spec};
 use serde::Deserialize;
 use std::fmt;
 use std::path::Path;
