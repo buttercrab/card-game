@@ -56,6 +56,8 @@ test('invalid card feedback uses the room toast rail and leaves the hand clear',
 
 test('a newly appearing bid cannot accept a carry-over click', async ({ page }) => {
   await page.clock.install();
+  // Freeze before mounting scripted previews; only runFor advances deadlines.
+  await page.clock.pauseAt(new Date(Date.now() + 60_000));
   await page.goto('/preview?state=bidding&room');
   const bid = page.locator('.bid .primary');
   await bid.waitFor();
@@ -72,6 +74,8 @@ test('a newly appearing bid cannot accept a carry-over click', async ({ page }) 
 
 test('Deal Miss transitioning into bidding rejects the old gesture', async ({ page }) => {
   await page.clock.install();
+  // Freeze before mounting scripted previews; only runFor advances deadlines.
+  await page.clock.pauseAt(new Date(Date.now() + 60_000));
   await page.goto('/preview?state=misdealtransition&room');
   const miss = page.getByRole('button', { name: '딜미스', exact: true });
   await miss.waitFor();

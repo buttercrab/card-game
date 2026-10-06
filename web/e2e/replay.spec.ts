@@ -32,6 +32,8 @@ test('replay round controls, tabs, keyboard and closing work', async ({ page }) 
 
 test('an open replay retains the finished hand when the live table deals and moves players', async ({ page }) => {
   await page.clock.install();
+  // Freeze before mounting scripted previews; only runFor advances deadlines.
+  await page.clock.pauseAt(new Date(Date.now() + 60_000));
   await page.goto('/preview?state=replayrace&room');
   await page.getByRole('button', { name: '다시 보기', exact: true }).click();
   const replay = page.getByRole('dialog', { name: '다시 보기', exact: true });

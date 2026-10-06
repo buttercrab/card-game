@@ -8,6 +8,8 @@ test.beforeEach(async ({ page }) => {
 test('a turn arriving retains normal card travel duration', async ({ page }, info) => {
   test.skip(info.project.name !== '390x844-light', 'one normal-motion timing case');
   await page.clock.install();
+  // Freeze before mounting scripted previews; only runFor advances deadlines.
+  await page.clock.pauseAt(new Date(Date.now() + 60_000));
   await page.goto('/preview?state=arrival&room');
   await expect(page.locator('.slot')).toHaveCount(3);
   await page.clock.runFor(1000);
@@ -35,6 +37,8 @@ test('collection credit waits for the cards and uses the player feedback slot', 
 test('a reconnect does not announce historical points as a new collection', async ({ page }, info) => {
   test.skip(info.project.name !== '390x844-light', 'one reconnect timeline case');
   await page.clock.install();
+  // Freeze before mounting scripted previews; only runFor advances deadlines.
+  await page.clock.pauseAt(new Date(Date.now() + 60_000));
   await page.goto('/preview?state=resume&room');
   await expect(page.locator('.seat .feedback').getByText(/^\+\d+점$/)).toHaveCount(0);
   await page.clock.runFor(1100);
