@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import Card from './games/mighty/Card.svelte';
   import BackArt from './games/mighty/CardBack.svelte';
   import Icon from './Icon.svelte';
@@ -18,7 +19,7 @@
   const howTo = (kind: 'back' | 'table', id: string) =>
     ACHIEVEMENTS.find((a) => a.reward?.kind === kind && a.reward.id === id)?.how ?? '';
 
-  let { onclose, onreport }: { onclose: () => void; onreport?: () => void } = $props();
+  let { onclose, onreport, table }: { onclose: () => void; onreport?: () => void; table?: Snippet } = $props();
 
   const SPEEDS: { value: Speed; label: string }[] = [
     { value: 'normal', label: '보통' },
@@ -35,6 +36,11 @@
 {/snippet}
 
 <Sheet title="설정" {onclose}>
+  {#if table}
+    <section aria-label="테이블 설정">{@render table()}</section>
+    <h3>내 화면과 소리</h3>
+    <p class="muted scope-note">이 기기에만 적용돼요.</p>
+  {/if}
   <div class="row">
     {@render toggle('4색 덱', '♦ 주황, ♣ 파랑', () => settings.fourColor, (on) => (settings.fourColor = on))}
   </div>
@@ -118,6 +124,8 @@
 </Sheet>
 
 <style>
+  h3 { margin: 20px 0 4px; font-size: var(--text-body); }
+  .scope-note { margin: 0 0 12px; font-size: var(--text-label); }
   .row {
     display: flex;
     align-items: center;

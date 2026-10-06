@@ -116,4 +116,10 @@
       row-gap: 2px;
     }
   }
+  @media (orientation: landscape) and (max-height: 520px) {
+    .status { font-size: 12px; gap: 2px 8px; }
+    .contract { font-size: 16px; }
+    .meter { flex: 0 1 auto; }
+    .meter :global(.tally) { display: none; }
+  }
 </style>

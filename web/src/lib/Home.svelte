@@ -16,6 +16,7 @@
   import { responseError } from './errorText';
   import { ruleRefusal } from './games/mighty/refusals';
   import Button from './ui/Button.svelte';
+  import Sheet from './ui/Sheet.svelte';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
@@ -37,6 +38,7 @@
   const chosen = $derived(choice.startsWith('custom:') ? (customs.find((c) => `custom:${c.id}` === choice) ?? null) : null);
   const preset = $derived(chosen?.base ?? choice);
   const chosenName = $derived(chosen ? customName(chosen) : presetTitle(preset));
+  let choosing = $state(false);
   let comparing = $state(false);
   let editing = $state(false);
   let code = $state('');
@@ -119,7 +121,7 @@
       <h2>새 테이블</h2>
       <span class="muted head-note">어떤 규칙으로 할까요?</span>
     </div>
-    <PresetPicker selected={choice} {customs} onselect={(c) => (choice = c)} />
+    <button class="btn rule-choice" onclick={() => (choosing = true)} aria-haspopup="dialog"><span>{chosenName} 규칙</span><span class="muted">바꾸기 →</span></button>
     <div class="rule-tools">
       <button class="btn ghost sm" onclick={() => (showRules = true)}>규칙 보기</button>
       <button class="btn ghost sm" onclick={() => (comparing = true)}>비교</button>
@@ -129,11 +131,6 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </section>
 
-  <button class="learn" onclick={() => (learning = true)}>
-    <strong>마이티가 처음이에요</strong>
-    <span class="muted">1분 설명 보고 봇이랑 연습하기 →</span>
-  </button>
-
   <section class="panel">
     <h2>테이블 들어가기</h2>
     <form onsubmit={join}>
@@ -141,6 +138,11 @@
       <Button type="submit" disabled={!code.trim()}>들어가기</Button>
     </form>
   </section>
+
+  <button class="learn" onclick={() => (learning = true)}>
+    <strong>마이티가 처음이에요</strong>
+    <span class="muted">1분 설명 보고 봇이랑 연습하기 →</span>
+  </button>
 
   <InstallHint />
   <footer>
@@ -152,6 +154,12 @@
     <SiteLinks />
   </footer>
 </main>
+{#if choosing}
+  <Sheet title="규칙 고르기" onclose={() => (choosing = false)}>
+    <PresetPicker selected={choice} {customs} onselect={(c) => (choice = c)} />
+    {#snippet footer(close)}<Button variant="primary" onclick={close}>이 규칙으로</Button>{/snippet}
+  </Sheet>
+{/if}
 {#if learning}
   <Tutorial onpractice={() => create(true)} onclose={() => (learning = false)} />
 {/if}
@@ -197,7 +205,7 @@
   main {
     max-width: 460px;
     margin: 0 auto;
-    padding: 40px 16px;
+    padding: 20px 16px;
     display: grid;
     /* One column that never grows past the screen, even on a 320px phone. */
     grid-template-columns: minmax(0, 1fr);
@@ -240,6 +248,16 @@
     padding: 20px;
     border-radius: var(--r-panel);
     background: var(--panel);
+  }
+  .rule-choice {
+    justify-content: space-between;
+    min-width: 0;
+  }
+  @media (max-height: 700px) {
+    main { padding-block: 12px; gap: 10px; }
+    .mark { display: none; }
+    header p { font-size: 14px; }
+    .panel { padding: 14px; gap: 8px; }
   }
   .sm {
     color: var(--ink-muted);

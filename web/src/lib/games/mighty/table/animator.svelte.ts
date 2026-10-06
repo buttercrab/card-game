@@ -33,7 +33,7 @@ export interface Stage {
   me(): number | null;
   seatName(seat: number): string;
   twoJokers(): boolean;
-  /** It is your turn in the latest state (not yet on screen). */
+  /** Suppress a turn cue if the queued turn is no longer actionable. */
   liveTurn(): boolean;
   /** The card on the trick that `seat` played, as drawn. */
   trickCard(seat: number): Element | null;
@@ -117,7 +117,7 @@ export class Animator {
     const timer = setTimeout(() => {
       this.dealing = false;
       release();
-    }, 900);
+    }, settings.speed === 'fast' ? 450 : 900);
     return () => {
       clearTimeout(timer);
       release();
@@ -161,12 +161,12 @@ export class Animator {
     }
   }
 
-  /** Duration multiplier: 0 skips motion; a backlog speeds it up; once it
-   * is your turn, what is left plays three times as fast. */
+  /** Explicit Fast mode and backlogs can hurry; a turn arriving never
+   * silently changes the player's chosen motion speed. */
   #pace(): number {
-    return this.#paceUnhurried() / (this.#stage.liveTurn() ? 3 : 1);
+    return this.#paceUnhurried();
   }
-  /** The same without your turn's hurry: a finished trick is always shown. */
+  /** Respect the selected speed, with bounded catch-up for queued updates. */
   #paceUnhurried(): number {
     if (motion.level === 'off' || this.#hurry) return 0;
     return (settings.speed === 'fast' ? 0.5 : 1) / (1 + 0.5 * this.#queue.length);
@@ -184,7 +184,8 @@ export class Animator {
       while (this.#queue.length > 0) {
         const next = this.#queue.shift()!;
         const k = this.#pace();
-        this.#cues(this.shown, next);
+        const previous = this.shown;
+        this.#cues(previous, next);
         // Too far behind: catch up at once. A hidden tab plays on as if
         // watched, on the worker clock, so coming back finds the hand
         // where it would be.
@@ -193,9 +194,11 @@ export class Animator {
           this.resolving = null;
           this.winner = null;
           this.shown = next;
+          this.#settled(previous, next);
           continue;
         }
-        await this.#transition(this.shown, next, k);
+        await this.#transition(previous, next, k);
+        this.#settled(previous, next);
       }
     } finally {
       this.#running = false;
@@ -230,11 +233,6 @@ export class Animator {
     const calledBefore = roundOf(was)?.called_joker;
     const { play } = phaseOf(now);
     if (play && play.called_joker && !calledBefore && play.plays[0]) this.cueAt(play.plays[0].seat, '조커콜', 'call');
-    const turnOf = (m: StateMsg) => (typeof m.turn === 'object' ? m.turn.Seat : null);
-    if (me !== null && turnOf(next) === me && turnOf(prev) !== me) {
-      sound.turn();
-      if (settings.haptics) navigator.vibrate?.(18);
-    }
     const kind = (p: PhaseView) => (typeof p === 'object' ? Object.keys(p)[0] : p);
     if (kind(now) !== kind(was)) {
       const { exchange } = phaseOf(now);
@@ -251,12 +249,6 @@ export class Animator {
       const moved = raised || a.passed.filter(Boolean).length !== b.passed.filter(Boolean).length;
       if (moved) sound.bid(raised ? next.view.bids.filter((x) => x.contract !== null).length : 0);
     }
-    const done = phaseOf(now).done;
-    if (done && !phaseOf(was).done) {
-      const declarerWon = done.team_points >= done.contract.count;
-      const mine = me === null || me === done.declarer || me === done.friend;
-      sound.result(mine ? declarerWon : !declarerWon);
-    }
     // With motion off, cards still make their sound as they land.
     if (this.#pace() === 0 || motion.level !== 'full') {
       const r = roundOf(was);
@@ -264,6 +256,23 @@ export class Animator {
       if (r && s && s.tricks.length === r.tricks.length) {
         s.plays.slice(r.plays.length).forEach((_, i) => sound.card(i * 0.06, r.plays.length + i > 0));
       }
+    }
+  }
+
+  /** Ready/result cues follow the visible action, never its queued packet. */
+  #settled(prev: StateMsg, next: StateMsg) {
+    if (!this.#stage.felt()?.isConnected) return;
+    const me = this.#stage.me();
+    const turnOf = (m: StateMsg) => typeof m.turn === 'object' ? m.turn.Seat : null;
+    if (me !== null && turnOf(next) === me && turnOf(prev) !== me && this.#stage.liveTurn()) {
+      sound.turn();
+      if (settings.haptics) navigator.vibrate?.(18);
+    }
+    const done = phaseOf(next.view.phase).done;
+    if (done && !phaseOf(prev.view.phase).done) {
+      const mine = me === null || me === done.declarer || me === done.friend;
+      const made = done.team_points >= done.contract.count;
+      sound.result(mine ? made : !made);
     }
   }
 
@@ -370,14 +379,15 @@ export class Animator {
       await this.#pause(150 * kh);
       this.winner = trick.winner;
       await pop(stage.trickCard(trick.winner), reduced || this.#hurry ? 0 : 360 * kh);
-      await this.#pause((reduced ? 1100 : 900) * kh);
+      await this.#pause((reduced ? 1100 : 1050) * kh);
       const to = stage.anchor(trick.winner);
       // The sweep is heard from the winner's side of the table.
       const pan = to ? ((to.left + to.width / 2) / innerWidth - 0.5) * 1.2 : 0;
-      sound.sweep(trick.plays.filter((p) => isPoint(p.card)).length, 0, pan);
+      sound.sweep(0, pan);
       if (!reduced && !this.#hurry && to) {
         await Promise.all(trick.plays.map((p, i) => flyTo(stage.trickCard(p.seat), to, 400 * k, i * 40 * k)));
       }
+      sound.score(trick.plays.filter((p) => isPoint(p.card)).length);
       // The winner's plate takes the cards with a small bounce.
       void juice(stage.seatElement(trick.winner), trick.winner === stage.me() ? 0.15 : 0.35);
       await this.#land(

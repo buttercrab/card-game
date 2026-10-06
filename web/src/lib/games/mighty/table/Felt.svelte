@@ -51,6 +51,7 @@
     attachSpot,
     attachCard,
     between,
+    interactive = between,
     controlsOut = false,
     swapFrom,
     seatTap,
@@ -80,8 +81,10 @@
     /** Registers a seat's place, which slides when seats move. */
     attachSpot: (seat: number) => Attachment<HTMLElement>;
     attachCard: (seat: number) => Attachment<HTMLElement>;
-    /** Between hands: each seat is a button, and the middle holds `children`. */
+    /** Lobby layout, with the middle holding `children`. */
     between: boolean;
+    /** Seats can be managed without switching a completed hand to lobby layout. */
+    interactive?: boolean;
     /** Bids or the exchange rise over the felt's foot. */
     controlsOut?: boolean;
     swapFrom: number | null;
@@ -111,9 +114,9 @@
       <div class="spot {place}" data-seat={s} style:--x={d.x} style:--y={d.y} {@attach attachSpot(s)}>
         <div class="seat-box">
           <SeatComponent {...seats[s]} {place} picked={swapFrom === s} attach={attachSeat(s)} />
-          {#if between}{@render seatTap(s)}{/if}
+          {#if interactive}{@render seatTap(s)}{/if}
         </div>
-        {#if between && swapFrom === null && seats[s]?.empty}{@render seatActs(s)}{/if}
+        {#if interactive && swapFrom === null && seats[s]?.empty}{@render seatActs(s)}{/if}
       </div>
     {/each}
 
@@ -133,7 +136,8 @@
             tilt={((p.seat * 7 + trickNo * 3) % 5) - 2}
             attach={attachCard(p.seat)}
           />
-          {#if i === 0 && 'Joker' in p.card && lead}<LeadTag {lead} />{/if}
+          {#if i === 0 && 'Joker' in p.card && lead}<LeadTag {lead} compact />{/if}
+          <span class="card-owner" title={seats[p.seat]?.name}>{seats[p.seat]?.name}</span>
         </div>
       {/each}
     </div>
@@ -148,6 +152,7 @@
 </div>
 
 <style>
+  .card-owner { display: none; }
   .felt {
     position: relative;
     min-height: 0;
@@ -157,7 +162,7 @@
      seats come in towards the trick instead of hugging the window edges. */
   .ring {
     --seat-w: clamp(92px, 10cqw, 148px);
-    --seat-h: 78px;
+    --seat-h: 106px;
     /* A trick card is never much bigger than a card in your hand. */
     --trick-max: 92px;
     position: absolute;
@@ -245,11 +250,33 @@
      foot: the side seats step up, just under the top ones, so the
      controls leave their names clear. */
   @container (max-height: 260px) {
-    .lift-sides .spot.right,
-    .lift-sides .spot.left {
-      top: max(calc(var(--seat-h) + 4px + var(--seat-h) / 2), calc(var(--cy) - 30px));
+    .lift-sides.five {
+      max-width: none;
+      --seat-w: min(23cqw, 92px);
+      --seat-figure: 16px;
+      --seat-meta-min: 14px;
+      --feedback-h: 24px;
     }
+    .lift-sides :global(.seat) { gap: 1px; }
+    .lift-sides :global(.name-row) { padding-inline: 3px; gap: 3px; }
+    .lift-sides :global(.thinking) { display: none; }
+    .lift-sides :global(.meta) { font-size: 9px; gap: 2px; }
+    .lift-sides :global(.meta > span) { font-size: 9px; padding: 0 2px; line-height: 14px; }
+    .lift-sides :global(.name) { font-size: 12px; line-height: 14px; }
+    .lift-sides.five .spot:not(.bottom) {
+      top: 0;
+      bottom: auto;
+      right: auto;
+      transform: translateX(-50%);
+    }
+    .lift-sides.five .spot.left { left: 12.5%; }
+    .lift-sides.five .spot.top-left { left: 37.5%; }
+    .lift-sides.five .spot.top-right { left: 62.5%; }
+    .lift-sides.five .spot.right { left: 87.5%; }
+
   }
+  .between .spot.top-left, .between .spot.top-right { top: 0; }
+  .between .spot.left, .between .spot.right { top: max(var(--cy), 238px); }
   .seat-box {
     position: relative;
   }
@@ -368,21 +395,53 @@
       top: auto;
       bottom: 0;
     }
+    .ring:not(.between) {
+      --seat-w: min(23cqw, 92px); --seat-figure: 16px;
+      --seat-meta-min: 14px; --feedback-h: 24px;
+    }
+    .ring:not(.between) :global(.seat) { gap: 1px; }
+    .ring:not(.between) :global(.name-row) { padding-inline: 3px; gap: 3px; }
+    .ring:not(.between) :global(.thinking) { display: none; }
+    .ring :global(.meta) { font-size: 9px; gap: 2px; }
+    .ring :global(.meta > span) { font-size: 9px; padding: 0 2px; line-height: 14px; }
+    .ring:not(.between) :global(.name) { font-size: 12px; line-height: 14px; }
+    .ring:not(.between) .spot:not(.bottom) {
+      top: 0; bottom: auto; right: auto; transform: translateX(-50%);
+    }
+    .ring:not(.between) .spot.left { left: 12.5%; }
+    .ring:not(.between) .spot.top-left { left: 37.5%; }
+    .ring:not(.between) .spot.top-right { left: 62.5%; }
+    .ring:not(.between) .spot.right { left: 87.5%; }
+    /* Play occupies the decision column; each card gets one fixed slot. */
+    .ring:not(.between):not(.lift-sides) .trick {
+      --card-size: 32px;
+      left: calc(100% + 8px + max(240px, (100vw - 32px) * 0.36) / 2);
+      top: 0; display: flex; gap: 4px; transform: translateX(-50%);
+    }
+    .ring:not(.between):not(.lift-sides) .slot { position: relative; transform: none; }
+    .ring:not(.between):not(.lift-sides) .slot :global(.tag) { bottom: 14px; }
+    .ring:not(.between):not(.lift-sides) .card-owner {
+      display: block; width: 32px; font-size: 9px; line-height: 10px;
+      text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     /* Empty seats include action rows. Two stacked seats cannot fit a
        short felt, so between hands the four others use one ordered row. */
     .ring.between.five {
-      --seat-figure: 20px;
+      --seat-figure: 14px;
+      --feedback-h: 24px;
       --seat-meta-min: 0px;
     }
-    .between.five .spot:not(.bottom) {
+    .between.five :global(.seat.empty .feedback) { height: 0; }
+    .between.five .spot {
       top: 0;
       bottom: auto;
       right: auto;
       transform: translateX(-50%);
     }
-    .between.five .spot.left { left: 12.5%; }
-    .between.five .spot.top-left { left: 37.5%; }
-    .between.five .spot.top-right { left: 62.5%; }
-    .between.five .spot.right { left: 87.5%; }
+    .between.five .spot.bottom { left: 10%; }
+    .between.five .spot.left { left: 30%; }
+    .between.five .spot.top-left { left: 50%; }
+    .between.five .spot.top-right { left: 70%; }
+    .between.five .spot.right { left: 90%; }
   }
 </style>

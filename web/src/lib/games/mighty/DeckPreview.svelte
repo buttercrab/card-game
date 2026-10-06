@@ -79,6 +79,20 @@
           <Card width={140} />
         </div>
 
+        <h3>조커 인덱스 크기별</h3>
+        <div class="row wrap joker-samples">
+          {#each [40, 56, 76, 80, 108, 124, 140, 240] as width}
+            {#each [false, true] as twoJokers}
+              {#each ['Black', 'Red'] as color}
+                <figure data-width={width} data-two-jokers={twoJokers}>
+                  <Card card={{ Joker: color as 'Black' | 'Red' }} {width} {twoJokers} seal="joker" />
+                  <figcaption>{width}px · {twoJokers ? '홍/흑' : '조커'}</figcaption>
+                </figure>
+              {/each}
+            {/each}
+          {/each}
+        </div>
+
         <h3>전체 덱</h3>
         <div class="row wrap">
           {#each deck as card, i (i)}
@@ -95,6 +109,20 @@
         <div class="row wrap">
           {#each deck.slice(13, 26) as card, i (i)}
             <Card {card} size="mini" seal={sealOf(card, rules, trump)} />
+          {/each}
+        </div>
+
+        <h3>가능한 카드 · 낼 수 없는 카드</h3>
+        <div class="row wrap legality-samples">
+          {#each SUITS as suit}
+            {#each [10, 13, 14] as rank}
+              {#each [false, true] as unplayable}
+                <figure data-unplayable={unplayable} data-suit={suit}>
+                  <Card card={{ Normal: [suit, rank] }} width={108} {unplayable} seal={sealOf({ Normal: [suit, rank] }, rules, null)} />
+                  <figcaption>{unplayable ? '낼 수 없음' : '가능'}</figcaption>
+                </figure>
+              {/each}
+            {/each}
           {/each}
         </div>
 
@@ -123,6 +151,7 @@
 </main>
 
 <style>
+  .legality-samples figcaption { padding-top: 8px; }
   main {
     padding: 16px;
   }

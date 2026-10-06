@@ -4,7 +4,7 @@
   // `close` all close it, and `onclose` hears each. Its look is the
   // `dialog.sheet` primitive in app.css: a scrolling body under the title,
   // and a footer that stays at the foot.
-  import type { Snippet } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
 
   let {
     title,
@@ -41,9 +41,14 @@
   const titleId = `${id}-title`;
   let heading = $state<HTMLElement>();
 
-  $effect(() => {
-    dialog!.showModal();
-    if (focus === 'title') (heading ?? dialog!.querySelector<HTMLElement>(`#${CSS.escape(titleId)}`))?.focus();
+  onMount(() => {
+    const element = dialog!;
+    // Native modal sheets belong to the document layer, independent of
+    // conditional/animated table fragments that create their content.
+    document.body.append(element);
+    element.showModal();
+    if (focus === 'title') (heading ?? element.querySelector<HTMLElement>(`#${CSS.escape(titleId)}`))?.focus();
+    return () => element.remove();
   });
 
   const close = () => dialog?.close();

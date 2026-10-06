@@ -15,8 +15,10 @@ export interface TableProps<G extends GameTypes> {
   ui?: TableUi;
   /** The rules' name, for the table between hands. */
   rulesName?: string;
-  /** Opens the table's menu (설정 between hands). */
+  /** Opens the table menu. */
   onmenu?: () => void;
+  /** Opens the single settings panel directly. */
+  onsettings?: () => void;
   onrules?: () => void;
   oninvite?: () => void;
 }

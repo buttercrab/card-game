@@ -21,6 +21,7 @@
 
   let {
     done,
+    folded = false,
     me,
     room,
     seatName,
@@ -38,6 +39,7 @@
     onrun,
   }: {
     done: Done;
+    folded?: boolean;
     me: number | null;
     room: RoomView | null;
     seatName: (seat: number) => string;
@@ -47,12 +49,12 @@
     earned: Achievement[];
     seated: boolean;
     shuffleNote: string | null;
-    /** Where it may start, from the felt's top, and how wide it may be. */
-    fit: { top: number; width: number | null } | null;
+    /** Where it may start, from the felt's top. */
+    fit: { top: number } | null;
     /** How tall it would be with nothing cut off (for the table's fit). */
     need?: number;
     onfold: () => void;
-    onreplay: () => void;
+    onreplay: (hand: Done) => void;
     onshare: () => void;
     onstart: () => void;
     /** A 런, counted out: the table settles once under the gold word. */
@@ -136,14 +138,18 @@
     return () => clearTimeout(start);
   });
 
+  let fold = $state<HTMLElement>();
   let body = $state<HTMLElement>();
   let foot = $state<HTMLElement>();
   $effect(() => {
-    if (!body || !foot) return;
-    const measure = () => (need = body!.scrollHeight + foot!.offsetHeight);
+    if (!body || !foot || !fold) return;
+    const measure = () => {
+      if (!folded) need = body!.scrollHeight + foot!.offsetHeight + fold!.offsetHeight + 2;
+    };
     const sized = new ResizeObserver(measure);
     sized.observe(body);
     sized.observe(foot);
+    sized.observe(fold);
     measure();
     return () => sized.disconnect();
   });
@@ -151,23 +157,21 @@
 
 <div
   class="result-layer"
-  class:cover={!!fit?.width}
   style:--fit-top={fit ? `${fit.top}px` : undefined}
-  style:--fit-w={fit?.width ? `${fit.width}px` : undefined}
 >
   <!-- A tap anywhere on the result skips the count; keys need nothing to skip. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <div class="sheet result" class:big={result.made && result.margin >= 3} class:lost={!mineWon && me !== null} role="status" onclick={skip}>
-    <!-- Folds the result down to look at the table; the middle of the
-         table then offers the next hand and brings the result back. -->
+    <!-- Fold only the details. The completed table and action footer stay put. -->
     <button
       class="btn ghost fold"
+      bind:this={fold}
       onclick={(e) => {
         e.stopPropagation();
         onfold();
-      }}><span>테이블 보기</span><Icon name="fold" size="18px" /></button
+      }}><span>{folded ? '결과 다시 보기' : '테이블 보기'}</span><Icon name={folded ? 'result' : 'fold'} size="18px" /></button
     >
-    <div class="body" bind:this={body}>
+    <div class="body" hidden={folded} bind:this={body}>
       <div class="head">
         <p class="headline">
           {#if result.run && tallied}<span class="run-word">런</span>{:else}{result.won ? '여당 승리' : '야당 승리'}{/if}
@@ -224,7 +228,7 @@
       {#if seated && !full}<p class="muted wait-seats">빈 자리를 채우면 다음 판을 시작할 수 있어요</p>
       {:else if shuffleNote}<p class="muted wait-seats" role="status">{shuffleNote}</p>{/if}
       <div class="next">
-        {#if done.tricks.length}<button class="btn" onclick={onreplay}>다시 보기</button>{/if}
+        {#if done.tricks.length}<button class="btn replay-button" onclick={() => onreplay(done)}>다시 보기</button>{/if}
         {#if room}<button class="btn" onclick={onshare}>결과 카드</button>{/if}
         {#if me !== null}<button class="btn primary" disabled={!seated || !full} onclick={onstart}>다음 판</button>{/if}
       </div>
@@ -250,7 +254,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    width: min(100%, 440px);
+    width: min(100%, 520px);
     max-height: 100%;
     overflow: hidden;
     border-radius: var(--r-panel);
@@ -258,38 +262,11 @@
     box-shadow: var(--lip);
     pointer-events: auto;
   }
+  .body[hidden] { display: none; }
   .body {
     min-height: 0;
     overflow: auto;
     padding: 14px 16px 8px;
-  }
-  /* Phones have no room beside the side seats: the sheet covers them
-     whole, from under the top seats down, rather than cutting them in
-     half; so does a wider screen whose result does not fit beside them. */
-  .cover .sheet {
-    height: 100%;
-  }
-  .cover .body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: safe center;
-  }
-  @media (max-width: 599px) {
-    .sheet {
-      height: 100%;
-    }
-    .body {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: safe center;
-    }
-  }
-  @media (min-width: 600px) {
-    .sheet {
-      width: min(100%, max(440px, var(--fit-w, 0px)));
-    }
   }
   .foot {
     flex: none;
@@ -575,5 +552,21 @@
     padding: 4px 14px;
     color: var(--ink-muted);
     font-size: var(--text-label);
+  }
+  /* Short landscape: use the table area instead of a tiny box beneath
+     the single row of seats. Keep actions visible while the body scrolls. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .result-layer { grid-column: 1 / -1; grid-row: 1 / -1; inset: 0; align-items: flex-end; }
+    .fold { min-height: 28px; padding-block: 2px; }
+    .body { padding: 4px 12px; }
+    .head { display: flex; align-items: center; justify-content: center; gap: 12px; }
+    .headline, .big .headline { font-size: 22px; }
+    .sub { display: none; }
+    .ledger { margin: 0 0 4px; font-size: 12px; }
+    table { font-size: 12px; }
+    th { padding: 2px 4px; }
+    td { height: 22px; }
+    .foot { padding: 4px 12px 8px; }
+    .foot .btn { min-height: 36px; }
   }
 </style>

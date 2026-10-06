@@ -9,6 +9,7 @@ import { defineConfig, devices } from '@playwright/test';
 // play a hand (play.spec.ts).
 const port = Number(process.env.PORT ?? 4317);
 const server = process.env.SERVER_BIN ?? '../target/release/server';
+const web = process.env.WEB_DIST ?? 'dist';
 const quickBotsURL = `http://127.0.0.1:${port + 1}`;
 
 const sizes = [
@@ -46,14 +47,14 @@ export default defineConfig({
   ),
   webServer: [
     {
-      command: `${server} --web dist --addr 127.0.0.1:${port}`,
+      command: `${server} --web ${web} --addr 127.0.0.1:${port}`,
       env: { STATS_TOKEN: 'x', RUST_LOG: 'warn' },
       url: `http://127.0.0.1:${port}/healthz`,
       reuseExistingServer: false,
       timeout: 30_000,
     },
     {
-      command: `${server} --web dist --addr 127.0.0.1:${port + 1} --bot-delay-ms 20 --bot-think-ms 20`,
+      command: `${server} --web ${web} --addr 127.0.0.1:${port + 1} --bot-delay-ms 20 --bot-think-ms 20`,
       env: { RUST_LOG: 'warn' },
       url: `${quickBotsURL}/healthz`,
       reuseExistingServer: false,

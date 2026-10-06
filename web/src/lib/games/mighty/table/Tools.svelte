@@ -3,6 +3,7 @@
   // the hint (what a bot would do in your place, on your turn) and the
   // reactions. The hint's answer hangs from its button until the hand
   // moves on, or until dismissed.
+  import { tableShortcut } from '../../../ui/shortcuts';
   import Icon from '../../../Icon.svelte';
   import Reactions from '../../../room/Reactions.svelte';
   import SuitText from '../../../SuitText.svelte';
@@ -31,9 +32,12 @@
   });
 </script>
 
+<svelte:window onkeydown={(e) => {
+  if (e.key.toLowerCase() === 'h' && canHint && tableShortcut(e)) { e.preventDefault(); onhint(); }
+}} />
 <div class="tools">
   {#if canHint || hint}
-    <Button variant="icon" raised aria-label="봇이라면 뭘 할지 보기" aria-expanded={!!hint} bind:element={button} onclick={() => (hint ? (dismissed = null) : onhint())}>
+    <Button aria-keyshortcuts="H" title="힌트 · H" variant="icon" raised aria-label="봇이라면 뭘 할지 보기" aria-expanded={!!hint} bind:element={button} onclick={() => (hint ? (dismissed = null) : onhint())}>
       <Icon name="hint" />
     </Button>
   {/if}

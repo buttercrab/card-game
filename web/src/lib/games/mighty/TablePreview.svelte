@@ -207,9 +207,10 @@
       rules,
       first_bidder: 0,
       // Every card has been played by the result.
-      hand: key === 'exchange' ? [...hand, ...kittyCards] : key === 'done' || key === 'won' || key === 'run' ? [] : hand,
+      hand: which === 'onecard' ? hand.slice(-1) : key === 'exchange' ? [...hand, ...kittyCards] : key === 'done' || key === 'won' || key === 'run' ? [] : hand,
       hand_sizes: [10, 10, 10, 10, 10],
       points_taken:
+        which === 'feedbackstress' ? [[], [10,11,12,13,14].flatMap(rank => [n('Heart', rank), n('Club', rank)]), [], [], []] :
         key === 'late'
           ? [
               [n('Club', 10), n('Heart', 11)],
@@ -226,7 +227,7 @@
     legal: legal[key] ?? [],
     notes: notes(key),
     turn,
-    out_of_turn: which === 'misdealnow' ? ['Misdeal'] : [],
+    out_of_turn: (which === 'misdealnow' || which === 'misdealtransition') ? ['Misdeal'] : [],
     grace_ms: key === 'grace' ? 2000 : 0,
     version: 0,
   });
@@ -256,11 +257,20 @@
     clock: null,
     watching: 0,
     showing: true,
-    in_hand: which !== 'done' && which !== 'won' && which !== 'run',
+    in_hand: !['done', 'won', 'run', 'replayrace'].includes(which),
   };
 
+  if (which === 'feedbackstress' && typeof phases.play === 'object' && 'Play' in phases.play) phases.play.Play.friend = 1;
   const alias: Record<string, string> = {
     sweep: 'play',
+    onecard: 'play',
+    replayrace: 'done',
+    replaycopy: 'done',
+    foldstability: 'done',
+    arrival: 'play',
+    resume: 'play',
+    feedbackstress: 'play',
+    misdealtransition: 'bidding',
     misdeal: 'bidding',
     waiting: 'bidding',
     misdealnow: 'bidding',
@@ -271,7 +281,7 @@
   };
   const key = which === 'folded' ? 'done' : which === 'leave' ? 'play' : (alias[which] ?? which);
   const turn: StateMsg['turn'] =
-    key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' || which === 'misdealnow' ? { Seat: 4 } : key === 'watch' ? { Seat: 3 } : { Seat: 0 };
+    key === 'done' || key === 'won' || key === 'run' ? 'Over' : which === 'waiting' || which === 'misdealnow' || which === 'misdealtransition' || which === 'arrival' ? { Seat: 4 } : key === 'watch' ? { Seat: 3 } : { Seat: 0 };
 
   /** States drawn by the whole room page (Room.svelte), bar and menu too. */
   const ROOM_STATES = [
@@ -291,17 +301,19 @@
     'menu',
     'leave',
   ];
-  const inRoom = ROOM_STATES.includes(which);
+  const fullRoom = new URLSearchParams(location.search).has('room');
+  const inRoom = fullRoom || ROOM_STATES.includes(which);
   /** Watching between hands: the lobby with an empty seat, a watcher's name entry. */
   const watching = ['lobbywatch', 'seatsit', 'seatsitbot'].includes(which);
   /** Between hands with nothing on the table: the lobby, or once the seats moved. */
-  const idle = inRoom && !['folded', 'leave'].includes(which);
+  const idle = ROOM_STATES.includes(which) && !['folded', 'leave'].includes(which);
   if (which === 'timer' || which === 'mytimer' || which === 'spectate' || inRoom) {
     room.table = { turn_secs: 20, shuffle: which === 'room', shuffle_next: false };
     room.watching = 2;
     room.seats[2] = { kind: 'human', name: '아주긴이름의친구입니다', connected: true, away: true };
   }
-  if (inRoom) {
+  if (fullRoom) room.seats[3] = { kind: 'human', name: '민수', connected: true, away: false };
+  if (ROOM_STATES.includes(which)) {
     // Everyone is here (the offline banner is the hand's business).
     room.seats[3] = { kind: 'human', name: '민수', connected: true, away: false };
     room.in_hand = which === 'leave';
@@ -335,6 +347,7 @@
     ];
   }
   const game = key === 'exchange' ? msg(phases.bidding, 'bidding', { Seat: 0 }) : msg(phases[key] ?? phases.play, key, turn);
+  if (which === 'foldstability') game.view.viewer = { Seat: 2 };
   if (which === 'spectate') {
     game.view.viewer = 'Spectator';
     game.view.hand = [];
@@ -344,7 +357,7 @@
     room,
     // The exchange opens on the bidding, so the table sees which cards came from the kitty.
     game: idle ? null : game,
-    seat: which === 'spectate' || watching ? null : 0,
+    seat: which === 'spectate' || watching ? null : which === 'foldstability' ? 2 : 0,
     clock:
       which === 'timer' || which === 'spectate'
         ? { seat: 3, deadline: performance.now() + 13000, total: 20000 }
@@ -354,8 +367,17 @@
     // Between hands the seats carry their totals, so a side seat's rising
     // bubble can pass over the name above it for its two seconds; the other
     // states keep checking where bubbles land.
-    reactions: which === 'folded' ? {} : { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
+    reactions: ['folded', 'sweep', 'arrival', 'resume'].includes(which) ? {} : { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
+
+  // Model a completed view crossing a copying boundary: equal data,
+  // distinct object identities for the live source and displayed result.
+  if (which === 'replaycopy') {
+    const completed = $state.snapshot(game);
+    Object.defineProperty(client, 'game', { get: () => structuredClone(completed) });
+  }
+  if (which === 'resume') client.game = { ...game, view: { ...game.view, points_taken: Array.from({ length: 5 }, () => []) } };
+  if (which === 'arrival') client.game = msg(playPhase(trickPlays.slice(0, 3), []), 'play', { Seat: 4 });
 
   // What is open, as a player would have opened it: a seat's choices (and,
   // for some, the next question in them), a swap begun, the result folded,
@@ -383,6 +405,23 @@
     );
   }
 
+  if (which === 'resume') step(1000, () => (client.game = game));
+  if (which === 'arrival') step(1000, () => (client.game = msg(playPhase(trickPlays, []), 'play', { Seat: 0 })));
+  if (which === 'replayrace') {
+    step(1500, () => {
+      client.room = { ...room, seats: [...room.seats].reverse(), in_hand: true };
+      client.seat = 4;
+      const next = msg(phases.bidding, 'bidding', { Seat: 4 });
+      next.view.viewer = { Seat: 4 };
+      next.view.rules = presetRules('default');
+      next.view.hand = next.view.hand.map(c => 'Joker' in c ? { Joker: 'Black' } : c);
+      next.version = 1;
+      client.game = next;
+    });
+  }
+  if (which === 'misdealtransition') {
+    step(1000, () => (client.game = msg(phases.bidding, 'bidding', { Seat: 0 })));
+  }
   if (which === 'misdeal') {
     // A new deal arrives after seat 3 threw in a weak hand.
     step(300, () => {
@@ -403,7 +442,9 @@
     // Finish the trick so the table plays its sweep, holding the note on screen.
     step(300, () => {
       const done = [...trickPlays, { seat: 0, card: n('Club', 11), powered: true }];
-      client.game = msg(playPhase([], [{ plays: done, lead: { Suit: 'Club' }, winner: 2 }]), 'play', { Seat: 2 });
+      const collected = msg(playPhase([], [{ plays: done, lead: { Suit: 'Club' }, winner: 2 }]), 'play', { Seat: 2 });
+      collected.view.points_taken[2] = [...collected.view.points_taken[2], n('Club', 13), n('Club', 11)];
+      client.game = collected;
     });
   }
 

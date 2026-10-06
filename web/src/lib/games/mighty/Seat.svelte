@@ -1,20 +1,19 @@
 <script lang="ts" module>
   /** Where a seat sits at five: you at the bottom, then round the table. */
   export type Place = 'bottom' | 'right' | 'top-right' | 'top-left' | 'left' | 'free';
+  export interface Gain { n: number; id: number; }
   export const PLACES: Place[] = ['bottom', 'right', 'top-right', 'top-left', 'left'];
 </script>
 
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
-  import Callout from './Callout.svelte';
   import { juice } from '../../motion';
   import PlayerFigure from './PlayerFigure.svelte';
-  import SuitText from '../../SuitText.svelte';
   import TurnRing from '../../room/TurnRing.svelte';
   import type { Suit } from './types';
   import Badge, { type Team } from '../../ui/Badge.svelte';
-  import Bubble from '../../ui/Bubble.svelte';
+  import FeedbackDock from '../../ui/FeedbackDock.svelte';
   let {
     name,
     bot = false,
@@ -38,6 +37,8 @@
     away = false,
     empty = false,
     score = null,
+    collecting = false,
+    gained = $bindable<Gain | null>(null),
   }: {
     name: string;
     bot?: boolean;
@@ -48,13 +49,11 @@
     /** Point cards won this hand. */
     points?: number;
     turn?: boolean;
-    /** A short note beside the seat, such as a bid or 패스. */
+    /** A short note in the reserved feedback slot, such as a bid or 패스. */
     bubble?: string | null;
     /** A reaction the player just sent; `id` replays it when repeated. */
     reaction?: { text: string; id: number } | null;
-    /** Where it sits round the table: a reaction rises beside the top seats
-     * (outwards: their space above is the status line), and a bid on a
-     * right-hand seat hangs inwards. */
+    /** Where it sits round the table. Feedback always stays below its name. */
     place?: Place;
     /** Chosen first in a swap: it stands up a little. */
     picked?: boolean;
@@ -80,6 +79,9 @@
     empty?: boolean;
     /** The running total, shown between hands. */
     score?: number | null;
+    /** Hold the collection cue until the cards reach their player. */
+    collecting?: boolean;
+    gained?: Gain | null;
   } = $props();
 
 
@@ -88,20 +90,27 @@
     if (cue) juice(el, 0.6);
   });
 
-  // Points taken float up from the plate as "+2", then the count bumps.
-  let gained = $state<{ n: number; id: number } | null>(null);
+  // Credit appears below the name once collection finishes.
   let before = untrack(() => points);
   let gainId = 0;
+  let pendingGain = 0;
+  let gainTimer: ReturnType<typeof setTimeout> | undefined;
+  onDestroy(() => clearTimeout(gainTimer));
   $effect(() => {
     const now = points;
-    if (now > before) {
-      const id = ++gainId;
-      gained = { n: now - before, id };
-      setTimeout(() => {
-        if (gained?.id === id) gained = null;
-      }, 900);
-    }
+    const waiting = collecting;
+    if (now < before) pendingGain = 0;
+    // A loaded score snapshot is not a new trick. Only collect credit
+    // while the animator is resolving cards for this seat.
+    if (now > before && waiting) pendingGain += now - before;
     before = now;
+    if (pendingGain > 0 && !waiting) {
+      const id = ++gainId;
+      gained = { n: pendingGain, id };
+      pendingGain = 0;
+      clearTimeout(gainTimer);
+      gainTimer = setTimeout(() => { if (gained?.id === id) gained = null; }, 1000);
+    }
   });
 </script>
 
@@ -117,39 +126,37 @@
       {trumpSuit}
       isBot={bot}
       thinking={turn && bot}
-      active={turn}
       {lookAt}
       {mood}
       {offline}
     />
     {/if}
     {#if clock}<TurnRing deadline={clock.deadline} total={clock.total} />{/if}
-    <!-- A bid or 패스, beside the figure, clear of the neighbours. -->
-    {#if bubble}{#key bubble}<span class="bubble"><span class="pop"><SuitText text={bubble} /></span></span>{/key}{/if}
   </div>
   <div class="meta">
     <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
-    {#if team}{#key team}<Badge {team} ringed class="pop" />{/key}
-    {:else if secretFriend}<Badge secret ringed class="pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요" />{/if}
+    {#if team}{#key team}<Badge {team} size="sm" ringed class="pop" />{/key}
+    {:else if secretFriend}<Badge secret size="sm" ringed class="pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요" />{/if}
     {#if points > 0}
-      {#key points}<Badge class="bump">{points}점</Badge>{/key}
+      {#key points}<Badge class={gained ? 'bump' : ''}>{points}점</Badge>{/key}
     {/if}
-    {#if away}<Badge kind="outline">자리 비움</Badge>{/if}
     {#if score !== null && !empty}<Badge class="score" negative={score < 0} title="누적 점수" label="누적 {score}점">{score > 0 ? '+' : ''}{score}</Badge>{/if}
   </div>
   <div class="name-row">
-    {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
-    <span class="name">{name}</span>
+    {#if away || offline}
+      <span class="status-icons">
+        {#if away}<span class="away-dot" title="자리 비움" aria-label="자리 비움"></span>{/if}
+        {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
+      </span>
+    {/if}
+    <span class="name" title={name}>{name}</span>
     {#if turn && bot}<span class="thinking" aria-label="생각하는 중"><i></i><i></i><i></i></span>{/if}
   </div>
-  {#if gained}{#key gained.id}<span class="gain" aria-hidden="true">+{gained.n}</span>{/key}{/if}
-  {#if cue?.text}{#key cue.id}<Callout text={cue.text} />{/key}{/if}
-  {#if reaction}
-    {#key reaction.id}<Bubble text={reaction.text} side={place === 'top-right' ? 'right' : place === 'top-left' ? 'left' : 'up'} />{/key}
-  {/if}
+  <FeedbackDock {reaction} {cue} credit={gained} bid={bubble} />
 </div>
 
 <style>
+  .away-dot { width: 7px; height: 7px; flex: none; border: 1px solid currentColor; border-radius: 50%; }
   .seat {
     position: relative;
     display: grid;
@@ -170,6 +177,20 @@
     color: var(--ink);
   }
   /* The figure; on its turn the name tag below lights up. */
+  .stand::before {
+    /* SVG head centre: (60, 48) in its 120 × 110 viewBox. A true circle
+       behind the head, with the shoulders deliberately extending below. */
+    content: ''; position: absolute; left: 50%; top: calc(48 / 110 * 100%);
+    width: 72%; aspect-ratio: 1; border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--accent); opacity: 0; pointer-events: none;
+    transition: opacity var(--dur-quick) var(--ease-standard);
+  }
+  .seat.turn .stand::before { opacity: 0.14; }
+  .meta :global(.count) { font-size: 11px; padding-inline: 4px; }
+  @media (orientation: portrait) and (min-height: 700px) and (max-width: 599px) {
+    .seat { --figure-w: var(--seat-figure, clamp(44px, 10cqh, 68px)); }
+  }
   .stand {
     position: relative;
     width: var(--figure-w);
@@ -216,6 +237,7 @@
     font-weight: 500;
   }
   .name-row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -241,11 +263,15 @@
     font-weight: 600;
     line-height: 1.27;
   }
+  /* Status and thinking sit outside the centered name, without moving it. */
+  .status-icons { position: absolute; right: calc(100% + 4px); display: inline-flex; align-items: center; gap: 3px; }
+  .status-icons, .thinking { color: var(--ink-muted); }
   /* A bot deciding: three dots breathing in turn. */
   .thinking {
+    position: absolute;
+    left: calc(100% + 4px);
     display: inline-flex;
     gap: 2px;
-    margin-left: 2px;
   }
   .thinking i {
     width: 4px;
@@ -269,52 +295,6 @@
       opacity: 1;
     }
   }
-  .gain {
-    position: absolute;
-    right: 6px;
-    top: 0;
-    z-index: 5;
-    font-size: 14px;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    color: var(--accent);
-    pointer-events: none;
-    animation: gain 900ms var(--ease-standard) both;
-  }
-  @keyframes gain {
-    0% {
-      opacity: 0;
-      translate: 0 4px;
-    }
-    20% {
-      opacity: 1;
-      translate: 0 -6px;
-    }
-    100% {
-      opacity: 0;
-      translate: 0 -22px;
-    }
-  }
-  :global(:root[data-motion='reduced']) .gain {
-    animation-name: gain-fade;
-  }
-  @keyframes gain-fade {
-    0%,
-    100% {
-      opacity: 0;
-    }
-    20%,
-    70% {
-      opacity: 1;
-    }
-  }
-  .dot {
-    flex: none;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--danger);
-  }
   /* Team badge and points are pinned on the robe, like a name tag, so the
      seat stays about as short as the old plate. */
   .meta {
@@ -333,50 +313,6 @@
      release the empty spacer while keeping any badges at their own height. */
   .meta {
     min-height: var(--seat-meta-min, 20px);
-  }
-  .bubble {
-    position: absolute;
-    left: calc(100% - 6px);
-    top: 0;
-    z-index: 4;
-    padding: 2px 9px;
-    border-radius: var(--r-pill);
-    background: var(--ink);
-    color: var(--table);
-    --suit-tone: currentColor;
-    font-size: var(--text-label);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    /* A long note (노기루다 20) takes two short lines, so the
-       two top seats' notes never meet in the middle. */
-    width: max-content;
-    max-width: 4.6em;
-    line-height: 1.2;
-    text-align: center;
-    word-break: keep-all;
-  }
-  /* Phones: a long name on a top seat ends sooner, so it keeps clear of
-     the trick's top cards beside it. */
-  @media (max-width: 599px) {
-    :is(.top-right, .top-left) .name {
-      max-width: 5em;
-    }
-  }
-  /* Phones and tablets: a bid on a right-hand seat hangs inwards. */
-  @media (max-width: 1023px), (max-height: 639px) {
-    :is(.right, .top-right) .bubble {
-      left: auto;
-      right: calc(100% - 6px);
-    }
-  }
-  /* Phones on their side: the bottom seats show their bid above, clear of
-     the hand. */
-  @media (orientation: landscape) and (max-height: 520px) {
-    :is(.right, .left) .bubble {
-      top: -12px;
-      bottom: auto;
-      transform: translate(-50%, -50%);
-    }
   }
   /* Tablets: the seats grow with the table instead of staying phone-sized. */
   @media (min-width: 600px) {
