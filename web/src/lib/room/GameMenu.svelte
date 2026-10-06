@@ -1,13 +1,10 @@
 <script lang="ts">
   // The table's one menu, in place of a page header: invite, the rules, the
   // table's own settings, this device's settings, and the way out.
-  import { CATALOG } from '../catalog';
   import Icon from '../Icon.svelte';
   import type { GameTypes, RoomViewOf } from './types';
   import Button from '../ui/Button.svelte';
-  import Segmented from '../ui/Segmented.svelte';
   import Sheet from '../ui/Sheet.svelte';
-  import Switch from '../ui/Switch.svelte';
 
   let {
     room,
@@ -17,11 +14,8 @@
     onclose,
     oninvite,
     onrules,
-    oneditrules,
     onsettings,
     onreport,
-    onturn,
-    onshuffle,
     onleave,
     leaving = $bindable(false),
   }: {
@@ -34,11 +28,8 @@
     onclose: () => void;
     oninvite: () => void;
     onrules: () => void;
-    oneditrules: () => void;
     onsettings: () => void;
     onreport: () => void;
-    onturn: (secs: number) => void;
-    onshuffle: (on: boolean) => void;
     /** Leave the table for the home page. */
     onleave: () => void;
     /** Leaving mid-hand asks first (a bot plays your seat from then on): asking. */
@@ -46,11 +37,6 @@
   } = $props();
 
   const inHand = $derived(room.in_hand);
-  /** The table's settings change between hands, by whoever sits there. */
-  const editable = $derived(seated && !inHand);
-  const turnSecs = $derived(room.table.turn_secs);
-  const shuffle = $derived(room.table.shuffle);
-  const TURNS = CATALOG.turn_limits.map((secs) => ({ value: secs, label: secs === 0 ? '끔' : `${secs}초` }));
 
   function leave() {
     if (seated && inHand && !leaving) leaving = true;
@@ -59,7 +45,7 @@
 </script>
 
 <!-- Opened on the title, not on 초대하기, so no ring is drawn round it. -->
-<Sheet size="small" focus="title" {onclose}>
+<Sheet size="small" class="game-menu" focus="title" {onclose}>
   {#snippet head(id)}
     <h2 class="sheet-title" {id} tabindex="-1">
       테이블 <span class="code">{room.id}</span>
@@ -78,34 +64,10 @@
       <span class="label">규칙 보기</span>
       <span class="aside">{rulesName}</span>
     </Button>
-  </div>
-
-  <section class="table-set" aria-labelledby="table-set-title">
-    <h3 id="table-set-title">테이블 설정</h3>
-    {#if editable}
-      <div class="set-row">
-        <span class="set-label">턴 시간</span>
-        <Segmented options={TURNS} value={turnSecs} onchange={onturn} label="턴 시간" />
-      </div>
-      <p class="note">{turnSecs > 0 ? '시간이 지나면 봇이 대신 둬요.' : '시간 제한 없이 둬요.'}</p>
-      <Switch checked={shuffle} onchange={onshuffle}>매 판 자리 섞기</Switch>
-      <Button wide onclick={oneditrules}>
-        <Icon name="sliders" size="22px" />
-        <span class="label">규칙 바꾸기</span>
-      </Button>
-    {:else}
-      <p class="read">
-        턴 시간 <strong>{turnSecs === 0 ? '끔' : `${turnSecs}초`}</strong>{#if shuffle}{' · '}매 판 자리 섞기{/if}
-      </p>
-      <p class="note">{seated ? '판이 끝나면 바꿀 수 있어요.' : '앉은 사람이 판과 판 사이에 바꿀 수 있어요.'}</p>
-    {/if}
-  </section>
-
-  <div class="items">
     <Button wide onclick={onsettings}>
       <Icon name="sound" size="22px" />
-      <span class="label">소리와 화면</span>
-      <span class="aside">효과음 · 음악 · 카드</span>
+      <span class="label">설정</span>
+      <span class="aside">테이블 · 화면 · 소리</span>
     </Button>
     <Button wide onclick={onreport}>
       <Icon name="flag" size="22px" />
@@ -121,7 +83,7 @@
         <button class="btn danger" onclick={onleave}>나가기</button>
       </div>
     {:else}
-      <Button variant="ghost" class="leave" onclick={leave}><Icon name="leave" />나가기</Button>
+      <Button variant="ghost" class="leave" onclick={leave}><Icon name="leave" size="22px" /><span class="label">나가기</span></Button>
       <Button onclick={close}>닫기</Button>
     {/if}
   {/snippet}
@@ -146,9 +108,14 @@
   .num {
     font-variant-numeric: tabular-nums;
   }
+  :global(.game-menu .sheet-foot .leave) {
+    margin-inline-start: 0;
+    padding-inline: 14px;
+    gap: 12px;
+  }
   .items {
     display: grid;
-    gap: 8px;
+    gap: 12px;
   }
   /* A row per thing to do: a drawn icon, the words, a quiet note at the end. */
   .label {
@@ -166,40 +133,6 @@
     color: var(--ink-muted);
   }
   .done {
-    color: var(--ink);
-  }
-  .table-set {
-    display: grid;
-    gap: 10px;
-    margin: 16px 0;
-    padding: 12px 14px 14px;
-    border-radius: var(--r-control);
-    background: var(--table);
-  }
-  h3 {
-    margin: 0;
-    font-size: 14px;
-    color: var(--ink-muted);
-  }
-  .set-row {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: 12px;
-  }
-  .set-label {
-    font-size: var(--text-body);
-    font-weight: 600;
-  }
-  .note,
-  .read {
-    margin: 0;
-    font-size: var(--text-label);
-    color: var(--ink-muted);
-    word-break: keep-all;
-  }
-  .read {
-    font-size: var(--text-body);
     color: var(--ink);
   }
   /* Asking before leaving mid-hand: the question over its two answers. */

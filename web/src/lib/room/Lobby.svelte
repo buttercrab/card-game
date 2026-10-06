@@ -14,7 +14,7 @@
     shuffleNote,
     onstart,
     onshuffle,
-    onmenu,
+    onsettings,
     oncancelswap,
   }: {
     room: RoomViewOf<GameTypes>;
@@ -27,7 +27,7 @@
     shuffleNote: string | null;
     onstart: () => void;
     onshuffle: (on: boolean) => void;
-    onmenu?: () => void;
+    onsettings?: () => void;
     oncancelswap: () => void;
   } = $props();
 
@@ -52,7 +52,7 @@
       {#if room.table.shuffle}
         <!-- 매 판 자리 섞기 is on: 섞기 is already as on as it gets; the
              setting itself is under 설정. -->
-        <button class="btn tool on" aria-pressed="true" aria-label="섞기: 매 판 자리 섞기 켜짐 (설정에서 바꿔요)" onclick={onmenu}>
+        <button class="btn tool on" aria-pressed="true" aria-label="섞기: 매 판 자리 섞기 켜짐 (설정에서 바꿔요)" onclick={onsettings}>
           <Icon name="shuffle" size="22px" /><span>섞기</span>
         </button>
       {:else}
@@ -66,7 +66,7 @@
           <Icon name="shuffle" size="22px" /><span>섞기</span>
         </button>
       {/if}
-      <button class="btn tool" onclick={onmenu}><Icon name="sliders" size="22px" /><span>설정</span></button>
+      <button class="btn tool" onclick={onsettings}><Icon name="sliders" size="22px" /><span>설정</span></button>
     </div>
   {:else}
     <p class="note">
@@ -106,7 +106,7 @@
     animation-name: fade;
   }
   .go {
-    min-width: 136px;
+    width: clamp(96px, calc(100cqw - 2 * var(--seat-w) - 8px), 136px);
     min-height: 52px;
     font-size: 18px;
   }
@@ -136,15 +136,16 @@
     vertical-align: bottom;
   }
   .tools {
-    display: flex;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: clamp(96px, calc(100cqw - 2 * var(--seat-w) - 8px), 136px);
     gap: 8px;
   }
   /* Small drawn tools: an icon over a word, on card paper with its lip. */
   .tool {
     flex-direction: column;
     gap: 2px;
-    min-width: 56px;
+    min-width: 0;
     min-height: 56px;
     padding: 6px 8px 5px;
     font-size: var(--text-caption);
@@ -159,14 +160,17 @@
   }
   @container (max-width: 360px) {
     .tool {
-      min-width: 44px;
+      min-width: 0;
       min-height: 52px;
     }
   }
   @media (orientation: landscape) and (max-height: 520px) {
     .centre.seated {
-      top: calc(100% + 40px);
+      top: calc(100% + 30px); display: flex; gap: 8px;
     }
+    .go { width: 96px; min-height: 44px; font-size: 16px; }
+    .tools { width: 104px; }
+    .tool { min-height: 44px; padding: 4px; }
   }
   /* Hung under the middle's buttons, so it takes no height from them: the
      middle stays clear of the top seats on a short phone. */

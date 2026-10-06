@@ -47,7 +47,7 @@
     client,
     ui: givenUi,
     rulesName = '',
-    onmenu,
+    onsettings,
     onrules,
     oninvite,
   }: TableProps<Mighty> = $props();
@@ -99,8 +99,8 @@
     {
       me: (): number | null => me,
       seatName,
+      liveTurn: () => liveTurn,
       twoJokers: (): boolean => hand.twoJokers,
-      liveTurn: (): boolean => liveTurn,
       trickCard: (seat) => trickCards.get(seat),
       anchor: (seat, card) => {
         if (seat === me) return (card && handCards.rect(cardKey(card))) || tray?.getBoundingClientRect() || null;
@@ -130,11 +130,11 @@
   const rules = $derived(view.rules);
   const me = $derived(view.viewer === 'Spectator' ? null : view.viewer.Seat);
   const n = $derived(view.hand_sizes.length);
-  const turn = $derived(typeof msg.turn === 'object' ? msg.turn.Seat : null);
+  const turn = $derived(animator.resolving ? null : typeof msg.turn === 'object' ? msg.turn.Seat : null);
   const myTurn = $derived(me !== null && turn === me);
   const hand = $derived(handView(view, me));
   const { bidding, exchange, play, done, contract } = $derived(hand);
-  const ring = $derived(new Ring(n, me ?? 0));
+  const ring = $derived.by(() => new Ring(n, between ? 0 : (me ?? 0)));
   const resolving = $derived(animator.resolving);
   const winner = $derived(animator.winner);
 
@@ -243,15 +243,10 @@
   /** Why a tapped card cannot be played, as the server explains it. Said
    * where the turn is said, in place of the caption or the pill, so it
    * never lands on the hand or on the line it replaces. */
-  let refusal = $state<string | null>(null);
-  let refusalTimer: ReturnType<typeof setTimeout> | undefined;
   function refuse(card: CardT) {
     const why = live.notes.unplayable.find((u) => sameCard(u.card, card))?.why;
     const reason = why ? refusalText(why) : '지금은 낼 수 없는 카드예요';
-    if (controls) return client.notice(reason);
-    refusal = reason;
-    clearTimeout(refusalTimer);
-    refusalTimer = setTimeout(() => (refusal = null), 2200);
+    client.notice(reason);
   }
 
   function playable(card: CardT): boolean {
@@ -378,32 +373,77 @@
   $effect(() => {
     if (!done) ui.folded = false;
   });
-  let replay = $state(false);
+  type ReplaySnapshot = {
+    done: NonNullable<ReturnType<typeof handView>['done']>;
+    names: string[];
+    rules: StateMsg['view']['rules'];
+    twoJokers: boolean;
+    hiddenDiscards: boolean;
+  };
+  // Transport copies and Svelte proxies need not share object identity.
+  // The complete immutable deal identifies the replay across both views.
+  const replayFrames = new Map<string, ReplaySnapshot>();
+  const replayKey = (finished: ReplaySnapshot['done']) => JSON.stringify(finished);
+  let replay = $state.raw<ReplaySnapshot | null>(null);
+  let replayOpener: HTMLElement | null = null;
+  function rememberReplay(source: StateMsg['view']) {
+    if (typeof source.phase !== 'object' || !('Done' in source.phase)) return;
+    const finished = source.phase.Done;
+    const key = replayKey(finished);
+    if (replayFrames.has(key)) return;
+    const viewer = source.viewer === 'Spectator' ? null : source.viewer.Seat;
+    replayFrames.set(key, {
+      done: finished,
+      names: Array.from({ length: source.hand_sizes.length }, (_, s) => nameOf(s, viewer, room?.seats, known, true)),
+      rules: source.rules, twoJokers: handView(source, viewer).twoJokers,
+      hiddenDiscards: source.rules.reveal_discards === false && finished.declarer !== viewer,
+    });
+    // An open replay holds its own frame; bound historical cache growth.
+    if (replayFrames.size > 8) replayFrames.delete(replayFrames.keys().next().value!);
+  }
+  // Freeze live metadata before the room advances, and retain displayed
+  // completions even when intermediate incoming updates were batched.
+  $effect(() => {
+    const source = client.game?.view;
+    if (source) rememberReplay(source);
+  });
+  $effect(() => rememberReplay(view));
+  function openReplay(finished: ReplaySnapshot['done']) {
+    const key = replayKey(finished);
+    if (!replayFrames.has(key)) rememberReplay({ ...view, phase: { Done: finished } });
+    replayOpener = document.querySelector<HTMLElement>('.replay-button');
+    replay = replayFrames.get(key)!;
+  }
+  function closeReplay() {
+    replay = null;
+    void tick().then(() => {
+      const target = replayOpener?.isConnected ? replayOpener : document.querySelector<HTMLElement>('.menu-btn');
+      target?.focus();
+    });
+  }
   let sharing = $state(false);
   /** 런, counted out: the table settles once under the gold word. */
   let nudge = $state(false);
 
   /** Where the result sits, from the felt's top: on wider screens under
    * the side seats when it fits there; else (and always on phones) under
-   * the top seats, covering the side seats whole instead of slicing them,
-   * and on wider screens as wide as the ring. */
+   * the top seats. The panel keeps a bounded, content-sized width. */
   let resultNeed = $state(0);
-  let resultFit = $state<{ top: number; width: number | null } | null>(null);
+  let resultFit = $state<{ top: number } | null>(null);
   $effect(() => {
-    if (!done || folded || !felt || !section) return;
+    if (!done || folded || resolving || !felt || !section) return;
     void resultNeed;
     const measure = () => {
       if (!felt || !section) return;
       const f = felt.getBoundingClientRect();
       const side = seatEls.rect(ring.seatAt(1)) ?? seatEls.rect(ring.seatAt(n - 1));
       const top = seatEls.rect(ring.seatAt(2)) ?? seatEls.rect(ring.seatAt(3));
-      const ringBox = ringEl?.getBoundingClientRect();
-      if (!side || !top || !ringBox) return (resultFit = null);
-      if (innerWidth < 600) return (resultFit = { top: Math.max(0, top.bottom - f.top + 8), width: null });
+      if (!side || !top) return (resultFit = null);
+      if (innerWidth < 600) return (resultFit = { top: Math.max(0, top.bottom - f.top + 8) });
       const floor = section.getBoundingClientRect().bottom;
       const under = side.bottom - f.top + 8;
       resultFit =
-        floor - (f.top + under) >= resultNeed ? { top: under, width: null } : { top: top.bottom - f.top + 8, width: ringBox.width + 16 };
+        floor - (f.top + under) >= resultNeed ? { top: under } : { top: top.bottom - f.top + 8 };
     };
     void tick().then(measure);
     window.addEventListener('resize', measure);
@@ -414,7 +454,8 @@
   // The table stays: the seats keep their places, the result folds away,
   // and the middle offers the next hand. A tap on a seat opens its choices.
   const seated = $derived(client.seat !== null);
-  const between = $derived(!(room?.in_hand ?? false) && (idle || (done !== null && folded)));
+  const between = $derived(!(room?.in_hand ?? false) && idle);
+  const arranging = $derived(!(room?.in_hand ?? false) && (idle || done !== null));
   /** What everyone at the table (watchers too) is told about the next shuffle. */
   const shuffleNote = $derived(
     room?.table.shuffle ? '매 판 시작할 때 자리를 섞어요' : room?.table.shuffle_next ? '다음 판 시작할 때 자리를 섞어요' : null,
@@ -424,7 +465,7 @@
   /** The name a watcher sits down with. */
   let sitName = $state(savedName());
   $effect(() => {
-    if (!between) {
+    if (!arranging) {
       ui.closeSeat();
       ui.swapFrom = null;
     }
@@ -528,6 +569,7 @@
         offline: info?.kind === 'human' && !info.connected,
         team: hand.team(s),
         points: hand.points(s),
+        collecting: resolving !== null,
         turn: turn === s,
         bubble: bidNote(bidding, s),
         reaction: client.reactions?.[s] ?? null,
@@ -557,7 +599,7 @@
 
   const hint = $derived(client.hint && myTurn ? actionLabel(client.hint, seatName) : null);
   const pill = $derived(
-    myTurn && play ? (settings.singleTap ? '낼 카드를 누르세요' : raisedCard ? '한 번 더 누르면 내요' : '낼 카드를 두 번 누르세요') : null,
+    liveTurn && play ? (settings.singleTap ? '낼 카드를 누르세요' : raisedCard ? '한 번 더 누르면 내요' : '낼 카드를 두 번 누르세요') : null,
   );
 </script>
 
@@ -612,17 +654,14 @@
     />
   {/if}
 {/snippet}
-{#snippet strip(isFolded: boolean)}
+{#snippet strip()}
   <div class="strip-area">
     <Strip
       controls={controls ? controlPanel : undefined}
-      {refusal}
       {pill}
       waiting={done ? null : waiting}
       misdeal={misdealNow}
-      folded={isFolded}
       onmisdeal={() => act('Misdeal')}
-      onunfold={() => (ui.folded = false)}
       bind:controlsHeight
     />
   </div>
@@ -635,7 +674,7 @@
   class:nudge
   class:tips={settings.tips}
   class:swapping={swapFrom !== null}
-  class:result-open={done !== null && !folded}
+  class:completed={done !== null && !resolving}
   class:controls-out={controls}
   class:between
   style:--over="{controls ? controlsHeight : 0}px"
@@ -646,7 +685,11 @@
   </div>
   <!-- Always there, at a fixed height, so the felt below never moves. -->
   <div class="event">
-    {#if animator.event && !done}{#key animator.event}<p class="fade-up" aria-live="polite"><SuitText text={animator.event} /></p>{/key}{/if}
+    {#if turn !== null && !between}
+      <p class="turn-heading"><span aria-hidden="true">●</span> <strong>{myTurn ? '내 차례' : seatName(turn)}</strong>{myTurn ? '' : ' 차례'}</p>
+    {:else if animator.event && !done}
+      {#key animator.event}<p class="fade-up" aria-live="polite"><SuitText text={animator.event} /></p>{/key}
+    {/if}
     {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite"><SuitText text={tip} /></p>{/key}{/if}
   </div>
 
@@ -658,7 +701,7 @@
     <Felt
       {ring}
       seats={seatViews}
-      watching={me === null}
+      watching={between || me === null}
       {onTable}
       trickKey={resolving ? `r${resolving.key}` : `p${play?.tricks.length ?? 0}`}
       {trickNo}
@@ -672,6 +715,7 @@
       attachSpot={(s) => spots.at(s)}
       attachCard={(s) => trickCards.at(s)}
       {between}
+      interactive={arranging}
       controlsOut={controls}
       {swapFrom}
       {seatTap}
@@ -691,16 +735,17 @@
           {shuffleNote}
           onstart={() => client.start()}
           onshuffle={(on) => client.shuffleNext(on)}
-          {onmenu}
+          {onsettings}
           oncancelswap={() => (ui.swapFrom = null)}
         />
       {/if}
     </Felt>
   </div>
 
-  {#if done && !folded}
+  {#if done && !resolving}
     <ResultSheet
       {done}
+      {folded}
       {me}
       {room}
       {seatName}
@@ -711,8 +756,8 @@
       {shuffleNote}
       fit={resultFit}
       bind:need={resultNeed}
-      onfold={() => (ui.folded = true)}
-      onreplay={() => (replay = true)}
+      onfold={() => (ui.folded = !ui.folded)}
+      onreplay={openReplay}
       onshare={() => (sharing = true)}
       onstart={() => client.start()}
       onrun={() => {
@@ -723,8 +768,9 @@
   {/if}
 
   {#if me !== null}
-    {@render strip(done !== null && folded)}
-    <div class="tray-area" data-seat={between ? me : undefined}>
+    {@render strip()}
+    {#if !between}
+    <div class="tray-area">
       <Tray
         seat={{
           name: myName,
@@ -732,6 +778,7 @@
           team: hand.team(me),
           secretFriend: hand.secretFriend,
           points: hand.points(me),
+          collecting: resolving !== null,
           turn: myTurn,
           trumpSuit: contract?.trump ?? null,
           lookAt: lookAt(0),
@@ -741,8 +788,9 @@
         team={hand.team(me)}
         secretFriend={hand.secretFriend}
         points={hand.points(me)}
-        mine={myTurn}
+        mine={liveTurn}
         {between}
+        interactive={arranging}
         picked={swapFrom === me}
         reaction={client.reactions?.[me] ?? null}
         cue={animator.cues[me] ?? null}
@@ -770,14 +818,13 @@
         }}
       />
     </div>
+    {/if}
     <!-- Your tools, once, where the layout puts them: the felt's foot on a
          phone, the result's foot while it shows, the top line on a phone
          held sideways, the tray's right end on a desktop. -->
     <div class="tools-area" class:crowded bind:clientWidth={toolsWidth}>
       <Tools {hint} canHint={settings.hints && liveTurn} onhint={() => client.askHint()} onreact={(text) => client.react(text)} />
     </div>
-  {:else if done && folded}
-    {@render strip(true)}
   {:else if !done && !between}
     <!-- Watching: no hand, no strip; one line says whose turn it is. -->
     <p class="spectating">구경하는 중{waiting ? ` · ${waiting.pre}${waiting.name}${waiting.post}` : ''}</p>
@@ -835,27 +882,26 @@
       }}
     />
   {/if}
-  {#if replay && done}
+  {#if replay}
+    {@const snapshot = replay}
     <HandReplay
-      tricks={done.tricks}
-      discards={done.discards}
-      hiddenDiscards={rules.reveal_discards === false && done.declarer !== me}
-      declarer={done.declarer}
-      friend={done.friend}
-      {seatName}
-      {seal}
-      twoJokers={hand.twoJokers}
-      onclose={() => (replay = false)}
+      tricks={snapshot.done.tricks}
+      discards={snapshot.done.discards}
+      hiddenDiscards={snapshot.hiddenDiscards}
+      declarer={snapshot.done.declarer}
+      friend={snapshot.done.friend}
+      seatName={(s) => snapshot.names[s] ?? `${s + 1}번 자리`}
+      seal={(card) => sealOf(card, snapshot.rules, snapshot.done.contract.trump)}
+      twoJokers={snapshot.twoJokers}
+      onclose={closeReplay}
     />
   {/if}
 </section>
 
 <style>
-  /* Every row but the felt has a fixed height for the screen size, and the
-     tray never changes height either, so the felt (and every seat and the
-     trick on it) stays put from the deal to the result. Whatever comes and
-     goes (bids, the exchange, the result, the turn pill) lies over it.
-     Breakpoints are lib/tokens.ts's: 600, 1024 and 1100. */
+  /* The lobby has five fixed seats and no empty hand tray. During a hand,
+     portrait decisions reserve a measured row above the cards; landscape
+     decisions sit beside the felt. Breakpoints match lib/tokens.ts. */
   .table {
     --status-h: 48px;
     --event-h: 18px;
@@ -871,6 +917,15 @@
     grid-template-areas: 'status' 'event' 'felt' 'strip' 'tray';
     gap: 4px;
     height: calc(100dvh - var(--chrome, 80px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  /* Decision panels have a reserved row: they cannot paint over seats. */
+  @media (orientation: portrait) {
+    .table.controls-out { --strip-h: var(--over); }
+  }
+  @media (max-width: 599px) and (max-height: 620px) and (orientation: portrait) {
+    .table { --status-h: 36px; --event-h: 12px; }
+    .event { font-size: 11px; }
+    .event p { line-height: 12px; }
   }
   .table.seated {
     --tools-room: 52px;
@@ -898,6 +953,9 @@
     font-size: var(--text-label);
     color: var(--ink-muted);
   }
+  .turn-heading { color: var(--ink-muted); }
+  .turn-heading strong { color: var(--ink); font-weight: 700; }
+  .turn-heading > span { color: var(--accent); font-size: 9px; }
   .event p {
     margin: 0;
     overflow: hidden;
@@ -979,15 +1037,15 @@
       padding-inline-end: calc(var(--tools-w) + 4px);
     }
   }
-  /* While the result shows: at the start of its footer, which keeps room. */
-  .result-open .tools-area {
+  /* Completed hands keep tools in place when the result folds away. */
+  .completed .tools-area {
     grid-area: tray;
     justify-self: start;
     z-index: calc(var(--z-result) + 1);
     margin: 0 0 10px 12px;
   }
   @media (min-width: 600px) {
-    .result-open .tools-area {
+    .completed .tools-area {
       margin: 0 0 14px 16px;
     }
   }
@@ -1016,7 +1074,7 @@
       --tools-room: 0px;
     }
     .tools-area,
-    .result-open .tools-area {
+    .completed .tools-area {
       grid-area: tray;
       align-self: center;
       justify-self: end;
@@ -1041,9 +1099,8 @@
     .table.tips {
       --event-h: 36px;
     }
-    .status-area {
-      display: none;
-    }
+    .status-area { display: none; }
+    .event .turn-heading { display: none; }
     .side-area {
       grid-area: side;
       display: grid;
@@ -1064,20 +1121,20 @@
     .table.seated {
       --tools-room: 0px;
     }
-    /* No decision panel between hands: use that width for the seats and
-       keep the empty tray beside the lobby's controls at the foot. */
+    /* The five lobby seats share one row; actions have their own row below. */
     .table.between {
-      grid-template-columns: minmax(0, 1fr) 120px;
-      grid-template-areas: 'status status' 'felt felt' 'strip tray';
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) 64px;
+      grid-template-areas: 'status' 'felt' 'strip';
     }
     .event {
       display: none;
     }
-    .strip-area {
-      align-self: stretch;
-    }
+    .strip-area { align-self: stretch; min-height: 0; }
+    .status-area { padding-inline-end: calc(var(--tools-w) + 4px); }
+    .table:not(.between):not(.controls-out) .strip-area { padding-top: 56px; }
     .tools-area,
-    .result-open .tools-area,
+    .completed .tools-area,
     .tools-area.crowded {
       display: block;
       grid-area: status;
@@ -1088,6 +1145,14 @@
     }
   }
 
+  @media (min-width: 600px) and (min-height: 521px) {
+    .between .tools-area {
+      grid-area: felt;
+      align-self: start;
+      justify-self: end;
+      margin: 0;
+    }
+  }
   /* ---- Between hands -------------------------------------------------------
      Every seat is one tap from its choices: a transparent button over it. */
   .seat-tap {

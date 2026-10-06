@@ -7,7 +7,6 @@
   // drift up and aside while thinking, turn to ^^ after a won trick, sink
   // after a loss, and go to dashes when the player is offline.
   import { blinker } from '../../blink';
-  import { hop } from '../../motion';
   import { motion } from '../../settings.svelte';
   import { FIXED } from '../../tokens';
   import type { Suit } from './types';
@@ -17,7 +16,6 @@
     trumpSuit = null,
     isBot = false,
     thinking = false,
-    active = false,
     lookAt = null,
     mood = null,
     offline = false,
@@ -28,14 +26,12 @@
     trumpSuit?: Suit | null;
     isBot?: boolean;
     thinking?: boolean;
-    /** Its turn: the figure hops once as the turn arrives. */
-    active?: boolean;
     /** A unit vector, in screen directions, for the eyes to glance along. */
     lookAt?: { x: number; y: number } | null;
     /** 'happy' flashes ^^ eyes; 'down' lowers the eyes while it lasts. */
     mood?: 'happy' | 'down' | null;
     offline?: boolean;
-    /** A still figure: no blinking, no hop. */
+    /** A still figure: no blinking or gaze animation. */
     still?: boolean;
   } = $props();
 
@@ -68,11 +64,6 @@
     };
   });
 
-  let el: SVGSVGElement;
-  $effect(() => {
-    if (active && moving) hop(el);
-  });
-
   const down = $derived(mood === 'down' && !joy);
   const gaze = $derived.by(() => {
     if (down) return { x: 0, y: 2.6 };
@@ -84,7 +75,7 @@
   const lid = $derived(closed ? 0.12 : down ? 0.6 : 1);
 </script>
 
-<svg viewBox="0 0 120 110" class="figure" bind:this={el} aria-hidden="true">
+<svg viewBox="0 0 120 110" class="figure" aria-hidden="true">
   <!-- Bell robe, cut off at the bottom: head and shoulders. -->
   <path d="M20 110 Q22 76 60 72 Q98 76 100 110 Z" style:fill={robe} />
   <circle cx="60" cy="48" r="20" fill={SKIN} stroke={EYE} stroke-width="3" />
@@ -111,6 +102,13 @@
     <circle cx="97" cy="57" r="4.5" style:fill={robe} />
   {/if}
 
+  {#if team === 'friend'}
+    <!-- A partner clasp; the declarer keeps the crown. No hidden friend is exposed. -->
+    <g fill="none" stroke={EYE} stroke-width="3.5" stroke-linecap="round">
+      <path d="M53 88 l-4 4 a5 5 0 0 0 7 7 l4-4" />
+      <path d="M64 98 l4-4 a5 5 0 0 0-7-7 l-4 4" />
+    </g>
+  {/if}
   {#if offline}
     <path d="M49 49 H57 M63 49 H71" stroke={EYE} stroke-width="3" stroke-linecap="round" />
   {:else if joy}

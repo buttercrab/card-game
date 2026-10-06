@@ -105,6 +105,7 @@
   const MIN_STEP = 26;
   const cardWidth = $derived.by(() => {
     if (short) return 46;
+    if ((innerHeight.current ?? 0) <= 620 && width < 360) return 56;
     // Desktops grow the hand with the window's height, which is what runs out.
     if (wide) return Math.round(Math.min(124, Math.max(88, (innerHeight.current ?? 0) * 0.12)));
     // Phones take bigger cards while a full hand of ten still fits one row.
@@ -114,7 +115,7 @@
 
   /** Room enough for the index alone (its column is about 31% of the card):
    * a 13- or 14-card hand still fits one row at this step. */
-  const minStep = $derived(Math.max(20, Math.ceil(cardWidth * 0.31)));
+  const minStep = $derived(cardWidth === 56 ? cardWidth * 0.31 : Math.max(20, Math.ceil(cardWidth * 0.31)));
   /** The least a phone's hand card is drawn (docs/DESIGN.md). */
   const MIN_CARD = 56;
 
@@ -183,6 +184,7 @@
   class:quick={quickDeal}
   class:two={rows.length > 1}
   class:lifted
+  style:--deal-speed={settings.speed === 'fast' ? 0.5 : 1}
   style:--row-h="{Math.round(cardWidth * 1.4)}px"
   bind:clientWidth={width}
   onclick={(e) => e.target === e.currentTarget && (raised = null)}
@@ -229,6 +231,7 @@
     justify-content: center;
   }
   .spot {
+    flex: none;
     position: relative;
   }
   .spot:not(:first-child) {
@@ -243,11 +246,11 @@
   }
   .deal .spot {
     animation: deal-in var(--dur-travel) var(--ease-settle) both;
-    animation-delay: calc(var(--i) * 45ms);
+    animation-delay: calc(var(--i) * 45ms * var(--deal-speed));
   }
   .deal.quick .spot {
     animation-duration: calc(var(--dur-travel) / 2);
-    animation-delay: calc(var(--i) * 22ms);
+    animation-delay: calc(var(--i) * 22ms * var(--deal-speed));
   }
   /* Dealt cards land a little crooked and straighten, as on a real table. */
   /* Cards from the kitty drop into the hand once. */

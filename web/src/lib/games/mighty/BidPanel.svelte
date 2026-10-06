@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { SUITS, trumpLabel } from './cards';
   import { eachFrame, share } from '../../frame';
   import SuitIcon, { SUIT_NAME } from '../../SuitIcon.svelte';
@@ -26,6 +27,8 @@
   // the wait runs out, drawn from the clock on each frame (frame.ts) so it
   // tells the time under reduced motion and with 끄기 too.
   let held = $state(false);
+  let entering = $state(true);
+  onMount(() => { const timer = setTimeout(() => (entering = false), 400); return () => clearTimeout(timer); });
   /** How much of the wait is over, 0 to 1. */
   let waited = $state(1);
   $effect(() => {
@@ -99,12 +102,12 @@
     </div>
   {/if}
   <div class="actions">
-    {#if canMisdeal}<Button onclick={() => onact('Misdeal')} title="패가 약하면 다시 돌릴 수 있어요">딜미스</Button>{/if}
+    {#if canMisdeal}<Button disabled={entering} onclick={() => { if (!entering) onact('Misdeal'); }} title="패가 약하면 다시 돌릴 수 있어요">딜미스</Button>{/if}
     {#if canPass}
-      <Button onclick={() => onact('Pass')}>패스</Button>
+      <Button disabled={entering} onclick={() => { if (!entering) onact('Pass'); }}>패스</Button>
     {/if}
     {#if bids.length > 0}
-      <button class="btn primary" class:held disabled={held} onclick={() => onact({ Bid: bid })}>
+      <button class="btn primary" class:held disabled={held || entering} onclick={() => { if (!held && !entering) onact({ Bid: bid }); }}>
         공약 <SuitText text={trumpLabel(bid.trump)} /> {bid.count}
         {#if held}<span class="hold" style:transform="scaleX({waited})" aria-hidden="true"></span>{/if}
       </button>

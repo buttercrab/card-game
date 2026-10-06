@@ -151,7 +151,7 @@
 {#snippet index()}
   {#if joker}
     <SuitIcon suit="Star" class="index-suit" />
-    <span class="index-joker">{jokerLabel}</span>
+    <span class="index-joker" class:single={!twoJokers}>{jokerLabel}</span>
   {:else if suit}
     <span class="index-rank" class:ten={rank === 10}>{rankText(rank)}</span>
     <SuitIcon {suit} class="index-suit" />
@@ -359,6 +359,13 @@
     white-space: nowrap;
   }
 
+  /* The full two-syllable word is a vertical index, like JOKER on a
+     printed deck. A horizontal word is wider than this one-glyph column. */
+  .index-joker.single {
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+  }
+
   /* Small cards: one large glyph instead of pips. */
   .glyph {
     position: absolute;
@@ -538,13 +545,19 @@
     translate: 0 calc(var(--w) * -0.36);
     box-shadow: var(--shadow-raised);
   }
-  /* Cards that cannot be played sink back and lose some colour, rather
-     than greying out; they stay solid paper (never see-through, which
-     showed the next card's edge and went muddy in dark mode) and still
-     answer a tap with the reason. */
+  /* One inactive ink for every suit. Desaturation alone left spades
+     bold black while coloured suits faded. Paper stays opaque, so a fan
+     never shows another card through the unavailable one. */
   .unplayable {
+    --ink-on-card: var(--card-ink-muted);
+    --frame: var(--card-ink-muted);
     translate: 0 4px;
-    filter: saturate(0.4) brightness(0.9);
+    filter: none;
+  }
+  .unplayable .art,
+  .unplayable :global(.index-cue) {
+    filter: grayscale(1);
+    opacity: 0.65;
   }
   .picked {
     translate: 0 -18px;
@@ -558,7 +571,7 @@
   }
   .leading {
     translate: 0 -6px;
-    outline: 2px solid var(--ink);
+    outline: 2px solid var(--card-gold);
     outline-offset: 2px;
   }
   .dimmed {

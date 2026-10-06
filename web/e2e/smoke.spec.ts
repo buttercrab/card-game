@@ -373,7 +373,7 @@ test('섞기 waits for the next hand and names follow their seats', async ({ bro
   }
   // Everyone at the table, by name, from this tab's seat round.
   const names = () => page.locator('.ring .spot .seat .name').allTextContents();
-  const before = await names();
+  const before = (await names()).filter((name) => name !== '나');
   expect(new Set(before).size).toBe(4);
 
   const watcher = await browser.newPage();
@@ -381,7 +381,7 @@ test('섞기 waits for the next hand and names follow their seats', async ({ bro
   await page.getByRole('button', { name: /^섞기/ }).click();
   await expect(page.getByRole('button', { name: /섞기 취소/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(watcher.locator('.shuffle-note', { hasText: '다음 판 시작할 때 자리를 섞어요' })).toBeVisible();
-  expect(await names()).toEqual(before);
+  expect((await names()).filter((name) => name !== '나')).toEqual(before);
   // Pressed again it is off, and on once more.
   await page.getByRole('button', { name: /섞기 취소/ }).click();
   await expect(watcher.locator('.shuffle-note')).toHaveCount(0);

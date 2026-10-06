@@ -2,7 +2,7 @@
   // A room, for any game: the bar (the table's code, its menu), the
   // banners, the toast, the menu's sheets and, in the middle, the table
   // of the game the room plays, as `games` finds it by the room's `game`.
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { CATALOG } from '../catalog';
   import Icon from '../Icon.svelte';
   import { closeTop } from '../layers';
@@ -10,6 +10,8 @@
   import SettingsSheet from '../SettingsSheet.svelte';
   import SuitText from '../SuitText.svelte';
   import Button from '../ui/Button.svelte';
+  import Segmented from '../ui/Segmented.svelte';
+  import Switch from '../ui/Switch.svelte';
   import { RoomClient, savedName } from './client.svelte';
   import type { GameResolver } from './game';
   import GameMenu from './GameMenu.svelte';
@@ -49,6 +51,18 @@
   const toast = $derived(client.toasts.current);
 
   let showSettings = $state(false);
+  let settingsButton = $state<HTMLButtonElement>();
+  let settingsOpener: HTMLElement | null = null;
+  const TURNS = CATALOG.turn_limits.map((secs) => ({ value: secs, label: secs === 0 ? '끔' : `${secs}초` }));
+  function openSettings() {
+    settingsOpener = ui.menu ? (settingsButton ?? null) : document.activeElement as HTMLElement;
+    ui.closeMenu();
+    showSettings = true;
+  }
+  function closeSettings() {
+    showSettings = false;
+    void tick().then(() => { if (settingsOpener?.isConnected) settingsOpener.focus(); });
+  }
   let showRules = $state(false);
   let editRules = $state(false);
   let reporting = $state(false);
@@ -167,9 +181,15 @@
     </button>
     <span class="sr">{client.status === 'open' ? '연결됨' : client.status === 'closed' ? '연결 끊김' : '연결 중'}</span>
     {#if room?.watching}<span class="watching">구경 <span class="num">{room.watching}</span>명</span>{/if}
+    <button class="btn icon settings-btn" bind:this={settingsButton} onclick={openSettings} aria-label="설정" aria-haspopup="dialog"><Icon name="sliders" size="24px" /></button>
     <button class="btn icon menu-btn" onclick={() => (ui.menu = true)} aria-label="메뉴" aria-haspopup="dialog"><Icon name="menu" size="24px" /></button>
   </header>
 
+  <div class="feedback-rail">
+    {#if toast}
+      {#key toast.id}<div class="toast" data-kind={toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'}><span>{toast.kind === 'error' ? '알림' : '안내'}</span><span class="message" title={toast.text}><SuitText text={toast.text} /></span></div>{/key}
+    {/if}
+  </div>
   {#if client.status === 'missing'}
     <section class="panel center">
       <h2>{id} 테이블이 없어요</h2>
@@ -207,17 +227,13 @@
         {ui}
         {rulesName}
         onmenu={() => (ui.menu = true)}
+        onsettings={openSettings}
         onrules={() => (showRules = true)}
         oninvite={doInvite}
       />
     {/if}
   {/if}
 
-  {#if toast}
-    {#key toast.id}
-      <div class="toast" data-kind={toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'}><SuitText text={toast.text} /></div>
-    {/key}
-  {/if}
 </div>
 
 {#if ui.menu && room}
@@ -230,16 +246,30 @@
     onclose={() => ui.closeMenu()}
     oninvite={doInvite}
     onrules={() => (showRules = true)}
-    oneditrules={() => (editRules = true)}
-    onsettings={() => (showSettings = true)}
+    onsettings={openSettings}
     onreport={() => (reporting = true)}
-    onturn={(secs) => client.setTable({ turn_secs: secs })}
-    onshuffle={(on) => client.setTable({ shuffle: on })}
     onleave={leave}
   />
 {/if}
 {#if showSettings}
-  <SettingsSheet onclose={() => (showSettings = false)} />
+  <SettingsSheet onclose={closeSettings}>
+    {#snippet table()}
+      {#if room}
+        <h3>테이블 설정</h3>
+        <p class="muted">모두에게 적용돼요. 앉은 사람이 판과 판 사이에 바꿀 수 있어요.</p>
+        {#if seated && !inHand}
+          <p>턴 시간</p>
+          <Segmented options={TURNS} value={room.table.turn_secs} onchange={(secs) => client.setTable({ turn_secs: secs })} label="턴 시간" />
+          <p class="muted">{room.table.turn_secs > 0 ? '시간이 지나면 봇이 대신 둬요.' : '시간 제한 없이 둬요.'}</p>
+          <Switch checked={room.table.shuffle} onchange={(on) => client.setTable({ shuffle: on })}>매 판 자리 섞기</Switch>
+          <Button wide onclick={() => { closeSettings(); editRules = true; }}>규칙 바꾸기</Button>
+        {:else}
+          <p>턴 시간 <strong>{room.table.turn_secs === 0 ? '끔' : `${room.table.turn_secs}초`}</strong>{room.table.shuffle ? ' · 매 판 자리 섞기' : ''}</p>
+          {#if inHand}<p class="muted">판이 끝나면 바꿀 수 있어요.</p>{/if}
+        {/if}
+      {/if}
+    {/snippet}
+  </SettingsSheet>
 {/if}
 {#if reporting}
   <ReportSheet room={id} seat={client.seat} onclose={() => (reporting = false)} />
@@ -255,6 +285,7 @@
   /* At the table, the width follows the window's height: a tall desktop
      window gets a wider table instead of a fixed column with empty felt. */
   .page {
+    --chrome: 120px;
     max-width: max(1100px, calc((100dvh - 64px) * 1.7));
     margin: 0 auto;
     /* Edge seats and their chips can round a pixel past a narrow screen
@@ -265,6 +296,7 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
+  .settings-btn { margin-left: auto; }
   .bar {
     display: flex;
     align-items: center;
@@ -298,7 +330,6 @@
   }
   .menu-btn {
     width: 48px;
-    margin-left: auto;
     margin-right: -10px;
   }
   /* Connected: a small ink dot. Connecting: an empty ring. Lost: red. */
@@ -344,13 +375,17 @@
     background: var(--panel);
     font-size: 14px;
   }
+  .feedback-rail { height: 32px; position: relative; display: flex; justify-content: center; z-index: var(--z-toast); }
+  .toast .message { min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; line-height: 12px; }
+  .toast > span:first-child { flex: none; font-weight: 800; }
+  @media (orientation: landscape) and (max-height: 520px) {
+    .page { --chrome: 112px; }
+    .feedback-rail { height: 24px; }
+  }
   .toast {
-    position: fixed;
-    left: 50%;
-    bottom: calc(20px + env(safe-area-inset-bottom));
-    transform: translateX(-50%);
-    max-width: calc(100% - 32px);
-    padding: 10px 16px;
+    display: flex; align-items: center; gap: 8px;
+    width: min(420px, 100%); min-height: 28px; max-height: 32px; padding: 3px 10px;
+    font-size: 12px; line-height: 1.4;
     border-radius: var(--r-control);
     background: var(--ink);
     color: var(--table);

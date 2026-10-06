@@ -116,7 +116,8 @@ Imports below are relative to `web/src/lib`; adapt the path to the caller.
 | [Sheet](../web/src/lib/ui/Sheet.svelte) | Focused task/dialog | Required `onclose`; title or label; small/normal/large (400/420/560px before viewport clamp); optional head/footer snippets |
 | [Popover](../web/src/lib/ui/Popover.svelte) | Choices near an anchor | `anchor: () => DOMRect`, `onclose`, optional trigger, side/align/modal/role/label/autofocus/width |
 | [Badge](../web/src/lib/ui/Badge.svelte) | Noninteractive role/count/status | Team or secret friend; count/outline/tag kinds; label/tone/size; never substitute for a button |
-| [Bubble](../web/src/lib/ui/Bubble.svelte) | Temporary reaction | Seat-relative reaction words with fixed card-paper foreground |
+| [FeedbackDock](../web/src/lib/ui/FeedbackDock.svelte) | Player feedback | Owns priority and reserved slot geometry for reactions, events, points and bids |
+| [Bubble](../web/src/lib/ui/Bubble.svelte) | Feedback appearance | Card-paper foreground, shape and entry animation inside FeedbackDock |
 
 A bare button is reset, not a fully styled control. Use Button/Chip unless a
 component truly needs its own game object. Links may use `.btn` when they
@@ -169,18 +170,78 @@ do not duplicate placement and outside-click handlers in callers.
 
 `layers.ts` closes the topmost dialog before registered popovers. At the
 table, back closes a layer or opens the menu; explicit 나가기 leaves.
-The table remains visible between hands. Folding the result is not leaving.
+The table remains visible between hands. Folding a result hides only its
+details; player positions, viewer orientation, badges, scoreboard ordering,
+and the action footer stay fixed. Lobby layout begins when the old hand is
+cleared, not when its results are folded.
+
+Native Sheets mount in the document layer before opening, so a newly created
+modal is independent of conditional or animated game fragments.
 
 Modal Sheet behavior does not imply that Popover provides a native modal focus
 trap. Verify focus return/order for the actual caller; do not claim blanket
 accessibility compliance from using a primitive.
 
+## Finished-hand replay
+
+The result panel fits its content, with a 520px desktop width limit. Its body
+scrolls only when the available height requires it; short landscape uses the
+whole table area.
+
+Opening replay retains a snapshot of the completed hand: tricks, discards,
+player names, viewer permissions, and the rules used to mark cards. A new deal
+or seat shuffle on the live table must not close replay or rename its players.
+Replay frames match completed deal data across copied views and proxies,
+not JavaScript object identity. Only closing replay or leaving the room
+dismisses it. Closing returns focus to the replay button when it still exists,
+otherwise the table menu.
+
+## Feedback and quick controls
+
+Every player has one fixed feedback slot below their name/identity. Emoji and
+text reactions, bid notes and action cues use FeedbackDock for one priority
+order and reserved slot geometry, with Bubble owning their appearance;
+reactions take priority while visible. Player objects and the hand keep their
+height when feedback appears. The short landscape layout uses one player row
+and a separate played-card row, with compact owner names and a turn prompt.
+
+Errors, notices and illegal-card explanations use the same room toast rail
+below the header. They never move to the hand or replace its turn prompt.
+
+`R` opens/closes reactions. Arrow keys choose, Enter sends, Escape closes.
+`H` asks for a hint when available. Shortcuts ignore text fields, IME,
+modifiers, repeated keydown and modal UI. The server's canonical reaction list
+is `crates/server/src/room/mod.rs`; regenerate the catalog after changing it.
+It currently offers 12 emoji and 12 phrases. This is additive: old reaction
+values remain valid and unknown values remain refused.
+
+A newly mounted bidding panel disables all submit actions for 400ms. The
+out-of-turn Deal Miss control uses the left lane, keeping it separate from
+Bid; a pointer gesture that spans a phase change cannot submit the new action.
+
+Desktop and short-landscape hand columns reserve equal space left and right,
+so a single card stays centered independently of whether tools are visible.
+
+## Entry and settings
+
+Home shows the selected rule, Create Table and Join before the long preset list.
+The rule chooser retains every preset and saved custom rule; rule reading,
+comparison and editing remain available from home. Short screens omit the large
+card mark to preserve room for these actions.
+
+The header and lobby Settings buttons open one panel directly. Table settings
+apply to everyone and can change only between hands by a seated player. Personal
+screen and sound preferences apply to this browser. Opening Settings from the
+menu replaces the menu; closing returns to the table and restores focus.
+
 ## Table layout
 
 Phone portrait is the primary layout. The current visible experience is a
-five-seat table: viewer at the bottom, others in the ring. Watchers use the
-public perspective. Seat order changes only through an explicit seating/shuffle
-operation, not as a side effect of a phase or friend reveal.
+five-seat table. Between hands all five seats use the public orientation,
+with seat 0 at the bottom. Joining or standing does not rotate or resize the
+lobby. A dealt hand uses the player's own seat at the bottom and docks their
+cards below the felt. Explicit swaps and shuffles still move players together
+with their names.
 
 The screen has status, felt/seats/trick, contextual controls and a docked hand.
 The result and other overlays may scroll internally; the table page should
@@ -193,10 +254,12 @@ not scroll sideways. Account for safe-area insets and landscape height.
 | Wide landscape side panel | 1100px |
 | Short landscape hand | Landscape and height ≤520px |
 
-Between hands at five seats on short landscape screens, the four others form one
-ordered row, with compact figures and no empty metadata spacer. The lobby
-uses the freed decision-panel width; your seat and the next-hand controls
-sit at the foot. During a hand the existing corner layout is retained.
+Between hands at five seats on short landscape screens, all five seats form one
+ordered row, with compact figures and no empty metadata spacer. Lobby actions
+have a separate row below. In portrait, Start/Next Hand and the two secondary actions share
+the same outer edges; short landscape uses one horizontal action row. Portrait decision panels reserve their measured height;
+on a short felt the four other players use a compact row above the controls.
+Reactions and bid notes stay near their own player without covering neighbours.
 Phone between-hand reaction tools use the status row so they cannot cover
 empty-seat controls.
 
@@ -213,6 +276,8 @@ Keep corner indices visible. A chosen discard lifts without gaining a forward
 z-index that hides neighboring cards. Playing defaults to tap once to raise,
 again to play; a single-tap setting is available. Swipe-to-play is not
 implemented by the current hand component.
+
+Unavailable cards use the same neutral card ink for every suit; lowering saturation alone leaves spades looking active. Card paper remains opaque. The full one-joker corner label stacks vertically inside its index column.
 
 Unplayable state comes from the server's legal view/refusal data. Do not copy
 Mighty legality or payoff arithmetic into visual components. During a hand,
@@ -236,6 +301,9 @@ Its role/legality inputs come from game state, not guesses from the artwork.
 - Team Badge words remain visible. Secret friend is privately outlined until
   public information reveals the role. No-friend UI follows the server view.
 
+Player figures stay fixed when turns change. Keep blinking and eye glances;
+do not bob the whole character up and down.
+
 Art should look cut from paper: simple geometry, a few flat tones, no texture
 required for legibility. Cosmetic unlocks must not encode extra game knowledge.
 
@@ -254,7 +322,8 @@ reveal 600ms, stagger 40ms. Use standard/settle easing tokens. Local animator
 holds can differ; these values are not a promise of every event's exact length.
 
 The [animator](../web/src/lib/games/mighty/table/animator.svelte.ts) queues
-successive server states; it can hurry/skip or catch up when far behind.
+successive server states. Normal speed stays normal when your turn arrives;
+Fast is an explicit preference. Skip and backlog catch-up remain available.
 Animate from registered elements/anchors, not new global DOM lookups. Prefer
 transform and opacity. Existing transient outline emphasis is a bounded
 exception, not a general blurred-shadow animation style.
@@ -266,8 +335,19 @@ exception, not a general blurred-shadow animation style.
 | Mighty/joker/call/misdeal/friend | Local card/seat emphasis and role/call cue |
 | Hand result/run | Counted result and earned emphasis; skippable |
 
-Preserve the last card/trick long enough to understand it. Do not block input
-behind decorative sequencing. New entry can animate a fresh deal; reconnect
+The name stays centered below its character, including during bot thinking.
+The turn uses a filled name pill and head backdrop, with no leading dot.
+A declarer wears a crown;
+a publicly revealed friend wears a linked-ring clasp. Keep role words visible
+and use gold for the current winning card. During collection, clear turn
+emphasis until the next actor is visible.
+
+Preserve the last card/trick long enough to understand it. Normal mode holds
+the resolved trick for 1050ms after winner emphasis. Points feedback occupies
+the same reserved seat slot as reactions and appears after collection. Loading
+an existing score never announces it as new credit. The
+score chime follows card arrival, and the result opens after the final sweep.
+Do not block input behind decorative sequencing. New entry can animate a fresh deal; reconnect
 must not replay stale historical moves. Hidden-tab animation completion has a
 time fallback; timer state is measured from time, not CSS animation progress.
 

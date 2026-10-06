@@ -185,7 +185,7 @@ export const sound = {
    * of its edge on the other card.
    */
   card(delay = 0, onTop = false) {
-    const level = vary(0.5);
+    const level = vary(0.44);
     const slap = jitter(between(3200, 4500));
     burst(
       delay,
@@ -209,17 +209,20 @@ export const sound = {
       });
     }
   },
-  /** A trick slides to its winner, with a rising note per point card in it. */
-  sweep(points: number, delay = 0, pan = 0) {
+  /** Felt noise as a trick starts sliding to its winner. */
+  sweep(delay = 0, pan = 0) {
     // Cards dragged over felt: a falling band of noise with a fast flutter.
     burst(delay, [{ type: 'bandpass', freq: jitter(1800), to: jitter(700), q: 0.7 }], {
       attack: 0.02,
       decay: between(0.18, 0.24),
-      level: vary(0.35) * lift(1100),
+      level: vary(0.28) * lift(1100),
       pan,
       flutter: { rate: 32, depth: 0.25 },
     });
-    for (let i = 0; i < points; i++) note(delay + 0.08 + i * 0.07, SCALE[Math.min(i, SCALE.length - 1)]);
+  },
+  /** Credit chimes start when the cards actually arrive, including skips. */
+  score(points: number) {
+    for (let i = 0; i < points; i++) note(i * 0.07, SCALE[Math.min(i, SCALE.length - 1)], { level: 0.14, length: 0.28 });
   },
   /** It is now your turn. */
   turn() {

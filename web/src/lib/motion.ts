@@ -72,7 +72,7 @@ export function pop(el: Element | null, duration: number): Promise<void> {
     [
       { transform: 'scale(1)' },
       { transform: 'scale(0.9)', offset: 0.2 },
-      { transform: 'scale(1.14)', offset: 0.55 },
+      { transform: 'scale(1.08)', offset: 0.55 },
       { transform: 'scale(1)' },
     ],
     { duration, easing: EASE_STANDARD },
@@ -139,16 +139,6 @@ export function ring(el: Element | null, color = 'currentColor', duration = 420)
       { boxShadow: `0 0 0 0 color-mix(in srgb, ${color} 55%, transparent)` },
       { boxShadow: `0 0 0 14px color-mix(in srgb, ${color} 0%, transparent)` },
     ],
-    { duration, easing: EASE_STANDARD },
-  );
-}
-
-/** A small hop straight up and back down: a figure noticing it is its turn. */
-export function hop(el: Element | null, height = 3, duration = 300): Promise<void> {
-  if (still()) return Promise.resolve();
-  return run(
-    el,
-    [{ transform: 'translateY(0)' }, { transform: `translateY(${-height}px)`, offset: 0.4 }, { transform: 'translateY(0)' }],
     { duration, easing: EASE_STANDARD },
   );
 }

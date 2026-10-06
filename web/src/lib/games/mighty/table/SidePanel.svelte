@@ -60,6 +60,9 @@
       상황판
       {#if play}<span class="round-no">라운드 <strong>{trickNo}</strong>/{rules.hand_size}</span>{/if}
     </h3>
+    {#if turn !== null}
+      <p class="turn-line"><span aria-hidden="true">●</span><strong class="clip" title={seatName(turn)}>{turn === me ? '내 차례' : `${seatName(turn)} 차례`}</strong></p>
+    {:else if play}<p class="turn-line muted">카드 모으는 중</p>{/if}
     {#if bidding}
       <div class="big-contract">
         {#if bidding.best}
@@ -144,6 +147,9 @@
 </aside>
 
 <style>
+  .turn-line { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 10px; font-size: 14px; }
+  .turn-line > span { color: var(--accent); font-size: 9px; }
+  .turn-line strong { color: var(--ink); }
   .side {
     display: flex;
     flex-direction: column;

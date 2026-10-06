@@ -5,12 +5,11 @@
   // choices.
   import type { ComponentProps, Snippet } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
-  import Callout from '../Callout.svelte';
   import Hand from '../Hand.svelte';
-  import Seat from '../Seat.svelte';
+  import Seat, { type Gain } from '../Seat.svelte';
   import type { Card } from '../types';
   import Badge, { type Team } from '../../../ui/Badge.svelte';
-  import Bubble from '../../../ui/Bubble.svelte';
+  import FeedbackDock from '../../../ui/FeedbackDock.svelte';
   import type { Cue } from './animator.svelte';
 
   let {
@@ -20,6 +19,7 @@
     points,
     mine,
     between,
+    interactive = between,
     picked,
     reaction,
     cue,
@@ -39,6 +39,7 @@
     /** Your turn: the tray rings plum and the hand rises to meet you. */
     mine: boolean;
     between: boolean;
+    interactive?: boolean;
     /** Your seat is the first picked in a swap. */
     picked: boolean;
     reaction: { text: string; id: number } | null;
@@ -55,17 +56,14 @@
     /** The hand as Hand draws it. */
     hand: Omit<ComponentProps<typeof Hand>, 'raised' | 'lifted'>;
   } = $props();
+  let gained = $state<Gain | null>(null);
 </script>
 
 <div class="tray" class:mine class:between bind:this={tray}>
-  {#if reaction}
-    {#key reaction.id}<Bubble text={reaction.text} />{/key}
-  {/if}
-  {#if cue?.text}{#key cue.id}<Callout text={cue.text} below={false} />{/key}{/if}
   <!-- Desktop: your own seat at the tray's left; between hands, in its middle. -->
   <div class="me-seat" {@attach attachSpot}>
-    <Seat {...seat} {picked} place="bottom" attach={attachSeat} />
-    {#if between}{@render seatTap()}{/if}
+    <Seat {...seat} bind:gained {reaction} {cue} {picked} place="bottom" attach={attachSeat} />
+    {#if interactive}{@render seatTap()}{/if}
   </div>
   {#if secsLeft !== null}
     <!-- The last seconds of your turn, then a bot plays it for you. -->
@@ -75,7 +73,9 @@
     {#if team}{#key team}<Badge {team} class="pop" />{/key}
     {:else if secretFriend}<Badge secret class="pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요" />{/if}
     {#if points > 0}<Badge>{points}점</Badge>{/if}
+    <span class="my-name">{seat.name}</span>
   </div>
+  <FeedbackDock {reaction} {cue} credit={gained} />
   <!-- Always drawn, even empty, so the tray keeps its height. -->
   <div class="hand-slot">
     <Hand {...hand} bind:raised lifted={mine} />
@@ -83,6 +83,7 @@
 </div>
 
 <style>
+  .my-name { max-width: 8em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tray {
     position: relative;
     padding: 18px 8px 10px;
@@ -90,9 +91,6 @@
     outline: 3px solid transparent;
     outline-offset: -3px;
     transition: outline-color var(--dur-quick) var(--ease-standard);
-    /* Your reaction rises at the tray's left, over your own seat, clear of
-       the turn pill and the round note in the middle. */
-    --bubble-x: 64px;
   }
   .mine {
     outline-color: var(--accent);
@@ -150,6 +148,11 @@
     transform: translate(-50%, -50%);
     --seat-w: 100%;
   }
+  @media (max-width: 599px) and (max-height: 620px) and (orientation: portrait) {
+    .tray { padding: 6px 3px; }
+    .me-row { height: 16px; font-size: 12px; }
+    .tray { --feedback-h: 24px; }
+  }
   .hand-slot {
     min-width: 0;
   }
@@ -158,7 +161,7 @@
   @media (min-width: 1024px) and (min-height: 640px) {
     .tray {
       display: grid;
-      grid-template-columns: 170px minmax(0, 1fr) var(--tools-w, 0px);
+      grid-template-columns: 170px minmax(0, 1fr) 170px;
       grid-template-areas: 'me hand tools';
       align-items: center;
       column-gap: 12px;
@@ -167,7 +170,7 @@
     .hand-slot {
       grid-area: hand;
     }
-    .me-row {
+    .me-row, .tray > :global(.feedback) {
       display: none;
     }
     .me-seat,
@@ -188,9 +191,19 @@
   @media (orientation: landscape) and (max-height: 520px) {
     .tray {
       padding: 0 4px 4px;
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) 92px;
+      grid-template-areas: 'me hand tools';
+      column-gap: 4px; align-items: center;
     }
-    .me-row {
-      display: none;
+    .hand-slot { grid-area: hand; }
+    .me-row, .tray > :global(.feedback) { display: none; }
+    .me-seat :global(.meta) { font-size: 10px; gap: 3px; }
+    .me-seat :global(.meta > span) { font-size: 10px; padding: 0 3px; line-height: 14px; }
+    .me-seat {
+      display: block; grid-area: me;
+      --seat-w: 92px; --seat-figure: 16px; --seat-meta-min: 14px;
+      --feedback-h: 24px; --name-size: 12px;
     }
   }
 </style>

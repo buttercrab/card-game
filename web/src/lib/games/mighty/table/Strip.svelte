@@ -1,38 +1,26 @@
 <script lang="ts">
-  // The action strip: one fixed slot between the felt and the hand, whose
-  // content follows the phase. It has no panel of its own and nothing in
-  // it takes room: controls (bids, the exchange, a joker's choices) rise
-  // from it over the felt's foot, on the table's own paper so the seats
-  // behind never show through; the turn sits on the tray's rim as a pill.
+  // Phase decisions occupy their own row above the hand (or beside the
+  // felt in landscape). The parent reserves controlsHeight in portrait;
+  // turn prompts sit on the tray rim. Result folding belongs to ResultSheet.
   import type { Snippet } from 'svelte';
-  import Icon from '../../../Icon.svelte';
-  import SuitText from '../../../SuitText.svelte';
 
   let {
     controls,
-    refusal = null,
     pill = null,
     waiting = null,
     misdeal = false,
-    folded = false,
     onmisdeal,
-    onunfold,
     controlsHeight = $bindable(0),
   }: {
-    /** Bids, the exchange or a joker's choices, risen over the felt. */
+    /** Bids, the exchange or a joker's choices. */
     controls?: Snippet;
-    /** Why the card just tapped cannot be played. */
-    refusal?: string | null;
     /** Your turn to play: what a tap does now. */
     pill?: string | null;
     /** Whose turn it is, in parts, so a long name gives way. */
     waiting?: { pre: string; name: string; post: string } | null;
     /** 딜미스 is open outside your turn. */
     misdeal?: boolean;
-    /** The result is folded away: a tab brings it back. */
-    folded?: boolean;
     onmisdeal?: () => void;
-    onunfold?: () => void;
     controlsHeight?: number;
   } = $props();
 </script>
@@ -44,25 +32,21 @@
 <div class="strip">
   {#if controls}
     <div class="controls" bind:clientHeight={controlsHeight}>{@render controls()}</div>
-  {:else if refusal}
-    <p class="prompt pill refusal" role="alert"><SuitText text={refusal} /></p>
   {:else if pill}
-    <p class="prompt pill"><strong>내 차례</strong> · {pill}</p>
+    <p class="prompt pill"><strong>내 차례</strong> · <span class="instruction">{pill}</span><span class="brief">{pill.includes('두 번') ? '두 번 눌러 내기' : pill.includes('한 번 더') ? '한 번 더 눌러 내기' : '카드 눌러 내기'}</span></p>
   {:else if misdeal}
     <!-- Optional, so secondary: plum stays for your turn. -->
     <div class="aside-act">
-      {@render caption()}
       <button class="btn" onclick={onmisdeal} title="패가 약하면 차례가 아니어도 다시 나눌 수 있어요">딜미스</button>
+      {@render caption()}
     </div>
-  {:else if folded}
-    <!-- The folded result waits on the tray's rim, like a sheet's tab. -->
-    <button class="prompt pill unfold" onclick={onunfold}><Icon name="result" size="18px" />결과 다시 보기</button>
   {:else}
     {@render caption()}
   {/if}
 </div>
 
 <style>
+  .brief { display: none; }
   .strip {
     position: relative;
     z-index: var(--z-controls);
@@ -103,9 +87,6 @@
   .pill strong {
     color: var(--accent-on-card);
   }
-  .refusal {
-    font-weight: 700;
-  }
   /* Someone else's turn is news, not a button: a plain caption. */
   .caption {
     font-size: var(--text-label);
@@ -128,7 +109,7 @@
     bottom: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: start;
     gap: 10px;
     padding: 0 8px 8px;
   }
@@ -142,17 +123,6 @@
   .aside-act .btn {
     flex: none;
     min-width: 88px;
-  }
-  .unfold {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 44px;
-    padding: 6px 16px;
-    font-weight: 600;
-  }
-  .unfold:active {
-    transform: translate(-50%, calc(50% + 2px)) scale(0.97);
   }
   /* Phones on their side: the strip has room of its own beside the felt,
      so nothing lies over anything. */
@@ -168,8 +138,11 @@
       transform: none;
     }
     .prompt {
-      align-self: center;
-      white-space: normal;
+      align-self: center; font-size: 12px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
     }
+    .pill { padding: 2px 6px; font-size: 11px; line-height: 12px; }
+    .instruction { display: none; }
+    .brief { display: inline; }
   }
 </style>

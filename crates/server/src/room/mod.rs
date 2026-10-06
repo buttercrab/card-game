@@ -47,7 +47,7 @@ pub type ConnId = u64;
 pub const TURN_LIMITS: [u32; 4] = [0, 20, 40, 60];
 
 /// The reactions a player can send; anything else is refused.
-pub const REACTIONS: [&str; 12] = [
+pub const REACTIONS: [&str; 24] = [
     "👏",
     "😂",
     "😮",
@@ -60,6 +60,18 @@ pub const REACTIONS: [&str; 12] = [
     "빨리요~",
     "미안",
     "굿",
+    "👍",
+    "😎",
+    "🤔",
+    "😅",
+    "🎉",
+    "💪",
+    "잘했어요",
+    "고마워요",
+    "한 판 더!",
+    "역전 가자",
+    "천천히 해요",
+    "좋은 승부",
 ];
 
 /// The table's own settings, apart from the game's rules: they change how

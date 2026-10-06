@@ -286,3 +286,15 @@ Write a manifest into `research/manifests/` (fields in its
 [README](../research/manifests/README.md)); the `ml/` tests validate every
 manifest there. `cardgame_ml.manifest.Manifest.verify(root)` checks a copy
 of the files against it.
+
+
+## Manual pacing versus fast bot tests
+
+For a human playtest, start the server without bot timing overrides. The normal
+`--bot-delay-ms` default is 1000; bots vary their wait by decision and difficulty.
+The e2e quick-bot server uses 20ms delay/think overrides solely to finish tests
+quickly. Do not use that server as the human-facing play preview.
+
+`WEB_DIST` overrides the e2e build directory. Building into a separate temporary
+directory and serving it on a new port preserves an existing in-memory table
+while a revised frontend or server is being tested.

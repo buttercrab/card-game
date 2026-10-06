@@ -58,7 +58,7 @@ test('bot level arrows keep focus with the server-confirmed choice', async ({ pa
   await create(page);
   await sit(page);
   await page.locator('.seat-act', { hasText: '+ 봇' }).first().click();
-  const opener = page.locator('.spot').filter({ hasNot: page.locator('.seat-acts') }).locator('.seat-tap').first();
+  const opener = page.locator('.spot[data-seat="1"] .seat-tap');
   await opener.focus();
   await opener.press('Enter');
   const group = page.getByRole('radiogroup');
