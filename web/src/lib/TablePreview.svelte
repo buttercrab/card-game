@@ -349,7 +349,10 @@
         : which === 'mytimer'
           ? { seat: 0, deadline: performance.now() + 4800, total: 20000 }
           : null,
-    reactions: { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
+    // Between hands the seats carry their totals, so a side seat's rising
+    // bubble can pass over the name above it for its two seconds; the other
+    // states keep checking where bubbles land.
+    reactions: which === 'folded' ? {} : { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
 
   // What is open, as a player would have opened it: a seat's choices (and,
