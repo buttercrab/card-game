@@ -13,7 +13,7 @@
 //
 // Values are compared as JSON, so a field can be a number, a flag, a card
 // pair or a whole sub-object.
-import { RULE_TEXT } from '../../errorText';
+import { RULE_TEXT } from './refusals';
 import { cardLabel, deckSize, jokers } from './cards';
 import type {
   BackRun,

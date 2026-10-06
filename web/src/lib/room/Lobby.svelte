@@ -3,7 +3,7 @@
   // 다음 판) once every seat is filled, 섞기 and 설정; for a watcher, how to
   // sit down; while swapping, which seat to pick.
   import Icon from '../Icon.svelte';
-  import type { RoomView } from '../games/mighty/types';
+  import type { GameTypes, RoomViewOf } from './types';
   import Button from '../ui/Button.svelte';
 
   let {
@@ -17,7 +17,7 @@
     onmenu,
     oncancelswap,
   }: {
-    room: RoomView;
+    room: RoomViewOf<GameTypes>;
     seated: boolean;
     /** Picking the seat to swap with. */
     swapping: boolean;

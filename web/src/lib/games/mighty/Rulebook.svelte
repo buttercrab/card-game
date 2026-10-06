@@ -5,7 +5,7 @@
   import SuitIcon from '../../SuitIcon.svelte';
   import SuitText from '../../SuitText.svelte';
   import { cardLabel, jokers, kittyCount, rankLabel } from './cards';
-  import { CATALOG, isPreset, presetRules, presetTitle } from '../../catalog';
+  import { MIGHTY, isPreset, presetRules, presetTitle } from './catalog';
   import type { Card as CardT, CardPolicy, Contract, Examples, Rules, TrickPolicy } from './types';
 
   /** `rules` overrides the preset's: a table's own, or the preset's as the
@@ -30,7 +30,7 @@
     examples = null;
     if (!body) return;
     let live = true;
-    fetch('/api/rules/examples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+    fetch('/api/games/mighty/rules/examples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
       .then((r) => (r.ok ? r.json() : null))
       .then((e: Examples | null) => live && (examples = e))
       .catch(() => {});
@@ -221,7 +221,7 @@
     lines.push('자기 차례가 아니어도 되고, 패스한 뒤에는 못 해요. 먼저 부른 사람의 딜미스예요. 그 사람은 패를 보여 줘요.');
     if (m.window === 'BeforeFirstBid')
       lines.push(
-        `첫 공약은 패를 받고 ${CATALOG.first_bid_grace_ms / 1000}초쯤 기다렸다가 할 수 있어요. 그사이 딜미스할 사람이 있는지 봐요.`,
+        `첫 공약은 패를 받고 ${MIGHTY.first_bid_grace_ms / 1000}초쯤 기다렸다가 할 수 있어요. 그사이 딜미스할 사람이 있는지 봐요.`,
       );
     if (m.caller_deals) lines.push('딜미스를 한 사람이 새로 나눈 판에서 먼저 불러요.');
     if (m.all_points) lines.push('받은 카드가 모두 점수 카드여도 딜미스를 할 수 있어요.');

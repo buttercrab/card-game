@@ -6,7 +6,7 @@
 <script lang="ts">
   // The rule sets a new table can play, one row each: the name, then what
   // sets it apart from 기본, worked out from the rule data (ruleFields.ts).
-  import { PRESET_RULES, PRESETS, presetTitle } from '../../catalog';
+  import { PRESETS, PRESET_RULES, presetTitle } from './catalog';
   import { traits } from './ruleFields';
   import SuitText from '../../SuitText.svelte';
   import { customName, type CustomSet } from './rulesets';

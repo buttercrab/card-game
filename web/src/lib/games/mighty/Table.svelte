@@ -9,7 +9,7 @@
   import { checkHand, type Achievement } from './achievements';
   import BidPanel from './BidPanel.svelte';
   import { actionLabel, cardLabel, kittyCount, sameCard, sealOf } from './cards';
-  import { CATALOG, presetRules } from '../../catalog';
+  import { MIGHTY, presetRules } from './catalog';
   import { savedName } from '../../room/client.svelte';
   import { later } from '../../clock';
   import ExchangePanel from './ExchangePanel.svelte';
@@ -38,8 +38,8 @@
   import Tray from './table/Tray.svelte';
   import { bidNote, callLabel as callLabelOf, handView, moodOf, tagsOf, trickNotes, trickNumber, waitingFor } from './table/view';
   import { TableUi } from '../../room/ui.svelte';
-  import type { TableClient } from '../../room/tableClient';
-  import type { Action, Card as CardT, PlayAction, StateMsg } from './types';
+  import type { TableProps } from '../../room/game';
+  import type { Action, Card as CardT, Mighty, PlayAction, StateMsg } from './types';
   import Button from '../../ui/Button.svelte';
   import Chip from '../../ui/Chip.svelte';
 
@@ -50,17 +50,7 @@
     onmenu,
     onrules,
     oninvite,
-  }: {
-    client: TableClient;
-    /** What is open at the table: the room page's own, shared with its menu. */
-    ui?: TableUi;
-    /** The rules' name, for the table between hands. */
-    rulesName?: string;
-    /** Opens the table's menu (설정 between hands). */
-    onmenu?: () => void;
-    onrules?: () => void;
-    oninvite?: () => void;
-  } = $props();
+  }: TableProps<Mighty> = $props();
   const ui = untrack(() => givenUi) ?? new TableUi();
 
   // Between hands, with no hand on the table (the first one, or once the
@@ -72,7 +62,7 @@
     return {
       view: {
         viewer: client.seat === null ? 'Spectator' : { Seat: client.seat },
-        rules: room ? room.rules : presetRules(CATALOG.default_preset),
+        rules: room ? room.rules : presetRules(MIGHTY.default_preset),
         first_bidder: 0,
         hand: [],
         hand_sizes: Array.from({ length: n }, () => 0),

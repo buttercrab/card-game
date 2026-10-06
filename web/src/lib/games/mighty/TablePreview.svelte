@@ -15,12 +15,14 @@
   // (섞기 pressed for the next hand) | menu (the table's menu) | leave
   // (나가기 mid-hand, asking first).
   import Room from '../../room/Room.svelte';
+  import { mighty } from './game';
   import Table from './Table.svelte';
-  import { CATALOG, presetRules } from '../../catalog';
+  import { CATALOG } from '../../catalog';
+  import { presetRules } from './catalog';
   import { settled } from '../../motion';
   import { FakeClient } from '../../room/fakeClient.svelte';
   import { TableUi } from '../../room/ui.svelte';
-  import type { Bid, Card, ContractChange, PhaseView, Played, RoomView, Rules, StateMsg, Trick } from './types';
+  import type { Bid, Card, ContractChange, Mighty, PhaseView, Played, RoomView, Rules, StateMsg, Trick } from './types';
 
   const which = new URLSearchParams(location.search).get('state') ?? 'play';
 
@@ -338,7 +340,7 @@
     game.view.hand = [];
     game.legal = [];
   }
-  const client = new FakeClient({
+  const client = new FakeClient<Mighty>({
     room,
     // The exchange opens on the bidding, so the table sees which cards came from the kitty.
     game: idle ? null : game,
@@ -442,7 +444,7 @@
 </script>
 
 {#if inRoom}
-  <Room id="preview" onleave={() => {}} {client} {ui} />
+  <Room id="preview" games={() => mighty} onleave={() => {}} {client} {ui} />
 {:else}
   <div class="page">
     <!-- Where the room's header sits (Room.svelte), so the table gets the same height. -->

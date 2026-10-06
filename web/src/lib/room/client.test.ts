@@ -10,7 +10,7 @@ vi.mock('../sound', () => ({
 
 import { RoomClient } from './client.svelte';
 import { Toasts } from './toast.svelte';
-import type { StateMsg } from '../games/mighty/types';
+import type { GameTypes, StateMsgOf } from './types';
 
 /** A WebSocket the test drives: it opens, talks and drops when told. */
 class FakeSocket {
@@ -84,12 +84,12 @@ afterEach(() => {
 const sockets = () => FakeSocket.all.length;
 const last = () => FakeSocket.all[FakeSocket.all.length - 1];
 
-function state(version: number): { type: 'state' } & StateMsg {
+function state(version: number): { type: 'state' } & StateMsgOf<GameTypes> {
   return {
     type: 'state',
-    view: {} as StateMsg['view'],
+    view: {},
     legal: [],
-    notes: { unplayable: [], contracts: [] },
+    notes: null,
     turn: 'Over',
     out_of_turn: [],
     grace_ms: 0,
@@ -288,11 +288,16 @@ describe('toasts', () => {
     client.close();
   });
 
-  test('refusals are worded by code, rules by what failed', () => {
+  test("refusals are worded by code, and by the game's own words when it has them", () => {
     const client = new RoomClient('abc');
     last().open();
     last().receive({ type: 'error', code: 'invalid_rules', rule: 'empty_bid_range' });
-    expect(client.toasts.current?.text).toBe('최소 공약이 최대 공약보다 클 수 없어요');
+    expect(client.toasts.current?.text).toBe('그 규칙으로는 게임을 할 수 없어요');
+    client.refusal = (e) => (e.code === 'invalid_rules' ? `rule ${e.rule}` : null);
+    last().receive({ type: 'error', code: 'invalid_rules', rule: 'empty_bid_range' });
+    expect(client.toasts.current?.text).toBe('rule empty_bid_range');
+    last().receive({ type: 'error', code: 'table_full' });
+    expect(client.toasts.current?.text).toBe('자리가 다 찼어요');
     // A code from a newer server, or an old server's English, still gets words.
     last().receive({ type: 'error', code: 'from_the_future' });
     expect(client.toasts.current?.text).toBe('요청을 처리하지 못했어요');

@@ -4,7 +4,7 @@
   // its point cards, then the standings. Drawn on a canvas, shared through
   // the phone's share sheet or saved, or copied as text for KakaoTalk.
   import { occupantName } from '../../room/names';
-  import { presetTitle } from '../../catalog';
+  import { presetTitle } from './catalog';
   import { PATHS } from '../../SuitIcon.svelte';
   import { FIXED, SUIT_INK, THEME } from '../../tokens';
   import type { HandSummary, RoomView, Suit } from './types';

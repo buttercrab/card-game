@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SeatInfo } from '../games/mighty/types';
+import type { SeatInfo } from './types';
 import { moveNames, rememberNames, Ring, seatLabel, seatName } from './seats';
 
 describe('Ring', () => {

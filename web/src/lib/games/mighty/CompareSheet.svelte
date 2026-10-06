@@ -2,7 +2,7 @@
   // How one rule set differs from another: pick the other side with a chip,
   // read only the rows that differ.
   import { untrack } from 'svelte';
-  import { PRESET_RULES, PRESETS } from '../../catalog';
+  import { PRESETS, PRESET_RULES } from './catalog';
   import RuleDiff from './RuleDiff.svelte';
   import { customName, type CustomSet } from './rulesets';
   import type { Rules } from './types';

@@ -1641,7 +1641,7 @@ mod tests {
     }
 
     /// Hands scored by [`settle`], with their breakdowns, for the web
-    /// client's wording of the count (`web/src/lib/ledger.ts`) to check
+    /// client's wording of the count (`web/src/lib/games/mighty/ledger.ts`) to check
     /// itself against: every preset and a few drawn rule sets, each over contracts above and
     /// below the minimum, with and without a friend, failed, made and run.
     fn payoff_fixture() -> serde_json::Value {

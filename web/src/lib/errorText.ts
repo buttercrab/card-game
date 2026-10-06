@@ -1,7 +1,9 @@
 // The server refuses with a code (crates/server/src/protocol.rs); players
-// read Korean. Both maps are keyed by the generated unions, so a new code
-// on the server does not compile here until it has its words.
-import type { ErrorCode, InvalidRules, ServerError } from './generated/protocol';
+// read Korean. The map is keyed by the generated union, so a new code on
+// the server does not compile here until it has its words. A game says
+// more about the refusals only it makes (Mighty: which rule check failed)
+// through a `refusal` of its own.
+import type { ErrorCode, ServerError } from './generated/protocol';
 
 const ERROR_TEXT: Record<ErrorCode, string> = {
   not_seated: '자리에 앉은 사람만 할 수 있어요',
@@ -38,33 +40,23 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   table_gone: '아무도 없어서 테이블이 닫혔어요',
 };
 
-/** Why rules cannot be played, as Rules::validate finds it. */
-export const RULE_TEXT: Record<InvalidRules, string> = {
-  point_cards_missing: '점수 카드(10~A)는 모두 덱에 있어야 해요',
-  bad_extra_cards: '더 넣는 카드는 가장 낮은 숫자보다 낮은 서로 다른 카드여야 해요',
-  table_size: '인원이나 패 장수가 맞지 않아요',
-  too_few_cards: '나눠 줄 카드가 모자라요',
-  joker_call_not_in_deck: '조커콜 카드가 덱에 없어요',
-  empty_bid_range: '최소 공약이 최대 공약보다 클 수 없어요',
-  no_trump_bonus_too_high: '노기루다 보너스는 최소 공약보다 작아야 해요',
-  joker_call_per_joker: '조커마다 조커콜 카드가 하나씩 있어야 해요',
-  pays_back_too_much: '갚는 기준이 가장 낮은 공약보다 크면 지고도 점수를 받게 돼요',
-  no_friend_rule: '프렌드를 정하는 방법을 하나는 켜 주세요 (가짜 프렌드만으로는 안 돼요)',
-  fake_without_card: '가짜 프렌드는 카드로 프렌드를 부를 때만 쓸 수 있어요',
-  always_misdeal: '딜미스 기준이 너무 높아 어떤 패든 딜미스가 돼요',
-};
+/** A game's own words for a refusal, or null to use the room's. */
+export type Refusal = (error: Partial<ServerError>) => string | null;
 
 /** What to tell a player about a refusal. A code this build does not know
  * (a newer server) still gets words, never a crash. */
-export function errorText(error: Partial<ServerError> | null | undefined): string {
-  if (error?.code === 'invalid_rules' && error.rule && error.rule in RULE_TEXT) return RULE_TEXT[error.rule];
+export function errorText(error: Partial<ServerError> | null | undefined, refusal?: Refusal): string {
+  if (error && refusal) {
+    const said = refusal(error);
+    if (said) return said;
+  }
   return (error?.code && ERROR_TEXT[error.code]) || '요청을 처리하지 못했어요';
 }
 
 /** The refusal in an HTTP error response's body, if it has one. */
-export async function responseError(res: Response): Promise<string> {
+export async function responseError(res: Response, refusal?: Refusal): Promise<string> {
   try {
-    return errorText((await res.json()) as ServerError);
+    return errorText((await res.json()) as ServerError, refusal);
   } catch {
     return errorText(null);
   }

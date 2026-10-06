@@ -3,8 +3,8 @@
 // and media queries in script. app.css writes the same values as custom
 // properties; tokens.test.ts checks the two never drift apart.
 
-import type { CardBack, TableTone } from './games/mighty/achievements';
-import type { Suit } from './games/mighty/types';
+import type { CardBack, TableTone } from './looks';
+import type { Suit } from './generated/protocol';
 
 /** A colour for the light theme and one for the dark. */
 export interface Pair {

@@ -3,7 +3,7 @@
   import Rulebook from './Rulebook.svelte';
   import RuleDiff from './RuleDiff.svelte';
   import { differences, otherDifferences } from './ruleFields';
-  import { isPreset, presetRules, presetTitle } from '../../catalog';
+  import { isPreset, presetRules, presetTitle } from './catalog';
   import { loadCustom } from './rulesets';
   import type { Rules } from './types';
   import Button from '../../ui/Button.svelte';

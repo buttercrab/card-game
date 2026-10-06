@@ -1,15 +1,16 @@
 // Achievements (업적), kept on this device like 내 기록. Some unlock a card
 // back or a table colour, which are only looks: nothing changes the game.
 
+import type { CardBack, TableTone } from '../../looks';
 import { mightyCard } from './cards';
 import type { HandRecord } from './stats';
 import type { PhaseView } from './types';
 
+export { BACK_NAMES, TABLE_NAMES, type CardBack, type TableTone } from '../../looks';
+
 type Done = Extract<PhaseView, { Done: unknown }>['Done'];
 
 export type Reward = { kind: 'back'; id: CardBack } | { kind: 'table'; id: TableTone };
-export type CardBack = 'charcoal' | 'plum' | 'indigo' | 'gold' | 'ink' | 'jade';
-export type TableTone = 'hanji' | 'celadon' | 'indigo' | 'blush';
 
 export interface Achievement {
   id: string;
@@ -33,21 +34,6 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'ten', title: '단골', how: '10판 하기' },
   { id: 'fifty', title: '마이티 중독', how: '50판 하기', reward: { kind: 'back', id: 'jade' } },
 ];
-
-export const BACK_NAMES: Record<CardBack, string> = {
-  charcoal: '숯',
-  plum: '자두',
-  indigo: '쪽빛',
-  gold: '금',
-  ink: '먹',
-  jade: '옥',
-};
-export const TABLE_NAMES: Record<TableTone, string> = {
-  hanji: '한지',
-  celadon: '청자',
-  indigo: '쪽빛',
-  blush: '분홍',
-};
 
 const KEY = 'mighty.achievements';
 

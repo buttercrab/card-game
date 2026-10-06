@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { presetRules } from '../../../catalog';
+import { presetRules } from '../catalog';
 import type { Card, PhaseView, Played, View } from '../types';
 import { bidNote, callLabel, handView, moodOf, resultOf, tagsOf, trickNotes, trickNumber, waitingFor, weight, type Bidding, type Done } from './view';
 

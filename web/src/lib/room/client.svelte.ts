@@ -3,7 +3,7 @@ import { errorText } from '../errorText';
 import { sound } from '../sound';
 import type { TableClient } from './tableClient';
 import { Toasts } from './toast.svelte';
-import type { Action, BotLevel, ClientMsg, Preset, RoomView, Rules, ServerMsg, SessionMsg, StateMsg } from '../games/mighty/types';
+import type { BotLevel, ClientMsgOf, GameTypes, RoomViewOf, ServerMsgOf, SessionMsgOf, StateMsgOf } from './types';
 
 interface Saved {
   token: string;
@@ -45,12 +45,13 @@ export function savedName(): string {
   return load<string>(NAME_KEY) ?? '';
 }
 
-/** A live connection to one room. Reconnects and reclaims its seat on its own. */
-export class RoomClient implements TableClient {
+/** A live connection to one room, for any game `G`. Reconnects and
+ * reclaims its seat on its own. */
+export class RoomClient<G extends GameTypes = GameTypes> implements TableClient<G> {
   /** The table: the latest room message with the latest session's scores
    * and hands (the server sends the session only when it changes). */
-  room = $state<RoomView | null>(null);
-  game = $state<StateMsg | null>(null);
+  room = $state<RoomViewOf<G> | null>(null);
+  game = $state<StateMsgOf<G> | null>(null);
   seat = $state<number | null>(null);
   /** The toast: the server's errors, which sound, and the table's notices, which don't. */
   toasts = new Toasts((t) => {
@@ -60,7 +61,7 @@ export class RoomClient implements TableClient {
   /** The latest reaction per seat, cleared after a few seconds. `id` restarts its animation. */
   reactions = $state<Record<number, { text: string; id: number }>>({});
   /** What the bot would do in your place, until the hand moves on. */
-  hint = $state<Action | null>(null);
+  hint = $state<G['action'] | null>(null);
   /** The turn timer, with its deadline on this page's clock (performance.now()). */
   clock = $state<{ seat: number; deadline: number; total: number } | null>(null);
   /** Finished hands here go into this browser's record (내 기록). */
@@ -69,6 +70,8 @@ export class RoomClient implements TableClient {
   /** Called as seats are about to move, while the table still shows them
    * where they were; `order[s]` is where seat `s` goes. */
   onmove: ((order: number[]) => void) | null = null;
+  /** The game's own words for a refusal it alone makes; see TableClient. */
+  refusal: TableClient<G>['refusal'] = null;
 
   #id: string;
   #ws: WebSocket | null = null;
@@ -89,7 +92,7 @@ export class RoomClient implements TableClient {
   /** 시작 was pressed and the room has not answered yet. */
   #starting = false;
   /** The latest session; the server sends it on connecting and when it changes. */
-  #session: SessionMsg = { scores: [], hands_played: 0, history: [], hands: [] };
+  #session: SessionMsgOf<G> = { scores: [], hands_played: 0, history: [], hands: [] };
 
   constructor(id: string) {
     this.#id = id;
@@ -123,7 +126,7 @@ export class RoomClient implements TableClient {
       if (saved?.token) this.#send({ type: 'join', name: saved.name, token: saved.token, device: device(), reclaim: true });
     };
     ws.onmessage = (event) => {
-      if (!this.#closed) this.#receive(JSON.parse(event.data) as ServerMsg);
+      if (!this.#closed) this.#receive(JSON.parse(event.data) as ServerMsgOf<G>);
     };
     ws.onclose = async () => {
       if (this.#closed || this.#gone) return;
@@ -155,7 +158,7 @@ export class RoomClient implements TableClient {
     }
   }
 
-  #receive(msg: ServerMsg) {
+  #receive(msg: ServerMsgOf<G>) {
     switch (msg.type) {
       case 'session': {
         this.#session = { scores: msg.scores, hands_played: msg.hands_played, history: msg.history, hands: msg.hands };
@@ -244,12 +247,12 @@ export class RoomClient implements TableClient {
           break;
         }
         this.#starting = false;
-        this.toasts.show('error', errorText(msg));
+        this.toasts.show('error', errorText(msg, this.refusal ?? undefined));
         break;
     }
   }
 
-  #send(msg: ClientMsg) {
+  #send(msg: ClientMsgOf<G>) {
     if (this.#ws?.readyState === WebSocket.OPEN) this.#ws.send(JSON.stringify(msg));
   }
 
@@ -307,13 +310,9 @@ export class RoomClient implements TableClient {
     this.#send({ type: 'remove_bot', seat });
   }
 
-  /** `presetRules`: the preset's rules as the table pinned them, to keep
-   * them; without it the server pins the preset as it is today. */
-  setRules(preset: Preset, rules: Rules | null, presetRules?: Rules) {
-    this.#send({
-      type: 'set_settings',
-      settings: { preset, ...(rules ? { rules } : {}), ...(presetRules ? { preset_rules: presetRules } : {}) },
-    });
+  /** The game's settings for the hands to come: its preset and rules. */
+  setSettings(settings: G['settings']) {
+    this.#send({ type: 'set_settings', settings });
   }
 
   /** Shows a short message in the toast, without the error sound. */
@@ -336,7 +335,7 @@ export class RoomClient implements TableClient {
     this.#send({ type: 'start' });
   }
 
-  act(action: Action) {
+  act(action: G['action']) {
     this.#send({ type: 'act', action });
   }
 

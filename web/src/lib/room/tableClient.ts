@@ -1,15 +1,16 @@
-// What the room page and the table need of a connection to one room. The
-// real one is RoomClient (client.svelte.ts); /preview draws the same pages
-// on a made-up one (preview/FakeClient.svelte.ts).
+// What the room page and a game's table need of a connection to one room,
+// for any game `G`. The real one is RoomClient (client.svelte.ts); /preview
+// draws the same pages on a made-up one (fakeClient.svelte.ts).
 
 import type { Toast } from './toast.svelte';
-import type { Action, BotLevel, Preset, RoomView, Rules, StateMsg } from '../games/mighty/types';
+import type { Refusal } from '../errorText';
+import type { BotLevel, GameTypes, RoomViewOf, StateMsgOf } from './types';
 
-export interface TableClient {
+export interface TableClient<G extends GameTypes = GameTypes> {
   /** The room as the server last sent it. */
-  readonly room: RoomView | null;
+  readonly room: RoomViewOf<G> | null;
   /** The hand as this seat (or a watcher) sees it; null between hands. */
-  readonly game: StateMsg | null;
+  readonly game: StateMsgOf<G> | null;
   /** This tab's seat, or null when watching. */
   readonly seat: number | null;
   readonly status: 'connecting' | 'open' | 'closed' | 'missing';
@@ -18,7 +19,7 @@ export interface TableClient {
   /** The latest reaction per seat; `id` restarts its animation. */
   readonly reactions: Record<number, { text: string; id: number }>;
   /** What the bot would do in your place, until the hand moves on. */
-  readonly hint: Action | null;
+  readonly hint: G['action'] | null;
   /** The turn timer, with its deadline on this page's clock (performance.now()). */
   readonly clock: { seat: number; deadline: number; total: number } | null;
   /** Whether finished hands go into this browser's record (내 기록). */
@@ -26,6 +27,9 @@ export interface TableClient {
   /** Called as seats are about to move, while the table still shows them
    * where they were; `order[s]` is where seat `s` goes. */
   onmove: ((order: number[]) => void) | null;
+  /** The game's own words for a refusal it alone makes (rules that cannot
+   * be played), or null to use the room's. */
+  refusal: Refusal | null;
 
   join(name: string, seat?: number): void;
   leave(): void;
@@ -35,12 +39,13 @@ export interface TableClient {
   clearSeat(seat: number): void;
   addBot(seat: number, level?: BotLevel): void;
   removeBot(seat: number): void;
-  setRules(preset: Preset, rules: Rules | null, presetRules?: Rules): void;
+  /** The game's settings for the hands to come (its preset and rules). */
+  setSettings(settings: G['settings']): void;
   notice(text: string): void;
   askHint(): void;
   react(text: string): void;
   start(): void;
-  act(action: Action): void;
+  act(action: G['action']): void;
   /** Stops for good: no socket, no reconnect, no timer left running. */
   close(): void;
 }

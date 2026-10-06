@@ -11,23 +11,24 @@
   import PresetPicker from './games/mighty/PresetPicker.svelte';
   import RuleEditor from './games/mighty/RuleEditor.svelte';
   import RulebookSheet from './games/mighty/RulebookSheet.svelte';
-  import { CATALOG, isPreset, presetTitle } from './catalog';
+  import { MIGHTY, isPreset, presetTitle } from './games/mighty/catalog';
   import { customName, loadCustom, type CustomSet } from './games/mighty/rulesets';
   import { responseError } from './errorText';
+  import { ruleRefusal } from './games/mighty/refusals';
   import Button from './ui/Button.svelte';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
   /** The preset last used here, if it still exists, or the default one. */
   function remembered(saved: CustomSet[]): string {
-    let id: string = CATALOG.default_preset;
+    let id: string = MIGHTY.default_preset;
     try {
       id = localStorage.getItem('mighty.preset') ?? id;
     } catch {
       // Private mode: start from the default.
     }
     const known = id.startsWith('custom:') ? saved.some((c) => `custom:${c.id}` === id) : isPreset(id);
-    return known ? id : CATALOG.default_preset;
+    return known ? id : MIGHTY.default_preset;
   }
   const saved = loadCustom();
   let customs = $state(saved);
@@ -59,14 +60,14 @@
     busy = true;
     error = null;
     try {
-      const res = await fetch('/api/rooms', {
+      const res = await fetch('/api/games/mighty/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // Rules of its own start with the table, checked by the server.
         body: JSON.stringify({ preset: practice ? 'default' : preset, rules: practice ? undefined : chosen?.rules }),
       });
       if (!res.ok) {
-        error = await responseError(res);
+        error = await responseError(res, ruleRefusal);
         return;
       }
       const id: string = (await res.json()).id;

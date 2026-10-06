@@ -1,32 +1,35 @@
 <script lang="ts">
+  // A room, for any game: the bar (the table's code, its menu), the
+  // banners, the toast, the menu's sheets and, in the middle, the table
+  // of the game the room plays, as `games` finds it by the room's `game`.
   import { onDestroy, onMount, untrack } from 'svelte';
-  import { CATALOG, isPreset, presetTitle } from '../catalog';
-  import { RoomClient, savedName } from './client.svelte';
-  import { TableUi } from './ui.svelte';
-  import type { TableClient } from './tableClient';
-  import GameMenu from './GameMenu.svelte';
+  import { CATALOG } from '../catalog';
   import Icon from '../Icon.svelte';
-  import SuitText from '../SuitText.svelte';
-  import Button from '../ui/Button.svelte';
-  import { invite } from './invite';
   import { closeTop } from '../layers';
   import ReportSheet from '../ReportSheet.svelte';
-  import RuleEditor from '../games/mighty/RuleEditor.svelte';
-  import RulebookSheet from '../games/mighty/RulebookSheet.svelte';
-  import { differences } from '../games/mighty/ruleFields';
   import SettingsSheet from '../SettingsSheet.svelte';
-  import Table from '../games/mighty/Table.svelte';
+  import SuitText from '../SuitText.svelte';
+  import Button from '../ui/Button.svelte';
+  import { RoomClient, savedName } from './client.svelte';
+  import type { GameResolver } from './game';
+  import GameMenu from './GameMenu.svelte';
+  import { invite } from './invite';
+  import type { TableClient } from './tableClient';
+  import { TableUi } from './ui.svelte';
   import { keepAwake } from './wakeLock';
 
   let {
     id,
     onleave,
+    games,
     client: given,
     ui: givenUi,
   }: {
     id: string;
     /** Off the table, to the home page; the table's own history entry is gone by then. */
     onleave: () => void;
+    /** The game for the room's `game` id (games/registry.ts). */
+    games: GameResolver;
     /** The connection to the room; a live one to `id` by default. */
     client?: TableClient;
     /** What is open at the table. */
@@ -54,8 +57,15 @@
   let invitedTimer: ReturnType<typeof setTimeout> | undefined;
 
   const room = $derived(client.room);
-  /** The server speaks another protocol than this page was built for. */
-  const outdated = $derived(room !== null && room.protocol !== CATALOG.protocol);
+  /** The game the room plays, once it says which. */
+  const game = $derived(room ? games(room.game) : null);
+  // The game's own words for the refusals only it makes.
+  $effect(() => {
+    client.refusal = game?.refusal ?? null;
+  });
+  /** The server speaks another protocol than this page was built for, or
+   * plays a game this page does not have. */
+  const outdated = $derived(room !== null && (room.protocol !== CATALOG.protocol || game === null));
   const seated = $derived(client.seat !== null);
   const inHand = $derived(room?.in_hand ?? false);
   $effect(() => keepAwake(inHand));
@@ -90,16 +100,8 @@
     if (empty >= 0) client.addBot(empty, 'easy');
     else client.start();
   });
-  // What this table changed from its preset, for the rules' name: against
-  // the preset as the table pinned it, not as the preset reads today.
-  const changedCount = $derived(
-    room?.customized && room.settings.preset_rules ? differences(room.rules, room.settings.preset_rules).length : 0,
-  );
-  const rulesName = $derived(
-    room
-      ? `${presetTitle(room.settings.preset)} 규칙${changedCount ? ` · 바꾼 것 ${changedCount}개` : room.customized ? ' · 바꾼 규칙' : ''}`
-      : '',
-  );
+  /** The rules' name, with what the table changed, as its game says it. */
+  const rulesName = $derived(room && game ? game.rulesName(room) : '');
   const offline = $derived(
     room?.seats.flatMap((s, i) => (s.kind === 'human' && !s.connected ? [{ seat: i, name: s.name }] : [])) ?? [],
   );
@@ -199,14 +201,16 @@
       </div>
     {/if}
 
-    <Table
-      {client}
-      {ui}
-      {rulesName}
-      onmenu={() => (ui.menu = true)}
-      onrules={() => (showRules = true)}
-      oninvite={doInvite}
-    />
+    {#if game}
+      <game.Table
+        {client}
+        {ui}
+        {rulesName}
+        onmenu={() => (ui.menu = true)}
+        onrules={() => (showRules = true)}
+        oninvite={doInvite}
+      />
+    {/if}
   {/if}
 
   {#if toast}
@@ -240,24 +244,11 @@
 {#if reporting}
   <ReportSheet room={id} seat={client.seat} onclose={() => (reporting = false)} />
 {/if}
-{#if editRules && room}
-  <RuleEditor
-    preset={room.settings.preset}
-    rules={room.settings.rules ?? null}
-    base={room.settings.preset_rules ?? null}
-    onsave={(base, rules) =>
-      // On the same preset, the table keeps the preset's rules it pinned.
-      isPreset(base) && client.setRules(base, rules, base === room.settings.preset ? room.settings.preset_rules : undefined)}
-    onclose={() => (editRules = false)}
-  />
+{#if editRules && room && game}
+  <game.RulesSheet {room} {client} edit onclose={() => (editRules = false)} />
 {/if}
-{#if showRules && room}
-  <RulebookSheet
-    preset={room.settings.preset}
-    rules={room.settings.rules ?? null}
-    base={room.settings.preset_rules ?? null}
-    onclose={() => (showRules = false)}
-  />
+{#if showRules && room && game}
+  <game.RulesSheet {room} {client} edit={false} onclose={() => (showRules = false)} />
 {/if}
 
 <style>

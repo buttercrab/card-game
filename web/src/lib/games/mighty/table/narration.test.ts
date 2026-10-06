@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { presetRules } from '../../../catalog';
+import { presetRules } from '../catalog';
 import type { Card, PhaseView, StateMsg } from '../types';
 import { describe as narrate, tipFor, variantLabel } from './narration';
 import { handView } from './view';

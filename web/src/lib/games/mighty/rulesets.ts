@@ -1,6 +1,6 @@
 // The custom sets a group saved on this device; the presets come with the
 // build (catalog.ts).
-import { CATALOG } from '../../catalog';
+import { MIGHTY } from './catalog';
 import { same } from './ruleFields';
 import type { Rules } from './types';
 
@@ -49,7 +49,7 @@ export function loadCustom(): CustomSet[] {
     return Array.isArray(list)
       ? list
           .filter((s) => s && typeof s.base === 'string' && s.rules)
-          .map((s: CustomSet) => ({ ...s, rules: fillGaps(upgradeRules(s.rules), CATALOG.rule_defaults) }))
+          .map((s: CustomSet) => ({ ...s, rules: fillGaps(upgradeRules(s.rules), MIGHTY.rule_defaults) }))
       : [];
   } catch {
     return [];

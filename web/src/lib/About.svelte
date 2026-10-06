@@ -2,7 +2,8 @@
   // 소개: what the site is, Mighty in a paragraph, and who made what.
   import Doc from './Doc.svelte';
   import SuitText from './SuitText.svelte';
-  import { CATALOG, LEVEL_LABEL, PRESETS } from './catalog';
+  import { CATALOG, LEVEL_LABEL } from './catalog';
+  import { PRESETS } from './games/mighty/catalog';
 </script>
 
 <Doc title="소개" here="/about">

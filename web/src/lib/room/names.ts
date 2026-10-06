@@ -1,4 +1,4 @@
-import type { SeatInfo } from '../games/mighty/types';
+import type { SeatInfo } from './types';
 
 // Bots go by small, warm names instead of "봇 2". The server gives each bot
 // its name when it sits down (crates/server/src/room.rs, BOT_NAMES), and the

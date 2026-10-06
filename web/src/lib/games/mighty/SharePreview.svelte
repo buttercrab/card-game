@@ -1,6 +1,7 @@
 <script lang="ts">
   // /share: the session share card with made-up hands, to check its drawing.
-  import { CATALOG, presetRules } from '../../catalog';
+  import { CATALOG } from '../../catalog';
+  import { presetRules } from './catalog';
   import ShareCard from './ShareCard.svelte';
   import type { HandSummary, RoomView, Suit } from './types';
 

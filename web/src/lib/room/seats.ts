@@ -4,7 +4,7 @@
 // tested on its own (seats.test.ts).
 
 import { occupantName } from './names';
-import type { SeatInfo } from '../games/mighty/types';
+import type { SeatInfo } from './types';
 
 /** A seat's place on screen, counted from the bottom seat. */
 export class Ring {

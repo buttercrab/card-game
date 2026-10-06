@@ -5,7 +5,7 @@
   import { CATALOG, LEVEL_LABEL } from '../catalog';
   import Icon from '../Icon.svelte';
   import { occupantName } from './names';
-  import type { BotLevel, SeatInfo } from '../games/mighty/types';
+  import type { BotLevel, SeatInfo } from './types';
   import Button from '../ui/Button.svelte';
   import Popover from '../ui/Popover.svelte';
   import Segmented from '../ui/Segmented.svelte';

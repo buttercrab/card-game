@@ -7,7 +7,7 @@
   import { untrack } from 'svelte';
   import { cardLabel } from './cards';
   import PresetPicker from './PresetPicker.svelte';
-  import { isPreset, presetRules, presetTitle } from '../../catalog';
+  import { isPreset, presetRules, presetTitle } from './catalog';
   import { GROUPS, RULE_FIELDS, differences, getPath, problems, same, say, setField, shown, traits, type Field } from './ruleFields';
   import { customName, loadCustom, saveCustom, type CustomSet } from './rulesets';
   import SuitText from '../../SuitText.svelte';
