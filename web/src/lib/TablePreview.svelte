@@ -19,7 +19,7 @@
   import type { RoomClient } from './client.svelte';
   import { CATALOG, presetRules } from './catalog';
   import { settled } from './motion';
-  import type { Bid, Card, ContractChange, PhaseView, Played, RoomMsg, Rules, StateMsg, Trick } from './types';
+  import type { Bid, Card, ContractChange, PhaseView, Played, RoomView, Rules, StateMsg, Trick } from './types';
 
   const which = new URLSearchParams(location.search).get('state') ?? 'play';
 
@@ -227,7 +227,7 @@
     grace_ms: key === 'grace' ? 2000 : 0,
     version: 0,
   });
-  const room: RoomMsg = {
+  const room: RoomView = {
     protocol: CATALOG.protocol,
     id: 'preview',
     game: 'mighty',

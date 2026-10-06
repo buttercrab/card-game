@@ -8,9 +8,11 @@ use axum::http::request::Parts;
 use axum::response::Response;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Instant;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use std::time::Duration;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::Instant;
 
 /// Up to `burst` at once, refilled at `per_minute`.
 pub struct Limiter {
@@ -109,11 +111,26 @@ impl ConnBucket {
 /// server has few.
 pub const HINT_SEARCHES: usize = 2;
 
-pub static HINTS: Semaphore = Semaphore::const_new(HINT_SEARCHES);
+/// The server's places for hint searches, shared by its rooms.
+#[derive(Clone)]
+pub struct HintPool(Arc<Semaphore>);
 
-/// A place for one hint search, or `None` while [`HINT_SEARCHES`] already run.
-pub fn hint_permit() -> Option<SemaphorePermit<'static>> {
-    HINTS.try_acquire().ok()
+impl HintPool {
+    pub fn new(searches: usize) -> HintPool {
+        HintPool(Arc::new(Semaphore::new(searches)))
+    }
+
+    /// A place for one hint search, held until dropped, or `None` while
+    /// every place is taken.
+    pub fn try_permit(&self) -> Option<OwnedSemaphorePermit> {
+        self.0.clone().try_acquire_owned().ok()
+    }
+}
+
+impl Default for HintPool {
+    fn default() -> HintPool {
+        HintPool::new(HINT_SEARCHES)
+    }
 }
 
 /// The largest WebSocket message or frame a client may send. Its biggest,
@@ -133,12 +150,56 @@ pub fn ws_hints() -> ConnBucket {
     ConnBucket::new(12, 4)
 }
 
+/// Reactions one connection may send: one about every 0.7 s. Faster ones
+/// are dropped quietly.
+pub fn ws_reactions() -> ConnBucket {
+    ConnBucket::new(86, 1)
+}
+
+/// At most `max` in any hour, from everyone together.
+pub struct HourlyCap {
+    max: usize,
+    times: Mutex<Vec<Instant>>,
+}
+
+impl HourlyCap {
+    pub fn new(max: usize) -> HourlyCap {
+        HourlyCap {
+            max,
+            times: Mutex::default(),
+        }
+    }
+
+    /// Takes one of the hour's places if one is left.
+    pub fn take(&self) -> bool {
+        let now = Instant::now();
+        let mut times = self.times.lock().expect("hourly cap poisoned");
+        times.retain(|t| now.saturating_duration_since(*t) < Duration::from_secs(3600));
+        if times.len() >= self.max {
+            return false;
+        }
+        times.push(now);
+        true
+    }
+}
+
+/// Problem reports saved at most this often, from everyone.
+pub const REPORTS_PER_HOUR: usize = 30;
+
+/// New client errors filed as issues at most this often, so a flood of
+/// made-up errors cannot flood the issue tracker.
+pub const ISSUES_PER_HOUR: usize = 5;
+
 /// The limits the server applies.
 pub struct Limits {
     pub tables: Limiter,
     pub reports: Limiter,
     pub errors: Limiter,
     pub sockets: Limiter,
+    /// Problem reports saved, from everyone.
+    pub report_files: HourlyCap,
+    /// New client errors saved for an issue, from everyone.
+    pub error_issues: HourlyCap,
 }
 
 impl Default for Limits {
@@ -149,6 +210,8 @@ impl Default for Limits {
             errors: Limiter::new(30, 30),
             // A client reconnects on its own after a drop, so leave room.
             sockets: Limiter::new(60, 60),
+            report_files: HourlyCap::new(REPORTS_PER_HOUR),
+            error_issues: HourlyCap::new(ISSUES_PER_HOUR),
         }
     }
 }
@@ -227,12 +290,13 @@ mod tests {
 
     #[test]
     fn hint_searches_are_capped_across_the_server() {
+        let pool = HintPool::default();
         let held: Vec<_> = (0..HINT_SEARCHES)
-            .map(|_| hint_permit().expect("a free place"))
+            .map(|_| pool.try_permit().expect("a free place"))
             .collect();
-        assert!(hint_permit().is_none(), "every place is taken");
+        assert!(pool.try_permit().is_none(), "every place is taken");
         drop(held);
-        assert!(hint_permit().is_some());
+        assert!(pool.try_permit().is_some());
     }
 
     #[test]

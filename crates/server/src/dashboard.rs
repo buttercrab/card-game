@@ -65,7 +65,7 @@ fn access(token: Option<&str>, uri: &Uri, headers: &HeaderMap) -> Access {
 
 /// Checks access; on success returns `None` and the caller answers.
 fn gate(app: &AppState, uri: &Uri, headers: &HeaderMap) -> Option<Response> {
-    match access(app.stats_token.as_deref(), uri, headers) {
+    match access(app.config.stats_token.as_deref(), uri, headers) {
         Access::Off => Some(StatusCode::NOT_FOUND.into_response()),
         Access::Denied => Some((StatusCode::UNAUTHORIZED, "통계를 보려면 토큰이 필요해요.").into_response()),
         Access::Remember(value) => {
@@ -172,11 +172,12 @@ pub async fn stats_page(State(app): State<AppState>, uri: Uri, headers: HeaderMa
         return denied;
     }
     let reports = app
+        .config
         .data
         .as_deref()
         .map(|dir| recent_reports(&dir.join("reports")))
         .unwrap_or_default();
-    let html = page_full(&app.stats.summary(now()), &reports, Some(&app.server_status()));
+    let html = page(&app.stats.summary(now()), &reports, Some(&app.server_status()));
     private(([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
 }
 
@@ -230,7 +231,7 @@ pub async fn report_file(
         return denied;
     }
     // Only names the server itself writes, so no path can leave the folder.
-    let (Some(dir), Some(_)) = (app.data.as_deref(), report_name(&file)) else {
+    let (Some(dir), Some(_)) = (app.config.data.as_deref(), report_name(&file)) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     match std::fs::read(dir.join("reports").join(&file)) {
@@ -329,16 +330,8 @@ fn rows<'a>(out: &mut String, items: impl IntoIterator<Item = (String, String)> 
     }
 }
 
-pub fn page(s: &Summary) -> String {
-    page_with(s, &[])
-}
-
-pub fn page_with(s: &Summary, reports: &[ReportRow]) -> String {
-    page_full(s, reports, None)
-}
-
 /// The whole page, with the server's live state on top when given.
-pub fn page_full(s: &Summary, reports: &[ReportRow], server: Option<&ServerStatus>) -> String {
+pub fn page(s: &Summary, reports: &[ReportRow], server: Option<&ServerStatus>) -> String {
     let t = &s.totals;
     let mut body = String::new();
     let _ = write!(
@@ -627,7 +620,7 @@ mod tests {
             frame: "f@index.js".into(),
             version: Some("1".into()),
         });
-        let html = page(&stats.summary(now()));
+        let html = page(&stats.summary(now()), &[], None);
         assert!(html.contains("마이티 통계"));
         assert!(html.contains("경기과고"));
         assert!(html.contains("2분 5초"));
@@ -662,12 +655,15 @@ mod tests {
             },
         };
         let summary = crate::stats::Stats::in_memory().summary(1_791_105_000);
-        let html = page_full(&summary, &[], Some(&server));
+        let html = page(&summary, &[], Some(&server));
         assert!(html.contains("3 / 500"));
         assert!(html.contains("끊김"));
         assert!(html.contains("거절한 워커") && html.contains("an older worker"));
         assert!(html.contains("0123456789ab"));
-        assert!(!page(&summary).contains("봇 워커"), "only with the server's state");
+        assert!(
+            !page(&summary, &[], None).contains("봇 워커"),
+            "only with the server's state"
+        );
     }
 
     #[test]
@@ -693,7 +689,7 @@ mod tests {
         std::fs::write(dir.join("notes.txt"), "ignored").unwrap();
         let rows = recent_reports(dir);
         assert_eq!(rows.iter().map(|r| r.time).collect::<Vec<_>>(), [200, 100]);
-        let html = page_with(&crate::stats::Stats::in_memory().summary(1_791_105_000), &rows);
+        let html = page(&crate::stats::Stats::in_memory().summary(1_791_105_000), &rows, None);
         assert!(html.contains("&lt;b&gt;둘째&lt;/b&gt;") && html.contains("/stats/reports/100-000001.json"));
     }
 }

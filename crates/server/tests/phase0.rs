@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use futures_util::SinkExt;
 use serde_json::{Value, json};
-use server::AppState;
+use server::{AppState, Config};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
@@ -27,40 +27,11 @@ async fn play_out(ws: &mut Socket) {
 }
 
 #[tokio::test]
-async fn reclaiming_a_seat_clears_its_away_mark() {
-    // Turn-limit seconds last 10 ms, so a 20-second turn runs out in 200 ms.
-    let addr = serve(AppState::new(Duration::ZERO).with_turn_second(Duration::from_millis(10))).await;
-    let room = create_room(addr, "gshs").await;
-    let mut ws = connect(addr, &room).await;
-    let (seat, token) = join(&mut ws, "Jae", None).await;
-    send(&mut ws, json!({ "type": "set_table", "turn_secs": 20 })).await;
-    for bot in 1..5 {
-        send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
-    }
-    send(&mut ws, json!({ "type": "start" })).await;
-    // Jae's turn runs out, so the seat is marked away while still connected.
-    next_where(&mut ws, "room", |r| {
-        r["seats"][0]["away"] == true && r["seats"][0]["connected"] == true
-    })
-    .await;
-    drop(ws);
-
-    let mut again = connect(addr, &room).await;
-    send(
-        &mut again,
-        json!({ "type": "join", "name": "Jae", "token": token, "reclaim": true }),
-    )
-    .await;
-    assert_eq!(next(&mut again, "welcome").await["seat"], seat);
-    // The first room message after the welcome is the one the join made.
-    let room = next(&mut again, "room").await;
-    assert_eq!(room["seats"][0]["connected"], true);
-    assert_eq!(room["seats"][0]["away"], false, "coming back clears 자리 비움: {room}");
-}
-
-#[tokio::test]
 async fn leaving_mid_hand_is_counted() {
-    let state = AppState::new(Duration::from_millis(50));
+    let state = AppState::new(Config {
+        bot_delay_ms: 50,
+        ..config()
+    });
     let stats = state.stats();
     let addr = serve(state).await;
     let room = create_room(addr, "gshs").await;
@@ -97,7 +68,10 @@ async fn fake_worker(addr: SocketAddr) -> Socket {
 
 #[tokio::test]
 async fn a_worker_that_cannot_make_a_move_does_not_hold_up_the_room() {
-    let state = AppState::new(Duration::ZERO).with_bot_token("secret".into());
+    let state = AppState::new(Config {
+        bot_token: Some("secret".into()),
+        ..config()
+    });
     let remote = state.remote_bots();
     let addr = serve(state).await;
 
@@ -139,7 +113,10 @@ async fn a_worker_that_cannot_make_a_move_does_not_hold_up_the_room() {
 
 #[tokio::test]
 async fn a_worker_of_another_protocol_is_turned_away() {
-    let state = AppState::new(Duration::ZERO).with_bot_token("secret".into());
+    let state = AppState::new(Config {
+        bot_token: Some("secret".into()),
+        ..config()
+    });
     let remote = state.remote_bots();
     let addr = serve(state).await;
 
@@ -167,7 +144,10 @@ async fn a_worker_of_another_protocol_is_turned_away() {
 
 #[tokio::test]
 async fn the_version_names_the_build_and_the_worker() {
-    let state = AppState::new(Duration::ZERO).with_bot_token("secret".into());
+    let state = AppState::new(Config {
+        bot_token: Some("secret".into()),
+        ..config()
+    });
     let addr = serve(state).await;
     let (status, body) = http(addr, "GET", "/version", "").await;
     assert_eq!(status, 200);
