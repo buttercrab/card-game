@@ -3,10 +3,10 @@
 //! seat, which follows the players when they move).
 
 use super::seating::moved;
+use crate::game::ServerGame;
 use crate::protocol::SessionMsg;
-use crate::session::SessionGame;
 
-pub(super) struct Session<G: SessionGame> {
+pub(super) struct Session<G: ServerGame> {
     pub scores: Vec<i64>,
     pub hands_played: u32,
     /// Each finished hand's payoffs, in order.
@@ -22,7 +22,7 @@ pub(super) struct Session<G: SessionGame> {
     pub revision: u64,
 }
 
-impl<G: SessionGame> Session<G> {
+impl<G: ServerGame> Session<G> {
     pub fn new(n: usize) -> Session<G> {
         Session {
             scores: vec![0; n],
@@ -97,8 +97,8 @@ impl<G: SessionGame> Session<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::MightySettings;
     use mighty::Mighty;
+    use mighty::table::MightySettings;
 
     /// Seats moving between hands keep the opening seat with its player.
     #[test]

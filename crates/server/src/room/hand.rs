@@ -2,8 +2,8 @@
 //! the counters that tell a stale bot move from a current one.
 
 use super::{Room, log_action};
+use crate::game::ServerGame;
 use crate::protocol::{ErrorCode, ServerError};
-use crate::session::SessionGame;
 use crate::stats::Event;
 use engine::Turn;
 use rand::Rng;
@@ -27,7 +27,7 @@ pub(super) enum LogEntry<A> {
 }
 
 /// Plays `log` from `game`, its first state; says which entry failed.
-pub(super) fn replay<G: SessionGame>(game: &mut G::State, log: &[LogEntry<G::Action>]) -> Result<(), String> {
+pub(super) fn replay<G: ServerGame>(game: &mut G::State, log: &[LogEntry<G::Action>]) -> Result<(), String> {
     for (i, entry) in log.iter().enumerate() {
         let applied = match entry {
             LogEntry::Chance { action } => G::apply_chance(game, action.clone()),
@@ -38,7 +38,7 @@ pub(super) fn replay<G: SessionGame>(game: &mut G::State, log: &[LogEntry<G::Act
     Ok(())
 }
 
-pub(super) struct Hand<G: SessionGame> {
+pub(super) struct Hand<G: ServerGame> {
     /// The current hand, or the last one once it is over.
     pub game: Option<G::State>,
     /// Every step of `game` so far, deals included, so it can be replayed.
@@ -52,14 +52,14 @@ pub(super) struct Hand<G: SessionGame> {
     /// Deals so far, so a bot's off-turn action for an earlier deal is
     /// dropped.
     pub deals: u64,
-    /// When the cards last landed, for [`SessionGame::grace`]; unknown
+    /// When the cards last landed, for [`ServerGame::grace`]; unknown
     /// after a restart, when any grace is long over.
     pub dealt_at: Option<Instant>,
     /// Whether the hand, once over, is in the session's scores.
     pub booked: bool,
 }
 
-impl<G: SessionGame> Default for Hand<G> {
+impl<G: ServerGame> Default for Hand<G> {
     fn default() -> Hand<G> {
         Hand {
             game: None,
@@ -75,7 +75,7 @@ impl<G: SessionGame> Default for Hand<G> {
 }
 
 /// What playing the chance actions did.
-pub(super) struct Advanced<G: SessionGame> {
+pub(super) struct Advanced<G: ServerGame> {
     /// Cards landed.
     pub dealt: bool,
     /// The hand is over, and not yet booked.
@@ -83,14 +83,14 @@ pub(super) struct Advanced<G: SessionGame> {
 }
 
 /// A hand just over.
-pub(super) struct Finished<G: SessionGame> {
+pub(super) struct Finished<G: ServerGame> {
     pub payoffs: Vec<i64>,
     pub summary: Option<G::Summary>,
     /// How it went, in a word, for the stats.
     pub outcome: &'static str,
 }
 
-impl<G: SessionGame> Hand<G> {
+impl<G: ServerGame> Hand<G> {
     pub fn turn(&self) -> Option<Turn> {
         self.game.as_ref().map(G::turn)
     }
@@ -174,7 +174,7 @@ impl<G: SessionGame> Hand<G> {
     }
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// Deals the next hand once every seat is filled, moving the seats
     /// first when the table shuffles.
     pub(super) fn start(&mut self) -> Result<(), ServerError> {

@@ -236,7 +236,8 @@ impl<G: EnvGame> Env<G> {
         // Every rule set of a game has the same spec; any one gives it.
         let mut rng = stream(config.seed, 0);
         let rules = setup.rules.draw::<G>(&mut rng)?;
-        let spec = G::spec(&G::options(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?;
+        let spec =
+            G::spec(&crate::game::draw_options::<G>(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?;
         let mut env = Env {
             setup,
             config,

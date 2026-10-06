@@ -51,7 +51,7 @@ async fn main() -> std::io::Result<()> {
         };
         let alive = server::bots::Liveness::new(config.worker_alive.clone());
         let think = Duration::from_millis(config.worker_think_ms);
-        server::bots::run_worker::<mighty::Mighty>(url.clone(), token, think, alive).await;
+        server::bots::run_worker(url.clone(), token, think, alive).await;
         return Ok(());
     }
     if let Some(web) = &config.web

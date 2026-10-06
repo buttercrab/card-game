@@ -72,7 +72,7 @@ pub struct Config {
     /// The dataset's name: its directory in the artifact store and its
     /// manifest's name.
     pub name: String,
-    /// The game, by [`engine::JsonGame::ID`].
+    /// The game, by [`engine::GameInfo::ID`].
     pub game: String,
     pub seed: u64,
     pub games: u64,
@@ -369,7 +369,7 @@ pub fn run<G: EnvGame>(
     let spec = {
         let mut rng = stream(config.seed, 0);
         let rules = setup.rules.draw::<G>(&mut rng)?;
-        G::spec(&G::options(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?
+        G::spec(&crate::game::draw_options::<G>(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?
     };
     std::fs::create_dir(out).map_err(io(out))?;
     let pool = rayon::ThreadPoolBuilder::new()

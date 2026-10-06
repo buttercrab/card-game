@@ -8,7 +8,7 @@
 //! An *informational* one records a known weakness whose right answer
 //! depends on what cannot be seen; it is reported, never scored.
 
-use crate::{EvalGame, preset};
+use crate::{Research, preset};
 use engine::{Game, Seat, Turn, Viewer};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -17,7 +17,7 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
-pub struct Puzzle<G: EvalGame> {
+pub struct Puzzle<G: Research> {
     pub id: String,
     /// Counted in the score; otherwise informational.
     pub scored: bool,
@@ -26,12 +26,12 @@ pub struct Puzzle<G: EvalGame> {
     pub why: String,
     /// A preset id.
     pub rules: String,
-    /// The options are those of this deal number ([`EvalGame::options`]).
+    /// The options are those of this deal number ([`Research::options`]).
     pub deal: u64,
     /// Every action from the start of the hand, chance actions included.
     pub log: Vec<G::Action>,
     pub acceptable: Vec<G::Action>,
-    /// The log version `log` was recorded in ([`EvalGame::LOG_VERSION`]):
+    /// The log version `log` was recorded in ([`Research::LOG_VERSION`]):
     /// the puzzle file's, set by [`parse`].
     #[serde(skip, default = "first_log_version")]
     pub log_version: u32,
@@ -46,7 +46,7 @@ const fn first_log_version() -> u32 {
 /// A puzzle file that names its log version.
 #[derive(Deserialize)]
 #[serde(bound = "", deny_unknown_fields)]
-struct Versioned<G: EvalGame> {
+struct Versioned<G: Research> {
     log_version: u32,
     puzzles: Vec<Puzzle<G>>,
 }
@@ -58,7 +58,7 @@ pub struct Position<G: Game> {
     pub legal: Vec<G::Action>,
 }
 
-impl<G: EvalGame> Puzzle<G> {
+impl<G: Research> Puzzle<G> {
     /// Replays the log, and checks that a seat is to act and that some but
     /// not all of its legal actions are acceptable.
     pub fn position(&self) -> Result<Position<G>, String> {
@@ -95,7 +95,7 @@ impl<G: EvalGame> Puzzle<G> {
     }
 
     /// Asks `bot` the puzzle `tries` times, on seeds `0..tries`.
-    pub fn ask(&self, bot: &G::Spec, tries: u64) -> Result<Answer, String> {
+    pub fn ask(&self, bot: &G::BotSpec, tries: u64) -> Result<Answer, String> {
         let Position { state, seat, legal } = self.position()?;
         let view = G::view(&state, Viewer::Seat(seat));
         let chose: Vec<G::Action> = (0..tries)
@@ -132,7 +132,7 @@ impl Answer {
 /// Reads a puzzle file: `{"log_version": N, "puzzles": [...]}`, or a bare
 /// array of puzzles (suite v1's), whose logs are log version 1. Ids are
 /// distinct.
-pub fn parse<G: EvalGame>(bytes: &[u8]) -> Result<Vec<Puzzle<G>>, String> {
+pub fn parse<G: Research>(bytes: &[u8]) -> Result<Vec<Puzzle<G>>, String> {
     let json: Value = serde_json::from_slice(bytes).map_err(|e| format!("puzzles: {e}"))?;
     let (version, puzzles) = if json.is_array() {
         let puzzles: Vec<Puzzle<G>> = serde_json::from_value(json).map_err(|e| format!("puzzles: {e}"))?;

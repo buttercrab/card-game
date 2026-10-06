@@ -4,40 +4,12 @@
 //! `generated/catalog.ts`, so the client never keeps copies of its own.
 
 use crate::room::{NAME_MAX, REACTIONS, TURN_LIMITS};
-use crate::session::FIRST_BID_GRACE;
-use mighty::bot::Level;
+use engine::{Level, Table};
+use mighty::Mighty;
 use mighty::rules::{Preset, Rules};
+use mighty::table::PresetInfo;
 use serde::Serialize;
 use ts_rs::TS;
-
-/// The presets in the order players pick them from: 기본 first, then the
-/// one with two jokers, then the rest.
-pub const PRESET_ORDER: [Preset; 9] = [
-    Preset::Default,
-    Preset::Gshs,
-    Preset::Ddshs,
-    Preset::Dshs,
-    Preset::Kmla,
-    Preset::Gsa,
-    Preset::Skku,
-    Preset::Sshs,
-    Preset::Yonsei,
-];
-
-/// The table a new table plays unless its maker picks another.
-pub const DEFAULT_PRESET: Preset = Preset::Default;
-
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct PresetInfo {
-    pub id: Preset,
-    /// The short name players know it by.
-    pub title: String,
-    /// What sets it apart, where the title does not say.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub note: Option<String>,
-    pub rules: Rules,
-}
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct BotLevelInfo {
@@ -80,19 +52,12 @@ pub struct Catalog {
 }
 
 pub fn catalog() -> Catalog {
+    let mighty = Mighty::catalog();
     Catalog {
         protocol: crate::protocol::version().to_string(),
-        presets: PRESET_ORDER
-            .iter()
-            .map(|&p| PresetInfo {
-                id: p,
-                title: p.title().to_string(),
-                note: p.note().map(str::to_string),
-                rules: p.rules(),
-            })
-            .collect(),
-        default_preset: DEFAULT_PRESET,
-        rule_defaults: Rules::web_mighty(),
+        presets: mighty.presets,
+        default_preset: mighty.default_preset,
+        rule_defaults: mighty.rule_defaults,
         bot_levels: Level::ALL
             .iter()
             .map(|&id| BotLevelInfo {
@@ -106,59 +71,7 @@ pub fn catalog() -> Catalog {
         name_max: NAME_MAX,
         report_max: crate::REPORT_MAX,
         report_days: crate::REPORT_DAYS,
-        first_bid_grace_ms: FIRST_BID_GRACE.as_millis() as u64,
+        first_bid_grace_ms: mighty.first_bid_grace_ms,
         idle_minutes: crate::IDLE_MINUTES,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Rules saved without an option read it as `rule_defaults` has it,
-    /// so the client filling gaps from them agrees with the server.
-    #[test]
-    fn rule_defaults_are_what_the_server_assumes() {
-        let defaults = serde_json::to_value(catalog().rule_defaults).unwrap();
-        let mut saved = serde_json::to_value(Preset::Gshs.rules()).unwrap();
-        let optional = [
-            "/lowest_rank",
-            "/extra_cards",
-            "/joker_lead",
-            "/scoring",
-            "/reveal_discards",
-            "/next_dealer",
-            "/misdeal/all_points",
-            "/misdeal/window",
-            "/misdeal/declarer",
-            "/misdeal/caller_deals",
-            "/bidding/change_to_no_trump_cost",
-            "/bidding/pass_is_final",
-            "/bidding/last_chance_min",
-            "/bidding/raise_on_exchange",
-            "/policy/release_with_mighty",
-        ];
-        for path in optional {
-            let (parent, key) = path.rsplit_once('/').unwrap();
-            let parent = if parent.is_empty() {
-                &mut saved
-            } else {
-                saved.pointer_mut(parent).unwrap()
-            };
-            parent.as_object_mut().unwrap().remove(key).unwrap();
-        }
-        let read = serde_json::to_value(serde_json::from_value::<Rules>(saved).unwrap()).unwrap();
-        for path in optional {
-            assert_eq!(read.pointer(path), defaults.pointer(path), "{path}");
-        }
-    }
-
-    #[test]
-    fn every_preset_is_offered_once() {
-        let mut order = PRESET_ORDER.to_vec();
-        order.sort_by_key(|p| p.name());
-        let mut all = Preset::ALL.to_vec();
-        all.sort_by_key(|p| p.name());
-        assert_eq!(order, all);
     }
 }

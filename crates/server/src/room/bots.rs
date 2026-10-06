@@ -4,10 +4,11 @@
 //! on its own typed channel ([`Internal`]).
 
 use super::{ConnId, Msg, Room, log_action};
+use crate::game::ServerGame;
 use crate::protocol::{ErrorCode, ServerError};
-use crate::session::{Decision, SessionGame};
+use engine::Decision;
+use engine::Level;
 use engine::Viewer;
-use mighty::bot::Level;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::json;
@@ -62,7 +63,7 @@ pub(super) enum Internal<A> {
     BotOffTurn { deal: u64, seat: usize, action: A },
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// Starts a bot thinking if one is to act. Its move arrives as
     /// [`Internal::BotMove`] no sooner than its pace.
     pub(super) fn think(&mut self) {
@@ -82,7 +83,9 @@ impl<G: SessionGame> Room<G> {
         // People take a moment, longer for a real choice, and every move
         // varies a little.
         let jitter = self.rng.random_range(JITTER);
-        let delay = bots.delay.mul_f32(pace(level, G::decision(&view, &legal)) * jitter);
+        let delay = bots
+            .delay
+            .mul_f32(pace(level, self.bots.decision(&view, &legal)) * jitter);
         // A move that must wait after the deal waits a little past it.
         let delay = match self.hand.grace_left(&legal) {
             left if !left.is_zero() => delay.max(left + Duration::from_millis(300)),
@@ -95,12 +98,13 @@ impl<G: SessionGame> Room<G> {
         let remote = Some(self.env.remote.clone()).filter(|r| r.available());
         let job = remote.as_ref().map(|_| {
             json!({
-                "level": level, "seat": seat, "temper": temper, "seed": seed,
+                "game": G::ID, "level": level, "seat": seat, "temper": temper, "seed": seed,
                 "think_ms": think.as_millis() as u64,
                 "view": view, "legal": legal,
             })
         });
         let tx = self.internal.clone();
+        let table_bots = self.bots.clone();
         self.thinking = Some(version);
         tokio::spawn(async move {
             let started = tokio::time::Instant::now();
@@ -118,7 +122,11 @@ impl<G: SessionGame> Room<G> {
                 Some(action) => Ok(action),
                 None => {
                     tokio::task::spawn_blocking(move || {
-                        G::bot(level, temper, local_think, 1).act(&view, &legal, &mut StdRng::seed_from_u64(seed))
+                        table_bots.bot(level, temper, local_think, 1).act(
+                            &view,
+                            &legal,
+                            &mut StdRng::seed_from_u64(seed),
+                        )
                     })
                     .await
                 }
@@ -182,7 +190,10 @@ impl<G: SessionGame> Room<G> {
         };
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game, seat);
-        let action = G::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut self.rng);
+        let action = self
+            .bots
+            .bot(Level::Normal, seat, Duration::ZERO, 1)
+            .act(&view, &legal, &mut self.rng);
         let logged = log_action(&action);
         if let Err(e) = self.hand.apply(seat, action) {
             tracing::error!(room = %self.id, seat, action = %logged, "the stand-in chose an illegal action: {e}");
@@ -224,7 +235,7 @@ impl<G: SessionGame> Room<G> {
                 continue;
             }
             let view = G::view(game, Viewer::Seat(seat));
-            let Some(action) = G::bot_off_turn(level, seat, &view, &legal) else {
+            let Some(action) = self.bots.off_turn(level, seat, &view, &legal) else {
                 continue;
             };
             let pause = self.env.bots.delay.mul_f32(self.rng.random_range(1.0..1.5));
@@ -249,9 +260,13 @@ impl<G: SessionGame> Room<G> {
         let view = G::view(game, Viewer::Seat(seat));
         let legal = G::legal_actions(game, seat);
         let (seed, version) = (self.rng.random::<u64>(), self.hand.version);
+        let table_bots = self.bots.clone();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            let action = G::bot(Level::Hard, seat, HINT_THINK, 1).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
+            let action =
+                table_bots
+                    .bot(Level::Hard, seat, HINT_THINK, 1)
+                    .act(&view, &legal, &mut StdRng::seed_from_u64(seed));
             let msg = Msg::<G>::Hint { version, action };
             let _ = tx.send(serde_json::to_string(&msg).expect("messages serialize"));
         });

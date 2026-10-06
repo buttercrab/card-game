@@ -158,7 +158,7 @@ async fn the_stats_show_the_bot_worker_link() {
     assert!(!remote.available());
     assert_eq!(stats(addr).await["worker"]["fallbacks"], 1);
 
-    let worker = tokio::spawn(server::bots::run_worker::<mighty::Mighty>(
+    let worker = tokio::spawn(server::bots::run_worker(
         format!("ws://{addr}/internal/bots"),
         "bots".into(),
         Duration::from_millis(10),

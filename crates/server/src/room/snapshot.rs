@@ -15,7 +15,8 @@
 use super::hand::{LogEntry, replay};
 use super::seating::Occupant;
 use super::{Room, RoomEnv, TableSettings};
-use crate::session::SessionGame;
+use crate::game::ServerGame;
+use engine::TableBots;
 use engine::Turn;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -30,7 +31,7 @@ const FORMAT: u32 = 2;
 /// as its log, since a game replays exactly from it.
 #[derive(Serialize, Deserialize)]
 #[serde(bound = "")]
-pub struct SnapshotV2<G: SessionGame> {
+pub struct SnapshotV2<G: ServerGame> {
     /// Always [`FORMAT`].
     format: u32,
     id: String,
@@ -60,10 +61,10 @@ struct SavedHand<A> {
 /// of bare actions (whoever's turn it was, or the deal) and out-of-turn
 /// ones as `{"out_of_turn": {seat, action}}`: replaying it tells which
 /// each bare action was.
-pub fn migrate_v1<G: SessionGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
+pub fn migrate_v1<G: ServerGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
     #[derive(Deserialize)]
     #[serde(bound = "")]
-    struct V1<G: SessionGame> {
+    struct V1<G: ServerGame> {
         id: String,
         game: String,
         settings: G::Settings,
@@ -139,14 +140,14 @@ pub fn migrate_v1<G: SessionGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
     })
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// The room as saved; see [`SnapshotV2`].
     pub fn snapshot(&self) -> SnapshotV2<G> {
         let session = &self.session;
         SnapshotV2 {
             format: FORMAT,
             id: self.id.clone(),
-            game: G::NAME.to_string(),
+            game: G::ID.to_string(),
             settings: self.settings.clone(),
             seats: self.seating.seats.clone(),
             scores: session.scores.clone(),
@@ -182,16 +183,16 @@ impl<G: SessionGame> Room<G> {
 
     /// Rebuilds a room from a saved snapshot, of this format or the first
     /// ([`migrate_v1`]), by replaying its hand.
-    pub fn restore(snapshot: Value, env: Arc<RoomEnv>) -> Result<Room<G>, String> {
+    pub fn restore(snapshot: Value, env: Arc<RoomEnv>, bots: Arc<dyn TableBots<G>>) -> Result<Room<G>, String> {
         let s: SnapshotV2<G> = match snapshot.get("format").and_then(Value::as_u64) {
             Some(1) => migrate_v1(snapshot)?,
             Some(2) => serde_json::from_value(snapshot).map_err(|e| e.to_string())?,
             format => return Err(format!("unknown snapshot format {format:?}")),
         };
-        if s.game != G::NAME {
-            return Err(format!("not a {} room", G::NAME));
+        if s.game != G::ID {
+            return Err(format!("not a {} room", G::ID));
         }
-        let mut room = Room::new(s.id, s.settings, env);
+        let mut room = Room::new(s.id, s.settings, env, bots);
         let n = room.seating.len();
         if s.seats.len() != n || s.scores.len() != n {
             return Err("seat count does not match the settings".into());
@@ -306,8 +307,8 @@ impl Persister {
 mod tests {
     use super::*;
     use crate::protocol::SeatsMoved;
-    use crate::session::MightySettings;
     use mighty::Mighty;
+    use mighty::table::MightySettings;
     use std::time::Duration;
 
     fn env() -> Arc<RoomEnv> {
@@ -318,7 +319,7 @@ mod tests {
     /// saved and restored too.
     #[test]
     fn the_rotation_survives_a_restore() {
-        let mut room = Room::<Mighty>::new("t".into(), MightySettings::default(), env());
+        let mut room = Room::<Mighty>::new("t".into(), MightySettings::default(), env(), crate::room::mighty_bots());
         room.session.hands_played = 3;
         let opener = |r: &Room<Mighty>| r.session.options(&r.settings, r.session.hands_played).first_bidder;
         let moved = |order: &[usize]| SeatsMoved::Shuffle { order: order.to_vec() };
@@ -326,7 +327,7 @@ mod tests {
         room.reseat(&[4, 3, 2, 1, 0], moved(&[4, 3, 2, 1, 0]));
         assert_eq!(opener(&room), 4);
         let saved = serde_json::to_value(room.snapshot()).unwrap();
-        let restored = Room::<Mighty>::restore(saved, env()).unwrap();
+        let restored = Room::<Mighty>::restore(saved, env(), crate::room::mighty_bots()).unwrap();
         assert_eq!(opener(&restored), 4);
     }
 
@@ -338,7 +339,7 @@ mod tests {
         use rand::SeedableRng;
         let mut rng = rand::rngs::StdRng::seed_from_u64(7);
         let settings = MightySettings::default();
-        let mut room = Room::<Mighty>::new("abc".into(), settings.clone(), env());
+        let mut room = Room::<Mighty>::new("abc".into(), settings.clone(), env(), crate::room::mighty_bots());
         let mut game = Mighty::new_game(&room.session.options(&settings, 0)).unwrap();
         // Written as the first format wrote it: bare actions, and the
         // out-of-turn ones wrapped.
@@ -376,7 +377,7 @@ mod tests {
         let mut v1 = serde_json::to_value(room.snapshot()).unwrap();
         v1["format"] = json!(1);
         v1["hand"] = json!({ "number": 0, "actions": actions, "started": 123 });
-        let restored = Room::<Mighty>::restore(v1, env()).unwrap();
+        let restored = Room::<Mighty>::restore(v1, env(), crate::room::mighty_bots()).unwrap();
         let view = |g: &mighty::State| Mighty::view(g, engine::Viewer::Seat(0));
         assert_eq!(view(restored.hand.game.as_ref().unwrap()), view(&game));
         assert_eq!(restored.hand.log.len(), actions.len());
@@ -391,7 +392,7 @@ mod tests {
         // Saved again, it is the new format, and restores the same.
         let v2 = serde_json::to_value(restored.snapshot()).unwrap();
         assert_eq!(v2["format"], 2);
-        let again = Room::<Mighty>::restore(v2.clone(), env()).unwrap();
+        let again = Room::<Mighty>::restore(v2.clone(), env(), crate::room::mighty_bots()).unwrap();
         assert_eq!(serde_json::to_value(again.snapshot()).unwrap(), v2);
     }
 
@@ -403,7 +404,7 @@ mod tests {
         use engine::Game;
         use rand::SeedableRng;
         let settings = MightySettings::default();
-        let room = Room::<Mighty>::new("abc".into(), settings.clone(), env());
+        let room = Room::<Mighty>::new("abc".into(), settings.clone(), env(), crate::room::mighty_bots());
         let options = room.session.options(&settings, 0);
         let mut game = Mighty::new_game(&options).unwrap();
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
@@ -436,7 +437,7 @@ mod tests {
         log.push(json!({ "kind": "out_of_turn", "seat": caller, "action": "Misdeal" }));
         let mut saved = serde_json::to_value(room.snapshot()).unwrap();
         saved["hand"] = json!({ "number": 0, "log": log });
-        let restored = Room::<Mighty>::restore(saved, env()).unwrap();
+        let restored = Room::<Mighty>::restore(saved, env(), crate::room::mighty_bots()).unwrap();
         assert_eq!(restored.hand.game.as_ref(), Some(&game));
         let again = serde_json::to_value(restored.snapshot()).unwrap();
         let last = again["hand"]["log"].as_array().unwrap().last().unwrap().clone();
@@ -445,14 +446,19 @@ mod tests {
 
     #[test]
     fn an_unknown_format_or_a_broken_log_is_refused() {
-        let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), env());
+        let room = Room::<Mighty>::new(
+            "abc".into(),
+            MightySettings::default(),
+            env(),
+            crate::room::mighty_bots(),
+        );
         let mut saved = serde_json::to_value(room.snapshot()).unwrap();
         saved["format"] = json!(3);
-        assert!(Room::<Mighty>::restore(saved.clone(), env()).is_err());
+        assert!(Room::<Mighty>::restore(saved.clone(), env(), crate::room::mighty_bots()).is_err());
         saved["format"] = json!(2);
         // A move by a seat whose turn it is not.
         saved["hand"] = json!({ "number": 0, "log": [{ "kind": "act", "seat": 0, "action": "Pass" }] });
-        assert!(Room::<Mighty>::restore(saved, env()).is_err());
+        assert!(Room::<Mighty>::restore(saved, env(), crate::room::mighty_bots()).is_err());
     }
 
     #[tokio::test]

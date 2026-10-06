@@ -3,8 +3,8 @@
 
 use super::seating::Occupant;
 use super::{ConnId, Msg, Room};
+use crate::game::ServerGame;
 use crate::protocol::{RoomMsg, SeatInfo, ServerMsg, StateMsg};
-use crate::session::SessionGame;
 use engine::{Turn, Viewer};
 
 /// A share link's preview of a table.
@@ -18,7 +18,7 @@ pub struct Preview {
     pub empty: usize,
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     fn room_message(&self) -> Msg<G> {
         let seats = self
             .seating
@@ -41,7 +41,7 @@ impl<G: SessionGame> Room<G> {
         ServerMsg::Room(RoomMsg {
             protocol: crate::protocol::version().to_string(),
             id: self.id.clone(),
-            game: G::NAME.to_string(),
+            game: G::ID.to_string(),
             settings: self.settings.clone(),
             rules: G::table_rules(&self.settings),
             customized: G::customized(&self.settings),

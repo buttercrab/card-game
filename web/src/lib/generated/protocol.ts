@@ -62,8 +62,8 @@ last_chance_min: number | null,
 raise_on_exchange: boolean, };
 
 /**
- * How well a bot plays: the levels players pick at the table. Defined
- * once here for the server, the environment, `sim` and the evals alike.
+ * How well a bot plays: the levels players pick at a table, whatever the
+ * game. Each game says what plays at each ([`TableBots`]).
  */
 export type BotLevel = "easy" | "normal" | "hard";
 
@@ -383,6 +383,9 @@ unplayable: Array<Unplayable>,
  */
 contracts: Array<ContractChange>, };
 
+/**
+ * What a Mighty table is set to play.
+ */
 export type MightySettings = { preset: Preset, 
 /**
  * The table's own rules, when its players changed the preset's.
@@ -390,7 +393,7 @@ export type MightySettings = { preset: Preset,
 rules?: Rules, 
 /**
  * The preset's rules as they were when the table chose it; see
- * [`SessionGame::freeze`]. Without it, the preset's rules today.
+ * [`Table::freeze`]. Without it, the preset's rules today.
  */
 preset_rules?: Rules, };
 
@@ -490,6 +493,9 @@ export type Played = { seat: number, card: Card, powered: boolean, };
  */
 export type Preset = "default" | "ddshs" | "dshs" | "kmla" | "gsa" | "gshs" | "skku" | "sshs" | "yonsei";
 
+/**
+ * A preset as the web client lists it.
+ */
 export type PresetInfo = { id: Preset, 
 /**
  * The short name players know it by.
@@ -641,7 +647,8 @@ export type SeatsMoved = { "how": "shuffle", order: Array<number>, } | { "how": 
  */
 export type ServerError = { code: ErrorCode, 
 /**
- * Which rule check failed, for [`ErrorCode::InvalidRules`].
+ * Which rule check failed, for [`ErrorCode::InvalidRules`], as the
+ * game names it.
  */
 rule?: InvalidRules, 
 /**
@@ -708,7 +715,7 @@ export type Suit = "Spade" | "Diamond" | "Heart" | "Club";
 export type TableSettings = { 
 /**
  * Seconds per decision, or 0 for no limit. The weightier decisions
- * (see [`SessionGame::long_decision`]) get twice as long.
+ * (see [`engine::Table::long_decision`]) get twice as long.
  */
 turn_secs: number, 
 /**

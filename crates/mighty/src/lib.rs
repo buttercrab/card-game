@@ -8,6 +8,7 @@ pub mod explain;
 pub mod rules;
 pub mod score;
 mod state;
+pub mod table;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod trick;
@@ -32,7 +33,7 @@ pub use state::{Action, Bid, Error, FriendCall, HandSummary, Options, Redeal, Re
 pub use trick::Lead;
 pub use view::{PhaseView, View};
 
-use engine::{Game, JsonGame, Turn, Viewer};
+use engine::{Game, GameInfo, Turn, Viewer};
 use rand::RngCore;
 use rules::{Preset, Rules};
 
@@ -92,22 +93,37 @@ impl Game for Mighty {
     }
 }
 
-/// Mighty behind [`engine::DynGame`]: options are [`Options`] and rules
-/// are [`Rules`], as JSON.
-impl JsonGame for Mighty {
+/// Mighty as the platform names it: options are [`Options`], rules are
+/// [`Rules`], and the presets come in [`Preset::ALL`]'s order, which the
+/// research tools' draws rely on (players pick them in
+/// [`table::PRESET_ORDER`]).
+impl GameInfo for Mighty {
     type Rules = Rules;
+    type RulesError = rules::InvalidRules;
 
     const ID: &'static str = "mighty";
     const NAME: &'static str = "마이티";
 
-    fn presets() -> Vec<(&'static str, &'static str, Rules)> {
+    fn presets() -> Vec<engine::Preset<Rules>> {
         Preset::ALL
             .into_iter()
-            .map(|p| (p.name(), p.title(), p.rules()))
+            .map(|p| engine::Preset {
+                id: p.name(),
+                name: p.title(),
+                rules: p.rules(),
+            })
             .collect()
     }
 
-    fn validate(rules: &Rules) -> Result<(), String> {
-        rules.validate().map_err(|e| e.to_string())
+    fn validate(rules: &Rules) -> Result<(), rules::InvalidRules> {
+        rules.validate()
+    }
+
+    fn seats(rules: &Rules) -> usize {
+        rules.players
+    }
+
+    fn describe(rules: &Rules) -> String {
+        format!("{} players, {} cards", rules.players, rules.deck_size())
     }
 }

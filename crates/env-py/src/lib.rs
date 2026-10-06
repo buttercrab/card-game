@@ -167,7 +167,7 @@ impl PyEnv {
             threads,
         };
         let inner = match game {
-            <Mighty as engine::JsonGame>::ID => build::<Mighty>(options),
+            <Mighty as engine::GameInfo>::ID => build::<Mighty>(options),
             _ => Err(Error::Config(format!("unknown game {game:?}"))),
         }
         .map_err(py_err)?;
@@ -232,7 +232,7 @@ fn selfplay(py: Python<'_>, config: &str, root: PathBuf, out: PathBuf, threads: 
     let config = SelfplayConfig::from_toml(config).map_err(py_err)?;
     let dataset = py
         .detach(|| match config.game.as_str() {
-            <Mighty as engine::JsonGame>::ID => env::selfplay::run::<Mighty>(&config, &root, &out, threads, |_| {}),
+            <Mighty as engine::GameInfo>::ID => env::selfplay::run::<Mighty>(&config, &root, &out, threads, |_| {}),
             game => Err(Error::Config(format!("unknown game {game:?}"))),
         })
         .map_err(py_err)?;

@@ -124,7 +124,7 @@ impl<G: EnvGame> Hand<G> {
     pub fn new(setup: &Setup<G>, seed: u64) -> Result<Hand<G>, Error> {
         let mut rng = stream(seed, 2);
         let rules = setup.rules.draw::<G>(&mut rng)?;
-        let options = G::options(&rules, &mut rng);
+        let options = crate::game::draw_options::<G>(&rules, &mut rng);
         let state = G::new_game(&options).map_err(|e| Error::Rules(e.to_string()))?;
         let bots = (0..G::seat_count(&state))
             .map(|seat| {

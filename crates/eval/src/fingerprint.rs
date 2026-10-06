@@ -4,7 +4,7 @@
 //! holds another network) get different fingerprints, so comparing their
 //! numbers is flagged ([`crate::results::Results::differing_fields`]).
 
-use crate::EvalGame;
+use crate::Research;
 use engine::{Bot, RandomBot, Seat, Viewer};
 use harness::Decided;
 use rand::SeedableRng;
@@ -17,8 +17,8 @@ pub const PROBES: usize = 16;
 /// Probe positions: decisions of seats in hands random bots play from
 /// fixed seeds, under the game's first preset, one in every few so they
 /// cover the whole hand.
-pub fn probes<G: EvalGame>() -> Vec<(G::State, Seat)> {
-    let Some((_, _, rules)) = G::presets().into_iter().next() else {
+pub fn probes<G: Research>() -> Vec<(G::State, Seat)> {
+    let Some(rules) = G::presets().into_iter().next().map(|p| p.rules) else {
         return Vec::new();
     };
     let mut out: Vec<(G::State, Seat)> = Vec::new();
@@ -60,7 +60,7 @@ pub fn probes<G: EvalGame>() -> Vec<(G::State, Seat)> {
 /// (built afresh for the probe's seat, on a generator seeded by the
 /// probe), hashed; 16 hex digits. A bot on a clock may choose otherwise
 /// from run to run, and so differ from itself.
-pub fn fingerprint<G: EvalGame>(spec: &G::Spec, probes: &[(G::State, Seat)]) -> String {
+pub fn fingerprint<G: Research>(spec: &G::BotSpec, probes: &[(G::State, Seat)]) -> String {
     let mut hash = Sha256::new();
     for (i, (state, seat)) in probes.iter().enumerate() {
         let view = G::view(state, Viewer::Seat(*seat));

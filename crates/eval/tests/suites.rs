@@ -3,7 +3,7 @@
 //! were drawn (ignored: they are drawn once, then fixed).
 
 use eval::suite::{Loaded, sha256};
-use eval::{EvalGame, preset};
+use eval::{Research, preset};
 use mighty::Mighty;
 use mighty::rules::{Preset, Rules};
 use rand::SeedableRng;

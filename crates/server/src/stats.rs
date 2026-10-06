@@ -6,7 +6,7 @@
 //! apart only by a salted hash of the id their browser already keeps to
 //! reclaim a seat, so the log can count who came back but not who they are.
 
-use mighty::bot::Level;
+use engine::Level;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

@@ -1,7 +1,7 @@
 //! Rule sources, and that excluded rule sets (the evals' held-out ones)
 //! never reach a hand.
 
-use env::{EnvGame, Error, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
+use env::{Error, Research, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
 use mighty::Mighty;
 use mighty::rules::{Preset, Rules};
 use rand::SeedableRng;

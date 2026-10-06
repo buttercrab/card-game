@@ -26,18 +26,18 @@
 //! that speak before the first bid. The simulator and the evals play the
 //! same way.
 //!
-//! The core is generic; what differs between games is the small
-//! [`EnvGame`] trait. Mighty's is in [`mighty`].
+//! The core is generic; what differs between games is what [`EnvGame`]
+//! asks: the game's research hooks (`sim::Research`) and its model
+//! encoding (`engine::Encode`).
 
 mod env;
 pub mod game;
 mod hand;
-pub mod mighty;
 pub mod npz;
 pub mod selfplay;
 
 pub use env::{Batch, Config, Env};
-pub use game::{EnvGame, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
+pub use game::{EnvGame, Research, RuleSampler, RuleSource, draw_options, load_rule_sets, rules_id, rules_key};
 pub use hand::{BotPool, Decision, Hand, Setup, Status};
 
 /// Why the environment could not do what was asked.

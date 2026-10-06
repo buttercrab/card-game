@@ -2,15 +2,19 @@
 //! and the game's types inside them, derives [`TS`]; [`crate::codegen`]
 //! writes them to `web/src/lib/generated/`, so the client is typed by the
 //! server's own definitions.
+//!
+//! The messages are generic over the game's types (its settings, rules,
+//! view, actions, notes and hand summaries); the game's own appear here
+//! only where the TypeScript is made concrete (`#[ts(concrete)]`,
+//! `#[ts(as)]`), which is what the client is built against.
 
 use crate::room::TableSettings;
-use crate::session::{MightyNotes, MightySettings};
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use engine::Turn;
-use mighty::bot::Level;
+use engine::{Level, Turn};
 use mighty::rules::{InvalidRules, Preset, Rules};
+use mighty::table::{MightyNotes, MightySettings};
 use mighty::{Action, HandSummary, View};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -96,10 +100,11 @@ pub enum ErrorCode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 pub struct ServerError {
     pub code: ErrorCode,
-    /// Which rule check failed, for [`ErrorCode::InvalidRules`].
+    /// Which rule check failed, for [`ErrorCode::InvalidRules`], as the
+    /// game names it.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub rule: Option<InvalidRules>,
+    #[ts(as = "Option<InvalidRules>", optional)]
+    pub rule: Option<Value>,
     /// More, in English, for the logs and for whoever debugs the client.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -122,9 +127,11 @@ impl ServerError {
         }
     }
 
-    pub fn rules(rule: InvalidRules) -> ServerError {
+    /// The game refused the rules, for `rule` (the game's
+    /// [`engine::GameInfo::RulesError`]).
+    pub fn rules(rule: &impl Serialize) -> ServerError {
         ServerError {
-            rule: Some(rule),
+            rule: Some(serde_json::to_value(rule).expect("a rule error serializes")),
             ..ServerError::new(ErrorCode::InvalidRules)
         }
     }
@@ -147,18 +154,15 @@ impl From<ErrorCode> for ServerError {
     }
 }
 
-impl From<InvalidRules> for ServerError {
-    fn from(rule: InvalidRules) -> ServerError {
-        ServerError::rules(rule)
-    }
-}
-
 impl std::fmt::Display for ServerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let code = serde_json::to_value(self.code).unwrap_or_default();
         write!(f, "{}", code.as_str().unwrap_or("error"))?;
-        if let Some(rule) = self.rule {
-            write!(f, ": {rule}")?;
+        if let Some(rule) = &self.rule {
+            match rule.as_str() {
+                Some(rule) => write!(f, ": {rule}")?,
+                None => write!(f, ": {rule}")?,
+            }
         }
         if let Some(detail) = &self.detail {
             write!(f, ": {detail}")?;
@@ -169,15 +173,26 @@ impl std::fmt::Display for ServerError {
 
 /// `POST /api/rooms`: a new table, on a preset (기본 by default) or on
 /// rules of its own, which must hold together.
-#[derive(Debug, Clone, Default, Deserialize, TS)]
-pub struct CreateRoom {
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(bound(deserialize = "P: Deserialize<'de>, R: Deserialize<'de>"))]
+#[ts(concrete(P = Preset, R = Rules))]
+pub struct CreateRoom<P, R> {
     #[serde(default)]
     #[ts(optional)]
-    pub preset: Option<Preset>,
+    pub preset: Option<P>,
     /// The table's own rules, changed from the preset's.
     #[serde(default)]
     #[ts(optional)]
-    pub rules: Option<Rules>,
+    pub rules: Option<R>,
+}
+
+impl<P, R> Default for CreateRoom<P, R> {
+    fn default() -> CreateRoom<P, R> {
+        CreateRoom {
+            preset: None,
+            rules: None,
+        }
+    }
 }
 
 /// The answer to [`CreateRoom`]: the table's id, which is its link.

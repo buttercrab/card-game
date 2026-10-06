@@ -270,7 +270,7 @@ fn mine() {
                         let proof = proven(&state, deal);
                         found.push(json!({
                             "pattern": format!("{pattern:?}"),
-                            "log_version": <Mighty as eval::EvalGame>::LOG_VERSION,
+                            "log_version": <Mighty as eval::Research>::LOG_VERSION,
                             "rules": preset.name(),
                             "deal": deal,
                             "seat": seat,

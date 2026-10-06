@@ -7,9 +7,9 @@
 
 use crate::catalog::{Catalog, catalog};
 use crate::protocol::{ClientMsg, CreateRoom, CreatedRoom, ServerMsg};
-use crate::session::{MightyNotes, MightySettings};
-use mighty::rules::Rules;
+use mighty::rules::{Preset, Rules};
 use mighty::score::Examples;
+use mighty::table::{MightyNotes, MightySettings};
 use mighty::{Action, HandSummary, View};
 use std::any::TypeId;
 use std::collections::HashSet;
@@ -61,7 +61,7 @@ pub fn typescript() -> String {
     };
     d.visit::<ServerMsg<MightySettings, HandSummary, Rules, View, Action, MightyNotes>>();
     d.visit::<Examples>();
-    d.visit::<CreateRoom>();
+    d.visit::<CreateRoom<Preset, Rules>>();
     d.visit::<CreatedRoom>();
     d.visit::<ClientMsg>();
     d.visit::<Catalog>();

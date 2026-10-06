@@ -2,7 +2,7 @@
 //! builds them, the server's bots included.
 
 use engine::{Game, Turn, Viewer};
-use env::EnvGame;
+use env::Research;
 use mighty::Mighty;
 use mighty::bot::Level;
 use mighty::rules::Preset;
@@ -56,7 +56,7 @@ fn levels_play_as_the_levels_build() {
                         let seed = decisions as u64;
                         let spec = Mighty::parse_bot(name).unwrap();
                         let ours =
-                            <Mighty as EnvGame>::bot(&spec, seat).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
+                            <Mighty as Research>::bot(&spec, seat).act(&view, &legal, &mut StdRng::seed_from_u64(seed));
                         let theirs = level
                             .build(seat, None)
                             .act(&view, &legal, &mut StdRng::seed_from_u64(seed));

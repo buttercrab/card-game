@@ -546,7 +546,7 @@ async fn a_bot_worker_thinks_for_the_room() {
     let refused = connect_async(format!("ws://{addr}/internal/bots")).await;
     assert!(refused.is_err());
 
-    tokio::spawn(server::bots::run_worker::<mighty::Mighty>(
+    tokio::spawn(server::bots::run_worker(
         format!("ws://{addr}/internal/bots"),
         "secret".into(),
         Duration::from_millis(20),
@@ -720,16 +720,17 @@ async fn shuffling_every_hand_reseats_before_the_deal() {
 #[test]
 fn a_snapshot_restores_as_saved_and_a_broken_one_is_refused() {
     use mighty::Mighty;
+    use mighty::table::MightySettings;
     use server::room::Room;
-    use server::session::MightySettings;
+    let bots = || -> std::sync::Arc<dyn engine::TableBots<Mighty>> { std::sync::Arc::new(mighty_ai::MightyBots) };
     let env = std::sync::Arc::new(server::room::RoomEnv::new(Duration::ZERO));
-    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), env.clone());
+    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), env.clone(), bots());
     let mut snapshot = serde_json::to_value(room.snapshot()).unwrap();
     snapshot["table"]["shuffle_next"] = json!(true);
-    let restored = Room::<Mighty>::restore(snapshot.clone(), env.clone()).unwrap();
+    let restored = Room::<Mighty>::restore(snapshot.clone(), env.clone(), bots()).unwrap();
     assert_eq!(serde_json::to_value(restored.snapshot()).unwrap(), snapshot);
     snapshot.as_object_mut().unwrap().remove("table");
-    assert!(Room::<Mighty>::restore(snapshot, env).is_err());
+    assert!(Room::<Mighty>::restore(snapshot, env, bots()).is_err());
 }
 
 /// Each seat's name (a person's or a bot's), and a bot's level, by seat.
