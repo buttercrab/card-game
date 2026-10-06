@@ -1,13 +1,13 @@
 use clap::{Parser, ValueEnum};
 use engine::{Bot, RandomBot};
-use mighty::bot::SimpleBot;
+use harness::stats::{mean_and_margin, quantile};
+use harness::{Checks, Clock, Failure, Timed};
 use mighty::rules::Preset;
 use mighty::{Mighty, Options};
+use mighty_ai::SimpleBot;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use sim::spec::Spec;
-use sim::stats::{mean_and_margin, quantile};
-use sim::{Checks, Clock, Failure, Timed};
 use std::cell::RefCell;
 use std::process::ExitCode;
 use std::rc::Rc;
@@ -41,9 +41,9 @@ struct Args {
     /// bidding a little bolder or more carefully by seat as at the table.
     /// `belief:MODEL_DIR:SAMPLES` is `hard` at SAMPLES deals, dealing the
     /// unseen cards by the belief model in MODEL_DIR instead of reading
-    /// the table (built with `--features belief`). `dmc:MODEL_DIR[:TEMP]`
+    /// the table. `dmc:MODEL_DIR[:TEMP]`
     /// plays by the Q network in MODEL_DIR, greedily or at a temperature
-    /// in points (built with `--features dmc`). `hybrid:MODEL_DIR:SAMPLES`
+    /// in points. `hybrid:MODEL_DIR:SAMPLES`
     /// is `hard` at SAMPLES deals leaning on that Q network, by settings
     /// `prior=K` (weigh the K moves it values most), `base=q` (its choice
     /// is the one to beat) and `leaf=K` (value playouts by it after K more
@@ -91,7 +91,7 @@ fn table(
     args: &Args,
     seats: usize,
     game: u64,
-    focus_bot: Spec,
+    focus_bot: &Spec,
     clock: &Rc<RefCell<Clock>>,
 ) -> (Vec<Box<dyn Bot<Mighty>>>, Option<usize>) {
     // The first bidder is `game % seats`; cycling this separately covers
@@ -136,7 +136,7 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
         view_every: args.view_every,
         ..Checks::default()
     };
-    sim::parallel(args.games, args.threads, |game| {
+    harness::parallel(args.games, args.threads, |game| {
         let rules = if args.vary {
             rules.varied(&mut ChaCha8Rng::seed_from_u64(args.seed + game))
         } else {
@@ -147,10 +147,10 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
             rules,
             first_bidder: game as usize % seats,
         };
-        let one = |focus_bot: Spec| {
+        let one = |focus_bot: &Spec| {
             let clock = Rc::new(RefCell::new(Clock::default()));
             let (mut bots, focus) = table(args, seats, game, focus_bot, &clock);
-            sim::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
+            harness::play::<Mighty>(&options, &mut bots, args.seed + game, checks).map(|report| Outcome {
                 clock: clock.take(),
                 baseline_clock: Clock::default(),
                 steps: report.steps,
@@ -158,8 +158,8 @@ fn run(args: &Args, preset: Preset) -> Result<Vec<Outcome>, Failure> {
                 baseline_payoff: None,
             })
         };
-        one(args.focus).and_then(|mut outcome| {
-            if let Some(baseline) = args.baseline {
+        one(&args.focus).and_then(|mut outcome| {
+            if let Some(baseline) = &args.baseline {
                 let base = one(baseline)?;
                 outcome.baseline_payoff = base.focus_payoff;
                 outcome.baseline_clock = base.clock;

@@ -8,6 +8,7 @@ use mighty::bot::Level;
 use mighty::card::Card;
 use mighty::explain::Refusal;
 use mighty::rules::{Contract, Preset, Rules};
+use mighty_ai::LevelBots;
 use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -135,7 +136,7 @@ pub enum Decision {
     Plan,
 }
 
-/// With `misdeal.ask_first`, the first bid waits this long after the deal,
+/// Where misdeals come before any bid, the first bid waits this long after the deal,
 /// so a fast bid never beats a 딜미스 to the table.
 pub const FIRST_BID_GRACE: Duration = Duration::from_secs(2);
 
@@ -304,7 +305,7 @@ impl SessionGame for Mighty {
 
     fn grace(state: &mighty::State, action: &mighty::Action) -> Duration {
         let first_bid = matches!(action, mighty::Action::Bid(_)) && state.before_first_bid();
-        if first_bid && state.rules().misdeal.ask_first {
+        if first_bid && state.rules().misdeal.window == mighty::rules::MisdealWindow::BeforeFirstBid {
             FIRST_BID_GRACE
         } else {
             Duration::ZERO

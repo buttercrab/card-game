@@ -1,6 +1,6 @@
 //! Plays a suite: every part asked for, in order, into [`Results`].
 
-use crate::machine::{self, Machine};
+use crate::fingerprint::{fingerprint, probes};
 use crate::play::{Deal, Table, play_tables};
 use crate::puzzle;
 use crate::results::{
@@ -10,6 +10,7 @@ use crate::results::{
 use crate::stats::{Estimate, ThinkTime};
 use crate::suite::{Loaded, Part, deals};
 use crate::{EvalGame, preset, rules};
+use harness::provenance::{self as machine, Machine};
 use std::time::Instant;
 
 /// What to run.
@@ -52,6 +53,7 @@ pub fn run<G: EvalGame>(request: &Request, progress: &mut dyn FnMut(&str)) -> Re
         },
         threads: request.threads,
         reproducible: true,
+        fields: Vec::new(),
         progress,
     };
     runner.reproducible =
@@ -84,6 +86,7 @@ pub fn run<G: EvalGame>(request: &Request, progress: &mut dyn FnMut(&str)) -> Re
         matches: None,
         cost: None,
         puzzles: None,
+        fingerprints: Default::default(),
     };
     for part in suite.parts().into_iter().filter(|p| request.parts.contains(p)) {
         match part {
@@ -96,6 +99,14 @@ pub fn run<G: EvalGame>(request: &Request, progress: &mut dyn FnMut(&str)) -> Re
         }
     }
     results.reproducible = runner.reproducible;
+    // Who the field bots were, so runs against the same names but other
+    // bots are told apart.
+    let probes = probes::<G>();
+    for (name, spec) in &runner.fields {
+        results
+            .fingerprints
+            .insert(name.clone(), fingerprint::<G>(spec, &probes));
+    }
     results.run.wall_seconds = started.elapsed().as_secs_f64();
     Ok(results)
 }
@@ -114,6 +125,8 @@ struct Runner<'p, G: EvalGame> {
     threads: Option<usize>,
     /// Whether every bot played so far decides without a clock.
     reproducible: bool,
+    /// Every field bot played so far, once each.
+    fields: Vec<(String, G::Spec)>,
     progress: &'p mut dyn FnMut(&str),
 }
 
@@ -121,6 +134,9 @@ impl<G: EvalGame> Runner<'_, G> {
     fn field(&mut self, name: &str) -> Result<G::Spec, String> {
         let spec = G::parse_bot(name)?;
         self.reproducible &= G::reproducible(&spec);
+        if !self.fields.iter().any(|(n, _)| n == name) {
+            self.fields.push((name.to_string(), spec.clone()));
+        }
         Ok(spec)
     }
 

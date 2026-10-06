@@ -51,14 +51,15 @@ needs it. On the Mac training runs on MPS
 The encoding (`engine::Encode`, Mighty's in `crates/mighty/src/encode.rs`)
 defines every model's input, so it changes only on purpose:
 
-1. Change the encoder, bump its `VERSION` (`mighty-3` to `mighty-4`) and
+1. Change the encoder, bump its `VERSION` (`mighty-4` to `mighty-5`) and
    append the new version to `SPECS` next to it, with the spec
    fingerprint the failing `the_spec_changes_only_with_its_version` test
    prints. That test fails while the spec and the last `SPECS` line
    disagree, so the spec cannot change without a new version.
 2. Rewrite every fixture built on it with `scripts/regenerate-fixtures.sh`
-   (Rust's `tests/encoding.json`, the pinned encodings and search
-   decisions in `crates/mighty/tests/pinned`, `crates/env/tests/parity.json`,
+   (Rust's `tests/encoding.json`, the pinned encodings in
+   `crates/mighty/tests/pinned` and search decisions in
+   `crates/mighty-ai/tests/pinned`, `crates/env/tests/parity.json`,
    and, with `uv`, `crates/infer/tests/tiny` and `tiny-q`), and review the
    diff. The pinned games' rules are frozen there, so changing a preset's
    house rules moves none of these, only `presets.json` and `payoffs.json`.
@@ -73,10 +74,14 @@ Versions: `mighty-1` (2026-10, P0); `mighty-2` (2026-10-05) adds how a
 failed contract is scored (`rules.scoring.lose`); `mighty-3` (2026-10-05,
 faster 딜미스) drops the misdeal round (`phase=misdeal_round` and the
 `kind=no_misdeal` events), since a misdeal is now called from the deal,
-out of turn, and 기본 has no round of answers. Belief v1 and every
-dataset before 2026-10-05 are `mighty-1`; data and models from the
+out of turn, and 기본 has no round of answers; `mighty-4` (2026-10-06)
+says when a misdeal may be called as one `rules.misdeal.window` one-hot
+(until the seat's own bid, all through the bidding, or before the first
+bid) instead of the `after_bidding` and `ask_first` flags. Belief v1 and
+every dataset before 2026-10-05 are `mighty-1`; data and models from the
 `mighty-2` days (such as a training run started then) need a commit
-before the `mighty-3` change.
+before the `mighty-3` change, and `dmc-v2` and the 2026-10-06 RL
+assessment are `mighty-3`.
 
 `ml/` reads the same pinned spec (`crates/mighty/tests/encoding.json`), so
 the Python tests see the change too.
@@ -141,9 +146,9 @@ with the baseline that knows only how many hidden cards each place holds,
 by phase of the hand; `export` adds `model.onnx` and `parity.json`, and
 `infer check` runs them from Rust, compares the logits with PyTorch's and
 times a call. The search then deals by the model as the bot
-`belief:<model dir>:<samples>` in `eval` and in `sim` (built with
-`--features belief`); `SearchBot::sampler` is the setting, off (uniform)
-by default and at the table.
+`belief:<model dir>:<samples>` in `eval`, `sim` and `lab`;
+`SearchBot::sampler` is the setting, off (uniform) by default and at the
+table.
 
 The model's architecture is pinned by a tiny fixture both test suites
 check (`crates/infer/tests/tiny`); rewrite it with
@@ -197,8 +202,8 @@ then `model.pt` and the manifest. `report` turns the log into the
 curve's table. `export` writes `model.onnx` and `parity.json`
 (`--weights snapshots/<file> --out <dir>` exports a snapshot instead).
 
-The exported directory is a bot for `eval` and `sim` (built with
-`--features dmc`): `dmc:<model dir>` plays the legal action of highest
+The exported directory is a bot for `eval`, `sim` and `lab`:
+`dmc:<model dir>` plays the legal action of highest
 value, `dmc:<model dir>:<temperature>` draws by `exp(value /
 temperature)`, the temperature in points (weaker levels). For example:
 
@@ -207,7 +212,7 @@ nice -n 10 target/release/eval run --suite v1 --bot dmc:$HOME/card-game-artifact
 ```
 
 `hybrid:<model dir>:<samples>` is 고수 at that many deals leaning on the
-network (`crates/mighty/src/hybrid.rs`): `@prior=K` weighs the K moves
+network (`crates/mighty-ai/src/hybrid.rs`): `@prior=K` weighs the K moves
 it values most instead of the search's candidates, `base=q` makes its
 choice the one a candidate must beat instead of the simple bot's, and
 `leaf=K` stops each playout K tricks on and takes the network's value

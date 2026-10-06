@@ -438,7 +438,9 @@ dependencies = [
  "clap",
  "engine",
  "flate2",
+ "harness",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "rayon",
@@ -496,7 +498,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "engine",
+ "harness",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "serde",
@@ -669,6 +673,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "harness"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "mighty",
+ "mighty-ai",
+ "rand 0.9.5",
+ "rand_chacha",
+ "serde",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -792,6 +808,7 @@ dependencies = [
  "clap",
  "engine",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "serde",
@@ -837,6 +854,23 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "lab"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "engine",
+ "harness",
+ "mighty",
+ "mighty-ai",
+ "rand 0.9.5",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "sim",
+ "thiserror",
+]
 
 [[package]]
 name = "lazy_static"
@@ -934,12 +968,25 @@ name = "mighty"
 version = "0.1.0"
 dependencies = [
  "engine",
+ "mighty",
  "rand 0.9.5",
  "rand_chacha",
  "serde",
  "serde_json",
  "thiserror",
  "ts-rs",
+]
+
+[[package]]
+name = "mighty-ai"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "mighty",
+ "rand 0.9.5",
+ "rand_chacha",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1601,6 +1648,7 @@ dependencies = [
  "engine",
  "futures-util",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rustls",
  "serde",
@@ -1669,8 +1717,10 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "engine",
+ "harness",
  "infer",
  "mighty",
+ "mighty-ai",
  "rand 0.9.5",
  "rand_chacha",
  "serde",

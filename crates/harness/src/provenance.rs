@@ -1,23 +1,37 @@
 //! Where and from what a run ran: the commit, the machine, the time.
 //! Think times only mean something next to the machine they were taken
-//! on, and every result only next to its commit.
+//! on, and every result and dataset only next to its commit.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// `git -C dir args...`, its output trimmed; why not, when it fails.
+pub fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
 /// The commit checked out at `dir`, and whether tracked files differ
 /// from it. `None` outside a git checkout.
 pub fn commit(dir: &Path) -> Option<(String, bool)> {
-    let git = |args: &[&str]| {
-        let out = Command::new("git").arg("-C").arg(dir).args(args).output().ok()?;
-        out.status
-            .success()
-            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
-    };
-    let hash = git(&["rev-parse", "HEAD"])?;
-    let dirty = !git(&["status", "--porcelain", "--untracked-files=no"])?.is_empty();
+    let hash = git(dir, &["rev-parse", "HEAD"]).ok()?;
+    let dirty = !git(dir, &["status", "--porcelain", "--untracked-files=no"])
+        .ok()?
+        .is_empty();
     Some((hash, dirty))
 }
 
@@ -78,8 +92,16 @@ fn load() -> Option<[f64; 3]> {
 
 /// Now, as `YYYY-MM-DDTHH:MM:SSZ`.
 pub fn now_utc() -> String {
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    utc(secs)
+    utc(now_secs())
+}
+
+/// Today in UTC, as `YYYY-MM-DD`.
+pub fn today() -> String {
+    utc(now_secs())[..10].to_string()
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
 /// Seconds since 1970 as `YYYY-MM-DDTHH:MM:SSZ`.
@@ -113,6 +135,7 @@ mod tests {
         assert_eq!(utc(0), "1970-01-01T00:00:00Z");
         assert_eq!(utc(951_782_400), "2000-02-29T00:00:00Z");
         assert_eq!(utc(1_791_158_399), "2026-10-04T23:59:59Z");
+        assert_eq!(today().len(), 10);
     }
 
     #[test]

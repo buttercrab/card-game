@@ -68,7 +68,7 @@ fn upgrade_v1(options: &Options, log: &[Action]) -> Result<Steps<Action>, String
         i += 1;
         let dealt = matches!(action, Action::Deal { .. });
         out.push((None, action));
-        if !(rules.misdeal.ask_first && dealt) {
+        if !(rules.misdeal.window == mighty::rules::MisdealWindow::BeforeFirstBid && dealt) {
             continue;
         }
         for k in 0..n {

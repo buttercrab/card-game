@@ -11,7 +11,7 @@
 
 use crate::EvalGame;
 use engine::Bot;
-use sim::{Checks, Clock, Failure, Timed};
+use harness::{Checks, Clock, Failure, Timed};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -54,7 +54,7 @@ pub fn play_tables<G: EvalGame>(
         })
         .collect();
     let total = tables.iter().map(|t| t.deals).sum();
-    let mut played = sim::parallel(total, threads, |job| {
+    let mut played = harness::parallel(total, threads, |job| {
         let k = starts.partition_point(|&start| start <= job) - 1;
         let (table, deal) = (&tables[k], job - starts[k]);
         let (payoff, times) = play_deal(table, bot, deal)?;
@@ -96,6 +96,6 @@ fn play_deal<G: EvalGame>(table: &Table<G>, bot: &G::Spec, deal: u64) -> Result<
         view_every: 0,
         ..Checks::default()
     };
-    let report = sim::play::<G>(&options, &mut bots, table.seed + deal, checks)?;
+    let report = harness::play::<G>(&options, &mut bots, table.seed + deal, checks)?;
     Ok((report.payoffs[focus], clock.take().times))
 }

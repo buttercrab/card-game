@@ -322,7 +322,7 @@ export type Held = "Mighty" | "Joker" | "Trump" | "Card";
  * Why [`Rules::validate`] refuses a set of rules. The web client words
  * each one for players, by its snake_case name.
  */
-export type InvalidRules = "point_cards_missing" | "bad_extra_cards" | "table_size" | "too_few_cards" | "joker_call_not_in_deck" | "empty_bid_range" | "no_trump_bonus_too_high" | "joker_call_per_joker" | "pays_back_too_much" | "no_friend_rule";
+export type InvalidRules = "point_cards_missing" | "bad_extra_cards" | "table_size" | "too_few_cards" | "joker_call_not_in_deck" | "empty_bid_range" | "no_trump_bonus_too_high" | "joker_call_per_joker" | "pays_back_too_much" | "no_friend_rule" | "fake_without_card" | "always_misdeal";
 
 export type JokerCall = { 
 /**
@@ -406,25 +406,25 @@ export type Misdeal = { point_value: number, joker_value: number, card_values: A
  */
 all_points: boolean, 
 /**
- * A player who has already bid may still ask, on their turn to bid.
+ * When a player whose hand qualifies may ask, during the bidding.
  */
-after_bidding: boolean, 
+window: MisdealWindow, 
 /**
  * The declarer may ask after taking the kitty and before discarding,
  * judged on every card they then hold.
  */
 declarer: boolean, 
 /**
- * Misdeals come before any bid: anyone whose hand qualifies may call
- * one from the moment the cards land until the first bid, on their
- * turn or not, and nobody later. The server holds the first bid back
- * a moment after the deal so a fast bid cannot beat a misdeal.
- */
-ask_first: boolean, 
-/**
  * Whoever calls a misdeal opens the bidding of the new deal.
  */
 caller_deals: boolean, };
+
+/**
+ * When, during the bidding, a player whose hand qualifies may call a
+ * misdeal: always from the moment the cards land, on their turn or not,
+ * and never once they have passed.
+ */
+export type MisdealWindow = "OwnTurnUntilBid" | "AllBidding" | "BeforeFirstBid";
 
 /**
  * Who opens the bidding of the next hand. The first bidder doubles as the
@@ -484,7 +484,7 @@ export type Played = { seat: number, card: Card, powered: boolean, };
 /**
  * 기본, the owner's written base rules, and the school rules collected in
  * web-mighty, named after the groups that play them. The school presets
- * are written as changes to [`Rules::default`] (web-mighty's base), which
+ * are written as changes to [`Rules::web_mighty`] (web-mighty's base), which
  * therefore stays as it was, and all score a failed contract by
  * [`LoseScore::PaysBack`]; `tests/presets.json` pins every preset.
  */

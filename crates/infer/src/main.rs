@@ -12,7 +12,7 @@
 
 use clap::{Parser, Subcommand};
 use engine::Observation;
-use infer::{Agreement, BeliefNet, Parity, QNet, QParity};
+use infer::{Agreement, BeliefNet, Parity, QNet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -55,7 +55,7 @@ impl Checked for BeliefNet {
 
 impl Checked for QNet {
     fn agreement(&self, dir: &Path) -> Result<(Agreement, f32, Vec<Observation>), String> {
-        let parity = QParity::load(&dir.join("parity.json")).map_err(|e| e.to_string())?;
+        let parity = Parity::load(&dir.join("parity.json")).map_err(|e| e.to_string())?;
         let agreement = self.check_parity(&parity).map_err(|e| e.to_string())?;
         Ok((agreement, parity.tolerance, parity.observations))
     }

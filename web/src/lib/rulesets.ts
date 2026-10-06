@@ -20,6 +20,17 @@ export function customName(set: CustomSet): string {
   return set.name.trim() || '우리 규칙';
 }
 
+/** Rules saved before `misdeal.window` said when by two flags; read them as
+ * the server does (`ask_first` won over `after_bidding`). */
+export function upgradeRules(saved: Rules): Rules {
+  const misdeal = saved?.misdeal as (Partial<Rules['misdeal']> & { ask_first?: boolean; after_bidding?: boolean }) | undefined;
+  if (!misdeal || misdeal.window !== undefined || (misdeal.ask_first === undefined && misdeal.after_bidding === undefined))
+    return saved;
+  const { ask_first, after_bidding, ...rest } = misdeal;
+  const window = ask_first ? 'BeforeFirstBid' : after_bidding ? 'AllBidding' : 'OwnTurnUntilBid';
+  return { ...saved, misdeal: { ...rest, window } as Rules['misdeal'] };
+}
+
 /** `saved` with every option it leaves out (rules saved before the option
  * existed) filled from `defaults`, as the server reads them. */
 export function fillGaps<T>(saved: T, defaults: T): T {
@@ -38,7 +49,7 @@ export function loadCustom(): CustomSet[] {
     return Array.isArray(list)
       ? list
           .filter((s) => s && typeof s.base === 'string' && s.rules)
-          .map((s: CustomSet) => ({ ...s, rules: fillGaps(s.rules, CATALOG.rule_defaults) }))
+          .map((s: CustomSet) => ({ ...s, rules: fillGaps(upgradeRules(s.rules), CATALOG.rule_defaults) }))
       : [];
   } catch {
     return [];

@@ -1,8 +1,8 @@
 use engine::{Bot, RandomBot};
-use mighty::bot::SimpleBot;
+use harness::Checks;
 use mighty::rules::Preset;
 use mighty::{Mighty, Options};
-use sim::Checks;
+use mighty_ai::SimpleBot;
 
 fn run(preset: Preset, games: u64, bot: fn(usize) -> Box<dyn Bot<Mighty>>) {
     let rules = preset.rules();
@@ -12,7 +12,7 @@ fn run(preset: Preset, games: u64, bot: fn(usize) -> Box<dyn Bot<Mighty>>) {
             first_bidder: seed as usize % rules.players,
         };
         let mut bots: Vec<_> = (0..rules.players).map(bot).collect();
-        if let Err(failure) = sim::play::<Mighty>(&options, &mut bots, seed, Checks::default()) {
+        if let Err(failure) = harness::play::<Mighty>(&options, &mut bots, seed, Checks::default()) {
             panic!("{preset}: {failure}");
         }
     }

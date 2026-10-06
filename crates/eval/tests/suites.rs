@@ -84,7 +84,7 @@ fn the_benchmark_suite_is_whole() {
         .filter(|m| m.name.starts_with("web-mighty"))
     {
         let (_, rules) = eval::rules::<Mighty>(&m.rules).unwrap();
-        assert_eq!(rules, Rules::default(), "{}", m.name);
+        assert_eq!(rules, Rules::web_mighty(), "{}", m.name);
     }
 }
 

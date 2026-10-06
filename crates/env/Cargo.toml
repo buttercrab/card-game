@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 clap.workspace = true
 engine.workspace = true
+harness.workspace = true
 flate2.workspace = true
 mighty.workspace = true
 rand.workspace = true
@@ -21,6 +22,9 @@ sim.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 zip.workspace = true
+
+[dev-dependencies]
+mighty-ai.workspace = true
 
 [lints]
 workspace = true

@@ -11,12 +11,13 @@
 #   crates/mighty/tests/presets.json        the presets' rules
 #   crates/mighty/tests/payoffs.json        scoring (the web tests read it)
 #   crates/mighty/tests/encoding.json       the encoding spec
-#   crates/mighty/tests/pinned/*.jsonl      encodings and search decisions
+#   crates/mighty/tests/pinned/*.jsonl      encodings
+#   crates/mighty-ai/tests/pinned/*.jsonl   search decisions
 #   crates/env/tests/parity.json            the environment, for Python
 # Python (uv, with the torch extra):
 #   crates/infer/tests/tiny, tiny-q         tiny models and their outputs
 #
-# The pinned games' rules (crates/mighty/tests/pinned/*-games.json,
+# The pinned games' rules (crates/mighty*/tests/pinned/*-games.json,
 # crates/env/tests/parity-rules.json) are frozen and never rewritten here,
 # so changing a preset moves only presets.json and payoffs.json.
 set -euo pipefail
@@ -40,7 +41,7 @@ write() {
 write -p mighty --lib -- --ignored write_preset_snapshot
 write -p mighty --lib -- --ignored write_payoff_fixture
 write -p mighty --test encode -- --ignored write
-write -p mighty --test search -- --ignored write
+write -p mighty-ai --test search -- --ignored write
 write -p env --test parity -- --ignored write
 
 if ! $rust_only; then
@@ -50,4 +51,4 @@ if ! $rust_only; then
     uv run --directory ml python -m cardgame_ml.export.fixture
 fi
 
-git status --short -- crates/mighty/tests crates/env/tests crates/infer/tests
+git status --short -- crates/mighty/tests crates/mighty-ai/tests crates/env/tests crates/infer/tests

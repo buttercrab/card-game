@@ -115,6 +115,7 @@ class _Results:
     matches: tuple[Summary, ...] | None = None
     cost: _Cost | None = None
     puzzles: _Puzzles | None = None
+    fingerprints: dict[str, str] = field(default_factory=dict[str, str])
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,17 @@ class EvalResult:
 
     matches: Summary | None = None
     """The ``matches`` part's tables pooled, each deal counting once."""
+    fingerprints: dict[str, str] = field(default_factory=dict[str, str])
+    """Every field bot the run met, by name: its choices on fixed probe
+    positions, hashed (empty for results written before them)."""
+
+    def differing_fields(self, other: "EvalResult") -> tuple[str, ...]:
+        """Field bots both runs name but that are not the same bot."""
+        return tuple(
+            name
+            for name, mine in sorted(self.fingerprints.items())
+            if name in other.fingerprints and other.fingerprints[name] != mine
+        )
 
     def metric(self, name: str) -> Summary | None:
         parts = {
@@ -168,6 +180,7 @@ class EvalResult:
             wall_seconds=r.run.wall_seconds,
             threads=r.run.threads,
             matches=_pooled(r.matches or ()),
+            fingerprints=dict(r.fingerprints),
         )
 
 
@@ -202,6 +215,10 @@ class Comparison:
     paired: bool
     """Measured deal by deal (the parent's bot as the suite's baseline),
     rather than as the difference of two separate measurements."""
+    fields_differ: tuple[str, ...] = ()
+    """Field bots the two measurements name alike but that are not the
+    same bot (their fingerprints differ): an unpaired difference against
+    them does not compare."""
     beats: bool = field(init=False)
     """Better beyond the 95% interval (written for readers of the record,
     derived when read back)."""
@@ -232,7 +249,12 @@ def compare(
     mine, theirs = own.metric(metric), parents.metric(metric)
     if mine is None or theirs is None or mine.bot is None or theirs.bot is None:
         return None
-    return Comparison(metric, mine.bot.minus(theirs.bot), paired=False)
+    return Comparison(
+        metric,
+        mine.bot.minus(theirs.bot),
+        paired=False,
+        fields_differ=parents.differing_fields(own),
+    )
 
 
 def eval_argv(

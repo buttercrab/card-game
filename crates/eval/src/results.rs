@@ -3,10 +3,11 @@
 //! would notice bumps the number. Fields are documented in
 //! `research/evals/README.md`.
 
-use crate::machine::Machine;
 use crate::puzzle::Answer;
 use crate::stats::{Estimate, ThinkTime};
+use harness::provenance::Machine;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 pub const SCHEMA: &str = "eval-results/1";
 
@@ -28,6 +29,24 @@ pub struct Results {
     pub matches: Option<Vec<TableResult>>,
     pub cost: Option<CostResult>,
     pub puzzles: Option<PuzzlesResult>,
+    /// Every field bot the run met, by name, with its fingerprint: its
+    /// choices on fixed probe positions, hashed ([`crate::fingerprint`]).
+    /// Results written before fingerprints have none.
+    #[serde(default)]
+    pub fingerprints: BTreeMap<String, String>,
+}
+
+impl Results {
+    /// The field bots both runs name but that chose differently on the
+    /// probe positions: the same name, another bot. Numbers measured
+    /// against them do not compare.
+    pub fn differing_fields(&self, other: &Results) -> Vec<String> {
+        self.fingerprints
+            .iter()
+            .filter(|(name, print)| other.fingerprints.get(*name).is_some_and(|theirs| theirs != *print))
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

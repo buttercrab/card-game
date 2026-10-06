@@ -9,8 +9,11 @@ before anyone plays it.
 | Part | What it is |
 | --- | --- |
 | [`engine`](crates/engine) | The `Game` trait every game implements and the `Bot` trait; `Encode` (positions as model inputs) and `DynGame` (any game through JSON) |
-| [`mighty`](crates/mighty) | Mighty rules, nine regional presets, bots (a simple one and a search bot that plays at the table) and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
-| [`sim`](crates/sim) | Plays thousands of games and checks invariants after every step |
+| [`mighty`](crates/mighty) | Mighty rules, nine regional presets and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
+| [`mighty-ai`](crates/mighty-ai) | Mighty's bots: a simple one, the search bot that plays at the table (PIMC, with an exact endgame and a reading of the other players) and the search with a Q network |
+| [`harness`](crates/harness) | What the research tools share: the checked play driver, games over threads, timing, statistics, provenance |
+| [`sim`](crates/sim) | Bots by name (`hard`, `search:400:1:0@threads=4`, `dmc:DIR`, ...), and a simulator that plays thousands of games with them and checks invariants after every step |
+| [`lab`](crates/lab) | Experiments on where the bots lose points: recorded hands replayed with one change |
 | [`env`](crates/env) | The batched RL environment over any game with an encoding, and the self-play data generator |
 | [`env-py`](crates/env-py) | The environment in Python (`cardgame_env`, PyO3), which `ml` depends on |
 | [`eval`](crates/eval) | Runs the eval suites in [`research/evals`](research/evals): bots measured on fixed deals, with a JSON record and a report |

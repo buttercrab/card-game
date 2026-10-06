@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { CATALOG, presetRules } from './catalog';
-import { fillGaps } from './rulesets';
+import { fillGaps, upgradeRules } from './rulesets';
 import type { Rules } from './types';
 
 test('rules saved before an option existed read it as the server does', () => {
@@ -16,4 +16,24 @@ test('rules saved before an option existed read it as the server does', () => {
   expect(filled.bidding.min).toBe(presetRules('gshs').bidding.min);
   expect(filled.joker_call.calls).toEqual(presetRules('gshs').joker_call.calls);
   expect(filled.deck).toBe('TwoJokers');
+});
+
+test('rules saved with the old misdeal flags read them as the window they meant', () => {
+  const cases: [boolean, boolean, Rules['misdeal']['window']][] = [
+    [false, false, 'OwnTurnUntilBid'],
+    [false, true, 'AllBidding'],
+    [true, false, 'BeforeFirstBid'],
+    [true, true, 'BeforeFirstBid'],
+  ];
+  for (const [ask_first, after_bidding, window] of cases) {
+    const saved = presetRules('gshs');
+    const misdeal = saved.misdeal as Partial<Rules['misdeal']> & Record<string, unknown>;
+    delete misdeal.window;
+    Object.assign(misdeal, { ask_first, after_bidding });
+    const read = fillGaps(upgradeRules(saved), CATALOG.rule_defaults);
+    expect(read.misdeal.window).toBe(window);
+    expect('ask_first' in read.misdeal).toBe(false);
+  }
+  // Rules saved now pass as they are.
+  expect(upgradeRules(presetRules('default'))).toEqual(presetRules('default'));
 });

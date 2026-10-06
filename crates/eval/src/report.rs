@@ -5,6 +5,62 @@ use crate::results::{PuzzlesResult, Results, Summary, TableResult};
 use crate::stats::{Estimate, ThinkTime};
 use std::fmt::Write;
 
+/// Two runs side by side, part by part: each one's bot, and the second
+/// minus the first. A field bot both name but with another fingerprint is
+/// flagged first: the numbers against it do not compare.
+pub fn comparison(a: &Results, b: &Results) -> String {
+    let mut out = String::new();
+    let w = &mut out;
+    let _ = writeln!(
+        w,
+        "`{}` ({}) against `{}` ({})\n",
+        b.bot, b.suite.name, a.bot, a.suite.name
+    );
+    for name in a.differing_fields(b) {
+        let _ = writeln!(
+            w,
+            "FIELD DIFFERS: `{name}` is not the same bot in both runs (fingerprint {} against {}); numbers against it do not compare",
+            a.fingerprints[&name], b.fingerprints[&name]
+        );
+    }
+    let missing: Vec<&String> = (a.fingerprints.keys().chain(b.fingerprints.keys()))
+        .filter(|name| !(a.fingerprints.contains_key(*name) && b.fingerprints.contains_key(*name)))
+        .collect();
+    if a.fingerprints.is_empty() || b.fingerprints.is_empty() {
+        let _ = writeln!(w, "A run without fingerprints: its field bots cannot be checked");
+    } else if !missing.is_empty() {
+        let _ = writeln!(w, "Fields in one run only: {missing:?}");
+    }
+    let parts = [
+        (
+            "ladder",
+            a.ladder.as_ref().map(|l| l.rating),
+            b.ladder.as_ref().map(|l| l.rating),
+        ),
+        (
+            "presets",
+            a.presets.as_ref().map(|p| p.average),
+            b.presets.as_ref().map(|p| p.average),
+        ),
+        (
+            "heldout",
+            a.heldout.as_ref().map(|p| p.average),
+            b.heldout.as_ref().map(|p| p.average),
+        ),
+    ];
+    for (part, x, y) in parts {
+        if let (Some(x), Some(y)) = (x, y) {
+            let diff = Estimate {
+                mean: y.bot.mean - x.bot.mean,
+                ci95: x.bot.ci95.hypot(y.bot.ci95),
+                n: x.bot.n.min(y.bot.n),
+            };
+            let _ = writeln!(w, "{part}: {} then {}, {diff} (unpaired)", x.bot, y.bot);
+        }
+    }
+    out
+}
+
 pub fn markdown(r: &Results) -> String {
     let mut out = String::new();
     let w = &mut out;
@@ -100,6 +156,14 @@ fn header(r: &Results) -> String {
             .map_or(String::new(), |l| format!(", load {:.1} at the start", l[0])),
         r.run.threads,
     ));
+    if !r.fingerprints.is_empty() {
+        let fields: Vec<String> = r
+            .fingerprints
+            .iter()
+            .map(|(name, print)| format!("`{name}` {print}"))
+            .collect();
+        lines.push(format!("- Field fingerprints: {}", fields.join(", ")));
+    }
     lines.push(format!(
         "- Started {}, took {}",
         r.run.started,

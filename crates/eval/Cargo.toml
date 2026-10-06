@@ -9,13 +9,15 @@ license.workspace = true
 [dependencies]
 clap.workspace = true
 engine.workspace = true
+harness.workspace = true
 mighty.workspace = true
+mighty-ai.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-sim = { workspace = true, features = ["belief", "dmc"] }
+sim.workspace = true
 
 [lints]
 workspace = true

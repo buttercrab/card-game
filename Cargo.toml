@@ -10,7 +10,9 @@ license = "MIT"
 
 [workspace.dependencies]
 engine = { path = "crates/engine" }
+harness = { path = "crates/harness" }
 mighty = { path = "crates/mighty" }
+mighty-ai = { path = "crates/mighty-ai" }
 env = { path = "crates/env" }
 infer = { path = "crates/infer" }
 server = { path = "crates/server" }
@@ -22,7 +24,7 @@ futures-util = "0.3"
 rand = "0.9"
 rand_chacha = "0.9"
 rayon = "1"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 sha2 = "0.10"
 tempfile = "3"

@@ -1,4 +1,4 @@
-//! Experiments on where the bots lose points; see `sim::lab`.
+//! Experiments on where the bots lose points; see the `lab` crate.
 //!
 //! ```text
 //! lab gen --deals 1000 --out hands.jsonl             # hands played by 고수 bots
@@ -12,14 +12,17 @@
 //! Every subcommand writes one JSON line per result, as results come in.
 
 use clap::{Parser, Subcommand};
+use lab::declare::{self, DeclareResult};
+use lab::exchange::{self, Exchanger};
+use lab::signal::{self, SignalSetup};
+use lab::{Actor, Record, audit, bid, play, record, regret};
 use mighty::rules::{Preset, Rules};
-use sim::lab::{self, Actor, DeclareResult, Exchanger, Record};
-use sim::signal::{self, SignalSetup};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 #[derive(Parser)]
@@ -158,22 +161,33 @@ enum Command {
     },
 }
 
-fn load(path: &PathBuf, limit: Option<usize>) -> Vec<Record> {
-    let file = File::open(path).expect("records file");
-    let mut records: Vec<Record> = BufReader::new(file)
-        .lines()
-        .map(|l| serde_json::from_str(&l.expect("readable")).expect("a record"))
-        .collect();
-    records.sort_by_key(|r| r.deal);
+/// Why the lab could not start.
+type Setup<T> = Result<T, String>;
+
+fn load(path: &PathBuf, limit: Option<usize>) -> Setup<Vec<Record>> {
+    let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut records = Vec::new();
+    for (n, line) in BufReader::new(file).lines().enumerate() {
+        let line = line.map_err(|e| format!("{}: {e}", path.display()))?;
+        records.push(serde_json::from_str(&line).map_err(|e| format!("{} line {}: {e}", path.display(), n + 1))?);
+    }
+    records.sort_by_key(|r: &Record| r.deal);
     records.truncate(limit.unwrap_or(usize::MAX));
-    records
+    Ok(records)
 }
 
 /// Runs `job` on every item across `threads` workers, writing each result
-/// as a JSON line as soon as it is done.
-fn run<T: Sync, R: serde::Serialize>(items: &[T], threads: usize, out: &PathBuf, job: impl Fn(&T) -> Vec<R> + Sync) {
-    let file = Mutex::new(File::create(out).expect("output file"));
+/// as a JSON line as soon as it is done. An item whose experiment fails is
+/// reported and skipped; the number of them is returned.
+fn run<T: Sync, R: serde::Serialize>(
+    items: &[T],
+    threads: usize,
+    out: &PathBuf,
+    job: impl Fn(&T) -> lab::Result<Vec<R>> + Sync,
+) -> Setup<usize> {
+    let file = Mutex::new(File::create(out).map_err(|e| format!("{}: {e}", out.display()))?);
     let next = AtomicUsize::new(0);
+    let failed = AtomicUsize::new(0);
     let started = Instant::now();
     std::thread::scope(|scope| {
         for _ in 0..threads {
@@ -181,7 +195,14 @@ fn run<T: Sync, R: serde::Serialize>(items: &[T], threads: usize, out: &PathBuf,
                 loop {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(item) = items.get(i) else { return };
-                    let results = job(item);
+                    let results = match job(item) {
+                        Ok(results) => results,
+                        Err(e) => {
+                            failed.fetch_add(1, Ordering::Relaxed);
+                            eprintln!("{}/{}: {e}", i + 1, items.len());
+                            continue;
+                        }
+                    };
                     let mut file = file.lock().expect("output");
                     for r in results {
                         writeln!(file, "{}", serde_json::to_string(&r).expect("serializable")).expect("write");
@@ -192,49 +213,88 @@ fn run<T: Sync, R: serde::Serialize>(items: &[T], threads: usize, out: &PathBuf,
             });
         }
     });
+    Ok(failed.into_inner())
 }
 
-fn named(variants: &[String]) -> Vec<(String, String)> {
+fn named(variants: &[String]) -> Setup<Vec<(String, String)>> {
     variants
         .iter()
         .map(|v| {
-            let (name, spec) = v.split_once('=').expect("variants are name=spec");
-            (name.to_string(), spec.to_string())
+            let (name, spec) = v.split_once('=').ok_or(format!("{v:?}: variants are name=spec"))?;
+            Ok((name.to_string(), spec.to_string()))
         })
         .collect()
 }
 
 /// The Q network of a `dmc:MODEL_DIR` spec.
-fn network(s: &str) -> &'static dyn engine::ActionValues {
-    let spec: sim::spec::Spec = s.parse().unwrap_or_else(|e| panic!("{e}"));
+fn network(s: &str) -> Setup<Arc<dyn engine::ActionValues>> {
+    let spec: sim::spec::Spec = s.parse()?;
     match spec.kind {
-        #[cfg(feature = "dmc")]
-        sim::spec::Kind::Dmc(bot) => bot.net,
-        _ => panic!("--net takes a dmc:MODEL_DIR spec"),
+        sim::spec::Kind::Dmc(bot) => Ok(bot.net),
+        _ => Err("--net takes a dmc:MODEL_DIR spec".into()),
     }
 }
 
-fn actor(s: &str) -> Actor {
-    Actor::parse(s).unwrap_or_else(|e| panic!("{e}"))
+fn actor(s: &str) -> Setup<Actor> {
+    Actor::parse(s).map_err(|e| e.to_string())
 }
 
-fn main() {
+fn exchanger(spec: &str) -> Setup<Exchanger> {
+    let count = |n: &str| n.parse().map_err(|_| format!("{spec:?}: a world count"));
+    Ok(if let Some(bot) = spec.strip_prefix("bot:") {
+        Exchanger::Bot(actor(bot)?)
+    } else if let Some(n) = spec.strip_prefix("joint:") {
+        Exchanger::Joint { worlds: count(n)? }
+    } else if let Some(pair) = spec.strip_prefix("split:") {
+        let (discard, call) = pair
+            .split_once('/')
+            .ok_or(format!("{spec:?}: split:DISCARD_BOT/CALL_BOT"))?;
+        Exchanger::Split {
+            discard: actor(discard)?,
+            call: actor(call)?,
+        }
+    } else if let Some(n) = spec.strip_prefix("call:") {
+        Exchanger::CallOnly { worlds: count(n)? }
+    } else {
+        return Err(format!("unknown exchange variant {spec:?}"));
+    })
+}
+
+fn main() -> ExitCode {
+    match lab_main() {
+        Ok(0) => ExitCode::SUCCESS,
+        Ok(failed) => {
+            eprintln!("lab: {failed} items failed");
+            ExitCode::FAILURE
+        }
+        Err(e) => {
+            eprintln!("lab: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Runs the command; how many items failed.
+fn lab_main() -> Setup<usize> {
     let args = Args::parse();
     let rules: Rules = match &args.rules {
-        Some(path) => serde_json::from_str(&std::fs::read_to_string(path).expect("rules file")).expect("rules JSON"),
+        Some(path) => {
+            let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?
+        }
         None => args.preset.rules(),
     };
-    rules.validate().expect("valid rules");
+    rules.validate().map_err(|e| e.to_string())?;
     let threads = args
         .threads
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
     match &args.command {
         Command::Gen { deals, start, bot } => {
-            let bot = actor(bot);
+            let bot = actor(bot)?;
             let deals: Vec<u64> = (*start..start + deals).collect();
             run(&deals, threads, &args.out, |&deal| {
-                vec![lab::generate(&rules, deal, bot)]
-            });
+                Ok(vec![record::generate(&rules, deal, &bot)?])
+            })
         }
         Command::Declare {
             deals,
@@ -242,11 +302,11 @@ fn main() {
             bot,
             field,
         } => {
-            let (bot, field) = (actor(bot), actor(field));
+            let (bot, field) = (actor(bot)?, actor(field)?);
             let deals: Vec<u64> = (*start..start + deals).collect();
             run(&deals, threads, &args.out, |&deal| {
-                vec![lab::declare(&rules, deal, bot, field)]
-            });
+                Ok(vec![declare::declare(&rules, deal, &bot, &field)?])
+            })
         }
         Command::BidSignal {
             deals,
@@ -256,31 +316,34 @@ fn main() {
             worlds,
             search_every,
         } => {
+            let bot = actor(bot)?;
+            let net = net.as_deref().map(network).transpose()?;
             let setup = SignalSetup {
-                bot: actor(bot),
-                net: net.as_deref().map(network),
+                bot: &bot,
+                net: net.as_deref(),
                 worlds: *worlds,
                 search_every: *search_every,
             };
             let deals: Vec<u64> = (*start..start + deals).collect();
             run(&deals, threads, &args.out, |&deal| {
                 signal::bid_signal(&rules, deal, setup)
-            });
+            })
         }
         Command::DeclareReport { run } => {
-            let runs: Vec<(String, Vec<DeclareResult>)> = named(run)
-                .into_iter()
-                .map(|(name, path)| {
-                    let text = std::fs::read_to_string(&path).expect("results file");
-                    let mut results: Vec<DeclareResult> = text
-                        .lines()
-                        .map(|l| serde_json::from_str(l).expect("a result"))
-                        .collect();
-                    results.sort_by_key(|r| r.deal);
-                    (name, results)
-                })
-                .collect();
-            std::fs::write(&args.out, lab::declare_report(&runs)).expect("report file");
+            let mut runs: Vec<(String, Vec<DeclareResult>)> = Vec::new();
+            for (name, path) in named(run)? {
+                let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+                let mut results: Vec<DeclareResult> = text
+                    .lines()
+                    .map(serde_json::from_str)
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| format!("{path}: {e}"))?;
+                results.sort_by_key(|r| r.deal);
+                runs.push((name, results));
+            }
+            std::fs::write(&args.out, declare::declare_report(&runs))
+                .map_err(|e| format!("{}: {e}", args.out.display()))?;
+            Ok(0)
         }
         Command::Play {
             records,
@@ -291,10 +354,13 @@ fn main() {
             skip,
             from_trick,
         } => {
-            let mut records = load(records, *limit);
+            let mut records = load(records, *limit)?;
             records.drain(..(*skip).min(records.len()));
-            let base = actor(base);
-            let variants: Vec<(String, Actor)> = named(variant).into_iter().map(|(n, s)| (n, actor(&s))).collect();
+            let base = actor(base)?;
+            let variants: Vec<(String, Actor)> = named(variant)?
+                .into_iter()
+                .map(|(n, s)| Ok((n, actor(&s)?)))
+                .collect::<Setup<_>>()?;
             let seats = rules.players;
             run(&records, threads, &args.out, |record| {
                 let focus: Vec<usize> = if *rotate {
@@ -306,13 +372,13 @@ fn main() {
                 for &seat in &focus {
                     for (name, v) in &variants {
                         out.push(match from_trick {
-                            Some(t) => lab::play_from(&rules, record, base, seat, (name, *v), t - 1),
-                            None => lab::play_variant(&rules, record, base, seat, (name, *v)),
+                            Some(t) => play::play_from(&rules, record, &base, seat, (name, v), t - 1)?,
+                            None => play::play_variant(&rules, record, &base, seat, (name, v))?,
                         });
                     }
                 }
-                out
-            });
+                Ok(out)
+            })
         }
         Command::Bid {
             records,
@@ -320,21 +386,23 @@ fn main() {
             worlds,
             limit,
         } => {
-            let records = load(records, *limit);
-            let bot = actor(bot);
+            let records = load(records, *limit)?;
+            let bot = actor(bot)?;
             run(&records, threads, &args.out, |record| {
-                vec![lab::bid_experiment(&rules, record, bot, *worlds)]
-            });
+                Ok(vec![bid::bid_experiment(&rules, record, &bot, *worlds)?])
+            })
         }
         Command::Regret { records, endgame } => {
-            let records = load(records, None);
+            let records = load(records, None)?;
             run(&records, threads, &args.out, |record| {
-                vec![lab::regret(&rules, record, *endgame)]
-            });
+                Ok(vec![regret::regret(&rules, record, *endgame)?])
+            })
         }
         Command::Audit { records } => {
-            let records = load(records, None);
-            run(&records, threads, &args.out, |record| vec![lab::audit(&rules, record)]);
+            let records = load(records, None)?;
+            run(&records, threads, &args.out, |record| {
+                Ok(vec![audit::audit(&rules, record)?])
+            })
         }
         Command::Exchange {
             records,
@@ -343,40 +411,19 @@ fn main() {
             limit,
             skip,
         } => {
-            let mut records = load(records, *limit);
+            let mut records = load(records, *limit)?;
             records.drain(..(*skip).min(records.len()));
-            let play = actor(play);
-            let variants: Vec<(String, Exchanger)> = named(variant)
+            let play = actor(play)?;
+            let variants: Vec<(String, Exchanger)> = named(variant)?
                 .into_iter()
-                .map(|(name, spec)| {
-                    let how = if let Some(bot) = spec.strip_prefix("bot:") {
-                        Exchanger::Bot(actor(bot))
-                    } else if let Some(n) = spec.strip_prefix("joint:") {
-                        Exchanger::Joint {
-                            worlds: n.parse().expect("world count"),
-                        }
-                    } else if let Some(pair) = spec.strip_prefix("split:") {
-                        let (discard, call) = pair.split_once('/').expect("split:DISCARD_BOT/CALL_BOT");
-                        Exchanger::Split {
-                            discard: actor(discard),
-                            call: actor(call),
-                        }
-                    } else if let Some(n) = spec.strip_prefix("call:") {
-                        Exchanger::CallOnly {
-                            worlds: n.parse().expect("world count"),
-                        }
-                    } else {
-                        panic!("unknown exchange variant {spec:?}");
-                    };
-                    (name, how)
-                })
-                .collect();
+                .map(|(name, spec)| Ok((name, exchanger(&spec)?)))
+                .collect::<Setup<_>>()?;
             run(&records, threads, &args.out, |record| {
                 variants
                     .iter()
-                    .map(|(name, how)| lab::exchange_variant(&rules, record, play, name, *how))
+                    .map(|(name, how)| exchange::exchange_variant(&rules, record, &play, name, how))
                     .collect()
-            });
+            })
         }
     }
 }

@@ -89,7 +89,13 @@ def write_summary(record: RunRecord, spec: Spec, folder: Path) -> Path:
     if c is not None:
         lines.append(
             f"- Against the parent ({c.metric}, {'paired' if c.paired else 'unpaired'}): "
-            f"{c.diff}" + (" — **beats it**" if c.beats else "")
+            f"{c.diff}"
+            + (" — **beats it**" if c.beats else "")
+            + (
+                f" — fields differ ({', '.join(c.fields_differ)}): not comparable"
+                if c.fields_differ
+                else ""
+            )
         )
     if record.candidate:
         lines.append(f"- Candidate: confirmation `{record.confirmation}` queued")

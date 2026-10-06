@@ -6,6 +6,7 @@ use env::EnvGame;
 use mighty::Mighty;
 use mighty::bot::Level;
 use mighty::rules::Preset;
+use mighty_ai::LevelBots;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::seq::IndexedRandom;

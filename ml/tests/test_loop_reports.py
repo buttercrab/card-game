@@ -67,7 +67,33 @@ def test_comparisons() -> None:
     assert not c.beats
     assert not c.loses
     assert c.diff.ci95 == pytest.approx(0.3 * 2**0.5)
+    assert c.fields_differ == ()
     assert compare("ladder", None, child, None) is None
+
+
+def test_unpaired_comparisons_against_another_field_are_flagged() -> None:
+    """Two runs that name the same field bot but met another (its
+    fingerprint differs) do not compare unpaired: the comparison says so."""
+
+    def run(bot: str, rating: float, normal: str) -> EvalResult:
+        record = results(bot, "hard", rating)
+        record["fingerprints"] = {"hard": "aaaa", "normal": normal}
+        return EvalResult.from_json(record)
+
+    child, parent = run("child", 7.0, "bbbb"), run("parent", 6.8, "cccc")
+    assert child.differing_fields(parent) == ("normal",)
+    c = compare("ladder", None, child, parent)
+    assert c is not None
+    assert c.fields_differ == ("normal",)
+    same = compare("ladder", None, child, run("parent", 6.8, "bbbb"))
+    assert same is not None
+    assert same.fields_differ == ()
+    # Results from before fingerprints compare as they did.
+    old = EvalResult.from_json(results("parent", "hard", 6.8))
+    assert old.fingerprints == {}
+    c = compare("ladder", None, child, old)
+    assert c is not None
+    assert c.fields_differ == ()
 
 
 def finished(layout: Layout, run_id: str, rating: float, *, hands: int | None = None) -> None:

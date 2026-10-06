@@ -195,7 +195,7 @@ pub fn value(rules: &Rules, contract: Contract, alone: bool, team_points: u8) ->
 }
 
 /// [`value`], with every step that led to it.
-pub fn breakdown(rules: &Rules, contract: Contract, alone: bool, team_points: u8) -> HandValue {
+pub(crate) fn breakdown(rules: &Rules, contract: Contract, alone: bool, team_points: u8) -> HandValue {
     let mut steps = Vec::new();
     let value = score(rules, contract, alone, team_points, &mut |step| steps.push(step));
     HandValue {
@@ -266,7 +266,7 @@ mod tests {
     fn the_breakdown_adds_up_to_the_value() {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(3);
         let mut sets: Vec<Rules> = Preset::ALL.iter().map(|p| p.rules()).collect();
-        sets.extend((0..40).map(|_| Rules::default().varied(&mut rng)));
+        sets.extend((0..40).map(|_| Rules::web_mighty().varied(&mut rng)));
         for rules in sets {
             for trump in [None, Some(crate::card::Suit::Club)] {
                 for count in rules.lowest_contract()..=20 {

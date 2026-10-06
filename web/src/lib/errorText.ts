@@ -50,6 +50,8 @@ export const RULE_TEXT: Record<InvalidRules, string> = {
   joker_call_per_joker: '조커마다 조커콜 카드가 하나씩 있어야 해요',
   pays_back_too_much: '갚는 기준이 가장 낮은 공약보다 크면 지고도 점수를 받게 돼요',
   no_friend_rule: '프렌드를 정하는 방법을 하나는 켜 주세요 (가짜 프렌드만으로는 안 돼요)',
+  fake_without_card: '가짜 프렌드는 카드로 프렌드를 부를 때만 쓸 수 있어요',
+  always_misdeal: '딜미스 기준이 너무 높아 어떤 패든 딜미스가 돼요',
 };
 
 /** What to tell a player about a refusal. A code this build does not know

@@ -26,8 +26,12 @@
 //! meanings carry most of what a rule changes, which is what lets a model
 //! play rule combinations it never trained on.
 
+pub use crate::card::SLOTS;
 use crate::card::{ACE, Card, Color, Suit};
-use crate::rules::{BackRun, CardPolicy, Contract, Doubling, LoseScore, NextDealer, Rules, TrickPolicy, WinScore};
+use crate::rules::{
+    BackRun, CardPolicy, Contract, Doubling, LoseScore, MAX_PLAYERS, MisdealWindow, NextDealer, Rules, TrickPolicy,
+    WinScore,
+};
 use crate::state::{Action, Bid, FriendCall, Phase, TrickState, powered};
 use crate::trick::{self, Lead, PlainSuit, Played, Trick, TrickContext, plain_suit, power};
 use crate::view::{PhaseView, View};
@@ -41,24 +45,25 @@ use engine::{Encode, Features, Game, Observation, Seat, Spec, Unsupported, Viewe
 /// on `mighty-1` cannot read it. `mighty-3` (2026-10-05) dropped the
 /// misdeal round (`phase=misdeal_round`, `kind=no_misdeal`): a misdeal is
 /// called from the moment the cards land, so there is no round to show.
-pub const VERSION: &str = "mighty-3";
+/// `mighty-4` (2026-10-06) says when a misdeal may be called as one
+/// `rules.misdeal.window` instead of the `after_bidding` and `ask_first`
+/// flags.
+pub const VERSION: &str = "mighty-4";
 
 /// Every encoding version and the fingerprint of the spec it stands for
 /// (FNV-1a, 64 bits, of the spec's JSON with `version` left empty), oldest
 /// first. Append a line with each new `VERSION`; never edit one. A test
 /// (`tests/encode.rs`) fails when the spec no longer matches the last line,
 /// so a spec cannot change without a new version.
-pub const SPECS: &[(&str, u64)] = &[("mighty-3", 0x34b5_0ba5_4929_610f)];
+pub const SPECS: &[(&str, u64)] = &[("mighty-3", 0x34b5_0ba5_4929_610f), ("mighty-4", 0xea61_3429_37b6_0266)];
 
-/// The most players any rule set may seat ([`Rules::validate`]).
-pub const MAX_SEATS: usize = 8;
-
-/// Card rows: 52 cards and two jokers.
-pub const SLOTS: usize = 54;
+/// The most players any rule set may seat: per-seat features have room
+/// for this many.
+pub const MAX_SEATS: usize = MAX_PLAYERS;
 
 /// The highest contract number the action space has room for. The rule
 /// editor stops at 26; [`Encode::spec`] refuses rules above this.
-pub const MAX_COUNT: u8 = 30;
+pub(crate) const MAX_COUNT: u8 = 30;
 
 /// Event rows. A hand of 기본 needs about 80; long bidding without final
 /// passes needs more.
@@ -110,24 +115,6 @@ const CALLED: usize = 4;
 const PLAYED: usize = 5;
 const TRICK_DONE: usize = 6;
 const EVENT_LABELS: [&str; 7] = ["pass", "bid", "contract", "discard", "call", "play", "trick"];
-
-/// A card's row, and its index in the card-based action blocks.
-pub fn slot(card: Card) -> usize {
-    match card {
-        Card::Normal(suit, rank) => suit as usize * 13 + usize::from(rank - 2),
-        Card::Joker(Color::Black) => 52,
-        Card::Joker(Color::Red) => 53,
-    }
-}
-
-/// The card in row `slot`.
-pub fn card_at(slot: usize) -> Card {
-    match slot {
-        52 => Card::Joker(Color::Black),
-        53 => Card::Joker(Color::Red),
-        _ => Card::new(Suit::ALL[slot / 13], (slot % 13) as u8 + 2),
-    }
-}
 
 fn trump_index(trump: Option<Suit>) -> usize {
     trump.map_or(4, |suit| suit as usize)
@@ -187,7 +174,7 @@ fn relative(me: Seat, seat: Seat, players: usize) -> usize {
 /// relative seat, first trick, last trick, alone), plays (by card),
 /// plays calling the joker (by card), joker leads (joker × suit or
 /// colour named).
-pub fn action_index(me: Seat, players: usize, action: &Action) -> Option<usize> {
+pub(crate) fn action_index(me: Seat, players: usize, action: &Action) -> Option<usize> {
     Some(match *action {
         Action::Deal { .. } => return None,
         Action::Pass => PASS,
@@ -195,8 +182,8 @@ pub fn action_index(me: Seat, players: usize, action: &Action) -> Option<usize> 
         Action::Bid(contract) => BID + contract_index(contract)?,
         Action::ChangeTrump(trump) => CHANGE + trump_index(trump),
         Action::Raise(contract) => RAISE + contract_index(contract)?,
-        Action::Discard(card) => DISCARD + slot(card),
-        Action::CallFriend(FriendCall::Card(card)) => CALL_CARD + slot(card),
+        Action::Discard(card) => DISCARD + card.slot(),
+        Action::CallFriend(FriendCall::Card(card)) => CALL_CARD + card.slot(),
         Action::CallFriend(FriendCall::Seat(seat)) => CALL_SEAT + relative(me, seat, players),
         Action::CallFriend(FriendCall::FirstTrick) => CALL_FIRST,
         Action::CallFriend(FriendCall::LastTrick) => CALL_LAST,
@@ -208,15 +195,15 @@ pub fn action_index(me: Seat, players: usize, action: &Action) -> Option<usize> 
         } => JOKER_LEAD + color as usize * LEADS + lead_index(lead),
         Action::Play {
             card, call_joker: true, ..
-        } => PLAY_CALL + slot(card),
-        Action::Play { card, .. } => PLAY + slot(card),
+        } => PLAY_CALL + card.slot(),
+        Action::Play { card, .. } => PLAY + card.slot(),
     })
 }
 
 /// A readable name for every action index, for the spec.
 fn action_name(index: usize) -> String {
     let contract = |i: usize| format!("{}{}", TRUMP_LABELS[i / COUNTS], i % COUNTS + 1);
-    let card = |i: usize| card_at(i).to_string();
+    let card = |i: usize| Card::from_slot(i).to_string();
     match index {
         PASS => "pass".into(),
         MISDEAL => "misdeal".into(),
@@ -389,17 +376,17 @@ impl<'a> Table<'a> {
     fn places(&self) -> [Place; SLOTS] {
         let mut places = [Place::Absent; SLOTS];
         for card in self.rules.cards() {
-            places[slot(card)] = Place::Unseen;
+            places[card.slot()] = Place::Unseen;
         }
         for &card in &self.view.hand {
-            places[slot(card)] = Place::Mine;
+            places[card.slot()] = Place::Mine;
         }
         for &card in self.discards {
-            places[slot(card)] = Place::Discarded;
+            places[card.slot()] = Place::Discarded;
         }
         for (trick, t) in self.tricks.iter().enumerate() {
             for (i, p) in t.plays.iter().enumerate() {
-                places[slot(p.card)] = Place::Played {
+                places[p.card.slot()] = Place::Played {
                     trick,
                     by: p.seat,
                     won_by: t.winner,
@@ -408,7 +395,7 @@ impl<'a> Table<'a> {
             }
         }
         for p in self.plays {
-            places[slot(p.card)] = Place::Trick(p.seat);
+            places[p.card.slot()] = Place::Trick(p.seat);
         }
         places
     }
@@ -421,12 +408,12 @@ impl<'a> Table<'a> {
     /// hand or unseen (unseen discards included, since nobody can tell them
     /// apart from cards in hands).
     fn live(&self, card: Card) -> bool {
-        matches!(self.places[slot(card)], Place::Mine | Place::Unseen)
+        matches!(self.places[card.slot()], Place::Mine | Place::Unseen)
     }
 
     /// Whether `joker` was won in a finished trick, which ends calling it.
     fn gone(&self, joker: Card) -> bool {
-        matches!(self.places[slot(joker)], Place::Played { .. })
+        matches!(self.places[joker.slot()], Place::Played { .. })
     }
 
     /// The trick whose policies apply: the one under way, or a middle one
@@ -448,13 +435,7 @@ impl<'a> Table<'a> {
     }
 
     fn context(&self, lead: Lead) -> TrickContext {
-        TrickContext {
-            trump: self.trump,
-            mighty: self.rules.mighty(self.trump),
-            deck: self.rules.deck,
-            lead,
-            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
-        }
+        self.rules.trick_context(self.trump, lead)
     }
 
     /// Each live card's power in the trick under way, or as a lead when
@@ -488,7 +469,7 @@ impl<'a> Table<'a> {
             };
             let mine = power(&ctx, suit, first);
             let beaten = keys.len() - keys.partition_point(|&k| k <= mine);
-            strengths[slot(first.card)] = if others == 0 {
+            strengths[first.card.slot()] = if others == 0 {
                 1.0
             } else {
                 1.0 - beaten as f32 / others as f32
@@ -501,7 +482,7 @@ impl<'a> Table<'a> {
     fn live_played(&self) -> Vec<Played> {
         let t = self.trick_state(self.lead);
         (0..SLOTS)
-            .map(card_at)
+            .map(Card::from_slot)
             .filter(|&card| self.live(card))
             .map(|card| Played {
                 seat: 0,
@@ -525,6 +506,7 @@ impl<'a> Table<'a> {
             card,
             powered: powered(self.rules, self.trick_state(Some(lead)), card),
         });
+
         trick::winner(&self.context(lead), plays) == plays.len() - 1
     }
 }
@@ -668,9 +650,16 @@ fn rules_features(f: &mut Features, r: &Rules) {
     f.num("rules.misdeal.joker_value", small(m.joker_value));
     f.num("rules.misdeal.threshold", f32::from(m.threshold) / 8.0);
     f.flag("rules.misdeal.all_points", m.all_points);
-    f.flag("rules.misdeal.after_bidding", m.after_bidding);
+    f.one_hot(
+        "rules.misdeal.window",
+        &["own_turn_until_bid", "all_bidding", "before_first_bid"],
+        Some(match m.window {
+            MisdealWindow::OwnTurnUntilBid => 0,
+            MisdealWindow::AllBidding => 1,
+            MisdealWindow::BeforeFirstBid => 2,
+        }),
+    );
     f.flag("rules.misdeal.declarer", m.declarer);
-    f.flag("rules.misdeal.ask_first", m.ask_first);
     f.flag("rules.misdeal.caller_deals", m.caller_deals);
 
     let b = &r.bidding;
@@ -794,7 +783,7 @@ struct CardRow {
 fn card_features(f: &mut Features, t: &Table, row: &CardRow) {
     let card = row.card;
     let rules = t.rules;
-    let place = t.places[slot(card)];
+    let place = t.places[card.slot()];
     let present = place != Place::Absent;
     // Everything below the identity is zero for a card this deck lacks.
     let on = |b: bool| present && b;
@@ -1009,14 +998,14 @@ fn encode_into(view: &View, legal: &[Action], named: bool) -> (Observation, Opti
     let mut playable = [false; SLOTS];
     for action in legal {
         if let Action::Play { card, .. } = action {
-            playable[slot(*card)] = true;
+            playable[card.slot()] = true;
         }
     }
     let in_play = matches!(view.phase, PhaseView::Play { .. });
     let mut trick = Vec::with_capacity(MAX_SEATS);
     let mut cards = features(SLOTS * 64);
     for (i, strength) in t.strengths().into_iter().enumerate() {
-        let card = card_at(i);
+        let card = Card::from_slot(i);
         let row = CardRow {
             card,
             strength,
@@ -1037,7 +1026,7 @@ fn encode_into(view: &View, legal: &[Action], named: bool) -> (Observation, Opti
     let mut event_cards = vec![-1; MAX_EVENTS];
     for (i, e) in kept.iter().enumerate() {
         event_features(&mut rows, &t, e);
-        event_cards[i] = e.card.map_or(-1, |c| slot(c) as i32);
+        event_cards[i] = e.card.map_or(-1, |c| c.slot() as i32);
     }
     let mut events = rows.into_values();
     events.resize(MAX_EVENTS * width, 0.0);
@@ -1079,7 +1068,7 @@ impl Encode for Mighty {
         Ok(Spec {
             version: VERSION.to_string(),
             global: names.global,
-            cards: (0..SLOTS).map(|i| card_at(i).to_string()).collect(),
+            cards: (0..SLOTS).map(|i| Card::from_slot(i).to_string()).collect(),
             card_features: names.card,
             max_events: MAX_EVENTS,
             event_features: names.event,
@@ -1106,26 +1095,26 @@ impl Encode for Mighty {
     fn belief_targets(state: &State, viewer: Seat) -> Vec<i32> {
         let view = Mighty::view(state, Viewer::Seat(viewer));
         let table = Table::new(&view);
-        let players = state.rules.players;
+        let players = state.seats();
         let buried: Vec<Card> = state
-            .kitty
+            .kitty()
             .iter()
-            .chain(state.discards().map_or(&[][..], |(d, _)| d))
+            .chain(state.declared().map_or(&[][..], |d| &d.discards))
             .copied()
             .collect();
         (0..SLOTS)
             .map(|i| {
-                let card = card_at(i);
+                let card = Card::from_slot(i);
                 if table.places[i] != Place::Unseen {
                     return -1;
                 }
-                if let Some(seat) = state.hands.iter().position(|h| h.contains(&card)) {
+                if let Some(seat) = state.hands().iter().position(|h| h.contains(&card)) {
                     relative(viewer, seat, players) as i32
                 } else if buried.contains(&card) {
                     BURIED
                 } else {
                     // Not dealt yet.
-                    debug_assert!(matches!(state.phase, Phase::Dealing), "{card} is nowhere");
+                    debug_assert!(matches!(state.phase(), Phase::Dealing), "{card} is nowhere");
                     -1
                 }
             })
@@ -1137,8 +1126,6 @@ impl Encode for Mighty {
 mod tests {
     use super::*;
     use crate::rules::Preset;
-    use engine::Turn;
-    use rand::seq::IndexedRandom;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
@@ -1155,7 +1142,7 @@ mod tests {
                 .filter(|&&other| trick::winner(&ctx, &[first, Played { seat: 1, ..other }]) == 1)
                 .count();
             let others = live.len() - 1;
-            strengths[slot(first.card)] = if others == 0 {
+            strengths[first.card.slot()] = if others == 0 {
                 1.0
             } else {
                 1.0 - beaten as f32 / others as f32
@@ -1177,22 +1164,20 @@ mod tests {
                 rules,
                 first_bidder: rng.random_range(0..players),
             };
-            let mut state = Mighty::new_game(&options).unwrap();
-            loop {
+            let mut check = |state: &State| {
                 for seat in 0..players {
-                    let view = Mighty::view(&state, Viewer::Seat(seat));
+                    let view = Mighty::view(state, Viewer::Seat(seat));
                     let t = Table::new(&view);
                     let (fast, slow) = (t.strengths(), strengths_by_tricks(&t));
                     assert_eq!(fast.map(f32::to_bits), slow.map(f32::to_bits), "{view:?}");
                     positions += 1;
                 }
-                let action = match Mighty::turn(&state) {
-                    Turn::Over => break,
-                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                    Turn::Seat(_) => Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone(),
-                };
-                Mighty::apply(&mut state, action).unwrap();
-            }
+            };
+            let done = crate::testing::play_hand(&options, &mut rng, &mut crate::testing::random, &mut |state, _| {
+                check(state);
+                true
+            });
+            check(&done);
         }
         assert!(positions > 5_000, "only {positions} positions");
     }

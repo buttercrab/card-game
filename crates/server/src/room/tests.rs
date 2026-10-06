@@ -379,7 +379,7 @@ async fn somebody_connected_keeps_a_table_open() {
 /// 기본's rules with every hand one that may be thrown in.
 fn misdeal_rules(preset: Preset) -> MightySettings {
     let mut rules = serde_json::to_value(preset.rules()).unwrap();
-    rules["misdeal"]["threshold"] = json!(100);
+    rules["misdeal"]["threshold"] = json!(19);
     let mut settings = MightySettings::new(preset);
     settings.rules = Some(serde_json::from_value(rules).unwrap());
     settings

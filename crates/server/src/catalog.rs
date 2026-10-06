@@ -92,7 +92,7 @@ pub fn catalog() -> Catalog {
             })
             .collect(),
         default_preset: DEFAULT_PRESET,
-        rule_defaults: Rules::default(),
+        rule_defaults: Rules::web_mighty(),
         bot_levels: Level::ALL
             .iter()
             .map(|&id| BotLevelInfo {
@@ -129,9 +129,8 @@ mod tests {
             "/reveal_discards",
             "/next_dealer",
             "/misdeal/all_points",
-            "/misdeal/after_bidding",
+            "/misdeal/window",
             "/misdeal/declarer",
-            "/misdeal/ask_first",
             "/misdeal/caller_deals",
             "/bidding/change_to_no_trump_cost",
             "/bidding/pass_is_final",

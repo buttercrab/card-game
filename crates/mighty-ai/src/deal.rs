@@ -9,34 +9,30 @@
 //! Both deal card by card, each to a seat with room or face down, and
 //! keep every constraint: exact hand sizes and face-down count, the cards
 //! the viewer knows, the suits a seat has shown it lacks; the search then
-//! redeals until the bidding agrees ([`crate::search`]). Uniformly, a card
+//! redeals until the bidding agrees ([`crate::SearchBot`]). Uniformly, a card
 //! goes to a place in proportion to the room left there. By beliefs, in
 //! proportion to `room × exp(logit)`, the model's logits being relative to
 //! the counts alone (see `cardgame_ml.models.belief`): so a model that
 //! says nothing deals exactly as uniformly does.
 
-use crate::card::Card;
-use crate::encode::{BURIED, MAX_SEATS, SLOTS, slot};
-use crate::search::{Dealer, Dealt};
-use crate::state::Action;
-use crate::view::View;
-use crate::{Mighty, bot};
+use crate::pimc::{Deal, Dealer, Dealt};
 use engine::{Belief, Encode};
+use mighty::card::{Card, CardSet, SLOTS};
+use mighty::encode::{BURIED, MAX_SEATS};
+use mighty::{Action, Mighty, View};
 use rand::{Rng, RngCore};
 use std::fmt;
+use std::sync::Arc;
 
 /// How a search deals the cards it cannot see.
-///
-/// A model is loaded once and kept for the life of the process (leak a
-/// `Box` for the `'static` reference), which keeps search bots, and the
-/// bot specs built on them, `Copy`.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub enum Sampler {
     /// Every deal the view allows alike: the table's 고수.
     #[default]
     Uniform,
-    /// By a belief model's predictions, from the seat's observation.
-    Belief(&'static dyn Belief),
+    /// By a belief model's predictions, from the seat's observation. The
+    /// model is loaded once and shared by every bot and thread using it.
+    Belief(Arc<dyn Belief>),
 }
 
 impl fmt::Debug for Sampler {
@@ -54,18 +50,10 @@ impl PartialEq for Sampler {
     fn eq(&self, other: &Sampler) -> bool {
         match (self, other) {
             (Sampler::Uniform, Sampler::Uniform) => true,
-            (Sampler::Belief(a), Sampler::Belief(b)) => std::ptr::addr_eq(*a, *b),
+            (Sampler::Belief(a), Sampler::Belief(b)) => Arc::ptr_eq(a, b),
             _ => false,
         }
     }
-}
-
-/// Deals a world's unseen cards: what a [`Sampler`] sets up for one
-/// decision.
-pub(crate) trait Deal: Sync {
-    /// Every seat's hand (`me`'s empty) and the cards face down, or `None`
-    /// when no deal was found.
-    fn hands(&self, dealer: &Dealer, rng: &mut dyn RngCore) -> Option<Dealt>;
 }
 
 impl Sampler {
@@ -158,11 +146,11 @@ impl ByBelief {
     fn deal(&self, cards: &[Card], dealer: &Dealer, rng: &mut dyn RngCore) -> Option<Dealt> {
         let seats = dealer.capacity.len();
         let mut held = [0usize; MAX_SEATS];
-        let mut hands = [0u64; MAX_SEATS];
+        let mut hands = [CardSet::EMPTY; MAX_SEATS];
         let mut down = Vec::with_capacity(dealer.hidden_down);
         for &card in cards {
             let suit = card.suit().map_or(0, |s| 1 << s as u8);
-            let odds = &self.odds[slot(card)];
+            let odds = &self.odds[card.slot()];
             let mut weights = [0.0; MAX_SEATS + 1];
             for s in 0..seats {
                 if held[s] < dealer.capacity[s] && dealer.void[s] & suit == 0 {
@@ -188,7 +176,7 @@ impl ByBelief {
                 down.push(card);
             } else {
                 held[place] += 1;
-                hands[place] |= bot::bit(card);
+                hands[place].insert(card);
             }
         }
         Some((hands, down))
@@ -198,13 +186,14 @@ impl ByBelief {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::{Preset, Rules};
-    use crate::search::SearchBot;
-    use crate::state::{Phase, State};
-    use crate::{Options, card::Suit};
-    use engine::{BeliefError, Bot, Game, Observation, Turn, Viewer};
+    use crate::SearchBot;
+    use engine::{BeliefError, Bot, Game, Observation, Viewer};
+    use mighty::State;
+    use mighty::card::Suit;
+    use mighty::rules::{Preset, Rules};
+    use mighty::testing;
+    use mighty::world::Phase;
     use rand::SeedableRng;
-    use rand::seq::IndexedRandom;
     use rand_chacha::ChaCha8Rng;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -223,11 +212,11 @@ mod tests {
         }
     }
 
-    fn fixed(logits: Vec<f32>) -> &'static Fixed {
-        Box::leak(Box::new(Fixed {
+    fn fixed(logits: Vec<f32>) -> Arc<Fixed> {
+        Arc::new(Fixed {
             logits,
             calls: AtomicUsize::new(0),
-        }))
+        })
     }
 
     /// Positions a seat decides in, from random play: every bidding,
@@ -235,24 +224,17 @@ mod tests {
     fn positions(rules: &Rules, hands: u64, mut visit: impl FnMut(&State, usize)) {
         for seed in 0..hands {
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            let options = Options {
-                rules: rules.clone(),
-                first_bidder: seed as usize % rules.players,
-            };
-            let mut state = Mighty::new_game(&options).unwrap();
-            loop {
-                let action = match Mighty::turn(&state) {
-                    Turn::Over => break,
-                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                    Turn::Seat(seat) => {
-                        if matches!(state.phase, Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_)) {
-                            visit(&state, seat);
-                        }
-                        Mighty::legal_actions(&state).choose(&mut rng).unwrap().clone()
+            testing::play_hand(
+                &testing::options(rules, seed),
+                &mut rng,
+                &mut testing::random,
+                &mut |state, seat| {
+                    if matches!(state.phase(), Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_)) {
+                        visit(state, seat);
                     }
-                };
-                Mighty::apply(&mut state, action).unwrap();
-            }
+                    true
+                },
+            );
         }
     }
 
@@ -282,10 +264,10 @@ mod tests {
                         continue;
                     };
                     for (s, &hand) in hands.iter().enumerate().take(rules.players) {
-                        assert_eq!(hand.count_ones() as usize, dealer.capacity[s]);
+                        assert_eq!(hand.len(), dealer.capacity[s]);
                         for suit in Suit::ALL {
                             if dealer.void[s] & (1 << suit as u8) != 0 {
-                                assert!(crate::bot::cards(hand).all(|c| c.suit() != Some(suit)));
+                                assert!(hand.iter().all(|c| c.suit() != Some(suit)));
                             }
                         }
                     }
@@ -294,7 +276,7 @@ mod tests {
                     dealer.fill(&mut world, (hands, down));
                     Mighty::check_invariants(&world).unwrap();
                     assert_eq!(Mighty::view(&world, Viewer::Seat(seat)), view);
-                    assert_eq!(world.legal_actions(), state.legal_actions());
+                    assert_eq!(Mighty::legal_actions(&world), Mighty::legal_actions(state));
                 }
             });
         }
@@ -314,12 +296,12 @@ mod tests {
         for _ in 0..n {
             let (hands, down) = deal();
             for (seat, &hand) in hands.iter().enumerate() {
-                for card in crate::bot::cards(hand) {
-                    counts[slot(card)][seat] += 1.0;
+                for card in hand.iter() {
+                    counts[card.slot()][seat] += 1.0;
                 }
             }
             for card in down {
-                counts[slot(card)][MAX_SEATS] += 1.0;
+                counts[card.slot()][MAX_SEATS] += 1.0;
             }
         }
         counts.iter().map(|c| c.map(|x| x / n as f64)).collect()
@@ -334,13 +316,13 @@ mod tests {
         for preset in [Preset::Default, Preset::Gshs, Preset::Kmla] {
             let mut picked: Vec<View> = Vec::new();
             positions(&preset.rules(), 2, |state, seat| {
-                if picked.len() < 6 && (state.legal_actions().len() > 1) {
+                if picked.len() < 6 && (Mighty::legal_actions(state).len() > 1) {
                     picked.push(Mighty::view(state, Viewer::Seat(seat)));
                 }
             });
             // Late positions too, where voids bite.
             positions(&preset.rules(), 1, |state, seat| {
-                if matches!(&state.phase, Phase::Play(p) if p.trick_no >= 5) && picked.len() < 9 {
+                if matches!(&state.phase(), Phase::Play(p) if p.trick_no >= 5) && picked.len() < 9 {
                     picked.push(Mighty::view(state, Viewer::Seat(seat)));
                 }
             });
@@ -371,14 +353,14 @@ mod tests {
         let rules = Preset::Default.rules();
         let mut view = None;
         positions(&rules, 1, |state, seat| {
-            if view.is_none() && matches!(state.phase, Phase::Bidding(_)) {
+            if view.is_none() && matches!(state.phase(), Phase::Bidding(_)) {
                 view = Some(Mighty::view(state, Viewer::Seat(seat)));
             }
         });
         let view = view.unwrap();
         let dealer = Dealer::new(&view).unwrap();
-        let joker = slot(Card::Joker(crate::card::Color::Black));
-        if view.hand.contains(&Card::Joker(crate::card::Color::Black)) {
+        let joker = Card::Joker(mighty::card::Color::Black).slot();
+        if view.hand.contains(&Card::Joker(mighty::card::Color::Black)) {
             return;
         }
         let mut logits = vec![0.0; SLOTS * CLASSES];
@@ -400,13 +382,13 @@ mod tests {
             samples: 12,
             threads: 3,
             budget: None,
-            sampler: Sampler::Belief(model),
+            sampler: Sampler::Belief(model.clone()),
             ..SearchBot::default()
         };
         let mut asked = 0;
         positions(&Preset::Gshs.rules(), 1, |state, seat| {
             let view = Mighty::view(state, Viewer::Seat(seat));
-            let legal = state.legal_actions();
+            let legal = Mighty::legal_actions(state);
             let before = model.calls.load(Ordering::Relaxed);
             let action = bot.act(&view, &legal, &mut ChaCha8Rng::seed_from_u64(3));
             assert!(legal.contains(&action));
@@ -420,8 +402,8 @@ mod tests {
     #[test]
     fn samplers_compare_by_model() {
         let (a, b) = (fixed(Vec::new()), fixed(Vec::new()));
-        assert_eq!(Sampler::Belief(a), Sampler::Belief(a));
-        assert_ne!(Sampler::Belief(a), Sampler::Belief(b));
+        assert_eq!(Sampler::Belief(a.clone()), Sampler::Belief(a.clone()));
+        assert_ne!(Sampler::Belief(a.clone()), Sampler::Belief(b));
         assert_eq!(Sampler::default(), Sampler::Uniform);
         assert_ne!(Sampler::Uniform, Sampler::Belief(a));
     }

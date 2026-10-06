@@ -1,5 +1,5 @@
 {
-  "version": "mighty-3",
+  "version": "mighty-4",
   "global": [
     "rules.players=1",
     "rules.players=2",
@@ -19,9 +19,10 @@
     "rules.misdeal.joker_value",
     "rules.misdeal.threshold",
     "rules.misdeal.all_points",
-    "rules.misdeal.after_bidding",
+    "rules.misdeal.window=own_turn_until_bid",
+    "rules.misdeal.window=all_bidding",
+    "rules.misdeal.window=before_first_bid",
     "rules.misdeal.declarer",
-    "rules.misdeal.ask_first",
     "rules.misdeal.caller_deals",
     "rules.bidding.min",
     "rules.bidding.max",

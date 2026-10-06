@@ -1,29 +1,26 @@
 [package]
 name = "sim"
-description = "Plays many games with bots and checks engine invariants after every step"
+description = "Bots by name, and a simulator that plays many games with them and checks engine invariants after every step"
 default-run = "sim"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-[features]
-# `belief:` bot specs, which run belief models (ONNX, through crates/infer).
-# Off by default, so what depends on sim (the environment and its Python
-# bindings) builds without an inference runtime; eval turns it on.
-belief = ["dep:infer"]
-# `dmc:` bot specs, which play by a Q network (ONNX, through crates/infer).
-dmc = ["dep:infer"]
-
 [dependencies]
 clap.workspace = true
 engine.workspace = true
-infer = { workspace = true, optional = true }
+harness.workspace = true
+infer.workspace = true
 mighty.workspace = true
+mighty-ai.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+mighty = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

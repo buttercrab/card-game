@@ -119,9 +119,9 @@ fn why(rules: &Rules, hand: &[Card], t: TrickState, card: Card) -> Option<Refusa
 mod tests {
     use crate::Mighty;
     use crate::rules::{Preset, Rules};
-    use engine::{Game, Turn};
+    use crate::testing;
+    use engine::Game;
     use rand::SeedableRng;
-    use rand::seq::IndexedRandom;
 
     /// Over many random hands under every preset and drawn rules, every
     /// card the game does not offer gets a reason, and no card it offers
@@ -131,7 +131,7 @@ mod tests {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(11);
         let mut rule_sets: Vec<Rules> = Preset::ALL.iter().map(|p| p.rules()).collect();
         for _ in 0..30 {
-            rule_sets.push(Rules::default().varied(&mut rng));
+            rule_sets.push(Rules::web_mighty().varied(&mut rng));
         }
         let mut explained = 0;
         let mut kinds = std::collections::HashSet::new();
@@ -141,39 +141,25 @@ mod tests {
                     rules: rules.clone(),
                     first_bidder,
                 };
-                let mut state = Mighty::new_game(&options).unwrap();
-                loop {
-                    let action = match Mighty::turn(&state) {
-                        Turn::Over => break,
-                        Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                        Turn::Seat(seat) => {
-                            let legal = Mighty::legal_actions(&state);
-                            let hand = state.hands[seat].clone();
-                            let refused = state.unplayable();
-                            if matches!(state.phase, crate::state::Phase::Play(_)) {
-                                let legal_cards: Vec<_> = legal
-                                    .iter()
-                                    .filter_map(|a| match a {
-                                        crate::Action::Play { card, .. } => Some(*card),
-                                        _ => None,
-                                    })
-                                    .collect();
-                                let unplayable: Vec<_> = hand.iter().filter(|c| !legal_cards.contains(c)).collect();
-                                assert_eq!(
-                                    refused.iter().map(|(c, _)| c).collect::<Vec<_>>(),
-                                    unplayable,
-                                    "{rules:?}"
-                                );
-                                explained += refused.len();
-                                kinds.extend(refused.iter().map(|(_, why)| std::mem::discriminant(why)));
-                            } else {
-                                assert!(refused.is_empty());
-                            }
-                            legal.choose(&mut rng).unwrap().clone()
-                        }
-                    };
-                    Mighty::apply(&mut state, action).unwrap();
-                }
+                testing::play_hand(&options, &mut rng, &mut testing::random, &mut |state, seat| {
+                    let legal = Mighty::legal_actions(state);
+                    let hand = &state.hands()[seat];
+                    let refused = state.unplayable();
+                    if matches!(state.phase(), crate::state::Phase::Play(_)) {
+                        let legal_cards: Vec<_> = legal.iter().filter_map(crate::Action::played_card).collect();
+                        let unplayable: Vec<_> = hand.iter().filter(|c| !legal_cards.contains(c)).collect();
+                        assert_eq!(
+                            refused.iter().map(|(c, _)| c).collect::<Vec<_>>(),
+                            unplayable,
+                            "{rules:?}"
+                        );
+                        explained += refused.len();
+                        kinds.extend(refused.iter().map(|(_, why)| std::mem::discriminant(why)));
+                    } else {
+                        assert!(refused.is_empty());
+                    }
+                    true
+                });
             }
         }
         assert!(explained > 1000, "{explained}");

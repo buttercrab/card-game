@@ -14,14 +14,16 @@
 //! decision in a deal later thrown in (a misdeal, or everyone passing) is
 //! marked, since its payoff then comes from other cards.
 
-use crate::lab::{Actor, Phase, TAG_BID, TAG_EXCHANGE, TAG_LAB, TAG_PLAY, Table, advance, options, stream};
+use crate::error::{LabError, Result};
+use crate::record::{new_hand, options, outcome};
+use crate::stream::{LabUse, Stream, lab, streams};
+use crate::table::{Actor, Phase, Table, advance};
 use engine::{ActionValues, Encode, Game, Seat, Viewer};
-use mighty::bot::SimpleBot;
 use mighty::rules::Rules;
-use mighty::search::{SearchBot, playout};
 use mighty::{Action, Mighty, PhaseView, State};
+use mighty_ai::SimpleBot;
+use mighty_ai::{SearchBot, play_out};
 
-use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
 /// One bidding decision.
@@ -69,7 +71,7 @@ pub struct SignalRow {
 /// The settings of [`bid_signal`].
 #[derive(Clone, Copy)]
 pub struct SignalSetup<'a> {
-    pub bot: Actor,
+    pub bot: &'a Actor,
     pub net: Option<&'a dyn ActionValues>,
     /// Deals per search value; 0 runs no search.
     pub worlds: usize,
@@ -79,40 +81,33 @@ pub struct SignalSetup<'a> {
 
 /// Plays hand `deal` with `setup.bot` in every seat and returns its
 /// bidding decisions.
-pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow> {
+pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Result<Vec<SignalRow>> {
     let seats = rules.players;
     let opts = options(rules, deal);
-    let mut state = Mighty::new_game(&opts).expect("valid rules");
+    let mut state = new_hand(rules, deal)?;
     let mut log = Vec::new();
     let mut taken: Vec<(State, Seat, Action, usize)> = Vec::new();
     let table = Table {
         all: setup.bot,
         focus: None,
     };
-    for (phase, tag) in [
-        (Phase::Bidding, TAG_BID),
-        (Phase::Exchange, TAG_EXCHANGE),
-        (Phase::Play, TAG_PLAY),
+    for (phase, part) in [
+        (Phase::Bidding, Stream::Bid),
+        (Phase::Exchange, Stream::Exchange),
+        (Phase::Play, Stream::Play),
     ] {
-        let mut rngs: Vec<ChaCha8Rng> = (0..=seats).map(|s| stream(deal, tag, s)).collect();
-        advance(&mut state, &table, &mut rngs, &mut log, phase, &mut |d| {
+        let mut rngs = streams(deal, part, seats);
+        advance(deal, &mut state, &table, &mut rngs, &mut log, phase, &mut |d| {
             if matches!(
                 Mighty::view(d.state, Viewer::Spectator).phase,
                 PhaseView::Bidding { .. }
             ) {
                 taken.push((d.state.clone(), d.seat, d.action.clone(), d.index));
             }
-        });
+        })?;
     }
-    let PhaseView::Done {
-        declarer,
-        friend,
-        payoffs,
-        ..
-    } = Mighty::view(&state, Viewer::Spectator).phase
-    else {
-        panic!("hand not over");
-    };
+    let done = outcome(deal, &state)?;
+    let (declarer, friend, payoffs) = (done.declarer, done.friend, done.payoffs);
     // Where each deal starts in the log: a decision's deal is the last
     // one before it.
     let dealt: Vec<usize> = (0..log.len())
@@ -123,7 +118,7 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow
     taken
         .into_iter()
         .enumerate()
-        .map(|(i, (before, seat, action, at))| {
+        .map(|(i, (before, seat, action, at))| -> Result<SignalRow> {
             let deal_no = dealt.iter().filter(|&&d| d < at).count().saturating_sub(1);
             let view = Mighty::view(&before, Viewer::Seat(seat));
             let legal = Mighty::legal_actions(&before);
@@ -175,7 +170,10 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow
             };
             if let Some(net) = setup.net {
                 let obs = Mighty::encode(&view, &legal);
-                let values = net.action_values(&[&obs]).expect("the network runs");
+                let values = net.action_values(&[&obs]).map_err(|e| LabError::Hand {
+                    deal,
+                    what: format!("the network failed: {e}"),
+                })?;
                 let value = |a: &Action| {
                     let index = Mighty::action_index(&view, a)?;
                     values[0].iter().find(|(j, _)| *j == index).map(|(_, v)| *v)
@@ -191,9 +189,9 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow
             }
             let searched = setup.worlds > 0 && (deal as usize + i).is_multiple_of(setup.search_every.max(1));
             if searched && legal.len() > 1 {
-                let mut rng = stream(deal, TAG_LAB, 1000 + i);
+                let mut rng = lab(deal, LabUse::Signal(i));
                 let worlds = SearchBot::default().worlds(&view, setup.worlds, &mut rng);
-                let value = |a: &Action, rng: &mut ChaCha8Rng| -> Option<f64> {
+                let value = |a: &Action| -> Option<f64> {
                     if !legal.contains(a) || worlds.is_empty() {
                         return None;
                     }
@@ -201,15 +199,15 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Vec<SignalRow
                     for (world, weight) in &worlds {
                         let mut s = world.clone();
                         Mighty::apply(&mut s, a.clone()).ok()?;
-                        total += weight * playout(simple, s, seat, rng) as f64;
+                        total += weight * play_out(simple, 0, s, seat) as f64;
                     }
                     Some(total)
                 };
-                row.s_chosen = value(&action, &mut rng);
-                row.s_pass = value(&Action::Pass, &mut rng);
-                row.s_simple_bid = cheapest.and_then(|c| value(&Action::Bid(c), &mut rng));
+                row.s_chosen = value(&action);
+                row.s_pass = value(&Action::Pass);
+                row.s_simple_bid = cheapest.and_then(|c| value(&Action::Bid(c)));
             }
-            row
+            Ok(row)
         })
         .collect()
 }

@@ -1,10 +1,12 @@
 //! House rules. Every regional variant is a [`Rules`] value; [`Preset`]
 //! holds the ones ported from web-mighty.
 
-use crate::card::{ACE, Card, DeckKind, Suit};
+use crate::card::{ACE, Card, CardSet, DeckKind, Suit};
 use crate::state::HandSummary;
+use crate::trick::{Lead, TrickContext};
 use engine::Seat;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -59,35 +61,89 @@ fn yes() -> bool {
     true
 }
 
+/// The most players any rule set seats ([`Rules::validate`]).
+pub const MAX_PLAYERS: usize = 8;
+
 /// A player may ask for a redeal when their hand is weak.
 /// Each card is worth `point_value` if it is a point card, `joker_value` if it
 /// is a joker, or its entry in `card_values` if listed. A hand totalling at
 /// most `threshold` qualifies.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, TS)]
 pub struct Misdeal {
     pub point_value: i8,
     pub joker_value: i8,
     pub card_values: Vec<(Card, i8)>,
     pub threshold: i8,
     /// A hand of nothing but point cards qualifies too (서울과고, 신촌).
-    #[serde(default)]
     pub all_points: bool,
-    /// A player who has already bid may still ask, on their turn to bid.
-    #[serde(default)]
-    pub after_bidding: bool,
+    /// When a player whose hand qualifies may ask, during the bidding.
+    pub window: MisdealWindow,
     /// The declarer may ask after taking the kitty and before discarding,
     /// judged on every card they then hold.
-    #[serde(default)]
     pub declarer: bool,
-    /// Misdeals come before any bid: anyone whose hand qualifies may call
-    /// one from the moment the cards land until the first bid, on their
-    /// turn or not, and nobody later. The server holds the first bid back
-    /// a moment after the deal so a fast bid cannot beat a misdeal.
-    #[serde(default)]
-    pub ask_first: bool,
     /// Whoever calls a misdeal opens the bidding of the new deal.
-    #[serde(default)]
     pub caller_deals: bool,
+}
+
+/// When, during the bidding, a player whose hand qualifies may call a
+/// misdeal: always from the moment the cards land, on their turn or not,
+/// and never once they have passed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+pub enum MisdealWindow {
+    /// Until the player's own first bid.
+    #[default]
+    OwnTurnUntilBid,
+    /// All through the bidding, even after bidding.
+    AllBidding,
+    /// Misdeals come before any bid: until the first bid anyone makes, and
+    /// nobody later. The server holds the first bid back a moment after the
+    /// deal so a fast bid cannot beat a misdeal.
+    BeforeFirstBid,
+}
+
+/// [`Misdeal`] as saved: rules saved before [`MisdealWindow`] said when by
+/// two flags, `ask_first` (before the first bid, which won over the other)
+/// and `after_bidding` (all through the bidding). Presets, sets saved in
+/// browsers and research datasets still hold them.
+#[derive(Deserialize)]
+struct SavedMisdeal {
+    point_value: i8,
+    joker_value: i8,
+    card_values: Vec<(Card, i8)>,
+    threshold: i8,
+    #[serde(default)]
+    all_points: bool,
+    #[serde(default)]
+    window: Option<MisdealWindow>,
+    #[serde(default)]
+    after_bidding: bool,
+    #[serde(default)]
+    ask_first: bool,
+    #[serde(default)]
+    declarer: bool,
+    #[serde(default)]
+    caller_deals: bool,
+}
+
+impl<'de> Deserialize<'de> for Misdeal {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Misdeal, D::Error> {
+        let saved = SavedMisdeal::deserialize(deserializer)?;
+        let window = saved.window.unwrap_or(match (saved.ask_first, saved.after_bidding) {
+            (true, _) => MisdealWindow::BeforeFirstBid,
+            (false, true) => MisdealWindow::AllBidding,
+            (false, false) => MisdealWindow::OwnTurnUntilBid,
+        });
+        Ok(Misdeal {
+            point_value: saved.point_value,
+            joker_value: saved.joker_value,
+            card_values: saved.card_values,
+            threshold: saved.threshold,
+            all_points: saved.all_points,
+            window,
+            declarer: saved.declarer,
+            caller_deals: saved.caller_deals,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -317,8 +373,10 @@ pub struct Contract {
     pub count: u8,
 }
 
-impl Default for Rules {
-    fn default() -> Rules {
+impl Rules {
+    /// web-mighty's rules, which the school presets are written as changes
+    /// to ([`Preset::rules`]); kept as they were.
+    pub fn web_mighty() -> Rules {
         Rules {
             players: 5,
             hand_size: 10,
@@ -331,9 +389,8 @@ impl Default for Rules {
                 card_values: Vec::new(),
                 threshold: 0,
                 all_points: false,
-                after_bidding: false,
+                window: MisdealWindow::OwnTurnUntilBid,
                 declarer: false,
-                ask_first: false,
                 caller_deals: false,
             },
             bidding: Bidding {
@@ -403,6 +460,10 @@ pub enum InvalidRules {
     PaysBackTooMuch,
     #[error("invalid rules: no way to choose a friend")]
     NoFriendRule,
+    #[error("invalid rules: a fake friend needs a friend called by card")]
+    FakeWithoutCard,
+    #[error("invalid rules: every hand would be a misdeal")]
+    AlwaysMisdeal,
 }
 
 impl Rules {
@@ -435,6 +496,19 @@ impl Rules {
             .collect();
         cards.sort();
         cards
+    }
+
+    /// [`Rules::cards`] as a set, built without listing them: the search's
+    /// playouts ask for it every play.
+    pub fn card_set(&self) -> CardSet {
+        // Each suit's ranks from `lowest_rank` to the ace, then the low
+        // cards dealt anyway and the jokers.
+        let low = u32::from(self.lowest_rank.max(2) - 2);
+        let ranks = 0x1fff & u64::MAX.checked_shl(low).unwrap_or(0);
+        let suits = CardSet::from_bits((0..4).fold(0, |m, suit| m | (ranks << (suit * 13))));
+        let extra: CardSet = self.extra_cards.iter().filter(|c| !c.is_joker()).collect();
+        let jokers: CardSet = self.deck.jokers().iter().collect();
+        suits | extra | jokers
     }
 
     /// The usual rules for `players` at the table, from these five-player
@@ -485,21 +559,39 @@ impl Rules {
     /// card-policy and scoring variants. `sim --vary` plays one draw per
     /// game; tests and model training use it to reach rule combinations no
     /// preset has.
+    ///
+    /// Each option is drawn from its own stream, named after it, of one
+    /// seed taken from `rng`: adding, removing or reordering an option
+    /// leaves every other option's draws as they were.
     pub fn varied<R: Rng + ?Sized>(&self, rng: &mut R) -> Rules {
-        let mut r = self.for_players(rng.random_range(3..=7)).expect("3 to 7 players");
-        r.misdeal.all_points = rng.random();
-        r.misdeal.after_bidding = rng.random();
-        r.misdeal.declarer = rng.random();
-        r.bidding.pass_is_final = rng.random();
-        r.misdeal.ask_first = rng.random();
-        r.misdeal.caller_deals = rng.random();
-        r.bidding.change_to_no_trump_cost = [None, Some(0), Some(1), Some(2)][rng.random_range(0..4)];
-        r.bidding.last_chance_min = rng.random::<bool>().then(|| r.bidding.min.saturating_sub(1).max(1));
-        r.bidding.raise_on_exchange = rng.random();
-        r.policy.release_with_mighty = rng.random();
-        r.joker_lead.not_first_trick = rng.random();
-        r.reveal_discards = rng.random();
-        let doubling = |rng: &mut R| [Doubling::Never, Doubling::Win, Doubling::Always][rng.random_range(0..3)];
+        let seed: u64 = rng.random();
+        let draw = |option: &str| {
+            let mut stream = ChaCha8Rng::seed_from_u64(seed);
+            stream.set_stream(fnv1a(option));
+            stream
+        };
+        let flag = |option: &str| draw(option).random::<bool>();
+        let pick = |option: &str, n: usize| draw(option).random_range(0..n);
+        let mut r = self
+            .for_players(draw("players").random_range(3..=7))
+            .expect("3 to 7 players");
+        r.misdeal.all_points = flag("misdeal.all_points");
+        r.misdeal.window = [
+            MisdealWindow::OwnTurnUntilBid,
+            MisdealWindow::AllBidding,
+            MisdealWindow::BeforeFirstBid,
+        ][pick("misdeal.window", 3)];
+        r.misdeal.declarer = flag("misdeal.declarer");
+        r.misdeal.caller_deals = flag("misdeal.caller_deals");
+        r.bidding.pass_is_final = flag("bidding.pass_is_final");
+        r.bidding.change_to_no_trump_cost =
+            [None, Some(0), Some(1), Some(2)][pick("bidding.change_to_no_trump_cost", 4)];
+        r.bidding.last_chance_min = flag("bidding.last_chance_min").then(|| r.bidding.min.saturating_sub(1).max(1));
+        r.bidding.raise_on_exchange = flag("bidding.raise_on_exchange");
+        r.policy.release_with_mighty = flag("policy.release_with_mighty");
+        r.joker_lead.not_first_trick = flag("joker_lead.not_first_trick");
+        r.reveal_discards = flag("reveal_discards");
+        let doubling = |option: &str| [Doubling::Never, Doubling::Win, Doubling::Always][pick(option, 3)];
         r.scoring = Scoring {
             win: [
                 WinScore::OverTen,
@@ -507,23 +599,28 @@ impl Rules {
                 WinScore::OverBid,
                 WinScore::BidBonus,
                 WinScore::BothOver(13),
-            ][rng.random_range(0..5)],
-            no_trump: doubling(rng),
-            alone: doubling(rng),
-            run: rng.random(),
-            back_run: match rng.random_range(0..4) {
-                0 => BackRun::Never,
-                1 => BackRun::TeamAtMost(rng.random_range(8..=10)),
-                2 => BackRun::ShortBy(rng.random_range(3..=6)),
-                _ => BackRun::DefenceReachesBid,
+            ][pick("scoring.win", 5)],
+            lose: {
+                let mut d = draw("scoring.lose");
+                match d.random_range(0..2) {
+                    0 => LoseScore::Shortfall,
+                    _ => LoseScore::PaysBack(d.random_range(8..=10)),
+                }
             },
-            full_contract: doubling(rng),
-            discards_to_declarer: rng.random(),
-            // Drawn last, so the draws above stay as they were before it.
-            lose: match rng.random_range(0..2) {
-                0 => LoseScore::Shortfall,
-                _ => LoseScore::PaysBack(rng.random_range(8..=10)),
+            no_trump: doubling("scoring.no_trump"),
+            alone: doubling("scoring.alone"),
+            run: flag("scoring.run"),
+            back_run: {
+                let mut d = draw("scoring.back_run");
+                match d.random_range(0..4) {
+                    0 => BackRun::Never,
+                    1 => BackRun::TeamAtMost(d.random_range(8..=10)),
+                    2 => BackRun::ShortBy(d.random_range(3..=6)),
+                    _ => BackRun::DefenceReachesBid,
+                }
             },
+            full_contract: doubling("scoring.full_contract"),
+            discards_to_declarer: flag("scoring.discards_to_declarer"),
         };
         r.validate().expect("varied rules are valid");
         r
@@ -545,7 +642,7 @@ impl Rules {
         }
         let cards = self.cards();
         let deck = cards.len();
-        if !(2..=8).contains(&self.players) || self.hand_size == 0 {
+        if !(2..=MAX_PLAYERS).contains(&self.players) || self.hand_size == 0 {
             return Err(InvalidRules::TableSize);
         }
         if self.players * self.hand_size > deck {
@@ -573,17 +670,53 @@ impl Rules {
         if !(f.by_card || f.by_seat || f.first_trick || f.last_trick || f.alone) {
             return Err(InvalidRules::NoFriendRule);
         }
+        if f.fake && !f.by_card {
+            return Err(InvalidRules::FakeWithoutCard);
+        }
+        if !self.some_hand_plays(&cards) {
+            return Err(InvalidRules::AlwaysMisdeal);
+        }
         Ok(())
+    }
+
+    /// Whether some hand of `cards` (the deck) is no misdeal: its total
+    /// clears the threshold and, where a hand of nothing but point cards
+    /// qualifies, it holds another card.
+    fn some_hand_plays(&self, cards: &[Card]) -> bool {
+        let mut values: Vec<(i32, Card)> = cards.iter().map(|&c| (i32::from(self.misdeal_value(c)), c)).collect();
+        values.sort_by_key(|&(v, _)| std::cmp::Reverse(v));
+        let best: Vec<(i32, Card)> = values.iter().copied().take(self.hand_size).collect();
+        let mut total: i32 = best.iter().map(|&(v, _)| v).sum();
+        if self.misdeal.all_points && best.iter().all(|(_, c)| c.is_point()) {
+            // The best hand holding a card that is not a point: the best
+            // such card in place of the least of these.
+            let Some(&(other, _)) = values.iter().find(|(_, c)| !c.is_point()) else {
+                return false;
+            };
+            total += other - best.last().map_or(0, |&(v, _)| v);
+        }
+        total > i32::from(self.misdeal.threshold)
     }
 
     /// The lowest number a contract can have: the minimum bid, or the
     /// dealer's last chance below it, less the no-trump bonus where
     /// no-trump may be bid. Changing trump never goes lower.
-    pub fn lowest_contract(&self) -> u8 {
+    pub(crate) fn lowest_contract(&self) -> u8 {
         let b = &self.bidding;
         let min = b.last_chance_min.map_or(b.min, |m| m.min(b.min));
         let bonus = if b.allow_no_trump { b.no_trump_bonus } else { 0 };
         min.saturating_sub(bonus)
+    }
+
+    /// What settles a trick that follows `lead` under `trump`.
+    pub fn trick_context(&self, trump: Option<Suit>, lead: Lead) -> TrickContext {
+        TrickContext {
+            trump,
+            mighty: self.mighty(trump),
+            deck: self.deck,
+            lead,
+            powerless_joker_passes: self.joker_lead.powerless_passes,
+        }
     }
 
     pub fn mighty(&self, trump: Option<Suit>) -> Card {
@@ -602,7 +735,7 @@ impl Rules {
     }
 
     /// What `card` adds to a hand's total for [`Rules::is_misdeal`].
-    pub fn misdeal_value(&self, card: Card) -> i8 {
+    pub(crate) fn misdeal_value(&self, card: Card) -> i8 {
         let m = &self.misdeal;
         if let Some((_, v)) = m.card_values.iter().find(|(c, _)| *c == card) {
             *v
@@ -616,7 +749,7 @@ impl Rules {
     }
 
     /// The contract after changing trump to `trump` once the kitty is seen.
-    pub fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
+    pub(crate) fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
         if trump.is_none()
             && let Some(cost) = self.bidding.change_to_no_trump_cost
         {
@@ -647,7 +780,7 @@ impl Rules {
     }
 
     /// Orders bids: a later bid must rank strictly higher.
-    pub fn bid_rank(&self, contract: Contract) -> (u8, bool) {
+    pub(crate) fn bid_rank(&self, contract: Contract) -> (u8, bool) {
         let tie_break = contract.trump.is_none() && self.bidding.no_trump_wins_ties;
         (self.bid_value(contract), tie_break)
     }
@@ -680,7 +813,7 @@ impl Rules {
         self.on_trick(category, trick)
     }
 
-    pub fn on_trick(&self, policy: TrickPolicy, trick: usize) -> CardPolicy {
+    pub(crate) fn on_trick(&self, policy: TrickPolicy, trick: usize) -> CardPolicy {
         if trick == 0 {
             policy.first
         } else if trick + 1 == self.hand_size {
@@ -700,9 +833,16 @@ impl Rules {
     }
 }
 
+/// FNV-1a, 64 bits: names [`Rules::varied`]'s streams.
+fn fnv1a(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
 /// 기본, the owner's written base rules, and the school rules collected in
 /// web-mighty, named after the groups that play them. The school presets
-/// are written as changes to [`Rules::default`] (web-mighty's base), which
+/// are written as changes to [`Rules::web_mighty`] (web-mighty's base), which
 /// therefore stays as it was, and all score a failed contract by
 /// [`LoseScore::PaysBack`]; `tests/presets.json` pins every preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
@@ -780,7 +920,7 @@ impl Preset {
 
     pub fn rules(self) -> Rules {
         use CardPolicy::*;
-        let mut r = Rules::default();
+        let mut r = Rules::web_mighty();
         // Every school: a failed contract pays back what it would have won
         // made exactly, and the shortfall on top, so a bid is not a free
         // shot (owner, 2026-10-05). 기본 sets its own scoring below.
@@ -892,7 +1032,7 @@ impl Preset {
                         .chain([(Card::new(Suit::Spade, ACE), 0)])
                         .collect(),
                     threshold: 1,
-                    ask_first: true,
+                    window: MisdealWindow::BeforeFirstBid,
                     caller_deals: true,
                     ..r.misdeal
                 };
@@ -996,7 +1136,7 @@ mod tests {
                 assert_eq!(r.deck_size(), r.cards().len(), "{preset} for {players}");
             }
         }
-        let mut r = Rules::default().for_players(4).unwrap();
+        let mut r = Rules::web_mighty().for_players(4).unwrap();
         r.extra_cards.extend([
             Card::new(Suit::Club, 3),
             Card::new(Suit::Heart, 9),
@@ -1005,9 +1145,31 @@ mod tests {
         assert_eq!(r.deck_size(), r.cards().len());
     }
 
+    /// The card set is the cards the rules deal, not every card of the
+    /// deck kind: 3마 starts at 7, 4마 at 5 plus the joker-call threes.
+    #[test]
+    fn the_card_set_is_the_cards_dealt() {
+        let odd = Rules {
+            lowest_rank: 10,
+            extra_cards: vec![Card::new(Suit::Heart, 9), Card::new(Suit::Club, 3)],
+            ..Rules::web_mighty()
+        };
+        let mut all = vec![odd];
+        for deck in [DeckKind::OneJoker, DeckKind::TwoJokers] {
+            let five = Rules {
+                deck,
+                ..Rules::web_mighty()
+            };
+            all.extend((3..=7).filter_map(|n| five.for_players(n)));
+        }
+        for rules in all {
+            assert_eq!(rules.card_set().iter().collect::<Vec<_>>(), rules.cards(), "{rules:?}");
+        }
+    }
+
     #[test]
     fn mighty_moves_when_spades_are_trump() {
-        let r = Rules::default();
+        let r = Rules::web_mighty();
         assert_eq!(r.mighty(Some(Suit::Spade)), Card::new(Suit::Diamond, ACE));
         assert_eq!(r.mighty(None), Card::new(Suit::Spade, ACE));
     }
@@ -1046,7 +1208,7 @@ mod tests {
 
     #[test]
     fn other_player_counts() {
-        let five = Rules::default();
+        let five = Rules::web_mighty();
         let sizes = |r: &Rules| (r.cards().len(), r.hand_size, r.kitty_size());
         let three = five.for_players(3).unwrap();
         // 7 to A and the joker: 33 cards, 10 each and 3 in the kitty.
@@ -1080,13 +1242,13 @@ mod tests {
     fn impossible_decks_are_rejected() {
         let r = Rules {
             lowest_rank: 11,
-            ..Rules::default()
+            ..Rules::web_mighty()
         };
         assert!(r.validate().is_err(), "the tens must stay");
-        let mut r = Rules::default().for_players(4).unwrap();
+        let mut r = Rules::web_mighty().for_players(4).unwrap();
         r.extra_cards.push(Card::new(Suit::Heart, 9));
         assert!(r.validate().is_err(), "a nine is already dealt");
-        let mut r = Rules::default().for_players(3).unwrap();
+        let mut r = Rules::web_mighty().for_players(3).unwrap();
         r.joker_call.calls = vec![(Card::new(Suit::Club, 3), Card::new(Suit::Spade, 3))];
         assert!(r.validate().is_err(), "♣3 is not in a 3마 deck");
     }
@@ -1130,7 +1292,7 @@ mod tests {
         for key in ["lowest_rank", "extra_cards", "scoring"] {
             object.remove(key);
         }
-        for key in ["all_points", "after_bidding", "declarer"] {
+        for key in ["all_points", "window", "declarer"] {
             object["misdeal"].as_object_mut().unwrap().remove(key);
         }
         for key in ["change_to_no_trump_cost", "pass_is_final"] {
@@ -1148,6 +1310,75 @@ mod tests {
         json["scoring"].as_object_mut().unwrap().remove("lose");
         let loaded: Rules = serde_json::from_value(json).unwrap();
         assert_eq!(loaded.scoring.lose, LoseScore::Shortfall);
+    }
+
+    /// Rules saved with the two flags that said when a misdeal may be
+    /// called read them as the window they meant; `ask_first` won.
+    #[test]
+    fn rules_saved_with_misdeal_flags_read_as_a_window() {
+        for (ask_first, after_bidding, window) in [
+            (false, false, MisdealWindow::OwnTurnUntilBid),
+            (false, true, MisdealWindow::AllBidding),
+            (true, false, MisdealWindow::BeforeFirstBid),
+            (true, true, MisdealWindow::BeforeFirstBid),
+        ] {
+            let mut json = serde_json::to_value(Preset::Gshs.rules()).unwrap();
+            let misdeal = json["misdeal"].as_object_mut().unwrap();
+            misdeal.remove("window");
+            misdeal.insert("ask_first".into(), ask_first.into());
+            misdeal.insert("after_bidding".into(), after_bidding.into());
+            let loaded: Rules = serde_json::from_value(json).unwrap();
+            assert_eq!(loaded.misdeal.window, window, "{ask_first} {after_bidding}");
+        }
+        // Saved now, the window is written out and read back.
+        let rules = Preset::Default.rules();
+        let json = serde_json::to_value(&rules).unwrap();
+        assert_eq!(json["misdeal"]["window"], "BeforeFirstBid");
+        assert_eq!(serde_json::from_value::<Rules>(json).unwrap(), rules);
+    }
+
+    #[test]
+    fn meaningless_rules_are_refused() {
+        let mut r = Rules::web_mighty();
+        r.friend.by_card = false;
+        assert_eq!(r.validate(), Err(InvalidRules::FakeWithoutCard));
+        r.friend.fake = false;
+        assert_eq!(r.validate(), Ok(()));
+        // 기본 counts in halves: ten of the fifteen J to A (♠A aside) make
+        // 10, in halves 20, the most a hand can hold; a threshold of that
+        // or more leaves no hand to play.
+        let mut r = Preset::Default.rules();
+        r.misdeal.threshold = 19;
+        assert_eq!(r.validate(), Ok(()));
+        r.misdeal.threshold = 20;
+        assert_eq!(r.validate(), Err(InvalidRules::AlwaysMisdeal));
+        // Point cards alone qualify too, so the best hand that plays holds
+        // nine points and another card.
+        let mut r = Rules::web_mighty();
+        r.misdeal.all_points = true;
+        r.misdeal.threshold = 8;
+        assert_eq!(r.validate(), Ok(()));
+        r.misdeal.threshold = 9;
+        assert_eq!(r.validate(), Err(InvalidRules::AlwaysMisdeal));
+    }
+
+    /// Each option has its own stream: the same seed draws the same value
+    /// of an option whatever else is drawn.
+    #[test]
+    fn varied_options_draw_from_their_own_streams() {
+        use rand::SeedableRng;
+        let draw = |seed| Rules::web_mighty().varied(&mut rand_chacha::ChaCha8Rng::seed_from_u64(seed));
+        let draws: Vec<Rules> = (0..200).map(draw).collect();
+        assert_eq!(draws[7], draw(7));
+        // Options vary independently: every window and table size comes up.
+        for window in [
+            MisdealWindow::OwnTurnUntilBid,
+            MisdealWindow::AllBidding,
+            MisdealWindow::BeforeFirstBid,
+        ] {
+            assert!(draws.iter().any(|r| r.misdeal.window == window), "{window:?}");
+        }
+        assert!((3..=7).all(|n| draws.iter().any(|r| r.players == n)));
     }
 
     #[test]

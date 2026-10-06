@@ -2,13 +2,11 @@
 //! view, that every legal action has its own index, and that belief
 //! targets say where hidden cards really are.
 
-mod common;
-
-use common::{check_golden, pinned_games, write_golden};
 use engine::{Encode, Game, Observation, Spec, Turn, Viewer};
 use mighty::card::{ACE, Card, Color, Suit};
-use mighty::encode::{ACTIONS, BURIED, MAX_EVENTS, MAX_SEATS, SLOTS, slot};
+use mighty::encode::{ACTIONS, BURIED, MAX_EVENTS, MAX_SEATS, SLOTS};
 use mighty::rules::{Preset, Rules};
+use mighty::testing::Pinned;
 use mighty::{Action, Mighty, Options, State};
 use rand::seq::IndexedRandom;
 use rand::{Rng, SeedableRng};
@@ -63,7 +61,7 @@ fn encode(state: &State, seat: usize) -> Observation {
 }
 
 fn spec() -> Spec {
-    Mighty::spec(&options(Rules::default(), 0)).unwrap()
+    Mighty::spec(&options(Rules::web_mighty(), 0)).unwrap()
 }
 
 /// One card's value of a named card feature.
@@ -73,7 +71,7 @@ fn card_feature(spec: &Spec, obs: &Observation, card: Card, name: &str) -> f32 {
         .iter()
         .position(|n| n == name)
         .unwrap_or_else(|| panic!("no {name}"));
-    obs.cards[slot(card) * spec.card_features.len() + column]
+    obs.cards[card.slot() * spec.card_features.len() + column]
 }
 
 fn global_feature(spec: &Spec, obs: &Observation, name: &str) -> f32 {
@@ -105,12 +103,12 @@ fn one_spec_fits_every_rule_set() {
 
 #[test]
 fn rules_beyond_the_action_space_are_refused() {
-    let mut rules = Rules::default();
+    let mut rules = Rules::web_mighty();
     rules.bidding.max = 31;
     assert!(Mighty::spec(&options(rules, 0)).is_err());
     let rules = Rules {
         hand_size: 0,
-        ..Rules::default()
+        ..Rules::web_mighty()
     };
     assert!(Mighty::spec(&options(rules, 0)).is_err(), "invalid rules");
 }
@@ -200,8 +198,13 @@ impl Fingerprint {
 /// games' rules are frozen (`tests/pinned/encode-games.json`), so only a
 /// change to the encoding moves this, and then `VERSION` changes too.
 /// Faster encoders must reproduce it exactly.
+fn pinned() -> Pinned {
+    Pinned::of("mighty", env!("CARGO_MANIFEST_DIR"))
+}
+
 fn pinned_encodings() -> Vec<String> {
-    pinned_games("encode-games.json")
+    pinned()
+        .games("encode-games.json")
         .iter()
         .enumerate()
         .map(|(game, pinned)| {
@@ -224,13 +227,13 @@ fn pinned_encodings() -> Vec<String> {
 
 #[test]
 fn encodings_are_pinned() {
-    check_golden("encodings.jsonl", &pinned_encodings(), "encode");
+    pinned().check("encodings.jsonl", &pinned_encodings(), "encode");
 }
 
 #[test]
 #[ignore]
 fn write_pinned_encodings() {
-    write_golden("encodings.jsonl", &pinned_encodings());
+    pinned().write("encodings.jsonl", &pinned_encodings());
 }
 
 /// Each legal action of every position of many random games has its own
@@ -322,7 +325,7 @@ fn belief_targets_say_where_hidden_cards_are() {
                 assert_eq!(targets.len(), SLOTS);
                 let mut held = [0; MAX_SEATS];
                 for (slot, &target) in targets.iter().enumerate() {
-                    let card = mighty::encode::card_at(slot);
+                    let card = Card::from_slot(slot);
                     let unseen = card_feature(&spec, &obs, card, "unseen") == 1.0;
                     assert_eq!(target >= 0, unseen && dealt, "{card} for seat {seat}");
                     if target == BURIED {
@@ -418,7 +421,7 @@ fn card_rows_carry_what_the_rules_make_of_a_card() {
 
 #[test]
 fn friend_calls_by_seat_are_relative() {
-    let rules = Rules::default();
+    let rules = Rules::web_mighty();
     let view = |seat| {
         let state = Mighty::new_game(&options(rules.clone(), 0)).unwrap();
         Mighty::view(&state, Viewer::Seat(seat))

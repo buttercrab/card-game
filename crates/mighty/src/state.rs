@@ -1,10 +1,12 @@
-use crate::card::{Card, Color, Suit};
-use crate::rules::{CardPolicy, Contract, InvalidRules, Rules, WinScore};
-use crate::trick::{self, Lead, Played, Trick, TrickContext};
-use engine::{Seat, Turn};
+use crate::card::{Card, CardSet, Color, Suit};
+use crate::rules::{CardPolicy, Contract, InvalidRules, MisdealWindow, Rules, WinScore};
+use crate::trick::{self, Lead, Played, Trick};
+use crate::view::{PhaseView, View};
+use engine::{Seat, Turn, Viewer};
 use rand::RngCore;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use ts_rs::TS;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -53,6 +55,16 @@ pub enum Action {
     },
 }
 
+impl Action {
+    /// The card a play puts down; `None` for any other action.
+    pub fn played_card(&self) -> Option<Card> {
+        match self {
+            Action::Play { card, .. } => Some(*card),
+            _ => None,
+        }
+    }
+}
+
 /// One turn of the bidding, as everyone at the table heard it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub struct Bid {
@@ -92,24 +104,28 @@ pub enum Error {
     BadDeal(&'static str),
 }
 
+/// A hand of Mighty under way. Only the game's own transitions
+/// ([`State::step`] and the constructors here) change it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct State {
-    pub(crate) rules: Rules,
-    pub(crate) first_bidder: Seat,
-    pub(crate) phase: Phase,
+    /// Shared with every view of the hand and every world a search deals.
+    rules: Arc<Rules>,
+    first_bidder: Seat,
+    phase: Phase,
     /// Kept sorted.
-    pub(crate) hands: Vec<Vec<Card>>,
-    pub(crate) kitty: Vec<Card>,
+    hands: Vec<Vec<Card>>,
+    kitty: Vec<Card>,
     /// Every card each seat won in tricks.
-    pub(crate) taken: Vec<Vec<Card>>,
+    taken: Vec<Vec<Card>>,
     /// Every bid and pass of this deal, in order.
-    pub(crate) bids: Vec<Bid>,
+    bids: Vec<Bid>,
     /// Why the cards were last dealt again, until the bidding ends.
-    pub(crate) redealt: Option<Redealt>,
+    redealt: Option<Redealt>,
 }
 
+/// Where a hand stands, with everything the game knows of it ([`State::phase`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Phase {
+pub enum Phase {
     Dealing,
     Bidding(Bidding),
     Exchange(Exchange),
@@ -117,27 +133,37 @@ pub(crate) enum Phase {
     Done(Done),
 }
 
+/// The bidding under way.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Bidding {
+pub struct Bidding {
     pub to_act: Seat,
     pub best: Option<(Seat, Contract)>,
     pub passed: Vec<bool>,
     pub has_bid: Vec<bool>,
 }
 
+/// What the bidding settled and the exchange added to: every phase after
+/// the bidding carries it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Exchange {
+pub struct Declared {
     pub declarer: Seat,
     pub contract: Contract,
+    /// The cards the declarer has put back; as many as the kitty held once
+    /// the exchange is over.
     pub discards: Vec<Card>,
+}
+
+/// The declarer taking the kitty, discarding and calling a friend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Exchange {
+    pub declared: Declared,
     pub trump_changed: bool,
 }
 
+/// The tricks under way.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Play {
-    pub declarer: Seat,
-    pub contract: Contract,
-    pub discards: Vec<Card>,
+pub struct Play {
+    pub declared: Declared,
     pub call: FriendCall,
     /// Set once the friend is publicly known.
     pub friend: Option<Seat>,
@@ -152,9 +178,10 @@ pub(crate) struct Play {
 }
 
 impl Play {
-    pub(crate) fn trick(&self) -> TrickState {
+    /// The trick under way, as the rules see it.
+    pub fn trick(&self) -> TrickState {
         TrickState {
-            trump: self.contract.trump,
+            trump: self.declared.contract.trump,
             trick_no: self.trick_no,
             lead: self.lead,
             called_joker: self.called_joker,
@@ -163,9 +190,10 @@ impl Play {
 }
 
 /// What the cards that may be played next depend on, besides the hand: the
-/// trick so far.
+/// trick so far. The game ([`State::step`]) and the endgame solver, which
+/// plays tricks out without a [`State`], move it on alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TrickState {
+pub struct TrickState {
     pub trump: Option<Suit>,
     pub trick_no: usize,
     /// What the trick follows; `None` before its first card.
@@ -174,11 +202,63 @@ pub(crate) struct TrickState {
     pub called_joker: Option<Card>,
 }
 
+impl TrickState {
+    /// The trick once `card` leads it: what it follows, and the joker it
+    /// calls when `call_joker` asks and a call is possible. `gone` tells
+    /// whether a joker was won in a finished trick.
+    pub fn led(
+        self,
+        rules: &Rules,
+        card: Card,
+        joker_lead: Option<Lead>,
+        call_joker: bool,
+        gone: impl Fn(Card) -> bool,
+    ) -> TrickState {
+        let mut t = self;
+        t.lead = if card.is_joker() {
+            joker_lead
+        } else {
+            card.suit().map(Lead::Suit)
+        };
+        t.called_joker = if call_joker {
+            callable_joker(rules, t, card, gone)
+        } else {
+            None
+        };
+        t
+    }
+
+    /// `card`, from `seat`, as it lies in this trick.
+    pub fn played(self, rules: &Rules, seat: Seat, card: Card) -> Played {
+        Played {
+            seat,
+            card,
+            powered: powered(rules, self, card),
+        }
+    }
+
+    /// The index into `plays`, this trick's cards so far, of the card
+    /// winning it; `None` before the first card.
+    pub fn winner(self, rules: &Rules, plays: &[Played]) -> Option<usize> {
+        let lead = self.lead.filter(|_| !plays.is_empty())?;
+        Some(trick::winner(&rules.trick_context(self.trump, lead), plays))
+    }
+
+    /// The next trick, before its first card.
+    pub fn next(self) -> TrickState {
+        TrickState {
+            trump: self.trump,
+            trick_no: self.trick_no + 1,
+            lead: None,
+            called_joker: None,
+        }
+    }
+}
+
+/// The hand over and scored.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Done {
-    pub declarer: Seat,
-    pub contract: Contract,
-    pub discards: Vec<Card>,
+pub struct Done {
+    pub declared: Declared,
     pub call: FriendCall,
     pub friend: Option<Seat>,
     pub team_points: u8,
@@ -205,8 +285,8 @@ pub struct HandSummary {
 
 impl State {
     pub(crate) fn new(options: &Options) -> Result<State, Error> {
-        let rules = options.rules.clone();
-        rules.validate()?;
+        options.rules.validate()?;
+        let rules = Arc::new(options.rules.clone());
         if options.first_bidder >= rules.players {
             return Err(Error::NoSuchSeat(options.first_bidder));
         }
@@ -223,15 +303,203 @@ impl State {
         })
     }
 
-    pub(crate) fn seats(&self) -> usize {
+    /// A world `view` cannot tell from the real one but for the cards it
+    /// has not seen: every other hand empty, nothing face down (fill them
+    /// with [`State::fill_hidden`]), and the cards won in tricks as they
+    /// were won. While bidding, exchanging and playing; `None` otherwise
+    /// and for spectators.
+    pub fn from_public(view: &View) -> Option<State> {
+        let Viewer::Seat(_) = view.viewer else { return None };
+        let seats = view.rules.players;
+        let mut taken = vec![Vec::new(); seats];
+        let phase = match &view.phase {
+            PhaseView::Bidding {
+                to_act,
+                best,
+                passed,
+                has_bid,
+            } => Phase::Bidding(Bidding {
+                to_act: *to_act,
+                best: *best,
+                passed: passed.clone(),
+                has_bid: has_bid.clone(),
+            }),
+            PhaseView::Play {
+                declarer,
+                contract,
+                call,
+                friend,
+                trick_no,
+                leader,
+                lead,
+                plays,
+                called_joker,
+                tricks,
+                discards,
+                // Derived from the plays; the rebuilt state works them out again.
+                leading: _,
+                no_friend: _,
+            } => {
+                for t in tricks {
+                    taken[t.winner].extend(t.plays.iter().map(|p| p.card));
+                }
+                Phase::Play(Play {
+                    declared: Declared {
+                        declarer: *declarer,
+                        contract: *contract,
+                        // Dealt face down when not seen.
+                        discards: discards.clone().unwrap_or_default(),
+                    },
+                    call: *call,
+                    friend: *friend,
+                    trick_no: *trick_no,
+                    leader: *leader,
+                    lead: *lead,
+                    plays: plays.clone(),
+                    called_joker: *called_joker,
+                    tricks: tricks.clone(),
+                })
+            }
+            PhaseView::Exchange {
+                declarer,
+                contract,
+                trump_changed,
+                discards,
+            } => Phase::Exchange(Exchange {
+                declared: Declared {
+                    declarer: *declarer,
+                    contract: *contract,
+                    discards: discards.clone().unwrap_or_default(),
+                },
+                trump_changed: *trump_changed,
+            }),
+            PhaseView::Dealing | PhaseView::Done { .. } => return None,
+        };
+        Some(State {
+            rules: view.rules.clone(),
+            first_bidder: view.first_bidder,
+            phase,
+            hands: Vec::new(),
+            kitty: Vec::new(),
+            taken,
+            bids: view.bids.clone(),
+            redealt: view.redealt.clone(),
+        })
+    }
+
+    /// Deals the cards a world from [`State::from_public`] lacks: `me`
+    /// holds `own`, every other seat its set in `hands`, and `down` lie face
+    /// down (the kitty while bidding; the discards in play, when unseen).
+    pub fn fill_hidden(&mut self, me: Seat, own: &[Card], hands: &[CardSet], down: Vec<Card>) {
+        let seats = self.seats();
+        self.hands.resize(seats, Vec::new());
+        for (seat, hand) in self.hands.iter_mut().enumerate() {
+            hand.clear();
+            if seat == me {
+                hand.extend(own);
+                hand.sort();
+            } else {
+                // In card order already.
+                hand.extend(hands[seat].iter());
+            }
+        }
+        match &mut self.phase {
+            Phase::Bidding(_) => self.kitty = down,
+            Phase::Play(p) if !down.is_empty() => p.declared.discards = down,
+            _ => {}
+        }
+    }
+
+    /// This hand, in play, wound back to the declarer's friend call: every
+    /// seat holding `hands` (as the play began), the discards made, nothing
+    /// won yet. Replaying the call and the cards since through
+    /// [`State::step`] brings it back to the trick under way.
+    pub fn before_call(&self, hands: Vec<Vec<Card>>) -> Option<State> {
+        let Phase::Play(p) = &self.phase else { return None };
+        Some(State {
+            rules: self.rules.clone(),
+            first_bidder: self.first_bidder,
+            phase: Phase::Exchange(Exchange {
+                declared: p.declared.clone(),
+                // The call comes after any change, which no longer matters.
+                trump_changed: false,
+            }),
+            hands,
+            kitty: Vec::new(),
+            taken: vec![Vec::new(); self.seats()],
+            bids: self.bids.clone(),
+            redealt: None,
+        })
+    }
+
+    pub fn seats(&self) -> usize {
         self.rules.players
+    }
+
+    /// A state of these parts, nothing else checked: for
+    /// [`crate::testing::PlayPosition`].
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn from_parts(
+        rules: Arc<Rules>,
+        first_bidder: Seat,
+        phase: Phase,
+        hands: Vec<Vec<Card>>,
+        taken: Vec<Vec<Card>>,
+    ) -> State {
+        State {
+            rules,
+            first_bidder,
+            phase,
+            hands,
+            kitty: Vec::new(),
+            taken,
+            bids: Vec::new(),
+            redealt: None,
+        }
+    }
+
+    pub fn phase(&self) -> &Phase {
+        &self.phase
+    }
+
+    /// The phase, to change by hand: for tests that build positions the
+    /// game would not reach on its own.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn phase_mut(&mut self) -> &mut Phase {
+        &mut self.phase
+    }
+
+    pub fn first_bidder(&self) -> Seat {
+        self.first_bidder
+    }
+
+    /// Every seat's hand, each sorted.
+    pub fn hands(&self) -> &[Vec<Card>] {
+        &self.hands
+    }
+
+    pub fn kitty(&self) -> &[Card] {
+        &self.kitty
+    }
+
+    /// Every card each seat won in tricks.
+    pub fn taken(&self) -> &[Vec<Card>] {
+        &self.taken
+    }
+
+    pub fn bids(&self) -> &[Bid] {
+        &self.bids
+    }
+
+    pub(crate) fn redealt(&self) -> Option<&Redealt> {
+        self.redealt.as_ref()
     }
 
     pub(crate) fn turn(&self) -> Turn {
         match &self.phase {
             Phase::Dealing => Turn::Chance,
             Phase::Bidding(b) => Turn::Seat(b.to_act),
-            Phase::Exchange(e) => Turn::Seat(e.declarer),
+            Phase::Exchange(e) => Turn::Seat(e.declared.declarer),
             Phase::Play(p) => Turn::Seat((p.leader + p.plays.len()) % self.seats()),
             Phase::Done(_) => Turn::Over,
         }
@@ -319,16 +587,12 @@ impl State {
 
     /// Whether `seat` may throw the deal in now, on their turn or not:
     /// their hand qualifies, they are still in the bidding (a pass has had
-    /// its say), and the window is open. With `misdeal.ask_first` it stays
-    /// open for everyone until the first bid; otherwise until the seat
-    /// itself bids, or all through the bidding with
-    /// `misdeal.after_bidding`.
+    /// its say), and the window ([`MisdealWindow`]) is open.
     fn may_misdeal(&self, b: &Bidding, seat: Seat) -> bool {
-        let misdeal = &self.rules.misdeal;
-        let open = if misdeal.ask_first {
-            b.best.is_none()
-        } else {
-            !b.has_bid[seat] || misdeal.after_bidding
+        let open = match self.rules.misdeal.window {
+            MisdealWindow::OwnTurnUntilBid => !b.has_bid[seat],
+            MisdealWindow::AllBidding => true,
+            MisdealWindow::BeforeFirstBid => b.best.is_none(),
         };
         open && !b.passed[seat] && self.rules.is_misdeal(&self.hands[seat])
     }
@@ -357,13 +621,18 @@ impl State {
         &self.rules
     }
 
+    /// The rules, shared: views and searches hold them without a copy.
+    pub(crate) fn shared_rules(&self) -> &Arc<Rules> {
+        &self.rules
+    }
+
     /// The contract the declarer would play after `action` in the
     /// exchange: a trump change at its cost, or a raise. None for any
     /// other action, or outside the exchange.
     pub fn contract_after(&self, action: &Action) -> Option<Contract> {
         let Phase::Exchange(e) = &self.phase else { return None };
         match *action {
-            Action::ChangeTrump(trump) => Some(self.changed_contract(e.contract, trump)),
+            Action::ChangeTrump(trump) => Some(self.changed_contract(e.declared.contract, trump)),
             Action::Raise(contract) => Some(contract),
             _ => None,
         }
@@ -460,22 +729,22 @@ impl State {
     }
 
     fn legal_exchange(&self, e: &Exchange) -> Vec<Action> {
-        let hand = &self.hands[e.declarer];
+        let hand = &self.hands[e.declared.declarer];
         let mut actions = Vec::new();
-        if e.discards.len() < self.rules.kitty_size() {
+        if e.declared.discards.len() < self.rules.kitty_size() {
             // Holding the kitty, a hand that qualifies may still be thrown in.
-            if self.rules.misdeal.declarer && e.discards.is_empty() && self.rules.is_misdeal(hand) {
+            if self.rules.misdeal.declarer && e.declared.discards.is_empty() && self.rules.is_misdeal(hand) {
                 actions.push(Action::Misdeal);
             }
-            if !e.trump_changed && e.discards.is_empty() {
+            if !e.trump_changed && e.declared.discards.is_empty() {
                 for trump in self.trump_options() {
-                    let changed = self.changed_contract(e.contract, trump);
-                    if trump != e.contract.trump && changed.count <= self.rules.bidding.max {
+                    let changed = self.changed_contract(e.declared.contract, trump);
+                    if trump != e.declared.contract.trump && changed.count <= self.rules.bidding.max {
                         actions.push(Action::ChangeTrump(trump));
                     }
                 }
                 if self.rules.bidding.raise_on_exchange {
-                    actions.extend(self.raises(e.contract).map(Action::Raise));
+                    actions.extend(self.raises(e.declared.contract).map(Action::Raise));
                 }
             }
             actions.extend(hand.iter().map(|&c| Action::Discard(c)));
@@ -484,14 +753,14 @@ impl State {
         let f = &self.rules.friend;
         if f.by_card {
             for card in self.rules.cards() {
-                let own = hand.contains(&card) || e.discards.contains(&card);
+                let own = hand.contains(&card) || e.declared.discards.contains(&card);
                 if !own || f.fake {
                     actions.push(Action::CallFriend(FriendCall::Card(card)));
                 }
             }
         }
         if f.by_seat {
-            let others = (0..self.seats()).filter(|&s| s != e.declarer);
+            let others = (0..self.seats()).filter(|&s| s != e.declared.declarer);
             actions.extend(others.map(|s| Action::CallFriend(FriendCall::Seat(s))));
         }
         for (enabled, call) in [
@@ -516,8 +785,11 @@ impl State {
         self.taken.iter().any(|t| t.contains(&joker))
     }
 
-    /// Applies an action already known to be legal.
-    pub(crate) fn step(&mut self, seat: Seat, action: Action) {
+    /// Applies `action` by `seat` without checking it: for searches, which
+    /// play out thousands of hands and take each action from the game's
+    /// own legal actions. Anything else applies through [`engine::Game`],
+    /// which checks.
+    pub fn step(&mut self, seat: Seat, action: Action) {
         let phase = std::mem::replace(&mut self.phase, Phase::Dealing);
         self.phase = match (phase, action) {
             (Phase::Bidding(_) | Phase::Exchange(_), Action::Misdeal) => {
@@ -581,9 +853,11 @@ impl State {
                 self.hands[declarer].extend(kitty);
                 self.hands[declarer].sort();
                 Phase::Exchange(Exchange {
-                    declarer,
-                    contract,
-                    discards: Vec::new(),
+                    declared: Declared {
+                        declarer,
+                        contract,
+                        discards: Vec::new(),
+                    },
                     trump_changed: false,
                 })
             }
@@ -600,30 +874,28 @@ impl State {
     fn step_exchange(&mut self, mut e: Exchange, action: Action) -> Phase {
         match action {
             Action::ChangeTrump(trump) => {
-                e.contract = self.changed_contract(e.contract, trump);
+                e.declared.contract = self.changed_contract(e.declared.contract, trump);
                 e.trump_changed = true;
             }
             Action::Raise(contract) => {
-                e.contract = contract;
+                e.declared.contract = contract;
                 e.trump_changed = true;
             }
             Action::Discard(card) => {
-                let hand = &mut self.hands[e.declarer];
+                let hand = &mut self.hands[e.declared.declarer];
                 hand.retain(|&c| c != card);
-                e.discards.push(card);
+                e.declared.discards.push(card);
             }
             Action::CallFriend(call) => {
                 return Phase::Play(Play {
-                    declarer: e.declarer,
-                    contract: e.contract,
-                    discards: e.discards,
+                    leader: e.declared.declarer,
+                    declared: e.declared,
                     call,
                     friend: match call {
                         FriendCall::Seat(s) => Some(s),
                         _ => None,
                     },
                     trick_no: 0,
-                    leader: e.declarer,
                     lead: None,
                     plays: Vec::new(),
                     called_joker: None,
@@ -638,34 +910,20 @@ impl State {
     /// The seat whose card is winning the trick so far, by the same rule
     /// that settles a finished trick. None before the first card.
     pub(crate) fn leading(&self, p: &Play) -> Option<Seat> {
-        let lead = p.lead.filter(|_| !p.plays.is_empty())?;
-        let ctx = TrickContext {
-            trump: p.contract.trump,
-            mighty: self.rules.mighty(p.contract.trump),
-            deck: self.rules.deck,
-            lead,
-            powerless_joker_passes: self.rules.joker_lead.powerless_passes,
-        };
-        Some(p.plays[trick::winner(&ctx, &p.plays)].seat)
+        Some(p.plays[p.trick().winner(&self.rules, &p.plays)?].seat)
     }
 
     fn step_play(&mut self, mut p: Play, seat: Seat, card: Card, joker_lead: Option<Lead>, call: bool) -> Phase {
         self.hands[seat].retain(|&c| c != card);
         if p.plays.is_empty() {
-            p.lead = if card.is_joker() {
-                joker_lead
-            } else {
-                card.suit().map(Lead::Suit)
-            };
-            p.called_joker = if call {
-                callable_joker(&self.rules, p.trick(), card, |j| self.joker_gone(j))
-            } else {
-                None
-            };
+            let t = p
+                .trick()
+                .led(&self.rules, card, joker_lead, call, |j| self.joker_gone(j));
+            p.lead = t.lead;
+            p.called_joker = t.called_joker;
         }
-        let powered = powered(&self.rules, p.trick(), card);
-        p.plays.push(Played { seat, card, powered });
-        if p.call == FriendCall::Card(card) && seat != p.declarer {
+        p.plays.push(p.trick().played(&self.rules, seat, card));
+        if p.call == FriendCall::Card(card) && seat != p.declared.declarer {
             p.friend = Some(seat);
         }
         if p.plays.len() < self.seats() {
@@ -681,15 +939,16 @@ impl State {
             FriendCall::LastTrick => last,
             _ => false,
         };
-        if reveals && winner != p.declarer && p.friend.is_none() {
+        if reveals && winner != p.declared.declarer && p.friend.is_none() {
             p.friend = Some(winner);
         }
         let plays = std::mem::take(&mut p.plays);
         p.tricks.push(Trick { plays, lead, winner });
-        p.trick_no += 1;
+        let next = p.trick().next();
+        p.trick_no = next.trick_no;
+        p.lead = next.lead;
+        p.called_joker = next.called_joker;
         p.leader = winner;
-        p.lead = None;
-        p.called_joker = None;
         if last {
             Phase::Done(self.score(p))
         } else {
@@ -698,15 +957,20 @@ impl State {
     }
 
     fn score(&self, p: Play) -> Done {
-        let team = |s: Seat| s == p.declarer || Some(s) == p.friend;
+        let team = |s: Seat| s == p.declared.declarer || Some(s) == p.friend;
         let won_points = (0..self.seats()).filter(|&s| team(s)).flat_map(|s| &self.taken[s]);
         let won = won_points.filter(|c| c.is_point()).count();
-        let team_points = (won + discard_points(&self.rules, &p.discards)) as u8;
-        let payoffs = settle(&self.rules, p.declarer, p.friend, p.contract, p.call, team_points);
+        let team_points = (won + discard_points(&self.rules, &p.declared.discards)) as u8;
+        let payoffs = settle(
+            &self.rules,
+            p.declared.declarer,
+            p.friend,
+            p.declared.contract,
+            p.call,
+            team_points,
+        );
         Done {
-            declarer: p.declarer,
-            contract: p.contract,
-            discards: p.discards,
+            declared: p.declared,
             call: p.call,
             friend: p.friend,
             team_points,
@@ -722,20 +986,21 @@ impl State {
         hand_value(&self.rules, contract, alone, team_points)
     }
 
-    pub(crate) fn discards(&self) -> Option<(&[Card], Seat)> {
+    /// What the bidding settled, once it is over.
+    pub fn declared(&self) -> Option<&Declared> {
         match &self.phase {
-            Phase::Exchange(e) => Some((&e.discards, e.declarer)),
-            Phase::Play(p) => Some((&p.discards, p.declarer)),
-            Phase::Done(d) => Some((&d.discards, d.declarer)),
+            Phase::Exchange(e) => Some(&e.declared),
+            Phase::Play(p) => Some(&p.declared),
+            Phase::Done(d) => Some(&d.declared),
             Phase::Dealing | Phase::Bidding(_) => None,
         }
     }
 
-    fn discards_mut(&mut self) -> Option<&mut Vec<Card>> {
+    fn declared_mut(&mut self) -> Option<&mut Declared> {
         match &mut self.phase {
-            Phase::Exchange(e) => Some(&mut e.discards),
-            Phase::Play(p) => Some(&mut p.discards),
-            Phase::Done(d) => Some(&mut d.discards),
+            Phase::Exchange(e) => Some(&mut e.declared),
+            Phase::Play(p) => Some(&mut p.declared),
+            Phase::Done(d) => Some(&mut d.declared),
             Phase::Dealing | Phase::Bidding(_) => None,
         }
     }
@@ -743,7 +1008,7 @@ impl State {
     /// The finished hand in brief, once it is over.
     pub fn summary(&self) -> Option<HandSummary> {
         let Phase::Done(d) = &self.phase else { return None };
-        let team = |s: Seat| s == d.declarer || Some(s) == d.friend;
+        let team = |s: Seat| s == d.declared.declarer || Some(s) == d.friend;
         let rounds = d
             .tricks
             .iter()
@@ -762,10 +1027,10 @@ impl State {
             FriendCall::Alone => None,
         });
         Some(HandSummary {
-            contract: d.contract,
-            declarer: d.declarer,
+            contract: d.declared.contract,
+            declarer: d.declared.declarer,
             friend: d.friend,
-            made: d.team_points >= d.contract.count,
+            made: d.team_points >= d.declared.contract.count,
             team_points: d.team_points,
             rounds,
             friend_revealed,
@@ -786,7 +1051,7 @@ impl State {
         };
         // Everyone sees the discards once the hand is over, if the rules show them.
         let shown = matches!(self.phase, Phase::Done(_)) && self.rules.reveal_discards;
-        let sees_discards = shown || self.discards().is_some_and(|(_, declarer)| Some(declarer) == me);
+        let sees_discards = shown || self.declared().is_some_and(|d| Some(d.declarer) == me);
         let mut next = self.clone();
 
         let mut pool: Vec<Card> = Vec::new();
@@ -797,7 +1062,7 @@ impl State {
         }
         pool.extend(&next.kitty);
         if !sees_discards {
-            pool.extend(next.discards_mut().map(|d| d.clone()).unwrap_or_default());
+            pool.extend(next.declared().map(|d| d.discards.clone()).unwrap_or_default());
         }
         pool.shuffle(rng);
 
@@ -810,9 +1075,9 @@ impl State {
             }
         }
         next.kitty = deal(next.kitty.len());
-        if !sees_discards && let Some(d) = next.discards_mut() {
-            let n = d.len();
-            *d = pool.drain(..n).collect();
+        if !sees_discards && let Some(d) = next.declared_mut() {
+            let n = d.discards.len();
+            d.discards = pool.drain(..n).collect();
         }
         next
     }
@@ -830,7 +1095,7 @@ impl State {
 
         let mut cards: Vec<Card> = self.hands.iter().chain(&self.taken).flatten().copied().collect();
         cards.extend(&self.kitty);
-        cards.extend(self.discards().map(|(d, _)| d.to_vec()).unwrap_or_default());
+        cards.extend(self.declared().map(|d| d.discards.clone()).unwrap_or_default());
         if let Phase::Play(p) = &self.phase {
             cards.extend(p.plays.iter().map(|pl| pl.card));
         }
@@ -890,13 +1155,13 @@ impl State {
                 }
                 // A made contract never costs the declarer, a failed one always
                 // does; only scoring against the minimum can lose on a win.
-                let made = d.team_points >= d.contract.count;
-                let declarer = d.payoffs[d.declarer];
+                let made = d.team_points >= d.declared.contract.count;
+                let declarer = d.payoffs[d.declared.declarer];
                 let may_lose = self.rules.scoring.win == WinScore::OverMin;
                 if (made && declarer < 0 && !may_lose) || (!made && declarer >= 0) {
                     return Err(format!(
                         "declarer gets {declarer} for {} of {}",
-                        d.team_points, d.contract.count
+                        d.team_points, d.declared.contract.count
                     ));
                 }
             }
@@ -909,7 +1174,7 @@ impl State {
 /// The legal plays from `hand` into trick `t`. `gone` tells whether a
 /// joker was won in a finished trick, which ends calling it. Shared by the
 /// game and by [`crate::endgame`], which plays tricks out without a [`State`].
-pub(crate) fn legal_plays(rules: &Rules, hand: &[Card], t: TrickState, gone: impl Fn(Card) -> bool) -> Vec<Action> {
+pub fn legal_plays(rules: &Rules, hand: &[Card], t: TrickState, gone: impl Fn(Card) -> bool) -> Vec<Action> {
     let trump = t.trump;
     let mighty = rules.mighty(trump);
     let policy = |c: &Card| rules.policy(*c, trump, t.trick_no);
@@ -991,7 +1256,7 @@ pub(crate) fn legal_plays(rules: &Rules, hand: &[Card], t: TrickState, gone: imp
 
 /// The joker that leading `card` into trick `t` would call, if a call is
 /// possible then.
-pub(crate) fn callable_joker(rules: &Rules, t: TrickState, card: Card, gone: impl Fn(Card) -> bool) -> Option<Card> {
+pub fn callable_joker(rules: &Rules, t: TrickState, card: Card, gone: impl Fn(Card) -> bool) -> Option<Card> {
     if rules.on_trick(rules.policy.joker_call, t.trick_no) != CardPolicy::Valid {
         return None;
     }
@@ -1005,7 +1270,7 @@ pub(crate) fn callable_joker(rules: &Rules, t: TrickState, card: Card, gone: imp
 
 /// Whether `card` keeps its power when played into trick `t` (its lead and
 /// call already set).
-pub(crate) fn powered(rules: &Rules, t: TrickState, card: Card) -> bool {
+pub fn powered(rules: &Rules, t: TrickState, card: Card) -> bool {
     let called_and_powerless = t.called_joker == Some(card) && !rules.joker_call.called_joker_has_power;
     rules.policy(card, t.trump, t.trick_no) != CardPolicy::NoEffect && !called_and_powerless
 }
@@ -1019,7 +1284,7 @@ pub(crate) fn hand_value(rules: &Rules, contract: Contract, alone: bool, team_po
 
 /// The points the declarer's side counts from its discards: their point
 /// cards, unless the rules give them to the defence.
-pub(crate) fn discard_points(rules: &Rules, discards: &[Card]) -> usize {
+pub fn discard_points(rules: &Rules, discards: &[Card]) -> usize {
     if rules.scoring.discards_to_declarer {
         discards.iter().filter(|c| c.is_point()).count()
     } else {
@@ -1031,7 +1296,7 @@ pub(crate) fn discard_points(rules: &Rules, discards: &[Card]) -> usize {
 /// for this contract: then the side's best play for points is its best
 /// play for payoff too. Scoring against the minimum can break this (a
 /// made contract worth less than a narrowly failed one).
-pub(crate) fn payoff_rises_with_points(rules: &Rules, contract: Contract, alone: bool) -> bool {
+pub fn payoff_rises_with_points(rules: &Rules, contract: Contract, alone: bool) -> bool {
     let values: Vec<i64> = (0..=20)
         .map(|points| hand_value(rules, contract, alone, points))
         .collect();
@@ -1098,7 +1363,7 @@ mod tests {
                 full_contract: Doubling::Never,
                 discards_to_declarer: true,
             },
-            ..Rules::default()
+            ..Rules::web_mighty()
         };
         let s = state(rules);
         let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
@@ -1113,7 +1378,7 @@ mod tests {
 
     #[test]
     fn scoring_against_the_minimum_can_lose_on_a_win() {
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.win = WinScore::OverMin;
         let s = state(rules);
         // 둘노 made with 12 against a minimum of 13: (12 − 13) × 2.
@@ -1123,7 +1388,7 @@ mod tests {
 
     #[test]
     fn default_scoring_is_unchanged() {
-        let s = state(Rules::default());
+        let s = state(Rules::web_mighty());
         let value = |trump, count, alone, points| s.hand_value(Contract { trump, count }, alone, points);
         assert_eq!(value(DIAMOND, 13, false, 15), 5);
         assert_eq!(value(None, 13, true, 20), 80);
@@ -1135,7 +1400,7 @@ mod tests {
 
     #[test]
     fn doublings_may_apply_to_losses_too() {
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.no_trump = Doubling::Always;
         rules.scoring.alone = Doubling::Always;
         rules.scoring.back_run = BackRun::ShortBy(5);
@@ -1143,7 +1408,7 @@ mod tests {
         // 부산대: 13 bid, 8 taken is 백런; no-trump and 노프렌드 double too.
         assert_eq!(s.hand_value(Contract { trump: None, count: 13 }, true, 8), -40);
         assert_eq!(s.hand_value(Contract { trump: None, count: 13 }, true, 9), -16);
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.back_run = BackRun::DefenceReachesBid;
         let s = state(rules);
         // 세종: the defence took 13 of a 13 contract's points.
@@ -1173,7 +1438,7 @@ mod tests {
 
     #[test]
     fn discards_may_count_for_the_defence() {
-        let mut rules = Rules::default();
+        let mut rules = Rules::web_mighty();
         rules.scoring.discards_to_declarer = false;
         let mut s = state(rules);
         let tens = Suit::ALL.map(|suit| Card::new(suit, 10));
@@ -1184,12 +1449,14 @@ mod tests {
             .collect();
         s.taken[0] = won;
         let play = Play {
-            declarer: 0,
-            contract: Contract {
-                trump: DIAMOND,
-                count: 13,
+            declared: Declared {
+                declarer: 0,
+                contract: Contract {
+                    trump: DIAMOND,
+                    count: 13,
+                },
+                discards: tens[..3].to_vec(),
             },
-            discards: tens[..3].to_vec(),
             call: FriendCall::Alone,
             friend: None,
             trick_no: 10,
@@ -1201,7 +1468,7 @@ mod tests {
         };
         let done = s.score(play.clone());
         assert_eq!((done.team_points, done.payoffs[0]), (12, -4));
-        s.rules.scoring.discards_to_declarer = true;
+        Arc::make_mut(&mut s.rules).scoring.discards_to_declarer = true;
         assert_eq!(s.score(play).team_points, 15);
     }
 
@@ -1288,12 +1555,14 @@ mod tests {
         s.taken = vec![Vec::new(); 5];
         s.taken[0] = points;
         let play = Play {
-            declarer: 0,
-            contract: Contract {
-                trump: DIAMOND,
-                count: 15,
+            declared: Declared {
+                declarer: 0,
+                contract: Contract {
+                    trump: DIAMOND,
+                    count: 15,
+                },
+                discards: Vec::new(),
             },
-            discards: Vec::new(),
             call,
             friend,
             trick_no: 10,
@@ -1327,12 +1596,14 @@ mod tests {
         let mut s = basic();
         s.hands = std::iter::once(vec![hand0]).chain(others.map(|c| vec![c])).collect();
         s.phase = Phase::Play(Play {
-            declarer: 0,
-            contract: Contract {
-                trump: DIAMOND,
-                count: 14,
+            declared: Declared {
+                declarer: 0,
+                contract: Contract {
+                    trump: DIAMOND,
+                    count: 14,
+                },
+                discards: Vec::new(),
             },
-            discards: Vec::new(),
             call: FriendCall::Alone,
             friend: None,
             trick_no: 9,
@@ -1403,10 +1674,10 @@ mod tests {
         let mut sets: Vec<(String, Rules)> = Preset::ALL.iter().map(|p| (p.name().to_string(), p.rules())).collect();
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
         for i in 0..10 {
-            sets.push((format!("varied-{i}"), Rules::default().varied(&mut rng)));
+            sets.push((format!("varied-{i}"), Rules::web_mighty().varied(&mut rng)));
         }
         // A bid under the minimum scored with the bid bonus: never a penalty.
-        let mut bonus = Rules::default();
+        let mut bonus = Rules::web_mighty();
         bonus.scoring.win = WinScore::BidBonus;
         sets.push(("bid-bonus".into(), bonus));
         let sets: Vec<serde_json::Value> = sets

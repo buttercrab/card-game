@@ -1,378 +1,483 @@
-//! Bots named on the command line and in eval suites: `random`, `simple`
-//! or `search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]`, with `@name=value,...`
-//! settings, the table's levels `easy`, `normal` and `hard`,
-//! `belief:MODEL_DIR:SAMPLES`: `hard` at that many samples, dealing by a
-//! belief model (needs the `belief` feature), and
-//! `dmc:MODEL_DIR[:TEMPERATURE]`: playing by a Q network, and
-//! `hybrid:MODEL_DIR:SAMPLES`: `hard` leaning on one (both need the `dmc`
-//! feature). See `sim --help`.
+//! Bots named on the command line, in eval suites and in research
+//! configs, all written `name[:positional][@key=value,...]` and read by one
+//! tokenizer ([`Syntax`]), which prints them back as written:
+//!
+//! - `random`;
+//! - `simple`, the rule-based bot, its weights settable by name
+//!   (`simple@bid_base=7`) and `slips=P` to slip to a cheap card that
+//!   often;
+//! - `search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]`, the search bot, which
+//!   also takes `threads`, `endgame` and `read.*` (how it reads the other
+//!   players);
+//! - the table's levels `easy`, `normal` and `hard` (or `초보`, `보통`,
+//!   `고수`), each bidding a little bolder or more carefully by seat as at
+//!   the table; `hard` is the search without the table's clock;
+//! - `belief:MODEL_DIR:SAMPLES`: `hard` at that many samples, dealing by
+//!   a belief model;
+//! - `dmc:MODEL_DIR[:TEMPERATURE]`: playing by a Q network;
+//! - `hybrid:MODEL_DIR:SAMPLES`: `hard` leaning on a Q network, by
+//!   `prior=K`, `base=q` and `leaf=K` besides the search's settings;
+//! - `phased:BID+EXCHANGE+PLAY`: one bot per phase of the hand.
+//!
+//! Each kind declares the settings it takes ([`Spec::keys`]) and refuses
+//! the rest. See `sim --help`.
 
+use crate::phased::Phased;
 use engine::{Bot, RandomBot, Seat};
 use mighty::Mighty;
-use mighty::bot::{Clumsy, Level, SimpleBot};
-use mighty::search::{Reading, Sampler, SearchBot};
+use mighty::bot::Level;
+use mighty_ai::{Baseline, Clumsy, HybridBot, LevelBots, Reading, Sampler, SearchBot, SimpleBot};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use std::fmt;
+use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
+pub use mighty_ai::{EASY_SLIPS, TEMPER};
+
+/// A bot spec as written: a name, what follows its colon, and settings.
+/// One tokenizer reads every kind; [`fmt::Display`] prints it back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Syntax {
+    pub name: String,
+    /// Everything between the name's colon and the settings, as written:
+    /// numbers for a search, a model directory (which may hold colons of
+    /// its own) and a number for a model bot, three bots for `phased`.
+    pub positional: Option<String>,
+    /// `key=value` pairs, in order.
+    pub settings: Vec<(String, String)>,
+}
+
+impl FromStr for Syntax {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Syntax, String> {
+        // A phased bot's parts are bots, settings and all.
+        if let Some(parts) = s.strip_prefix("phased:") {
+            return Ok(Syntax {
+                name: "phased".into(),
+                positional: Some(parts.into()),
+                settings: Vec::new(),
+            });
+        }
+        let (head, settings) = s.split_once('@').unwrap_or((s, ""));
+        let (name, positional) = match head.split_once(':') {
+            Some((name, rest)) => (name, Some(rest.to_string())),
+            None => (head, None),
+        };
+        let settings = settings
+            .split(',')
+            .filter(|w| !w.is_empty())
+            .map(|setting| {
+                let (key, value) = setting
+                    .split_once('=')
+                    .ok_or(format!("{s}: setting {setting:?} needs a value, as name=value"))?;
+                Ok((key.to_string(), value.to_string()))
+            })
+            .collect::<Result<_, String>>()?;
+        Ok(Syntax {
+            name: name.into(),
+            positional,
+            settings,
+        })
+    }
+}
+
+impl fmt::Display for Syntax {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.name)?;
+        if let Some(positional) = &self.positional {
+            write!(f, ":{positional}")?;
+        }
+        for (i, (key, value)) in self.settings.iter().enumerate() {
+            write!(f, "{}{key}={value}", if i == 0 { '@' } else { ',' })?;
+        }
+        Ok(())
+    }
+}
+
+/// The kinds of bot, by the settings they take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Which {
+    Random,
+    Simple,
+    Search,
+    Belief,
+    Dmc,
+    Hybrid,
+    Phased,
+}
+
+impl Which {
+    fn named(self) -> &'static str {
+        match self {
+            Which::Random => "the random bot",
+            Which::Simple => "a simple bot",
+            Which::Search => "a search bot",
+            Which::Belief => "a belief bot",
+            Which::Dmc => "a dmc bot",
+            Which::Hybrid => "a hybrid bot",
+            Which::Phased => "a phased bot",
+        }
+    }
+
+    /// The settings it takes, by name.
+    fn keys(self) -> Vec<String> {
+        let fields = |value: serde_json::Value| -> Vec<String> {
+            value.as_object().map_or_else(Vec::new, |o| o.keys().cloned().collect())
+        };
+        let weights = fields(serde_json::to_value(SimpleBot::default()).expect("weights serialize"));
+        let reading = fields(serde_json::to_value(Reading::default()).expect("settings serialize"));
+        let search = || {
+            let mut keys = weights.clone();
+            keys.extend(["threads", "endgame"].map(String::from));
+            keys.extend(reading.iter().map(|k| format!("read.{k}")));
+            keys
+        };
+        match self {
+            Which::Random | Which::Dmc | Which::Phased => Vec::new(),
+            Which::Simple => weights.iter().cloned().chain(["slips".to_string()]).collect(),
+            Which::Search | Which::Belief => search(),
+            Which::Hybrid => search()
+                .into_iter()
+                .chain(["prior", "base", "leaf"].map(String::from))
+                .collect(),
+        }
+    }
+
+    /// The error for a setting it does not take.
+    fn refuses(self, s: &Syntax, key: &str) -> String {
+        if self == Which::Random || self == Which::Dmc {
+            return format!("{s}: {} takes no settings", self.named());
+        }
+        if let Some(read) = key.strip_prefix("read.")
+            && self.keys().iter().any(|k| k.starts_with("read."))
+        {
+            return format!("{s}: unknown setting read.{read}");
+        }
+        let takes = self.keys();
+        format!(
+            "{s}: {} has no setting {key:?} (it takes {})",
+            self.named(),
+            if takes.is_empty() {
+                "none".into()
+            } else {
+                takes.join(", ")
+            }
+        )
+    }
+}
+
 /// A bot by name, built afresh for each seat it fills.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Spec {
+    /// As written, and printed back by [`fmt::Display`].
+    pub syntax: Syntax,
     pub kind: Kind,
     /// Bid a little bolder or more carefully by seat, as the server's
-    /// bots do ([`TEMPER`]); set for the table's levels.
+    /// bots do ([`TEMPER`]); set for the table's levels and the bots
+    /// built on 고수.
     pub temper: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+/// Two specs are the same bot when they are written the same way.
+impl PartialEq for Spec {
+    fn eq(&self, other: &Spec) -> bool {
+        self.syntax == other.syntax
+    }
+}
+
+impl fmt::Display for Spec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.syntax.fmt(f)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Kind {
     Random,
     Simple(SimpleBot),
     /// The simple bot, slipping to a random cheap card this often
     /// ([`Clumsy`]); the table's 초보 also bids more carefully.
     Clumsy(SimpleBot, f64),
+    /// The search, `belief:` bots included (dealing by their model).
     Search(SearchBot),
     /// A Q network's choice (`dmc:MODEL_DIR[:TEMPERATURE]`).
-    #[cfg(feature = "dmc")]
     Dmc(infer::QBot),
-    /// The search with a Q network (`hybrid:MODEL_DIR:SAMPLES@...`);
-    /// leaked, as its network is, to keep specs small and `Copy`.
-    #[cfg(feature = "dmc")]
-    Hybrid(&'static mighty::hybrid::HybridBot),
+    /// The search with a Q network (`hybrid:MODEL_DIR:SAMPLES@...`).
+    Hybrid(Box<HybridBot>),
     /// One bot per phase of the hand (`phased:BID+EXCHANGE+PLAY`).
-    Phased(&'static crate::phased::Phased),
+    Phased(Box<Phased>),
 }
 
-pub use mighty::bot::{EASY_SLIPS, TEMPER};
+/// A spec read but for its model: what [`check`] judges, and what
+/// [`Spec::from_str`] loads the model of.
+enum Recipe {
+    Ready(Kind),
+    Belief { dir: String, search: SearchBot },
+    Dmc { dir: String, temperature: f32 },
+    Hybrid { dir: String, hybrid: Box<Hybrid> },
+}
+
+/// A hybrid's settings, its network aside.
+struct Hybrid {
+    search: SearchBot,
+    prior: usize,
+    baseline: Baseline,
+    leaf: Option<usize>,
+}
+
+/// `value`, a number, or why not.
+fn number<T: FromStr>(s: &Syntax, what: &str, value: &str) -> Result<T, String> {
+    value.parse().map_err(|_| format!("bad {what} {value:?} in {s}"))
+}
+
+/// Reads `syntax` up to the model it names: positional parts and settings
+/// checked against what its kind takes. The recipe and whether the bot
+/// bids by seat.
+fn recipe(syntax: &Syntax) -> Result<(Recipe, bool), String> {
+    let s = syntax;
+    let level = s.name.parse::<Level>().ok();
+    let which = match (level, s.name.as_str()) {
+        (Some(level), _) if level.search().is_some() => Which::Search,
+        (Some(_), _) => Which::Simple,
+        (None, "random") => Which::Random,
+        (None, "simple") => Which::Simple,
+        (None, "search") => Which::Search,
+        (None, "belief") => Which::Belief,
+        (None, "dmc") => Which::Dmc,
+        (None, "hybrid") => Which::Hybrid,
+        (None, "phased") => Which::Phased,
+        _ => return Err(format!("unknown bot {:?}", s.to_string())),
+    };
+    let positional = s.positional.as_deref();
+    let keys = which.keys();
+    if let Some((key, _)) = s.settings.iter().find(|(key, _)| !keys.contains(key)) {
+        return Err(which.refuses(s, key));
+    }
+    let setting = |key: &str| s.settings.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+
+    // The search a level or kind starts from, its settings applied.
+    let search = |base: SearchBot| -> Result<SearchBot, String> {
+        let mut bot = base;
+        for (key, value) in &s.settings {
+            match key.strip_prefix("read.") {
+                Some(read) => {
+                    set_field(&mut bot.reading, read, value)?;
+                }
+                None if key == "threads" => bot.threads = number(s, "thread count", value)?,
+                None if key == "endgame" => bot.endgame = number(s, "endgame", value)?,
+                None if ["prior", "base", "leaf"].contains(&key.as_str()) => {}
+                None => {
+                    set_field(&mut bot.policy, key, value)?;
+                }
+            }
+        }
+        Ok(bot)
+    };
+    let model_and_samples = |kind: &str| -> Result<(String, usize), String> {
+        let rest = positional.unwrap_or_default();
+        let (dir, samples) = rest
+            .rsplit_once(':')
+            .ok_or(format!("{s}: expected {kind}:MODEL_DIR:SAMPLES"))?;
+        Ok((dir.to_string(), number(s, "sample count", samples)?))
+    };
+    let fixed = |samples: usize| SearchBot {
+        samples,
+        confidence: 1.0,
+        budget: None,
+        ..SearchBot::default()
+    };
+    let recipe = match which {
+        Which::Random | Which::Simple if positional.is_some() => {
+            return Err(format!("unknown bot {:?}", s.to_string()));
+        }
+        _ if level.is_some() && positional.is_some() => return Err(format!("unknown bot {:?}", s.to_string())),
+        Which::Random => Recipe::Ready(Kind::Random),
+        Which::Simple => {
+            let mut policy = level.map_or_else(SimpleBot::default, LevelBots::policy);
+            for (key, value) in s.settings.iter().filter(|(k, _)| k != "slips") {
+                set_field(&mut policy, key, value)?;
+            }
+            let slips = match setting("slips") {
+                Some(value) => Some(number(s, "slips", value)?),
+                None => level.and_then(LevelBots::slips),
+            };
+            Recipe::Ready(match slips {
+                Some(slips) => Kind::Clumsy(policy, slips),
+                None => Kind::Simple(policy),
+            })
+        }
+        Which::Search => {
+            let mut bot = search(level.and_then(LevelBots::search).unwrap_or_default())?;
+            let mut parts = positional.map(|p| p.split(':')).into_iter().flatten();
+            if let Some(samples) = parts.next() {
+                bot.samples = number(s, "sample count", samples)?;
+            }
+            if let Some(confidence) = parts.next() {
+                bot.confidence = number(s, "confidence", confidence)?;
+            }
+            if let Some(budget) = parts.next() {
+                let ms: u64 = number(s, "budget", budget)?;
+                bot.budget = (ms > 0).then(|| Duration::from_millis(ms));
+            }
+            let extra: Vec<&str> = parts.collect();
+            if !extra.is_empty() {
+                return Err(format!(
+                    "{s}: a search bot is search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]; {:?} is extra",
+                    extra.join(":")
+                ));
+            }
+            Recipe::Ready(Kind::Search(bot))
+        }
+        // 고수 at its own sample count, dealing by the model and not
+        // reading the table on top unless asked: the model's beliefs
+        // already rest on every bid and card played, and weighing its
+        // deals by them again counts that evidence twice (the `beliefs`
+        // example of `crates/infer` measures it).
+        Which::Belief => {
+            let (dir, samples) = model_and_samples("belief")?;
+            let mut base = fixed(samples);
+            base.reading.on = false;
+            Recipe::Belief {
+                dir,
+                search: search(base)?,
+            }
+        }
+        Which::Dmc => {
+            let rest = positional.ok_or(format!("{s}: expected dmc:MODEL_DIR[:TEMPERATURE]"))?;
+            let (dir, temperature): (&str, f32) = match rest.rsplit_once(':') {
+                // A directory may hold a colon; a temperature is a number.
+                Some((dir, t)) if t.parse::<f32>().is_ok() => (dir, number(s, "temperature", t)?),
+                _ => (rest, 0.0),
+            };
+            if !(temperature >= 0.0 && temperature.is_finite()) {
+                return Err(format!("{s}: the temperature must be a number of points, at least 0"));
+            }
+            Recipe::Dmc {
+                dir: dir.to_string(),
+                temperature,
+            }
+        }
+        Which::Hybrid => {
+            let (dir, samples) = model_and_samples("hybrid")?;
+            let bad = |key: &str, value: &str| format!("{s}: bad value {value:?} for {key}");
+            let prior = match setting("prior") {
+                Some(v) => v.parse().map_err(|_| bad("prior", v))?,
+                None => 0,
+            };
+            let baseline = match setting("base") {
+                None | Some("simple") => Baseline::Simple,
+                Some("q") => Baseline::Network,
+                Some(v) => return Err(bad("base", v)),
+            };
+            let leaf = match setting("leaf") {
+                None | Some("end") => None,
+                Some(v) => Some(v.parse().map_err(|_| bad("leaf", v))?),
+            };
+            Recipe::Hybrid {
+                dir,
+                hybrid: Box::new(Hybrid {
+                    search: search(fixed(samples))?,
+                    prior,
+                    baseline,
+                    leaf,
+                }),
+            }
+        }
+        Which::Phased => {
+            let rest = positional.unwrap_or_default();
+            let parts: Vec<&str> = rest.split('+').collect();
+            let [bid, exchange, play] = parts[..] else {
+                return Err(format!("{s}: expected phased:BID+EXCHANGE+PLAY"));
+            };
+            let part = |p: &str| -> Result<Spec, String> {
+                if p.starts_with("phased:") {
+                    return Err(format!("{s}: phases do not nest"));
+                }
+                p.parse()
+            };
+            Recipe::Ready(Kind::Phased(Box::new(Phased {
+                bid: part(bid)?,
+                exchange: part(exchange)?,
+                play: part(play)?,
+            })))
+        }
+    };
+    let temper = level.is_some() || matches!(which, Which::Belief | Which::Hybrid);
+    Ok((recipe, temper))
+}
 
 impl FromStr for Spec {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Spec, String> {
-        if let Some(rest) = s.strip_prefix("phased:") {
-            let phased = crate::phased::Phased::parse(rest)?;
-            let kind = Kind::Phased(Box::leak(Box::new(phased)));
-            return Ok(Spec { kind, temper: false });
-        }
-        let (name, settings) = s.split_once('@').unwrap_or((s, ""));
-        if let Some(rest) = name.strip_prefix("belief:") {
-            return belief(rest, settings);
-        }
-        if let Some(rest) = name.strip_prefix("dmc:") {
-            let (dir, temperature) = dmc(rest, settings)?;
-            return load_dmc(dir, temperature);
-        }
-        if let Some(rest) = name.strip_prefix("hybrid:") {
-            return hybrid(rest, settings);
-        }
-        // The table's levels (`hard` or `고수`), as mighty::bot::Level
-        // defines them: 고수 without a clock, so runs reproduce.
-        let level = name.parse::<Level>().ok();
-        let mut policy = level.map_or_else(SimpleBot::default, Level::policy);
-        let mut slips = level.and_then(Level::slips);
-        let base_search = level.and_then(Level::search).unwrap_or_default();
-        let temper = level.is_some();
-        let which = match (level, name) {
-            (Some(level), _) if level.search().is_some() => Which::Search,
-            (Some(_), _) => Which::Simple,
-            (None, "random") => Which::Random,
-            (None, "simple") => Which::Simple,
-            (None, _) if name == "search" || name.starts_with("search:") => Which::Search,
-            _ => return Err(format!("unknown bot {s:?}")),
-        };
-        if which == Which::Random && !settings.is_empty() {
-            return Err(format!("{s}: the random bot takes no settings"));
-        }
-        let search = which == Which::Search;
-        let mut reading = Reading::default();
-        let mut search_threads = 1;
-        let mut endgame = 0;
-        for setting in settings.split(',').filter(|w| !w.is_empty()) {
-            let (key, value) = setting
-                .split_once('=')
-                .ok_or(format!("{s}: setting {setting:?} needs a value, as name=value"))?;
-            match key.strip_prefix("read.") {
-                Some(key) if search => set_reading(&mut reading, key, value)?,
-                None if key == "threads" && search => {
-                    search_threads = value.parse().map_err(|_| format!("bad value {value:?} for threads"))?;
-                }
-                None if key == "endgame" && search => {
-                    endgame = value.parse().map_err(|_| format!("bad value {value:?} for endgame"))?;
-                }
-                None if key == "slips" && which == Which::Simple => {
-                    slips = Some(value.parse().map_err(|_| format!("bad value {value:?} for slips"))?);
-                }
-                None if set_weight(&mut policy, key, value)? => {}
-                _ => return Err(format!("{s}: {}", which.unknown(key))),
+        let syntax: Syntax = s.parse()?;
+        let (recipe, temper) = recipe(&syntax)?;
+        let kind = match recipe {
+            Recipe::Ready(kind) => kind,
+            Recipe::Belief { dir, mut search } => {
+                search.sampler = Sampler::Belief(load_belief(&dir)?);
+                Kind::Search(search)
             }
-        }
-        let kind = match which {
-            Which::Random => Kind::Random,
-            Which::Simple => match slips {
-                Some(slips) => Kind::Clumsy(policy, slips),
-                None => Kind::Simple(policy),
-            },
-            Which::Search => {
-                let mut bot = SearchBot {
-                    policy,
-                    reading,
-                    threads: search_threads,
-                    endgame,
-                    ..base_search
-                };
-                let mut parts = name.split(':').skip(1);
-                if let Some(samples) = parts.next() {
-                    bot.samples = samples.parse().map_err(|_| format!("bad sample count in {s:?}"))?;
-                }
-                if let Some(confidence) = parts.next() {
-                    bot.confidence = confidence.parse().map_err(|_| format!("bad confidence in {s:?}"))?;
-                }
-                if let Some(budget) = parts.next() {
-                    let ms: u64 = budget.parse().map_err(|_| format!("bad budget in {s:?}"))?;
-                    bot.budget = (ms > 0).then(|| Duration::from_millis(ms));
-                }
-                let extra: Vec<&str> = parts.collect();
-                if !extra.is_empty() {
-                    return Err(format!(
-                        "{s}: a search bot is search[:SAMPLES[:CONFIDENCE[:BUDGET_MS]]]; {:?} is extra",
-                        extra.join(":")
-                    ));
-                }
-                Kind::Search(bot)
-            }
+            Recipe::Dmc { dir, temperature } => Kind::Dmc(infer::QBot {
+                net: load_q(&dir)?,
+                temperature,
+            }),
+            Recipe::Hybrid { dir, hybrid } => Kind::Hybrid(Box::new(HybridBot {
+                search: hybrid.search,
+                values: load_q(&dir)?,
+                prior: hybrid.prior,
+                baseline: hybrid.baseline,
+                leaf: hybrid.leaf,
+            })),
         };
-        Ok(Spec { kind, temper })
+        Ok(Spec { syntax, kind, temper })
     }
 }
 
-/// The built-in bots by name, for which settings each takes.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Which {
-    Random,
-    Simple,
-    Search,
-}
+/// Models by directory, loaded once and shared by every spec naming them.
+struct Models<T>(std::sync::Mutex<std::collections::BTreeMap<String, Arc<T>>>);
 
-impl Which {
-    /// The error for a setting this bot does not take, with those it does.
-    fn unknown(self, key: &str) -> String {
-        let (bot, takes) = match self {
-            Which::Random => ("the random bot", "none"),
-            Which::Simple => ("a simple bot", "the simple bot's weights and slips"),
-            Which::Search => (
-                "a search bot",
-                "the simple bot's weights, threads, endgame and read.on, read.slip, read.bid_scale, \
-                 read.min_share, read.draws",
-            ),
-        };
-        format!("{bot} has no setting {key:?} (it takes {takes})")
+impl<T> Models<T> {
+    const fn new() -> Models<T> {
+        Models(std::sync::Mutex::new(std::collections::BTreeMap::new()))
     }
-}
 
-/// `belief:MODEL_DIR:SAMPLES@SETTINGS`: the table's 고수 (seat temper
-/// included) at `SAMPLES` deals, dealing by the model in `MODEL_DIR`, and
-/// not reading the table on top (`read.on=false`, unless the settings say
-/// otherwise): the model's beliefs already rest on every bid and card
-/// played, and weighing its deals by them again counts that evidence
-/// twice (the `beliefs` example of `crates/infer` measures it).
-fn belief(rest: &str, settings: &str) -> Result<Spec, String> {
-    let (dir, mut spec) = belief_search(rest, settings)?;
-    let Kind::Search(bot) = &mut spec.kind else {
-        unreachable!("parsed as a search")
-    };
-    bot.sampler = load_belief(dir)?;
-    Ok(spec)
-}
-
-/// A `belief:` spec's model directory, and the search it is but for the
-/// model.
-fn belief_search<'a>(rest: &'a str, settings: &str) -> Result<(&'a str, Spec), String> {
-    let (dir, samples) = rest
-        .rsplit_once(':')
-        .ok_or(format!("belief:{rest}: expected belief:MODEL_DIR:SAMPLES"))?;
-    let samples: usize = samples.parse().map_err(|_| format!("bad sample count {samples:?}"))?;
-    let mut spec: Spec = format!("search:{samples}:1:0@read.on=false,{settings}").parse()?;
-    spec.temper = true;
-    Ok((dir, spec))
+    fn get(&self, dir: &str, open: impl FnOnce(&Path) -> Result<T, String>) -> Result<Arc<T>, String> {
+        let mut loaded = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(model) = loaded.get(dir) {
+            return Ok(model.clone());
+        }
+        let model = Arc::new(open(Path::new(dir))?);
+        loaded.insert(dir.to_string(), model.clone());
+        Ok(model)
+    }
 }
 
 /// The belief model in directory `dir`, checked to read Mighty's encoding.
-/// Loaded once per directory and kept for the life of the process.
-#[cfg(feature = "belief")]
-fn load_belief(dir: &str) -> Result<Sampler, String> {
-    use std::collections::BTreeMap;
-    use std::sync::{Mutex, PoisonError};
-    static LOADED: Mutex<BTreeMap<String, &'static infer::BeliefNet>> = Mutex::new(BTreeMap::new());
-    let mut loaded = LOADED.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(&net) = loaded.get(dir) {
-        return Ok(Sampler::Belief(net));
-    }
-    let net = infer::BeliefNet::open(std::path::Path::new(dir)).map_err(|e| e.to_string())?;
-    check_encoding(dir, net.spec())?;
-    let net: &'static infer::BeliefNet = Box::leak(Box::new(net));
-    loaded.insert(dir.to_string(), net);
-    Ok(Sampler::Belief(net))
-}
-
-#[cfg(not(feature = "belief"))]
-fn load_belief(dir: &str) -> Result<Sampler, String> {
-    Err(format!(
-        "{dir}: this build has no belief models (build with --features belief)"
-    ))
-}
-
-/// `dmc:MODEL_DIR[:TEMPERATURE]`: plays by the Q network in `MODEL_DIR`
-/// (an exported `cardgame_ml.train.dmc` run), the legal action of highest
-/// value, or with a temperature in points drawn with probability
-/// proportional to `exp(value / temperature)`. No search, no seat temper.
-fn dmc<'a>(rest: &'a str, settings: &str) -> Result<(&'a str, f32), String> {
-    if !settings.is_empty() {
-        return Err(format!("dmc:{rest}@{settings}: a dmc bot takes no settings"));
-    }
-    let (dir, temperature) = match rest.rsplit_once(':') {
-        // A directory may hold a colon; a temperature is a number.
-        Some((dir, t)) if t.parse::<f32>().is_ok() => (dir, t.parse::<f32>().unwrap_or_default()),
-        _ => (rest, 0.0),
-    };
-    if !(temperature >= 0.0 && temperature.is_finite()) {
-        return Err(format!(
-            "dmc:{rest}: the temperature must be a number of points, at least 0"
-        ));
-    }
-    Ok((dir, temperature))
+fn load_belief(dir: &str) -> Result<Arc<infer::BeliefNet>, String> {
+    static LOADED: Models<infer::BeliefNet> = Models::new();
+    LOADED.get(dir, |path| {
+        let net = infer::BeliefNet::open(path).map_err(|e| e.to_string())?;
+        check_encoding(dir, net.spec())?;
+        Ok(net)
+    })
 }
 
 /// The Q network in directory `dir`, checked to read Mighty's encoding.
-/// Loaded once per directory and kept for the life of the process.
-#[cfg(feature = "dmc")]
-fn load_q(dir: &str) -> Result<&'static infer::QNet, String> {
-    use std::collections::BTreeMap;
-    use std::sync::{Mutex, PoisonError};
-    static LOADED: Mutex<BTreeMap<String, &'static infer::QNet>> = Mutex::new(BTreeMap::new());
-    let mut loaded = LOADED.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(&net) = loaded.get(dir) {
-        return Ok(net);
-    }
-    let net = infer::QNet::open(std::path::Path::new(dir)).map_err(|e| e.to_string())?;
-    check_encoding(dir, net.spec())?;
-    let net: &'static infer::QNet = Box::leak(Box::new(net));
-    loaded.insert(dir.to_string(), net);
-    Ok(net)
-}
-
-#[cfg(feature = "dmc")]
-fn load_dmc(dir: &str, temperature: f32) -> Result<Spec, String> {
-    Ok(Spec {
-        kind: Kind::Dmc(infer::QBot {
-            net: load_q(dir)?,
-            temperature,
-        }),
-        temper: false,
+fn load_q(dir: &str) -> Result<Arc<infer::QNet>, String> {
+    static LOADED: Models<infer::QNet> = Models::new();
+    LOADED.get(dir, |path| {
+        let net = infer::QNet::open(path).map_err(|e| e.to_string())?;
+        check_encoding(dir, net.spec())?;
+        Ok(net)
     })
-}
-
-#[cfg(not(feature = "dmc"))]
-fn load_dmc(dir: &str, _temperature: f32) -> Result<Spec, String> {
-    Err(format!(
-        "{dir}: this build has no Q networks (build with --features dmc)"
-    ))
-}
-
-/// `hybrid:MODEL_DIR:SAMPLES@SETTINGS`: the table's 고수 (seat temper
-/// included) at `SAMPLES` deals, leaning on the Q network in `MODEL_DIR`
-/// ([`mighty::hybrid`]). Its own settings: `prior=K` weighs the `K` moves
-/// the network values most instead of the search's candidates (0, the
-/// default, keeps those), `base=q` makes the network's choice the one to
-/// beat instead of the simple bot's (`base=simple`, the default), and
-/// `leaf=K` values playouts by the network once `K` more tricks are done
-/// instead of playing them out (`leaf=end`, the default). Any search
-/// setting goes too (`read.*`, `threads`, `endgame`, weights).
-fn hybrid(rest: &str, settings: &str) -> Result<Spec, String> {
-    let h = hybrid_parts(rest, settings)?;
-    load_hybrid(h.dir, h.search, h.prior, h.baseline, h.leaf)
-}
-
-/// A `hybrid:` spec but for its network.
-struct Hybrid<'a> {
-    dir: &'a str,
-    search: SearchBot,
-    prior: usize,
-    baseline: mighty::hybrid::Baseline,
-    leaf: Option<usize>,
-}
-
-fn hybrid_parts<'a>(rest: &'a str, settings: &str) -> Result<Hybrid<'a>, String> {
-    use mighty::hybrid::Baseline;
-    let (dir, samples) = rest
-        .rsplit_once(':')
-        .ok_or(format!("hybrid:{rest}: expected hybrid:MODEL_DIR:SAMPLES"))?;
-    let samples: usize = samples.parse().map_err(|_| format!("bad sample count {samples:?}"))?;
-    let (mut prior, mut baseline, mut leaf) = (0, Baseline::Simple, None);
-    let mut search = Vec::new();
-    for setting in settings.split(',').filter(|w| !w.is_empty()) {
-        let (key, value) = setting.split_once('=').ok_or(format!("bad setting {setting:?}"))?;
-        let bad = || format!("bad value {value:?} for {key}");
-        match key {
-            "prior" => prior = value.parse().map_err(|_| bad())?,
-            "base" => {
-                baseline = match value {
-                    "simple" => Baseline::Simple,
-                    "q" => Baseline::Network,
-                    _ => return Err(bad()),
-                }
-            }
-            "leaf" if value == "end" => leaf = None,
-            "leaf" => leaf = Some(value.parse().map_err(|_| bad())?),
-            _ => search.push(setting),
-        }
-    }
-    let spec: Spec = format!("search:{samples}:1:0@{}", search.join(",")).parse()?;
-    let Kind::Search(search) = spec.kind else {
-        unreachable!("parsed as a search")
-    };
-    Ok(Hybrid {
-        dir,
-        search,
-        prior,
-        baseline,
-        leaf,
-    })
-}
-
-#[cfg(feature = "dmc")]
-fn load_hybrid(
-    dir: &str,
-    search: SearchBot,
-    prior: usize,
-    baseline: mighty::hybrid::Baseline,
-    leaf: Option<usize>,
-) -> Result<Spec, String> {
-    Ok(Spec {
-        kind: Kind::Hybrid(Box::leak(Box::new(mighty::hybrid::HybridBot {
-            search,
-            values: load_q(dir)?,
-            prior,
-            baseline,
-            leaf,
-        }))),
-        temper: true,
-    })
-}
-
-#[cfg(not(feature = "dmc"))]
-fn load_hybrid(
-    dir: &str,
-    _search: SearchBot,
-    _prior: usize,
-    _baseline: mighty::hybrid::Baseline,
-    _leaf: Option<usize>,
-) -> Result<Spec, String> {
-    Err(format!(
-        "{dir}: this build has no Q networks (build with --features dmc)"
-    ))
 }
 
 /// Whether a model reads Mighty's encoding.
-#[cfg(any(feature = "belief", feature = "dmc"))]
 fn check_encoding(dir: &str, spec: &engine::Spec) -> Result<(), String> {
     let options = mighty::Options {
         rules: mighty::rules::Preset::Default.rules(),
@@ -390,7 +495,7 @@ fn check_encoding(dir: &str, spec: &engine::Spec) -> Result<(), String> {
 /// hold the model yet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Check {
-    /// `random`, `simple`, `search`, `belief`, `dmc` or `hybrid`.
+    /// `random`, `simple`, `search`, `belief`, `dmc`, `hybrid` or `phased`.
     pub kind: &'static str,
     /// Decides the same way in every run ([`Spec::reproducible`]).
     pub reproducible: bool,
@@ -401,91 +506,94 @@ pub struct Check {
 /// Checks the spec `s` as [`Spec::from_str`] reads it, but for loading the
 /// model a `belief:`, `dmc:` or `hybrid:` bot names.
 pub fn check(s: &str) -> Result<Check, String> {
-    let (name, settings) = s.split_once('@').unwrap_or((s, ""));
+    let (recipe, _) = recipe(&s.parse()?)?;
     let fixed = |samples: usize| format!("a fixed {samples} samples a decision, on no clock");
-    if let Some(rest) = name.strip_prefix("belief:") {
-        let (_, spec) = belief_search(rest, settings)?;
-        let Kind::Search(bot) = spec.kind else {
-            unreachable!("parsed as a search")
-        };
-        return Ok(Check {
+    Ok(match recipe {
+        Recipe::Belief { search, .. } => Check {
             kind: "belief",
             reproducible: true,
-            reason: fixed(bot.samples),
-        });
-    }
-    if let Some(rest) = name.strip_prefix("dmc:") {
-        dmc(rest, settings)?;
-        return Ok(Check {
+            reason: fixed(search.samples),
+        },
+        Recipe::Dmc { .. } => Check {
             kind: "dmc",
             reproducible: true,
             reason: "plays by its network on no clock; a temperature draws from the seeded generator".into(),
-        });
-    }
-    if let Some(rest) = name.strip_prefix("hybrid:") {
-        let h = hybrid_parts(rest, settings)?;
-        return Ok(Check {
+        },
+        Recipe::Hybrid { hybrid, .. } => Check {
             kind: "hybrid",
             reproducible: true,
-            reason: fixed(h.search.samples),
-        });
-    }
-    let spec: Spec = s.parse()?;
-    let (kind, reason) = match spec.kind {
-        Kind::Random => ("random", "no search, no clock".to_string()),
-        Kind::Simple(_) | Kind::Clumsy(..) => ("simple", "rules, no search, no clock".to_string()),
-        Kind::Search(bot) => (
-            "search",
-            match bot.budget {
-                Some(budget) => format!(
-                    "thinks on a clock: stops after {} ms a decision (a budget of 0 searches a fixed number of samples)",
-                    budget.as_millis()
+            reason: fixed(hybrid.search.samples),
+        },
+        Recipe::Ready(kind) => {
+            let reproducible = reproducible(&kind);
+            let (kind, reason) = match &kind {
+                Kind::Random => ("random", "no search, no clock".to_string()),
+                Kind::Simple(_) | Kind::Clumsy(..) => ("simple", "rules, no search, no clock".to_string()),
+                Kind::Search(bot) => (
+                    "search",
+                    match bot.budget {
+                        Some(budget) => format!(
+                            "thinks on a clock: stops after {} ms a decision (a budget of 0 searches a fixed number of samples)",
+                            budget.as_millis()
+                        ),
+                        None => fixed(bot.samples),
+                    },
                 ),
-                None => fixed(bot.samples),
-            },
-        ),
-        Kind::Phased(_) => (
-            "phased",
-            "each phase by its own bot: reproducible when every part is".to_string(),
-        ),
-        #[cfg(feature = "dmc")]
-        Kind::Dmc(_) | Kind::Hybrid(_) => unreachable!("read above"),
-    };
-    Ok(Check {
-        kind,
-        reproducible: spec.reproducible(),
-        reason,
+                Kind::Phased(_) => (
+                    "phased",
+                    "each phase by its own bot: reproducible when every part is".to_string(),
+                ),
+                Kind::Dmc(_) | Kind::Hybrid(_) => unreachable!("model bots are read above"),
+            };
+            Check {
+                kind,
+                reproducible,
+                reason,
+            }
+        }
     })
+}
+
+/// Whether a bot decides the same way in every run: true unless it stops
+/// thinking on a clock.
+fn reproducible(kind: &Kind) -> bool {
+    match kind {
+        Kind::Search(bot) => bot.budget.is_none(),
+        Kind::Random | Kind::Simple(_) | Kind::Clumsy(..) => true,
+        // Its temperature draws from the game's seeded generator.
+        Kind::Dmc(_) => true,
+        // Its search deals a fixed number of worlds, on no clock.
+        Kind::Hybrid(_) => true,
+        Kind::Phased(phased) => phased.reproducible(),
+    }
 }
 
 impl Spec {
     /// The bot for `seat`.
-    pub fn build(self, seat: Seat) -> Box<dyn Bot<Mighty> + Send> {
+    pub fn build(&self, seat: Seat) -> Box<dyn Bot<Mighty> + Send> {
         let temper = if self.temper { TEMPER[seat % TEMPER.len()] } else { 0.0 };
         let temper = |mut policy: SimpleBot| {
             policy.bid_base += temper;
             policy
         };
-        match self.kind {
+        match &self.kind {
             Kind::Random => Box::new(RandomBot),
-            Kind::Simple(bot) => Box::new(temper(bot)),
+            Kind::Simple(bot) => Box::new(temper(*bot)),
             Kind::Clumsy(bot, slips) => Box::new(Clumsy {
-                inner: temper(bot),
-                slips,
+                inner: temper(*bot),
+                slips: *slips,
             }),
             Kind::Search(bot) => Box::new(SearchBot {
                 policy: temper(bot.policy),
-                ..bot
+                ..bot.clone()
             }),
-            #[cfg(feature = "dmc")]
-            Kind::Dmc(bot) => Box::new(bot),
-            #[cfg(feature = "dmc")]
-            Kind::Hybrid(bot) => Box::new(mighty::hybrid::HybridBot {
+            Kind::Dmc(bot) => Box::new(bot.clone()),
+            Kind::Hybrid(bot) => Box::new(HybridBot {
                 search: SearchBot {
                     policy: temper(bot.search.policy),
-                    ..bot.search
+                    ..bot.search.clone()
                 },
-                ..*bot
+                ..(**bot).clone()
             }),
             Kind::Phased(phased) => Box::new(phased.build(seat)),
         }
@@ -493,69 +601,35 @@ impl Spec {
 
     /// Whether the bot decides the same way in every run: true unless it
     /// stops thinking on a clock.
-    pub fn reproducible(self) -> bool {
-        match self.kind {
-            Kind::Search(bot) => bot.budget.is_none(),
-            Kind::Random | Kind::Simple(_) | Kind::Clumsy(..) => true,
-            // Its temperature draws from the game's seeded generator.
-            #[cfg(feature = "dmc")]
-            Kind::Dmc(_) => true,
-            // Its search deals a fixed number of worlds, on no clock.
-            #[cfg(feature = "dmc")]
-            Kind::Hybrid(_) => true,
-            Kind::Phased(phased) => phased.reproducible(),
-        }
+    pub fn reproducible(&self) -> bool {
+        reproducible(&self.kind)
+    }
+
+    /// The settings this bot takes, by name.
+    pub fn keys(&self) -> Vec<String> {
+        let which = match &self.kind {
+            Kind::Random => Which::Random,
+            Kind::Simple(_) | Kind::Clumsy(..) => Which::Simple,
+            Kind::Search(_) if self.syntax.name == "belief" => Which::Belief,
+            Kind::Search(_) => Which::Search,
+            Kind::Dmc(_) => Which::Dmc,
+            Kind::Hybrid(_) => Which::Hybrid,
+            Kind::Phased(_) => Which::Phased,
+        };
+        which.keys()
     }
 }
 
-/// Sets one of the simple bot's weights by name, for tuning from the
-/// command line; false if it has no such weight.
-fn set_weight(bot: &mut SimpleBot, key: &str, value: &str) -> Result<bool, String> {
-    let bad = || format!("bad value {value:?} for {key}");
-    let float = || value.parse::<f32>().map_err(|_| bad());
-    let int = || value.parse::<i32>().map_err(|_| bad());
-    let count = || value.parse::<usize>().map_err(|_| bad());
-    match key {
-        "bid_base" => bot.bid_base = float()?,
-        "bid_trump" => bot.bid_trump = float()?,
-        "bid_trump_honor" => bot.bid_trump_honor = float()?,
-        "bid_mighty" => bot.bid_mighty = float()?,
-        "bid_joker" => bot.bid_joker = float()?,
-        "bid_sub_joker" => bot.bid_sub_joker = float()?,
-        "bid_ace" => bot.bid_ace = float()?,
-        "bid_king" => bot.bid_king = float()?,
-        "change_trump" => bot.change_trump = float()?,
-        "draw_trumps" => bot.draw_trumps = count()?,
-        "late_tricks" => bot.late_tricks = count()?,
-        "special_worth" => bot.special_worth = count()?,
-        "lead_point_penalty" => bot.lead_point_penalty = int()?,
-        "lead_joker" => bot.lead_joker = int()?,
-        "lead_mighty" => bot.lead_mighty = int()?,
-        "defend_trump" => bot.defend_trump = int()?,
-        "plan_last_trick" => bot.plan_last_trick = value.parse().map_err(|_| bad())?,
-        "aim_joker_call" => bot.aim_joker_call = value.parse().map_err(|_| bad())?,
-        "spare_declarer_joker" => bot.spare_declarer_joker = value.parse().map_err(|_| bad())?,
-        "misdeal_below_min" => bot.misdeal_below_min = value.parse().map_err(|_| bad())?,
-        "bid_spread" => bot.bid_spread = float()?,
-        "bid_caution" => bot.bid_caution = float()?,
-        _ => return Ok(false),
-    }
-    Ok(true)
-}
-
-/// Sets how the search bot reads the other players, for tuning from the
-/// command line: `read.on`, `read.slip`, `read.bid_scale`, `read.min_share`, `read.draws`.
-fn set_reading(reading: &mut Reading, key: &str, value: &str) -> Result<(), String> {
-    let bad = || format!("bad value {value:?} for read.{key}");
-    let float = || value.parse::<f64>().map_err(|_| bad());
-    match key {
-        "on" => reading.on = value.parse().map_err(|_| bad())?,
-        "slip" => reading.slip = float()?,
-        "bid_scale" => reading.bid_scale = float()?,
-        "min_share" => reading.min_share = float()?,
-        "draws" => reading.draws = value.parse().map_err(|_| bad())?,
-        _ => return Err(format!("unknown setting read.{key}")),
-    }
+/// Sets the field `key` of `value` to `raw`, through the type's serde
+/// form, so the settings a bot takes are its own fields with no list kept
+/// here: `raw` is read as JSON (a number or `true`), else as a string.
+fn set_field<T: Serialize + DeserializeOwned>(value: &mut T, key: &str, raw: &str) -> Result<(), String> {
+    let mut json = serde_json::to_value(&*value).map_err(|e| e.to_string())?;
+    let Some(field) = json.as_object_mut().and_then(|fields| fields.get_mut(key)) else {
+        return Err(format!("unknown setting {key}"));
+    };
+    *field = serde_json::from_str(raw).unwrap_or_else(|_| serde_json::Value::String(raw.to_string()));
+    *value = serde_json::from_value(json).map_err(|_| format!("bad value {raw:?} for {key}"))?;
     Ok(())
 }
 
@@ -574,7 +648,7 @@ mod tests {
         let Kind::Search(hard) = spec("hard").kind else {
             panic!("hard searches")
         };
-        assert_eq!(Some(hard), Level::Hard.search());
+        assert_eq!(Some(hard.clone()), Level::Hard.search());
         assert_eq!((hard.samples, hard.confidence, hard.budget), (200, 1.0, None));
         assert!(["easy", "normal", "hard", "고수"].iter().all(|s| spec(s).temper));
         assert!(!spec("search:200:1:0").temper);
@@ -583,32 +657,24 @@ mod tests {
     /// A level by name plays as the level builds itself, seat by seat.
     #[test]
     fn levels_build_as_mighty_defines_them() {
-        use engine::{Game, Turn, Viewer};
+        use engine::{Game, Viewer};
+        use mighty::testing;
         use rand::SeedableRng;
-        use rand::seq::IndexedRandom;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(5);
-        let rules = mighty::rules::Preset::Gshs.rules();
-        let mut state = Mighty::new_game(&mighty::Options { rules, first_bidder: 0 }).unwrap();
+        let options = testing::options(&mighty::rules::Preset::Gshs.rules(), 0);
         let mut asked = 0;
-        loop {
-            let action = match Mighty::turn(&state) {
-                Turn::Over => break,
-                Turn::Chance => Mighty::sample_chance(&state, &mut rng),
-                Turn::Seat(seat) => {
-                    let view = Mighty::view(&state, Viewer::Seat(seat));
-                    let legal = Mighty::legal_actions(&state);
-                    for level in [Level::Easy, Level::Normal] {
-                        let ask = |mut bot: Box<dyn Bot<Mighty> + Send>| {
-                            bot.act(&view, &legal, &mut rand_chacha::ChaCha8Rng::seed_from_u64(asked))
-                        };
-                        assert_eq!(ask(spec(level.name()).build(seat)), ask(level.build(seat, None)));
-                    }
-                    asked += 1;
-                    legal.choose(&mut rng).unwrap().clone()
-                }
-            };
-            Mighty::apply(&mut state, action).unwrap();
-        }
+        testing::play_hand(&options, &mut rng, &mut testing::random, &mut |state, seat| {
+            let view = Mighty::view(state, Viewer::Seat(seat));
+            let legal = Mighty::legal_actions(state);
+            for level in [Level::Easy, Level::Normal] {
+                let ask = |mut bot: Box<dyn Bot<Mighty> + Send>| {
+                    bot.act(&view, &legal, &mut rand_chacha::ChaCha8Rng::seed_from_u64(asked))
+                };
+                assert_eq!(ask(spec(level.name()).build(seat)), ask(level.build(seat, None)));
+            }
+            asked += 1;
+            true
+        });
         assert!(asked > 20);
     }
 
@@ -741,6 +807,52 @@ mod tests {
         }
     }
 
+    /// Every spec prints back as it was written, and what it prints reads
+    /// as the same bot.
+    #[test]
+    fn specs_print_back_as_written() {
+        let tiny = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny");
+        let tiny_q = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
+        let written = [
+            "random".to_string(),
+            "simple".into(),
+            "simple@bid_base=7,slips=0.25".into(),
+            "easy".into(),
+            "고수".into(),
+            "hard@threads=4,read.on=false".into(),
+            "search:200:1:0@endgame=3".into(),
+            "phased:normal+random+hard@threads=2".into(),
+            format!("belief:{tiny}:50@read.on=true"),
+            format!("dmc:{tiny_q}:2.5"),
+            format!("hybrid:{tiny_q}:40@prior=4,base=q,leaf=2,threads=2"),
+        ];
+        for s in written {
+            let parsed = spec(&s);
+            assert_eq!(parsed.to_string(), s);
+            let again = spec(&parsed.to_string());
+            assert_eq!(again, parsed);
+            assert_eq!(format!("{:?}", again.kind), format!("{:?}", parsed.kind), "{s}");
+            assert_eq!(again.temper, parsed.temper);
+        }
+    }
+
+    /// Each kind says which settings it takes: the simple bot's weights
+    /// by their names, the search's on top, nothing for the random bot.
+    #[test]
+    fn kinds_declare_their_settings() {
+        let simple = spec("simple").keys();
+        assert!(simple.contains(&"bid_base".to_string()) && simple.contains(&"slips".to_string()));
+        let search = spec("hard").keys();
+        assert!(search.contains(&"read.draws".to_string()) && search.contains(&"bid_base".to_string()));
+        assert!(!search.contains(&"slips".to_string()));
+        assert!(spec("random").keys().is_empty());
+        // Every key a kind declares, it takes.
+        for key in &search {
+            let value = if key == "read.on" { "true" } else { "1" };
+            spec(&format!("search:20:1:0@{key}={value}"));
+        }
+    }
+
     #[test]
     fn only_a_clock_makes_a_bot_irreproducible() {
         assert!(spec("hard").reproducible());
@@ -750,12 +862,11 @@ mod tests {
     }
 
     /// `belief:` is `hard` at its own sample count, dealing by the model.
-    #[cfg(feature = "belief")]
     #[test]
     fn belief_bots_are_hard_dealing_by_a_model() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny");
         let parsed = spec(&format!("belief:{dir}:50"));
-        let Kind::Search(bot) = parsed.kind else {
+        let Kind::Search(ref bot) = parsed.kind else {
             panic!("a belief bot searches")
         };
         assert!(parsed.temper && parsed.reproducible());
@@ -773,12 +884,11 @@ mod tests {
     }
 
     /// `dmc:` plays by a Q network, greedy unless given a temperature.
-    #[cfg(feature = "dmc")]
     #[test]
     fn dmc_bots_play_by_a_q_network() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
         let greedy = spec(&format!("dmc:{dir}"));
-        let Kind::Dmc(bot) = greedy.kind else {
+        let Kind::Dmc(ref bot) = greedy.kind else {
             panic!("a dmc bot")
         };
         assert_eq!(bot.temperature, 0.0);
@@ -787,7 +897,7 @@ mod tests {
             panic!("a dmc bot")
         };
         assert_eq!(warm.temperature, 2.5);
-        assert!(std::ptr::eq(warm.net, bot.net), "loaded once");
+        assert!(std::sync::Arc::ptr_eq(&warm.net, &bot.net), "loaded once");
         assert!(format!("dmc:{dir}:-1").parse::<Spec>().is_err());
         assert!(format!("dmc:{dir}@threads=2").parse::<Spec>().is_err());
         assert!("dmc:/no/such/model".parse::<Spec>().is_err());
@@ -798,13 +908,11 @@ mod tests {
 
     /// `hybrid:` is `hard` at its own sample count with a Q network, its
     /// settings split between the hybrid and the search.
-    #[cfg(feature = "dmc")]
     #[test]
     fn hybrid_bots_are_hard_with_a_q_network() {
-        use mighty::hybrid::Baseline;
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
         let plain = spec(&format!("hybrid:{dir}:40"));
-        let Kind::Hybrid(bot) = plain.kind else {
+        let Kind::Hybrid(ref bot) = plain.kind else {
             panic!("a hybrid bot")
         };
         assert!(plain.temper && plain.reproducible());
@@ -824,7 +932,7 @@ mod tests {
         );
         assert_eq!(tuned.search.threads, 2);
         assert!(!tuned.search.reading.on);
-        assert!(std::ptr::addr_eq(tuned.values, bot.values), "loaded once");
+        assert!(std::sync::Arc::ptr_eq(&tuned.values, &bot.values), "loaded once");
         for bad in ["base=best", "leaf=soon", "prior=-1", "nonsense=1"] {
             assert!(format!("hybrid:{dir}:40@{bad}").parse::<Spec>().is_err(), "{bad}");
         }
@@ -834,37 +942,18 @@ mod tests {
     }
 
     /// A hybrid plays whole hands, every setting on, with the tiny network.
-    #[cfg(feature = "dmc")]
     #[test]
     fn hybrid_bots_play_hands() {
-        use engine::{Game, Turn, Viewer};
         use mighty::{Mighty, Options, rules::Preset};
-        use rand::SeedableRng;
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../infer/tests/tiny-q");
         let hybrid = spec(&format!("hybrid:{dir}:6@prior=3,base=q,leaf=1"));
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(3);
         let options = Options {
             rules: Preset::Gshs.rules(),
             first_bidder: 0,
         };
-        let mut bots: Vec<_> = (0..5).map(|seat| hybrid.build(seat)).collect();
-        let mut state = Mighty::new_game(&options).unwrap();
-        loop {
-            match Mighty::turn(&state) {
-                Turn::Over => break,
-                Turn::Chance => {
-                    let deal = Mighty::sample_chance(&state, &mut rng);
-                    Mighty::apply(&mut state, deal).unwrap();
-                }
-                Turn::Seat(seat) => {
-                    let view = Mighty::view(&state, Viewer::Seat(seat));
-                    let legal = Mighty::legal_actions(&state);
-                    let action = bots[seat].act(&view, &legal, &mut rng);
-                    assert!(legal.contains(&action));
-                    Mighty::apply(&mut state, action).unwrap();
-                }
-            }
-        }
-        assert!(Mighty::payoffs(&state).is_some());
+        let mut bots: Vec<Box<dyn Bot<Mighty>>> =
+            (0..5).map(|seat| hybrid.build(seat) as Box<dyn Bot<Mighty>>).collect();
+        let report = harness::play::<Mighty>(&options, &mut bots, 3, harness::Checks::default()).unwrap();
+        assert_eq!(report.payoffs.iter().sum::<i64>(), 0);
     }
 }

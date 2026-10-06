@@ -5,9 +5,9 @@ use engine::{Game, Seat, Turn, Viewer};
 use eval::puzzle::{self, Puzzle};
 use eval::suite::Loaded;
 use mighty::card::Card;
-use mighty::endgame;
 use mighty::rules::{CardPolicy, Preset};
 use mighty::{Action, FriendCall, Mighty, Options, PhaseView, State};
+use mighty_ai::endgame;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde_json::json;
@@ -246,7 +246,7 @@ fn pattern(state: &State, me: Seat, legal: &[Action]) -> Option<Pattern> {
 #[ignore = "a tool: prints puzzle drafts"]
 fn mine() {
     let bot: sim::spec::Spec = "hard".parse().expect("a bot");
-    let drafts: Vec<Vec<serde_json::Value>> = sim::parallel(400, None, |deal| {
+    let drafts: Vec<Vec<serde_json::Value>> = harness::parallel(400, None, |deal| {
         let preset = [Preset::Gshs, Preset::Default][deal as usize % 2];
         let options = Options {
             first_bidder: deal as usize % 5,

@@ -6,15 +6,23 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# `mighty::testing` (cards by name, fixed deals, a hand driver, a position
+# builder) and `State::phase_mut`, for tests here and in other crates.
+test-support = ["dep:serde_json"]
+
 [dependencies]
 engine.workspace = true
 rand.workspace = true
+rand_chacha.workspace = true
 serde.workspace = true
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 ts-rs.workspace = true
 
 [dev-dependencies]
-rand_chacha.workspace = true
+# The integration tests use `mighty::testing`.
+mighty = { path = ".", features = ["test-support"] }
 serde_json.workspace = true
 
 [lints]
