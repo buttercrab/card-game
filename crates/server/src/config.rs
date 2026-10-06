@@ -55,8 +55,8 @@ pub struct Config {
     /// this directory, `web/src/lib/generated`, then exit.
     #[arg(long)]
     pub write_generated: Option<PathBuf>,
-    /// Print the catalog (presets, bot levels, the table's choices and
-    /// limits) as JSON, then exit.
+    /// Print the catalog (the games, bot levels, the table's choices and
+    /// limits, and each game's own: its presets) as JSON, then exit.
     #[arg(long)]
     pub dump_catalog: bool,
     /// A worker keeps this file fresh while its server talks to it.
