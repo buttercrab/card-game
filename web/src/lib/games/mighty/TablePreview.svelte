@@ -257,7 +257,7 @@
     clock: null,
     watching: 0,
     showing: true,
-    in_hand: !['done', 'won', 'run', 'replayrace'].includes(which),
+    in_hand: !['done', 'won', 'run', 'replayrace', 'replaycopy', 'foldstability'].includes(which),
   };
 
   if (which === 'feedbackstress' && typeof phases.play === 'object' && 'Play' in phases.play) phases.play.Play.friend = 1;
