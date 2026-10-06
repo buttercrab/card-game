@@ -15,7 +15,7 @@
   import { motion } from '../settings.svelte';
   import { sound } from '../sound';
   import SuitText from '../SuitText.svelte';
-  import type { RoomMsg } from '../types';
+  import type { RoomView } from '../types';
   import Badge, { type Team } from '../ui/Badge.svelte';
   import { resultOf, wonHand, type Done } from './view';
 
@@ -39,7 +39,7 @@
   }: {
     done: Done;
     me: number | null;
-    room: RoomMsg | null;
+    room: RoomView | null;
     seatName: (seat: number) => string;
     team: (seat: number) => Team | null;
     points: (seat: number) => number;

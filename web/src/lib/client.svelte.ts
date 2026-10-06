@@ -3,7 +3,7 @@ import { errorText } from './errorText';
 import { sound } from './sound';
 import type { TableClient } from './tableClient';
 import { Toasts } from './toast.svelte';
-import type { Action, BotLevel, ClientMsg, Preset, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
+import type { Action, BotLevel, ClientMsg, Preset, RoomView, Rules, ServerMsg, SessionMsg, StateMsg } from './types';
 
 interface Saved {
   token: string;
@@ -47,7 +47,9 @@ export function savedName(): string {
 
 /** A live connection to one room. Reconnects and reclaims its seat on its own. */
 export class RoomClient implements TableClient {
-  room = $state<RoomMsg | null>(null);
+  /** The table: the latest room message with the latest session's scores
+   * and hands (the server sends the session only when it changes). */
+  room = $state<RoomView | null>(null);
   game = $state<StateMsg | null>(null);
   seat = $state<number | null>(null);
   /** The toast: the server's errors, which sound, and the table's notices, which don't. */
@@ -71,6 +73,8 @@ export class RoomClient implements TableClient {
   #id: string;
   #ws: WebSocket | null = null;
   #closed = false;
+  /** The server said the table is gone: the client stays on "missing". */
+  #gone = false;
   #retry = 500;
   /** The pending reconnect, cancelled by close(). */
   #reconnect: ReturnType<typeof setTimeout> | undefined;
@@ -84,6 +88,8 @@ export class RoomClient implements TableClient {
   #movedSeat: number | null = null;
   /** 시작 was pressed and the room has not answered yet. */
   #starting = false;
+  /** The latest session; the server sends it on connecting and when it changes. */
+  #session: SessionMsg = { scores: [], hands_played: 0, history: [], hands: [] };
 
   constructor(id: string) {
     this.#id = id;
@@ -120,7 +126,7 @@ export class RoomClient implements TableClient {
       if (!this.#closed) this.#receive(JSON.parse(event.data) as ServerMsg);
     };
     ws.onclose = async () => {
-      if (this.#closed) return;
+      if (this.#closed || this.#gone) return;
       if (!opened) {
         const exists = await this.#exists();
         // Left (or unmounted) while asking: stay closed.
@@ -151,8 +157,14 @@ export class RoomClient implements TableClient {
 
   #receive(msg: ServerMsg) {
     switch (msg.type) {
+      case 'session': {
+        this.#session = { scores: msg.scores, hands_played: msg.hands_played, history: msg.history, hands: msg.hands };
+        // While seats move, the room that moves them brings the scores along.
+        if (this.room && !this.#moving) this.room = { ...this.room, ...this.#session };
+        break;
+      }
       case 'room': {
-        this.room = msg;
+        this.room = { ...msg, ...this.#session };
         this.#starting = false;
         if (this.#moving) {
           this.#moving = false;
@@ -225,6 +237,12 @@ export class RoomClient implements TableClient {
         break;
       }
       case 'error':
+        // The table closed as this tab came back: nothing to reconnect to.
+        if (msg.code === 'table_gone') {
+          this.#gone = true;
+          this.status = 'missing';
+          break;
+        }
         this.#starting = false;
         this.toasts.show('error', errorText(msg));
         break;

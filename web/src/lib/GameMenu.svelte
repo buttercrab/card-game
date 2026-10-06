@@ -3,7 +3,7 @@
   // table's own settings, this device's settings, and the way out.
   import { CATALOG } from './catalog';
   import Icon from './Icon.svelte';
-  import type { RoomMsg } from './types';
+  import type { RoomView } from './types';
   import Button from './ui/Button.svelte';
   import Segmented from './ui/Segmented.svelte';
   import Sheet from './ui/Sheet.svelte';
@@ -25,7 +25,7 @@
     onleave,
     leaving = $bindable(false),
   }: {
-    room: RoomMsg;
+    room: RoomView;
     seated: boolean;
     /** The rules' name, with how many this table changed. */
     rulesName: string;

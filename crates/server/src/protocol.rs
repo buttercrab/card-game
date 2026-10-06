@@ -86,6 +86,9 @@ pub enum ErrorCode {
     EmptyReport,
     /// Too many problem reports this hour, from everyone.
     TooManyReports,
+    /// The table closed (nobody was there for a while) as this connection
+    /// came; it hangs up after this.
+    TableGone,
 }
 
 /// A refusal: on a table's connection as `{type: "error", ...}`, over
@@ -211,11 +214,12 @@ pub struct ClockInfo {
     pub total_ms: u64,
 }
 
-/// The table: who sits where, the scores and the table's settings. Sent to
-/// everyone after every change.
+/// The table: who sits where, the turn timer and the table's settings.
+/// Sent to everyone after every change, and after a [`SessionMsg`] that
+/// changed with it.
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(concrete(S = MightySettings, H = HandSummary, R = Rules))]
-pub struct RoomMsg<S, H, R> {
+#[ts(concrete(S = MightySettings, R = Rules))]
+pub struct RoomMsg<S, R> {
     /// The server's [`version`] of the protocol.
     pub protocol: String,
     pub id: String,
@@ -228,13 +232,7 @@ pub struct RoomMsg<S, H, R> {
     /// Whether its players changed the preset's rules.
     pub customized: bool,
     pub seats: Vec<SeatInfo>,
-    pub scores: Vec<i64>,
-    pub hands_played: u32,
     pub in_hand: bool,
-    /// Each finished hand's payoffs, in order.
-    pub history: Vec<Vec<i64>>,
-    /// Each finished hand in brief, in order.
-    pub hands: Vec<H>,
     pub table: TableSettings,
     /// The turn timer, when one runs.
     pub clock: Option<ClockInfo>,
@@ -242,6 +240,21 @@ pub struct RoomMsg<S, H, R> {
     pub watching: usize,
     /// Whether a hand, running or just finished, is on the table.
     pub showing: bool,
+}
+
+/// The session so far: the scores and every finished hand, by seat. Sent
+/// when a connection opens and whenever it changes (a hand ends, someone
+/// new sits down, the seats move), just before the [`RoomMsg`] that goes
+/// with it.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(concrete(H = HandSummary))]
+pub struct SessionMsg<H> {
+    pub scores: Vec<i64>,
+    pub hands_played: u32,
+    /// Each finished hand's payoffs, in order.
+    pub history: Vec<Vec<i64>>,
+    /// Each finished hand in brief, in order.
+    pub hands: Vec<H>,
 }
 
 /// The hand as one seat (or a spectator) may see it.
@@ -282,7 +295,8 @@ pub enum SeatsMoved {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(concrete(S = MightySettings, H = HandSummary, R = Rules, V = View, A = Action, N = MightyNotes))]
 pub enum ServerMsg<S, H, R, V, A, N> {
-    Room(RoomMsg<S, H, R>),
+    Room(RoomMsg<S, R>),
+    Session(SessionMsg<H>),
     State(StateMsg<V, A, N>),
     /// This connection sits at `seat`; `token` reclaims it after a reconnect.
     Welcome {

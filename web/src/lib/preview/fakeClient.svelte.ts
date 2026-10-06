@@ -4,10 +4,10 @@
 
 import type { TableClient } from '../tableClient';
 import type { Toast } from '../toast.svelte';
-import type { Action, RoomMsg, StateMsg } from '../types';
+import type { Action, RoomView, StateMsg } from '../types';
 
 export class FakeClient implements TableClient {
-  room = $state<RoomMsg | null>(null);
+  room = $state<RoomView | null>(null);
   game = $state<StateMsg | null>(null);
   seat = $state<number | null>(null);
   status = $state<TableClient['status']>('open');

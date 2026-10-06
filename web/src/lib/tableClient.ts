@@ -3,11 +3,11 @@
 // on a made-up one (preview/FakeClient.svelte.ts).
 
 import type { Toast } from './toast.svelte';
-import type { Action, BotLevel, Preset, RoomMsg, Rules, StateMsg } from './types';
+import type { Action, BotLevel, Preset, RoomView, Rules, StateMsg } from './types';
 
 export interface TableClient {
   /** The room as the server last sent it. */
-  readonly room: RoomMsg | null;
+  readonly room: RoomView | null;
   /** The hand as this seat (or a watcher) sees it; null between hands. */
   readonly game: StateMsg | null;
   /** This tab's seat, or null when watching. */

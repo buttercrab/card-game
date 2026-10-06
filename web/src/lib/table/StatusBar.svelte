@@ -5,7 +5,7 @@
   import { contractLabel } from '../cards';
   import SuitIcon, { SUIT_NAME } from '../SuitIcon.svelte';
   import SuitText from '../SuitText.svelte';
-  import type { RoomMsg, Rules } from '../types';
+  import type { RoomView, Rules } from '../types';
   import Badge from '../ui/Badge.svelte';
   import RulesChip from './RulesChip.svelte';
   import Tally from './Tally.svelte';
@@ -29,7 +29,7 @@
     tags: Tag[];
     callLabel: string | null;
     seatName: (seat: number) => string;
-    room: RoomMsg | null;
+    room: RoomView | null;
     /** No hand on the table: between hands. */
     idle: boolean;
     rulesName: string;

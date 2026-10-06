@@ -7,11 +7,11 @@
   import { presetTitle } from './catalog';
   import { PATHS } from './SuitIcon.svelte';
   import { FIXED, SUIT_INK, THEME } from './tokens';
-  import type { HandSummary, RoomMsg, Suit } from './types';
+  import type { HandSummary, RoomView, Suit } from './types';
   import Button from './ui/Button.svelte';
   import Sheet from './ui/Sheet.svelte';
 
-  let { room, onclose }: { room: RoomMsg; onclose: () => void } = $props();
+  let { room, onclose }: { room: RoomView; onclose: () => void } = $props();
 
   const W = 1080;
   const H = 1350;

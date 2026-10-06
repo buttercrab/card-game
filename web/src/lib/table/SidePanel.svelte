@@ -7,7 +7,7 @@
   import PlayerFigure from '../PlayerFigure.svelte';
   import SuitIcon, { SUIT_NAME } from '../SuitIcon.svelte';
   import SuitText from '../SuitText.svelte';
-  import type { Card as CardT, RoomMsg, Rules } from '../types';
+  import type { Card as CardT, RoomView, Rules } from '../types';
   import Badge from '../ui/Badge.svelte';
   import type { Ring } from './seats';
   import RulesChip from './RulesChip.svelte';
@@ -41,7 +41,7 @@
     /** Your name as the room knows it. */
     myName: string;
     seal: (card: CardT) => Seal | null;
-    room: RoomMsg | null;
+    room: RoomView | null;
     me: number | null;
     turn: number | null;
     ring: Ring;

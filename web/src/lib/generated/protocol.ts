@@ -224,7 +224,7 @@ export type Doubling = "Never" | "Win" | "Always";
  * Why the server refused something, as a code: the client words each in
  * Korean, and the compiler makes it word every one.
  */
-export type ErrorCode = "not_seated" | "already_seated" | "name_required" | "table_full" | "seat_taken" | "no_such_seat" | "no_player_in_seat" | "no_bot_in_seat" | "nobody_to_move" | "leave_own_seat" | "seats_between_hands" | "rules_between_hands" | "bots_stay_in_hand" | "hand_in_progress" | "empty_seats" | "no_hand" | "not_your_turn" | "illegal_action" | "wait_after_deal" | "no_such_turn_limit" | "invalid_rules" | "player_count_fixed" | "unknown_reaction" | "hints_busy" | "hints_too_often" | "bad_message" | "rate_limited" | "too_many_tables" | "unknown_preset" | "empty_report" | "too_many_reports";
+export type ErrorCode = "not_seated" | "already_seated" | "name_required" | "table_full" | "seat_taken" | "no_such_seat" | "no_player_in_seat" | "no_bot_in_seat" | "nobody_to_move" | "leave_own_seat" | "seats_between_hands" | "rules_between_hands" | "bots_stay_in_hand" | "hand_in_progress" | "empty_seats" | "no_hand" | "not_your_turn" | "illegal_action" | "wait_after_deal" | "no_such_turn_limit" | "invalid_rules" | "player_count_fixed" | "unknown_reaction" | "hints_busy" | "hints_too_often" | "bad_message" | "rate_limited" | "too_many_tables" | "unknown_preset" | "empty_report" | "too_many_reports" | "table_gone";
 
 /**
  * A hand scored for the rulebook: its count, and what each seat gets.
@@ -517,8 +517,9 @@ export type Redealt = { why: Redeal, count: number, };
 export type Refusal = "CalledJoker" | { "MustFollow": Lead } | "JokerFirstLead" | { "HeldBack": { card: Held, trick: TrickWhen, leading: boolean, } };
 
 /**
- * The table: who sits where, the scores and the table's settings. Sent to
- * everyone after every change.
+ * The table: who sits where, the turn timer and the table's settings.
+ * Sent to everyone after every change, and after a [`SessionMsg`] that
+ * changed with it.
  */
 export type RoomMsg = { 
 /**
@@ -537,15 +538,7 @@ rules: Rules,
 /**
  * Whether its players changed the preset's rules.
  */
-customized: boolean, seats: Array<SeatInfo>, scores: Array<number>, hands_played: number, in_hand: boolean, 
-/**
- * Each finished hand's payoffs, in order.
- */
-history: Array<Array<number>>, 
-/**
- * Each finished hand in brief, in order.
- */
-hands: Array<HandSummary>, table: TableSettings, 
+customized: boolean, seats: Array<SeatInfo>, in_hand: boolean, table: TableSettings, 
 /**
  * The turn timer, when one runs.
  */
@@ -659,7 +652,23 @@ detail?: string, };
 /**
  * Everything the server sends on a table's connection.
  */
-export type ServerMsg = { "type": "room" } & RoomMsg | { "type": "state" } & StateMsg | { "type": "welcome", seat: number, token: string, } | { "type": "unseated" } | { "type": "seats_moved" } & SeatsMoved | { "type": "reaction", seat: number, text: string, } | { "type": "hint", version: number, action: Action, } | { "type": "error" } & ServerError;
+export type ServerMsg = { "type": "room" } & RoomMsg | { "type": "session" } & SessionMsg | { "type": "state" } & StateMsg | { "type": "welcome", seat: number, token: string, } | { "type": "unseated" } | { "type": "seats_moved" } & SeatsMoved | { "type": "reaction", seat: number, text: string, } | { "type": "hint", version: number, action: Action, } | { "type": "error" } & ServerError;
+
+/**
+ * The session so far: the scores and every finished hand, by seat. Sent
+ * when a connection opens and whenever it changes (a hand ends, someone
+ * new sits down, the seats move), just before the [`RoomMsg`] that goes
+ * with it.
+ */
+export type SessionMsg = { scores: Array<number>, hands_played: number, 
+/**
+ * Each finished hand's payoffs, in order.
+ */
+history: Array<Array<number>>, 
+/**
+ * Each finished hand in brief, in order.
+ */
+hands: Array<HandSummary>, };
 
 /**
  * The hand as one seat (or a spectator) may see it.
