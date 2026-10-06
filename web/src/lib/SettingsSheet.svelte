@@ -2,8 +2,14 @@
   import Card from './Card.svelte';
   import BackArt from './CardBack.svelte';
   import Icon from './Icon.svelte';
+  import SuitText from './SuitText.svelte';
   import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './achievements';
   import { settings, type Speed } from './settings.svelte';
+  import { TABLE_TONE } from './tokens';
+  import Button from './ui/Button.svelte';
+  import Segmented from './ui/Segmented.svelte';
+  import Sheet from './ui/Sheet.svelte';
+  import Switch from './ui/Switch.svelte';
 
   const unlocked = loadUnlocked();
   const BACKS = Object.keys(BACK_NAMES) as CardBack[];
@@ -14,148 +20,104 @@
 
   let { onclose, onreport }: { onclose: () => void; onreport?: () => void } = $props();
 
-  const SPEEDS: { id: Speed; label: string }[] = [
-    { id: 'normal', label: '보통' },
-    { id: 'fast', label: '빠르게' },
-    { id: 'off', label: '끄기' },
+  const SPEEDS: { value: Speed; label: string }[] = [
+    { value: 'normal', label: '보통' },
+    { value: 'fast', label: '빠르게' },
+    { value: 'off', label: '끄기' },
   ];
-
-  let dialog: HTMLDialogElement;
-  $effect(() => {
-    dialog.showModal();
-  });
 </script>
 
-<dialog class="sheet" bind:this={dialog} onclose={onclose} aria-labelledby="settings-title">
-  <div class="sheet-body">
-    <h2 id="settings-title">설정</h2>
+{#snippet toggle(title: string, note: string | null, get: () => boolean, set: (on: boolean) => void)}
+  <Switch checked={get()} onchange={set}>
+    <strong>{title}</strong>
+    {#if note}<span class="muted"><SuitText text={note} /></span>{/if}
+  </Switch>
+{/snippet}
 
-    <label class="row">
-      <span>
-        <strong>4색 덱</strong>
-        <span class="muted">♦ 주황, ♣ 파랑</span>
-      </span>
-      <input type="checkbox" bind:checked={settings.fourColor} />
-    </label>
-    <div class="preview" aria-hidden="true">
-      <Card card={{ Normal: ['Spade', 14] }} size="mini" />
-      <Card card={{ Normal: ['Heart', 14] }} size="mini" />
-      <Card card={{ Normal: ['Diamond', 14] }} size="mini" />
-      <Card card={{ Normal: ['Club', 14] }} size="mini" />
+<Sheet title="설정" {onclose}>
+  <div class="row">
+    {@render toggle('4색 덱', '♦ 주황, ♣ 파랑', () => settings.fourColor, (on) => (settings.fourColor = on))}
+  </div>
+  <div class="preview" aria-hidden="true">
+    <Card card={{ Normal: ['Spade', 14] }} size="mini" />
+    <Card card={{ Normal: ['Heart', 14] }} size="mini" />
+    <Card card={{ Normal: ['Diamond', 14] }} size="mini" />
+    <Card card={{ Normal: ['Club', 14] }} size="mini" />
+  </div>
+  <div class="row">
+    {@render toggle('한 번 눌러 내기', '끄면 두 번 눌러야 카드를 내요', () => settings.singleTap, (on) => (settings.singleTap = on))}
+  </div>
+  <div class="row">
+    {@render toggle('초보 도움말', '내 차례마다 뭘 하면 되는지 알려 줘요', () => settings.tips, (on) => (settings.tips = on))}
+  </div>
+  <div class="row">
+    {@render toggle('힌트 버튼', '내 차례에 전구를 누르면 봇이라면 뭘 할지 알려 줘요', () => settings.hints, (on) => (settings.hints = on))}
+  </div>
+  <div class="row">
+    {@render toggle('진동', '내 차례가 되면 짧게 (안드로이드)', () => settings.haptics, (on) => (settings.haptics = on))}
+  </div>
+
+  <!-- The switch comes first; the slider only works while it is on. -->
+  <div class="row">
+    {@render toggle('효과음', null, () => settings.sound, (on) => (settings.sound = on))}
+  </div>
+  <input class="volume" type="range" min="0" max="1" step="0.1" bind:value={settings.volume} disabled={!settings.sound} aria-label="효과음 음량" />
+  <div class="row">
+    {@render toggle('배경 음악', '잔잔한 재즈', () => settings.music, (on) => (settings.music = on))}
+  </div>
+  <input class="volume" type="range" min="0" max="1" step="0.1" bind:value={settings.musicVolume} disabled={!settings.music} aria-label="배경 음악 음량" />
+
+  <div class="row looks">
+    <span class="text">
+      <strong>카드 뒷면</strong>
+      <span class="muted">업적으로 더 얻을 수 있어요</span>
+    </span>
+    <div class="swatches backs" role="radiogroup" aria-label="카드 뒷면">
+      {#each BACKS as id (id)}
+        {@const open = isUnlocked({ kind: 'back', id }, unlocked)}
+        <button
+          class="swatch back"
+          role="radio"
+          aria-checked={settings.cardBack === id}
+          aria-disabled={!open}
+          title={open ? BACK_NAMES[id] : `잠김 · ${howTo('back', id)}`}
+          aria-label={open ? BACK_NAMES[id] : `${BACK_NAMES[id]}, 잠김: ${howTo('back', id)}`}
+          onclick={() => open && (settings.cardBack = id)}
+        ><span class="art"><BackArt {id} /></span>{#if !open}<span class="lock"><Icon name="lock" size="14px" /></span>{/if}</button>
+      {/each}
     </div>
-
-    <label class="row">
-      <span>
-        <strong>한 번 눌러 내기</strong>
-        <span class="muted">끄면 두 번 눌러야 카드를 내요</span>
-      </span>
-      <input type="checkbox" bind:checked={settings.singleTap} />
-    </label>
-
-    <label class="row">
-      <span>
-        <strong>초보 도움말</strong>
-        <span class="muted">내 차례마다 뭘 하면 되는지 알려 줘요</span>
-      </span>
-      <input type="checkbox" bind:checked={settings.tips} />
-    </label>
-
-    <label class="row">
-      <span>
-        <strong>힌트 버튼</strong>
-        <span class="muted">내 차례에 전구를 누르면 봇이라면 뭘 할지 알려 줘요</span>
-      </span>
-      <input type="checkbox" bind:checked={settings.hints} />
-    </label>
-
-    <label class="row">
-      <span>
-        <strong>진동</strong>
-        <span class="muted">내 차례가 되면 짧게 (안드로이드)</span>
-      </span>
-      <input type="checkbox" bind:checked={settings.haptics} />
-    </label>
-
-    <!-- The switch comes first; the slider only works while it is on. -->
-    <div class="row">
-      <span><strong>효과음</strong></span>
-      <span class="pair">
-        <input type="checkbox" bind:checked={settings.sound} aria-label="효과음 켜기" />
-        <input type="range" min="0" max="1" step="0.1" bind:value={settings.volume} disabled={!settings.sound} aria-label="효과음 음량" />
-      </span>
-    </div>
-    <div class="row">
-      <span>
-        <strong>배경 음악</strong>
-        <span class="muted">잔잔한 재즈</span>
-      </span>
-      <span class="pair">
-        <input type="checkbox" bind:checked={settings.music} aria-label="배경 음악 켜기" />
-        <input type="range" min="0" max="1" step="0.1" bind:value={settings.musicVolume} disabled={!settings.music} aria-label="배경 음악 음량" />
-      </span>
-    </div>
-
-    <div class="row looks">
-      <span>
-        <strong>카드 뒷면</strong>
-        <span class="muted">업적으로 더 얻을 수 있어요</span>
-      </span>
-      <div class="swatches backs" role="radiogroup" aria-label="카드 뒷면">
-        {#each BACKS as id (id)}
-          {@const open = isUnlocked({ kind: 'back', id }, unlocked)}
-          <button
-            class="swatch back-{id}"
-            role="radio"
-            aria-checked={settings.cardBack === id}
-            aria-disabled={!open}
-            title={open ? BACK_NAMES[id] : `잠김 · ${howTo('back', id)}`}
-            aria-label={open ? BACK_NAMES[id] : `${BACK_NAMES[id]}, 잠김: ${howTo('back', id)}`}
-            onclick={() => open && (settings.cardBack = id)}
-          ><span class="art"><BackArt {id} /></span>{#if !open}<span class="lock"><Icon name="lock" size="14px" /></span>{/if}</button>
-        {/each}
-      </div>
-    </div>
-    <div class="row looks">
-      <strong>테이블 색</strong>
-      <div class="swatches tones" role="radiogroup" aria-label="테이블 색">
-        {#each TONES as id (id)}
-          {@const open = isUnlocked({ kind: 'table', id }, unlocked)}
-          <button
-            class="swatch table-{id}"
-            role="radio"
-            aria-checked={settings.tableTone === id}
-            aria-disabled={!open}
-            title={open ? TABLE_NAMES[id] : `잠김 · ${howTo('table', id)}`}
-            aria-label={open ? TABLE_NAMES[id] : `${TABLE_NAMES[id]}, 잠김: ${howTo('table', id)}`}
-            onclick={() => open && (settings.tableTone = id)}
-          >{#if !open}<span class="lock"><Icon name="lock" size="14px" /></span>{/if}</button>
-        {/each}
-      </div>
-    </div>
-
-    <div class="row">
-      <strong>애니메이션</strong>
-      <div class="chips" role="radiogroup" aria-label="애니메이션">
-        {#each SPEEDS as s (s.id)}
-          <button class="chip" role="radio" aria-checked={settings.speed === s.id} onclick={() => (settings.speed = s.id)}>
-            {s.label}
-          </button>
-        {/each}
-      </div>
+  </div>
+  <div class="row looks">
+    <strong class="text">테이블 색</strong>
+    <div class="swatches tones" role="radiogroup" aria-label="테이블 색">
+      {#each TONES as id (id)}
+        {@const open = isUnlocked({ kind: 'table', id }, unlocked)}
+        <button
+          class="swatch tone"
+          style:background={TABLE_TONE[id].table.light}
+          role="radio"
+          aria-checked={settings.tableTone === id}
+          aria-disabled={!open}
+          title={open ? TABLE_NAMES[id] : `잠김 · ${howTo('table', id)}`}
+          aria-label={open ? TABLE_NAMES[id] : `${TABLE_NAMES[id]}, 잠김: ${howTo('table', id)}`}
+          onclick={() => open && (settings.tableTone = id)}
+        >{#if !open}<span class="lock"><Icon name="lock" size="14px" /></span>{/if}</button>
+      {/each}
     </div>
   </div>
 
-  <form method="dialog" class="sheet-foot">
-    {#if onreport}<button type="button" class="ghost" onclick={() => (dialog.close(), onreport())}>문제 신고</button>{/if}
-    <button>닫기</button>
-  </form>
-</dialog>
+  <div class="row">
+    <strong class="text">애니메이션</strong>
+    <Segmented options={SPEEDS} value={settings.speed} onchange={(s) => (settings.speed = s)} label="애니메이션" />
+  </div>
+
+  {#snippet footer(close)}
+    {#if onreport}<Button variant="ghost" onclick={() => (close(), onreport())}>문제 신고</Button>{/if}
+    <Button onclick={close}>닫기</Button>
+  {/snippet}
+</Sheet>
 
 <style>
-  h2 {
-    margin: 0 0 12px;
-    font-size: 22px;
-  }
   .row {
     display: flex;
     align-items: center;
@@ -164,34 +126,30 @@
     min-height: 52px;
     border-top: 1px solid var(--line);
   }
-  .row > span {
-    display: grid;
+  /* A switch's words: the name over a quiet note. */
+  .row strong {
+    display: block;
   }
   .row .muted {
-    font-size: 13px;
+    display: block;
+    font-size: var(--text-label);
   }
-  input[type='checkbox'] {
-    flex: none;
-    width: 22px;
-    height: 22px;
-    min-height: 0;
+  .text {
+    display: grid;
+    min-width: 0;
   }
-  input[type='range'] {
+  /* A volume slider under its switch, while that is on. */
+  .volume {
+    display: block;
+    width: 100%;
     min-height: 0;
+    margin: 0 0 12px;
     padding: 0;
     border: none;
     background: none;
   }
-  input[type='range']:disabled {
+  .volume:disabled {
     opacity: 0.4;
-  }
-  .row > .pair {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .pair input[type='range'] {
-    width: 110px;
   }
   .preview {
     display: flex;
@@ -212,8 +170,7 @@
     .looks {
       flex-wrap: wrap;
     }
-    .looks > span,
-    .looks > strong {
+    .looks > .text {
       flex: 1 0 100%;
     }
     .swatches {
@@ -222,11 +179,11 @@
       justify-items: start;
       width: 100%;
     }
-    .swatches .swatch {
+    .swatch {
       width: 100%;
       max-width: 44px;
     }
-    .swatches .swatch[class*='back-'] {
+    .swatch.back {
       height: auto;
       aspect-ratio: 30 / 42;
     }
@@ -234,15 +191,10 @@
   .swatch {
     position: relative;
     width: 30px;
-    min-width: 0;
     height: 30px;
-    min-height: 0;
-    padding: 0;
-    border-radius: 8px;
-    box-shadow: none;
+    border-radius: var(--r-card);
     border: 2px solid var(--line);
-    color: #1c1915;
-    font-size: 11px;
+    color: var(--card-ink);
   }
   /* Chosen: an ink ring set off by a gap, so it shows on a pale swatch in
      dark mode too. */
@@ -260,7 +212,7 @@
   .swatch[aria-disabled='true'] .art {
     opacity: 0.35;
   }
-  .swatch[aria-disabled='true'][class*='table-'] {
+  .swatch.tone[aria-disabled='true'] {
     opacity: 0.7;
   }
   .art {
@@ -268,13 +220,8 @@
     inset: 0;
     display: block;
   }
-  .art :global(svg) {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
   /* Back swatches are little cards showing the back itself. */
-  .swatch[class*='back-'] {
+  .swatch.back {
     width: 30px;
     height: 42px;
     overflow: hidden;
@@ -287,15 +234,7 @@
     place-items: center;
     color: var(--ink);
   }
-  .swatch[class*='table-'] .lock {
-    color: #1c1915;
-  }
-  .table-hanji { background: #efebe3; }
-  .table-celadon { background: #e2eae2; }
-  .table-indigo { background: #e3e7ef; }
-  .table-blush { background: #f1e8e4; }
-  .chips {
-    display: flex;
-    gap: 6px;
+  .tone .lock {
+    color: var(--card-ink);
   }
 </style>

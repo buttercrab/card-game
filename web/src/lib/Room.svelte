@@ -2,8 +2,12 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { CATALOG, isPreset, presetTitle } from './catalog';
   import { RoomClient, savedName } from './client.svelte';
+  import { TableUi } from './table/ui.svelte';
+  import type { TableClient } from './tableClient';
   import GameMenu from './GameMenu.svelte';
   import Icon from './Icon.svelte';
+  import SuitText from './SuitText.svelte';
+  import Button from './ui/Button.svelte';
   import { invite } from './invite';
   import { closeTop } from './layers';
   import ReportSheet from './ReportSheet.svelte';
@@ -17,19 +21,21 @@
   let {
     id,
     onleave,
-    preview = null,
-    menu: menuAtStart = false,
+    client: given,
+    ui: givenUi,
   }: {
     id: string;
     /** Off the table, to the home page; the table's own history entry is gone by then. */
     onleave: () => void;
-    /** A made-up connection, for /preview. */
-    preview?: RoomClient | null;
-    /** Open with the menu showing (the preview). */
-    menu?: boolean;
+    /** The connection to the room; a live one to `id` by default. */
+    client?: TableClient;
+    /** What is open at the table. */
+    ui?: TableUi;
   } = $props();
 
-  const client = untrack(() => preview) ?? new RoomClient(untrack(() => id));
+  const client: TableClient = untrack(() => given) ?? new RoomClient(untrack(() => id));
+  const ui = untrack(() => givenUi) ?? new TableUi();
+
   // Off the page, nothing of the table keeps running: no socket, no
   // reconnect, no timer.
   onDestroy(() => {
@@ -39,7 +45,6 @@
   /** The client plays the error sound; notices are quiet. */
   const toast = $derived(client.toasts.current);
 
-  let showMenu = $state(untrack(() => menuAtStart));
   let showSettings = $state(false);
   let showRules = $state(false);
   let editRules = $state(false);
@@ -113,15 +118,17 @@
   // instead of quietly leaving mid-game. Only 나가기 leaves.
   let leaving = false;
   const mark = () => ({ ...(history.state ?? {}), table: id });
+  /** On the table's own address (not a page that draws one). */
+  const routed = () => location.pathname.replace(/\/$/, '') === `/r/${id}`;
   onMount(() => {
-    if (preview) return;
+    if (!routed()) return;
     // A reload lands on the entry already marked: no second one.
     if (history.state?.table !== id) history.pushState(mark(), '');
     const onpop = () => {
       if (leaving) return;
-      if (location.pathname.replace(/\/$/, '') !== `/r/${id}`) return;
+      if (!routed()) return;
       history.pushState(mark(), '');
-      if (!closeTop()) showMenu = true;
+      if (!closeTop()) ui.menu = true;
     };
     addEventListener('popstate', onpop);
     return () => removeEventListener('popstate', onpop);
@@ -133,8 +140,8 @@
     // Even while reconnecting (not seated just now): the seat's token is
     // forgotten, so the table never takes the seat back.
     client.leave();
-    showMenu = false;
-    if (!preview && history.state?.table === id) {
+    ui.closeMenu();
+    if (routed() && history.state?.table === id) {
       await new Promise<void>((done) => {
         addEventListener('popstate', () => done(), { once: true });
         history.back();
@@ -147,7 +154,7 @@
 <div class="page">
   <!-- No page header: the table's code (a tap invites) and its one menu. -->
   <header class="bar">
-    <button class="code-chip" onclick={doInvite} aria-label="친구 초대: 테이블 {id} 링크 {invited ? '복사됨' : '보내기'}">
+    <button class="btn code-chip" onclick={doInvite} aria-label="친구 초대: 테이블 {id} 링크 {invited ? '복사됨' : '보내기'}">
       <span class="status" data-status={client.status} aria-hidden="true"></span>
       {#if invited}
         <span class="said" role="status">{invited === 'shared' ? '보냈어요' : '복사했어요'}</span>
@@ -158,14 +165,14 @@
     </button>
     <span class="sr">{client.status === 'open' ? '연결됨' : client.status === 'closed' ? '연결 끊김' : '연결 중'}</span>
     {#if room?.watching}<span class="watching">구경 <span class="num">{room.watching}</span>명</span>{/if}
-    <button class="menu-btn" onclick={() => (showMenu = true)} aria-label="메뉴" aria-haspopup="dialog"><Icon name="menu" size="24px" /></button>
+    <button class="btn icon menu-btn" onclick={() => (ui.menu = true)} aria-label="메뉴" aria-haspopup="dialog"><Icon name="menu" size="24px" /></button>
   </header>
 
   {#if client.status === 'missing'}
     <section class="panel center">
       <h2>{id} 테이블이 없어요</h2>
       <p class="muted">아무도 없이 {CATALOG.idle_minutes}분이 지나면 테이블이 닫혀요.</p>
-      <button class="primary" onclick={leave}>새 테이블 만들기</button>
+      <Button variant="primary" onclick={leave}>새 테이블 만들기</Button>
     </section>
   {:else if !room}
     <p class="muted center">연결하는 중…</p>
@@ -175,7 +182,7 @@
            protocol than this page was built for. -->
       <div class="banner" role="status">
         <span>새 버전이 나왔어요.</span>
-        <button onclick={() => location.reload()}>새로고침</button>
+        <Button size="sm" onclick={() => location.reload()}>새로고침</Button>
       </div>
     {:else if client.status !== 'open'}
       <!-- The link dropped (a deploy restarts the server): the client
@@ -187,15 +194,16 @@
       <div class="banner">
         {#each offline as o (o.seat)}
           <span>{o.name} 연결이 끊겼어요.</span>
-          <button onclick={() => client.addBot(o.seat)}>봇에게 맡기기</button>
+          <Button size="sm" onclick={() => client.addBot(o.seat)}>봇에게 맡기기</Button>
         {/each}
       </div>
     {/if}
 
     <Table
       {client}
+      {ui}
       {rulesName}
-      onmenu={() => (showMenu = true)}
+      onmenu={() => (ui.menu = true)}
       onrules={() => (showRules = true)}
       oninvite={doInvite}
     />
@@ -203,18 +211,19 @@
 
   {#if toast}
     {#key toast.id}
-      <div class="toast" data-kind={toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'}>{toast.text}</div>
+      <div class="toast" data-kind={toast.kind} role={toast.kind === 'error' ? 'alert' : 'status'}><SuitText text={toast.text} /></div>
     {/key}
   {/if}
 </div>
 
-{#if showMenu && room}
+{#if ui.menu && room}
   <GameMenu
     {room}
     {seated}
     {rulesName}
     {invited}
-    onclose={() => (showMenu = false)}
+    bind:leaving={ui.leaving}
+    onclose={() => ui.closeMenu()}
     oninvite={doInvite}
     onrules={() => (showRules = true)}
     oneditrules={() => (editRules = true)}
@@ -262,15 +271,6 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
   .bar {
     display: flex;
     align-items: center;
@@ -280,12 +280,10 @@
   /* The table's code on a small paper chip: a tap invites a friend. */
   .code-chip {
     gap: 8px;
-    min-height: 40px;
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     font-size: 14px;
     font-weight: 700;
-    color: var(--ink);
     box-shadow: 0 2px 0 var(--btn-lip);
   }
   .code {
@@ -297,7 +295,7 @@
   }
   .watching {
     flex: none;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     color: var(--ink-muted);
   }
@@ -306,14 +304,8 @@
   }
   .menu-btn {
     width: 48px;
-    min-width: 48px;
-    height: 44px;
     margin-left: auto;
     margin-right: -10px;
-    padding: 0;
-    background: transparent;
-    box-shadow: none;
-    color: var(--ink);
   }
   /* Connected: a small ink dot. Connecting: an empty ring. Lost: red. */
   .status {
@@ -333,7 +325,7 @@
 
   .panel {
     padding: 16px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
   }
   .center {
@@ -341,20 +333,20 @@
   }
   h2 {
     margin: 0;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .banner {
     position: fixed;
     top: calc(56px + env(safe-area-inset-top));
     left: 16px;
     right: 16px;
-    z-index: 15;
+    z-index: var(--z-banner);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px 12px;
     padding: 8px 12px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--panel);
     font-size: 14px;
   }
@@ -365,10 +357,12 @@
     transform: translateX(-50%);
     max-width: calc(100% - 32px);
     padding: 10px 16px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     background: var(--ink);
     color: var(--table);
     font-weight: 600;
-    z-index: 50;
+    /* Suits on the ink toast take its colour. */
+    --suit-tone: currentColor;
+    z-index: var(--z-toast);
   }
 </style>

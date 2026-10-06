@@ -6,9 +6,12 @@
   import { occupantName } from './names';
   import { presetTitle } from './catalog';
   import { PATHS } from './SuitIcon.svelte';
-  import type { HandSummary, RoomMsg, Suit } from './types';
+  import { FIXED, SUIT_INK, THEME } from './tokens';
+  import type { HandSummary, RoomView, Suit } from './types';
+  import Button from './ui/Button.svelte';
+  import Sheet from './ui/Sheet.svelte';
 
-  let { room, onclose }: { room: RoomMsg; onclose: () => void } = $props();
+  let { room, onclose }: { room: RoomView; onclose: () => void } = $props();
 
   const W = 1080;
   const H = 1350;
@@ -31,16 +34,16 @@
   const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
   const short = (name: string) => (name.length > 10 ? `${name.slice(0, 10)}…` : name);
 
-  const PAPER = '#efebe3';
-  const CARD = '#fbf8f2';
-  const INK = '#1c1915';
-  const MUTED = '#645d53';
-  const LINE = '#d6cfc1';
-  const DECLARER = '#e69f00';
-  const DEFENSE = '#3b4a6b';
-  const GOLD = '#a77a12';
-  const DANGER = '#b3261e';
-  const SUIT_INK: Record<Suit, string> = { Spade: INK, Heart: '#a3271f', Diamond: '#c2620a', Club: '#1d5fb0' };
+  // A picture to send around: always the light theme's paper and ink.
+  const PAPER = THEME.table.light;
+  const CARD = THEME.card.light;
+  const INK = THEME.ink.light;
+  const MUTED = THEME['ink-muted'].light;
+  const LINE = THEME.line.light;
+  const DECLARER = FIXED['team-declarer'];
+  const DEFENSE = THEME['team-defense'].light;
+  const GOLD = FIXED['card-gold'];
+  const DANGER = THEME.danger.light;
   const SUIT_TEXT: Record<Suit, string> = { Spade: '♠', Heart: '♥', Diamond: '♦', Club: '♣' };
 
   /** The session as text for a chat, with emoji squares in place of the grid. */
@@ -267,7 +270,7 @@
       area.value = text;
       area.style.position = 'fixed';
       area.style.opacity = '0';
-      dialog.append(area);
+      (dialog ?? document.body).append(area);
       area.select();
       const ok = document.execCommand('copy');
       area.remove();
@@ -281,9 +284,8 @@
     copied = setTimeout(() => status === '복사했어요' && (status = null), 2000);
   }
 
-  let dialog: HTMLDialogElement;
+  let dialog = $state<HTMLDialogElement>();
   $effect(() => {
-    dialog.showModal();
     void draw();
     return () => {
       clearTimeout(copied);
@@ -292,40 +294,36 @@
   });
 </script>
 
-<dialog class="sheet share" bind:this={dialog} onclose={onclose} aria-labelledby="share-title">
-  <div class="sheet-body">
-    <h2 id="share-title">결과 카드</h2>
-    {#if url}
-      <img src={url} alt="마이티 {room.hands_played}판 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
-    {:else}
-      <p class="muted">그리는 중…</p>
-    {/if}
-    <p class="muted status" role="status">{status ?? ''}</p>
-  </div>
-  <form method="dialog" class="sheet-foot">
-    <button class="ghost">닫기</button>
-    <button type="button" onclick={copyText}>텍스트 복사</button>
-    <button type="button" class="primary" disabled={!url} onclick={share}>공유하기</button>
-  </form>
-</dialog>
+<Sheet title="결과 카드" bind:dialog {onclose}>
+  {#if url}
+    <img src={url} alt="마이티 {room.hands_played}판 결과: {standings.map((s) => `${s.name} ${signed(s.score)}`).join(', ')}" />
+  {:else}
+    <p class="muted">그리는 중…</p>
+  {/if}
+  <p class="muted status" role="status">{status ?? ''}</p>
+  {#snippet footer(close)}
+    <Button variant="ghost" onclick={close}>닫기</Button>
+    <Button onclick={copyText}>텍스트 복사</Button>
+    <Button variant="primary" disabled={!url} onclick={share}>공유하기</Button>
+  {/snippet}
+</Sheet>
 
 <style>
-  h2 {
-    margin: 0 0 12px;
-    font-size: 22px;
-  }
   img {
     display: block;
     width: 100%;
     max-height: 60dvh;
     object-fit: contain;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     box-shadow: var(--shadow-card);
     animation: fade-up 260ms var(--ease-standard) both;
+  }
+  :global(:root[data-motion='reduced']) img {
+    animation-name: fade;
   }
   .status {
     min-height: 1.4em;
     margin: 8px 0 0;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
 </style>

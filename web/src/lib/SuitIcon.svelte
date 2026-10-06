@@ -10,16 +10,65 @@
     Club: 'M30 30a20 20 0 1 0 40 0a20 20 0 1 0-40 0ZM8 62a20 20 0 1 0 40 0a20 20 0 1 0-40 0ZM52 62a20 20 0 1 0 40 0a20 20 0 1 0-40 0ZM40 54a10 10 0 1 0 20 0a10 10 0 1 0-20 0ZM46 50c0 28-4 40-14 46h36c-10-6-14-18-14-46Z',
     Star: 'M50 4l12.6 30.4 32.9 2.6-25 21.4 7.7 32L50 73.2 21.8 90.4l7.7-32-25-21.4 32.9-2.6Z',
   };
+
+  export const SUIT_NAME: Record<Suit, string> = { Spade: '스페이드', Diamond: '다이아몬드', Heart: '하트', Club: '클로버' };
 </script>
 
 <script lang="ts">
-  let { suit, class: className = '' }: { suit: Suit | 'Star'; class?: string } = $props();
+  // A suit, drawn: never a font glyph or emoji, so it looks the same on
+  // every device. It colours itself with its suit's ink (the four-colour
+  // setting remaps diamonds and clubs); the spade is the surface's ink
+  // (--spade-ink on card paper, else --ink). Where a surface has a colour
+  // of its own (a card's index, a chosen chip), --suit-tone: currentColor
+  // makes it follow. `inline` sets it in running text, at the text's size.
+  let {
+    suit,
+    inline = false,
+    size,
+    label,
+    class: className = '',
+  }: {
+    suit: Suit | 'Star';
+    inline?: boolean;
+    /** Its width and height, if not its container's rules. */
+    size?: string;
+    /** Its name for screen readers; without one it is decoration. */
+    label?: string;
+    class?: string;
+  } = $props();
 </script>
 
-<svg class={className} viewBox="0 0 100 100" aria-hidden="true"><path d={PATHS[suit]} fill="currentColor" /></svg>
+<svg
+  class={['suit', `s-${suit}`, inline && 'inline', className]}
+  viewBox="0 0 100 100"
+  role={label ? 'img' : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : 'true'}
+  style:width={size}
+  style:height={size}
+><path d={PATHS[suit]} fill="currentColor" /></svg>
 
 <style>
   svg {
     display: block;
+  }
+  .inline {
+    display: inline-block;
+    width: 0.92em;
+    height: 0.92em;
+    margin: 0 0.04em;
+    vertical-align: -0.12em;
+  }
+  .s-Spade {
+    color: var(--suit-tone, var(--spade-ink, var(--ink)));
+  }
+  .s-Heart {
+    color: var(--suit-tone, var(--suit-heart));
+  }
+  .s-Diamond {
+    color: var(--suit-tone, var(--suit-diamond));
+  }
+  .s-Club {
+    color: var(--suit-tone, var(--suit-club));
   }
 </style>

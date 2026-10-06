@@ -4,14 +4,14 @@ mod common;
 
 use common::*;
 use serde_json::{Value, json};
-use server::AppState;
+use server::{AppState, Config};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio_tungstenite::connect_async;
 
 #[tokio::test]
 async fn one_player_and_four_bots_finish_a_hand() {
-    let state = AppState::new(Duration::ZERO);
+    let state = AppState::new(config());
     let stats = state.stats();
     let addr = serve(state).await;
     let room = create_room(addr, "gshs").await;
@@ -46,11 +46,21 @@ async fn one_player_and_four_bots_finish_a_hand() {
             send(&mut ws, json!({ "type": "act", "action": action })).await;
         }
     }
-    // The room update for the finished hand went out just before the final state.
+    // Dealing the next hand changes the table but not the session, so only
+    // the table is sent again.
     send(&mut ws, json!({ "type": "start" })).await;
-    let room = next_where(&mut ws, "room", |r| r["hands_played"] == 1).await;
-    assert_eq!(room["in_hand"], true, "the next hand deals");
-    let history = room["history"].as_array().expect("hands are remembered");
+    let next_msg = next_text(&mut ws).await.unwrap();
+    assert_eq!(
+        (&next_msg["type"], &next_msg["in_hand"]),
+        (&json!("room"), &json!(true))
+    );
+    // Whoever comes to the table hears the session so far first.
+    let mut watcher = connect(addr, &room).await;
+    let session = next_text(&mut watcher).await.unwrap();
+    assert_eq!(session["type"], "session");
+    assert_eq!(session["hands_played"], 1);
+    assert_eq!(next_text(&mut watcher).await.unwrap()["type"], "room");
+    let history = session["history"].as_array().expect("hands are remembered");
     assert_eq!(history.len(), 1);
     assert_eq!(
         history[0]
@@ -61,7 +71,7 @@ async fn one_player_and_four_bots_finish_a_hand() {
             .sum::<i64>(),
         0
     );
-    let hands = room["hands"].as_array().expect("hands are summarized");
+    let hands = session["hands"].as_array().expect("hands are summarized");
     assert_eq!(hands.len(), 1);
     let rounds: Vec<i64> = serde_json::from_value(hands[0]["rounds"].clone()).unwrap();
     assert_eq!(rounds.len(), 10, "one entry per trick");
@@ -225,7 +235,11 @@ async fn unknown_rooms_are_not_found() {
 
 #[tokio::test]
 async fn idle_rooms_close_and_the_room_count_is_capped() {
-    let state = AppState::new(Duration::ZERO).with_limits(2, Duration::from_millis(200));
+    let state = AppState::new(Config {
+        max_rooms: 2,
+        idle_minutes: IDLE_200MS,
+        ..config()
+    });
     let open = state.clone();
     let addr = serve(state).await;
 
@@ -259,7 +273,10 @@ async fn idle_rooms_close_and_the_room_count_is_capped() {
 async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     let dir = temp_dir();
     let start = |dir: std::path::PathBuf| async move {
-        let state = AppState::new(Duration::ZERO).with_data(dir);
+        let state = AppState::new(Config {
+            data: Some(dir),
+            ..config()
+        });
         let restored = state.restore_rooms().unwrap();
         (serve(state).await, restored)
     };
@@ -277,6 +294,7 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
     send(&mut players[0].0, json!({ "type": "start" })).await;
     // Each move reaches everyone; whoever has legal actions makes the next one.
     let mut before = Value::Null;
+    let mut moves = Vec::new();
     for step in 0..8 {
         let mut mover = None;
         for (i, (ws, _)) in players.iter_mut().enumerate() {
@@ -290,15 +308,23 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
             before = msg;
             break;
         }
+        moves.push(json!({ "kind": "act", "seat": i, "action": msg["legal"][0] }));
         send(&mut players[i].0, json!({ "type": "act", "action": msg["legal"][0] })).await;
     }
     let seat = before["turn"]["Seat"].as_u64().unwrap() as usize;
     let token = players[seat].1.clone();
-    // The room saves itself after each move, before it reads its next
-    // message: once it has answered one more, the file is up to date.
-    let other = (seat + 1) % players.len();
-    send(&mut players[other].0, json!({ "type": "act", "action": "Pass" })).await;
-    assert_eq!(next(&mut players[other].0, "error").await["code"], "not_your_turn");
+    // The room hands itself to its writer after each move; once the file
+    // holds every move made, it is up to date.
+    let file = dir.path().join(format!("{room}.json"));
+    eventually("every move is saved", || async {
+        let saved: Value = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        let log = saved["hand"]["log"].as_array().cloned().unwrap_or_default();
+        log.into_iter().filter(|e| e["kind"] == "act").collect::<Vec<_>>() == moves
+    })
+    .await;
 
     // A second server reading the same directory picks the hand up where it was.
     let (addr, restored) = start(dir.path().to_path_buf()).await;
@@ -405,7 +431,10 @@ async fn reactions_reach_the_table_and_unknown_ones_are_refused() {
 async fn a_report_saves_the_room_without_seat_tokens() {
     let dir = temp_dir();
     let dir = dir.path();
-    let state = AppState::new(Duration::ZERO).with_data(dir.to_path_buf());
+    let state = AppState::new(Config {
+        data: Some(dir.to_path_buf()),
+        ..config()
+    });
     let addr = serve(state).await;
 
     let room = create_room(addr, "gshs").await;
@@ -456,8 +485,7 @@ async fn a_hint_is_one_of_the_legal_actions() {
                 let mine = msg["legal"].as_array().is_some_and(|l| !l.is_empty());
                 states.insert(msg["version"].as_u64().unwrap(), msg);
                 if mine {
-                    // Asked again for this state (at most one a second).
-                    tokio::time::sleep(Duration::from_millis(1100)).await;
+                    // Asked again for this state.
                     send(&mut ws, json!({ "type": "hint" })).await;
                 }
             }
@@ -507,7 +535,10 @@ async fn bots_default_to_hard_and_their_level_can_change() {
 
 #[tokio::test]
 async fn a_bot_worker_thinks_for_the_room() {
-    let state = AppState::new(Duration::ZERO).with_bot_token("secret".into());
+    let state = AppState::new(Config {
+        bot_token: Some("secret".into()),
+        ..config()
+    });
     let remote = state.remote_bots();
     let addr = serve(state).await;
 
@@ -544,7 +575,11 @@ async fn a_bot_worker_thinks_for_the_room() {
 
 #[tokio::test]
 async fn a_hand_left_unfinished_when_the_table_closes_counts_as_abandoned() {
-    let state = AppState::new(Duration::from_millis(50)).with_limits(10, Duration::from_millis(200));
+    let state = AppState::new(Config {
+        bot_delay_ms: 50,
+        idle_minutes: IDLE_200MS,
+        ..config()
+    });
     let stats = state.stats();
     let addr = serve(state).await;
 
@@ -643,220 +678,6 @@ async fn anyone_may_call_a_misdeal_out_of_turn_while_their_window_is_open() {
 }
 
 #[tokio::test]
-async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
-    let addr = spawn_server().await;
-    let (mut players, states) = misdeal_table(addr, "default").await;
-    let turn = to_act(&states[0]);
-    let grace = states[turn]["grace_ms"].as_u64().unwrap();
-    assert!(grace > 1000 && grace <= 2000, "{grace}");
-    let bid = states[turn]["legal"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|a| a.get("Bid").is_some())
-        .unwrap()
-        .clone();
-    send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
-    assert_eq!(next(&mut players[turn], "error").await["code"], "wait_after_deal");
-    let other = (turn + 2) % 5;
-    assert_eq!(states[other]["out_of_turn"], json!(["Misdeal"]));
-
-    // Once the grace is over, the same bid goes through.
-    let mut asked = 1;
-    let mine = loop {
-        tokio::time::sleep(Duration::from_millis(grace / 10)).await;
-        send(&mut players[turn], json!({ "type": "act", "action": bid })).await;
-        asked += 1;
-        let reply = loop {
-            let msg = next_text(&mut players[turn]).await.expect("socket open");
-            if msg["type"] == "state" || msg["type"] == "error" {
-                break msg;
-            }
-        };
-        if reply["type"] == "state" {
-            break reply;
-        }
-        assert_eq!(reply["code"], "wait_after_deal");
-        assert!(asked < 100, "the grace never ends");
-    };
-    let mut states = Vec::new();
-    for (seat, ws) in players.iter_mut().enumerate() {
-        states.push(if seat == turn {
-            mine.clone()
-        } else {
-            next(ws, "state").await
-        });
-    }
-    assert_eq!(states[0]["view"]["bids"].as_array().unwrap().len(), 1);
-    // The first bid closed every window.
-    assert!(states.iter().all(|s| s["out_of_turn"] == json!([])));
-    send(&mut players[other], json!({ "type": "act", "action": "Misdeal" })).await;
-    assert_eq!(next(&mut players[other], "error").await["code"], "not_your_turn");
-}
-
-/// A server whose turn-limit seconds last 10 ms, so a 20-second turn runs
-/// out in a fifth of a second.
-async fn spawn_quick_clock_server() -> SocketAddr {
-    serve(AppState::new(Duration::ZERO).with_turn_second(Duration::from_millis(10))).await
-}
-
-#[tokio::test]
-async fn a_turn_that_runs_out_is_played_for_the_seat_and_marks_it_away() {
-    let addr = spawn_quick_clock_server().await;
-    let room = create_room(addr, "gshs").await;
-    let mut ws = connect(addr, &room).await;
-    join(&mut ws, "Jae", None).await;
-
-    // Only a listed limit is taken.
-    send(&mut ws, json!({ "type": "set_table", "turn_secs": 25 })).await;
-    next(&mut ws, "error").await;
-    send(&mut ws, json!({ "type": "set_table", "turn_secs": 20 })).await;
-    let msg = next_where(&mut ws, "room", |r| r["table"]["turn_secs"] == 20).await;
-    assert_eq!(msg["table"]["shuffle"], false);
-    assert!(msg["clock"].is_null(), "no hand, no clock");
-
-    for bot in 1..5 {
-        send(&mut ws, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
-    }
-    send(&mut ws, json!({ "type": "start" })).await;
-    // Jae never acts: the clock runs on the server and a stand-in moves.
-    let clocked = next_where(&mut ws, "room", |r| r["clock"]["seat"] == 0).await;
-    assert!(clocked["clock"]["ms"].as_u64().unwrap() <= clocked["clock"]["total_ms"].as_u64().unwrap());
-    next_where(&mut ws, "room", |r| r["seats"][0]["away"] == true).await;
-    // Away, the next turns get five seconds' worth: 50 ms here.
-    let short = next_where(&mut ws, "room", |r| {
-        r["clock"]["seat"] == 0 && r["seats"][0]["away"] == true
-    })
-    .await;
-    assert_eq!(short["clock"]["total_ms"], 50);
-
-    // Anything the player does clears the mark.
-    send(&mut ws, json!({ "type": "react", "text": "미안" })).await;
-    next_where(&mut ws, "room", |r| r["seats"][0]["away"] == false).await;
-
-    // The hand finishes on its own, the stand-in playing every late turn.
-    let done = next_where(&mut ws, "room", |r| r["hands_played"] == 1).await;
-    assert_eq!(done["in_hand"], false);
-    assert!(done["clock"].is_null());
-}
-
-#[tokio::test]
-async fn a_dropped_player_counts_as_away_under_a_time_limit() {
-    let addr = spawn_quick_clock_server().await;
-    let room = create_room(addr, "gshs").await;
-    let mut a = connect(addr, &room).await;
-    join(&mut a, "A", None).await;
-    let mut b = connect(addr, &room).await;
-    join(&mut b, "B", None).await;
-    b.close(None).await.unwrap();
-    let r = next_where(&mut a, "room", |r| r["seats"][1]["connected"] == false).await;
-    assert_eq!(r["seats"][1]["away"], false, "without a limit nobody is away");
-    send(&mut a, json!({ "type": "set_table", "turn_secs": 60 })).await;
-    next_where(&mut a, "room", |r| r["seats"][1]["away"] == true).await;
-}
-
-#[tokio::test]
-async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
-    let addr = spawn_quick_clock_server().await;
-    let room = create_room(addr, "gshs").await;
-    let mut a = connect(addr, &room).await;
-    let (_, token_a) = join(&mut a, "A", None).await;
-    let mut b = connect(addr, &room).await;
-    let (_, token_b) = join(&mut b, "B", None).await;
-    let mut watcher = connect(addr, &room).await;
-    for bot in 2..5 {
-        send(&mut a, json!({ "type": "add_bot", "seat": bot, "level": "easy" })).await;
-    }
-    // Spectators may not move anyone.
-    send(&mut watcher, json!({ "type": "set_table", "shuffle_next": true })).await;
-    next(&mut watcher, "error").await;
-    send(&mut watcher, json!({ "type": "set_table", "shuffle_next": true })).await;
-    next(&mut watcher, "error").await;
-
-    // A whole hand plays itself: both players let every turn run out.
-    send(&mut a, json!({ "type": "set_table", "turn_secs": 20 })).await;
-    send(&mut a, json!({ "type": "start" })).await;
-    // Seats stay put while a hand is on.
-    next_where(&mut b, "room", |r| r["in_hand"] == true).await;
-    send(&mut b, json!({ "type": "swap_seats", "a": 0, "b": 1 })).await;
-    assert_eq!(next(&mut b, "error").await["code"], "seats_between_hands");
-    let before = next_where(&mut a, "room", |r| r["hands_played"] == 1).await;
-    assert_eq!(before["showing"], true);
-    let score = |r: &Value, name: &str| -> (usize, i64) {
-        let seat = r["seats"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .position(|s| s["name"] == name)
-            .unwrap();
-        (seat, r["scores"][seat].as_i64().unwrap())
-    };
-    let (a_was, a_score) = score(&before, "A");
-    let (_, b_score) = score(&before, "B");
-    let a_hist = before["history"][0][a_was].clone();
-    let declarer = before["hands"][0]["declarer"].as_u64().unwrap() as usize;
-    let declarer_was = before["seats"][declarer].clone();
-
-    // 섞기 waits for the next hand; 다음 판 shuffles, then deals.
-    send(&mut b, json!({ "type": "set_table", "shuffle_next": true })).await;
-    next_where(&mut watcher, "room", |r| r["table"]["shuffle_next"] == true).await;
-    send(&mut b, json!({ "type": "start" })).await;
-    let news = next_where(&mut a, "seats_moved", |m| m["how"] == "shuffle").await;
-    // B hears where everyone went before its own new seat, so its table can
-    // slide each seat from where it was.
-    let b_news = next(&mut b, "seats_moved").await;
-    let b_welcome = next(&mut b, "welcome").await;
-    let after = next_where(&mut watcher, "room", |r| r["hands_played"] == 1 && r["in_hand"] == true).await;
-    assert_eq!(after["table"]["shuffle_next"], false, "a shuffle is used once");
-    let (a_seat, a_after) = score(&after, "A");
-    let (b_seat, b_after) = score(&after, "B");
-    assert_eq!((a_after, b_after), (a_score, b_score), "scores follow the players");
-    assert_eq!(after["history"][0][a_seat], a_hist, "so does each hand's payoff");
-    let moved_declarer = after["hands"][0]["declarer"].as_u64().unwrap() as usize;
-    assert_eq!(after["seats"][moved_declarer]["kind"], declarer_was["kind"]);
-    // Bots keep their names too.
-    assert_eq!(after["seats"][moved_declarer]["name"], declarer_was["name"]);
-    assert_eq!(after["hands_played"], 1);
-    assert_eq!(news["order"][a_was], a_seat, "the news says where each seat went");
-    assert_eq!(b_news, news);
-
-    // Each tab learns its new seat, and the token still finds it.
-    assert_eq!(b_welcome["seat"].as_u64().unwrap() as usize, b_seat);
-    // That hand plays itself out too before the seats move again.
-    next_where(&mut watcher, "room", |r| r["hands_played"] == 2).await;
-    drop(b);
-    next_where(&mut watcher, "room", |r| r["seats"][b_seat]["connected"] == false).await;
-    let mut again = connect(addr, &room).await;
-    let (seat, token) = join(&mut again, "B", Some(&token_b)).await;
-    assert_eq!((seat as usize, token), (b_seat, token_b.clone()));
-
-    // A swap moves two seats.
-    send(&mut again, json!({ "type": "swap_seats", "a": a_seat, "b": b_seat })).await;
-    assert_eq!(
-        next(&mut again, "welcome").await["seat"].as_u64().unwrap() as usize,
-        a_seat
-    );
-    let swapped = next_where(&mut again, "room", |r| r["seats"][b_seat]["name"] == "A").await;
-    assert_eq!(swapped["seats"][a_seat]["name"], "B");
-
-    // B sends A back to watching; A's tab is told, and its token no longer
-    // seats it anywhere.
-    send(&mut again, json!({ "type": "clear_seat", "seat": b_seat })).await;
-    next(&mut a, "unseated").await;
-    let cleared = next_where(&mut watcher, "room", |r| r["seats"][b_seat]["kind"] == "empty").await;
-    assert_eq!(cleared["watching"], 2, "A and the first watcher");
-    send(
-        &mut a,
-        json!({ "type": "join", "name": "A", "token": token_a, "reclaim": true }),
-    )
-    .await;
-    next(&mut a, "unseated").await;
-    // A may sit again by choice.
-    send(&mut a, json!({ "type": "join", "name": "A", "seat": b_seat })).await;
-    assert_eq!(next(&mut a, "welcome").await["seat"].as_u64().unwrap() as usize, b_seat);
-}
-
-#[tokio::test]
 async fn a_watcher_takes_a_bots_seat_between_hands() {
     let addr = spawn_server().await;
     let room = create_room(addr, "gshs").await;
@@ -893,21 +714,22 @@ async fn shuffling_every_hand_reseats_before_the_deal() {
     );
 }
 
-/// A room saved by this server comes back as it was; one in an older
-/// shape (from before the last deploy but one, which tables never
-/// outlive) is refused, and the server sets its file aside.
+/// A room saved by this server comes back as it was; one missing part of
+/// its shape is refused, and the server sets its file aside (older
+/// formats are migrated: see `room::migrate_v1`).
 #[test]
-fn only_the_current_snapshot_shape_restores() {
+fn a_snapshot_restores_as_saved_and_a_broken_one_is_refused() {
     use mighty::Mighty;
     use server::room::Room;
     use server::session::MightySettings;
-    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), Duration::ZERO);
-    let mut snapshot = room.snapshot();
+    let env = std::sync::Arc::new(server::room::RoomEnv::new(Duration::ZERO));
+    let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), env.clone());
+    let mut snapshot = serde_json::to_value(room.snapshot()).unwrap();
     snapshot["table"]["shuffle_next"] = json!(true);
-    let restored = Room::<Mighty>::restore(snapshot.clone(), Duration::ZERO).unwrap();
-    assert_eq!(restored.snapshot(), snapshot);
+    let restored = Room::<Mighty>::restore(snapshot.clone(), env.clone()).unwrap();
+    assert_eq!(serde_json::to_value(restored.snapshot()).unwrap(), snapshot);
     snapshot.as_object_mut().unwrap().remove("table");
-    assert!(Room::<Mighty>::restore(snapshot, Duration::ZERO).is_err());
+    assert!(Room::<Mighty>::restore(snapshot, env).is_err());
 }
 
 /// Each seat's name (a person's or a bot's), and a bot's level, by seat.

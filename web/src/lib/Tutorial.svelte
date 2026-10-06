@@ -2,7 +2,10 @@
   // A short guide for someone who has never played Mighty, ending in a
   // practice table against easy bots.
   import Card from './Card.svelte';
+  import SuitText from './SuitText.svelte';
   import type { Card as CardT } from './types';
+  import Button from './ui/Button.svelte';
+  import Sheet from './ui/Sheet.svelte';
 
   let { onpractice, onclose }: { onpractice: () => void; onclose: () => void } = $props();
 
@@ -50,61 +53,54 @@
   const s = $derived(STEPS[step]);
   const last = $derived(step === STEPS.length - 1);
 
-  let dialog: HTMLDialogElement;
-  $effect(() => {
-    dialog.showModal();
-  });
 </script>
 
-<dialog class="sheet tutorial" bind:this={dialog} onclose={onclose} aria-labelledby="tutorial-title">
-  <div class="sheet-body">
+<Sheet class="tutorial" {onclose}>
+  {#snippet head(id)}
     <p class="count muted">{step + 1} / {STEPS.length}</p>
-    {#key step}
-      <div class="step fade-up">
-        <h2 id="tutorial-title">{s.title}</h2>
-        {#if s.cards.length}
-          <div class="cards" aria-hidden="true">
-            {#each s.cards as c, i (i)}<Card card={c.card} size="hand" seal={c.seal ?? null} />{/each}
-          </div>
-        {/if}
-        <p>{s.body}</p>
-      </div>
-    {/key}
-    <div class="dots" aria-hidden="true">
-      {#each STEPS as _, i (i)}<span class:on={i === step}></span>{/each}
+    <h2 class="sheet-title" {id}>{s.title}</h2>
+  {/snippet}
+  {#key step}
+    <div class="step fade-up">
+      {#if s.cards.length}
+        <div class="cards" aria-hidden="true">
+          {#each s.cards as c, i (i)}<Card card={c.card} size="hand" seal={c.seal ?? null} />{/each}
+        </div>
+      {/if}
+      <p><SuitText text={s.body} /></p>
     </div>
+  {/key}
+  <div class="dots" aria-hidden="true">
+    {#each STEPS as _, i (i)}<span class:on={i === step}></span>{/each}
   </div>
   <!-- Every button keeps its place from step to step: 이전 is only hidden
        on the first. -->
-  <div class="sheet-foot">
-    <button class="ghost" onclick={() => dialog.close()}>닫기</button>
-    <button class="prev" class:hidden={step === 0} onclick={() => step--} aria-hidden={step === 0} tabindex={step === 0 ? -1 : 0}>이전</button>
+  {#snippet footer(close)}
+    <Button variant="ghost" onclick={close}>닫기</Button>
+    <button class="btn" class:hidden={step === 0} onclick={() => step--} aria-hidden={step === 0} tabindex={step === 0 ? -1 : 0}>이전</button>
     {#if last}
-      <button class="primary" onclick={() => (dialog.close(), onpractice())}>봇이랑 연습하기</button>
+      <Button variant="primary" onclick={() => (close(), onpractice())}>봇이랑 연습하기</Button>
     {:else}
-      <button class="primary" onclick={() => step++}>다음</button>
+      <Button variant="primary" onclick={() => step++}>다음</Button>
     {/if}
-  </div>
-</dialog>
+  {/snippet}
+</Sheet>
 
 <style>
-  .tutorial {
-    overflow-x: hidden;
-  }
   .count {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   .step {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     min-width: 0;
     gap: 12px;
-    min-height: 260px;
+    min-height: 220px;
     align-content: start;
   }
-  h2 {
-    margin: 4px 0 0;
+  .count + .sheet-title {
+    margin: 4px 0 12px;
     font-family: var(--font-display);
     font-size: 26px;
     font-weight: 800;
@@ -137,17 +133,15 @@
     height: 8px;
     border-radius: 50%;
     background: color-mix(in srgb, var(--ink) 22%, transparent);
-    transition: width var(--dur-move) var(--ease-standard);
+    transition: background-color var(--dur-move) var(--ease-standard);
   }
   .dots span.on {
     width: 20px;
     border-radius: 4px;
     background: var(--ink);
   }
+  /* 이전 keeps its place while there is nothing before. */
   .hidden {
     visibility: hidden;
-  }
-  .sheet-foot .primary {
-    min-width: 140px;
   }
 </style>

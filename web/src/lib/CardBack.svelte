@@ -1,23 +1,11 @@
-<script lang="ts" module>
-  import type { CardBack } from './achievements';
-
-  /** The ground of each back; the same values as the data-back tokens. */
-  export const BACK_COLOR: Record<CardBack, string> = {
-    charcoal: '#2a2622',
-    plum: '#5a2445',
-    indigo: '#22305c',
-    gold: '#6a4c10',
-    ink: '#0d0d0e',
-    jade: '#1e4a3e',
-  };
-</script>
-
 <script lang="ts">
   // A card back: one geometric idea each, the same either way up, drawn in
   // a single lighter tone over the ground inside a thin inset rule. Each
   // idea comes from the achievement that earns it.
+  import type { CardBack } from './achievements';
   import { PATHS } from './SuitIcon.svelte';
   import { settings } from './settings.svelte';
+  import { BACK_COLOR, THEME } from './tokens';
 
   let { id }: { id?: CardBack } = $props();
 
@@ -25,7 +13,7 @@
   const uid = $props.id();
   const back = $derived(id ?? settings.cardBack);
   const ground = $derived(BACK_COLOR[back] ?? BACK_COLOR.charcoal);
-  const tone = $derived(`color-mix(in srgb, ${ground} 62%, #fbf8f2)`);
+  const tone = $derived(`color-mix(in srgb, ${ground} 62%, ${THEME.card.light})`);
   // 20 point cards around a ring, for 큰 그림.
   const DOTS = Array.from({ length: 20 }, (_, i) => {
     const a = (i / 20) * Math.PI * 2;

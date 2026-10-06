@@ -34,7 +34,7 @@
     min-height: 44px;
     margin: -12px 0 -16px -10px;
     padding: 0 10px;
-    border-radius: 12px;
+    border-radius: var(--r-control);
     color: var(--ink-muted);
     font-size: 14px;
     font-weight: 600;

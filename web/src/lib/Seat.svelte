@@ -1,27 +1,20 @@
 <script lang="ts" module>
-  export type Team = 'declarer' | 'friend' | 'defense';
-  export const TEAM_LABEL: Record<Team, string> = { declarer: '주공', friend: '프렌드', defense: '야당' };
-
-  /** A name with its subject particle: 재용이, 민수가, 봇 3이; 나 is 내가. */
-  export function subject(name: string): string {
-    if (name === '나') return '내가';
-    const last = name.charCodeAt(name.length - 1);
-    let batchim: boolean;
-    if (last >= 0xac00 && last <= 0xd7a3) batchim = (last - 0xac00) % 28 !== 0;
-    // Digits read as 영 일 이 삼 사 오 육 칠 팔 구.
-    else if (last >= 48 && last <= 57) batchim = [0, 1, 3, 6, 7, 8].includes(last - 48);
-    else batchim = true;
-    return name + (batchim ? '이' : '가');
-  }
+  /** Where a seat sits at five: you at the bottom, then round the table. */
+  export type Place = 'bottom' | 'right' | 'top-right' | 'top-left' | 'left' | 'free';
+  export const PLACES: Place[] = ['bottom', 'right', 'top-right', 'top-left', 'left'];
 </script>
 
 <script lang="ts">
   import { untrack } from 'svelte';
+  import type { Attachment } from 'svelte/attachments';
   import Callout from './Callout.svelte';
   import { juice } from './motion';
   import PlayerFigure from './PlayerFigure.svelte';
+  import SuitText from './SuitText.svelte';
   import TurnRing from './TurnRing.svelte';
   import type { Suit } from './types';
+  import Badge, { type Team } from './ui/Badge.svelte';
+  import Bubble from './ui/Bubble.svelte';
   let {
     name,
     bot = false,
@@ -32,7 +25,9 @@
     turn = false,
     bubble = null,
     reaction = null,
-    reactSide = 'up',
+    place = 'free',
+    picked = false,
+    attach,
     cue = null,
     dim = false,
     reveal = false,
@@ -57,9 +52,14 @@
     bubble?: string | null;
     /** A reaction the player just sent; `id` replays it when repeated. */
     reaction?: { text: string; id: number } | null;
-    /** Where a reaction rises: over the seat, or beside it, outwards, for the
-     * top seats, whose space above is the status line. */
-    reactSide?: 'up' | 'left' | 'right';
+    /** Where it sits round the table: a reaction rises beside the top seats
+     * (outwards: their space above is the status line), and a bid on a
+     * right-hand seat hangs inwards. */
+    place?: Place;
+    /** Chosen first in a swap: it stands up a little. */
+    picked?: boolean;
+    /** Registers the seat's element (the table's motion finds it so). */
+    attach?: Attachment<HTMLElement>;
     /** A big moment at this seat: it wiggles, with a short label under it
      * when `text` is set. A new `id` plays it again. */
     cue?: { text: string | null; id: number } | null;
@@ -105,7 +105,7 @@
   });
 </script>
 
-<div class="seat" bind:this={el} class:turn class:dim class:reveal class:empty aria-current={turn ? 'true' : undefined}>
+<div class="seat {place}" bind:this={el} class:turn class:dim class:reveal class:empty class:picked aria-current={turn ? 'true' : undefined} {@attach attach}>
   <!-- On its turn the name tag lights up in plum. -->
   <div class="stand">
     {#if empty}
@@ -125,17 +125,17 @@
     {/if}
     {#if clock}<TurnRing deadline={clock.deadline} total={clock.total} />{/if}
     <!-- A bid or 패스, beside the figure, clear of the neighbours. -->
-    {#if bubble}{#key bubble}<span class="bubble"><span class="pop">{bubble}</span></span>{/key}{/if}
+    {#if bubble}{#key bubble}<span class="bubble"><span class="pop"><SuitText text={bubble} /></span></span>{/key}{/if}
   </div>
   <div class="meta">
     <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
-    {#if team}{#key team}<span class="team pop {team === 'defense' ? 'defense' : 'declarer'}">{TEAM_LABEL[team]}</span>{/key}
-    {:else if secretFriend}<span class="team secret pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요">프렌드</span>{/if}
+    {#if team}{#key team}<Badge {team} ringed class="pop" />{/key}
+    {:else if secretFriend}<Badge secret ringed class="pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요" />{/if}
     {#if points > 0}
-      {#key points}<span class="points bump">{points}점</span>{/key}
+      {#key points}<Badge class="bump">{points}점</Badge>{/key}
     {/if}
-    {#if away}<span class="away">자리 비움</span>{/if}
-    {#if score !== null && !empty}<span class="score" class:neg={score < 0} title="누적 점수" aria-label="누적 {score}점">{score > 0 ? '+' : ''}{score}</span>{/if}
+    {#if away}<Badge kind="outline">자리 비움</Badge>{/if}
+    {#if score !== null && !empty}<Badge class="score" negative={score < 0} title="누적 점수" label="누적 {score}점">{score > 0 ? '+' : ''}{score}</Badge>{/if}
   </div>
   <div class="name-row">
     {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
@@ -145,9 +145,7 @@
   {#if gained}{#key gained.id}<span class="gain" aria-hidden="true">+{gained.n}</span>{/key}{/if}
   {#if cue?.text}{#key cue.id}<Callout text={cue.text} />{/key}{/if}
   {#if reaction}
-    {#key reaction.id}
-      <span class="reaction side-{reactSide}" class:emoji={/^\p{Extended_Pictographic}/u.test(reaction.text)} aria-live="polite">{reaction.text}</span>
-    {/key}
+    {#key reaction.id}<Bubble text={reaction.text} side={place === 'top-right' ? 'right' : place === 'top-left' ? 'left' : 'up'} />{/key}
   {/if}
 </div>
 
@@ -176,9 +174,6 @@
     position: relative;
     width: var(--figure-w);
   }
-  .stand :global(.figure) {
-    position: relative;
-  }
   /* The friend's seat turns over like a card. */
   .seat.reveal {
     animation: reveal 520ms var(--ease-standard);
@@ -194,13 +189,16 @@
       transform: perspective(500px) rotateX(0);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .seat.reveal {
-      animation: none;
-    }
+  :global(:root[data-motion='reduced']) .seat.reveal {
+    animation: none;
   }
   .seat.dim {
     opacity: 0.6;
+  }
+  /* Picked first in a swap: it stands up a little, in ink. */
+  .seat.picked {
+    translate: 0 -4px;
+    color: var(--ink);
   }
   /* An empty seat: an outline the size of a figure, and a muted name. */
   .outline {
@@ -217,27 +215,13 @@
   .seat.empty .name {
     font-weight: 500;
   }
-  /* The running total: tabular, quiet, red below zero. */
-  .score {
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--table);
-    box-shadow: 0 0 0 1px var(--line);
-    font-family: var(--font-display);
-    font-weight: 800;
-    color: var(--ink);
-    line-height: 18px;
-  }
-  .score.neg {
-    color: var(--danger);
-  }
   .name-row {
     display: flex;
     align-items: center;
     gap: 4px;
     max-width: 100%;
     padding: 1px 8px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     transition:
       background-color var(--dur-quick) var(--ease-standard),
       color var(--dur-quick) var(--ease-standard);
@@ -300,21 +284,28 @@
   @keyframes gain {
     0% {
       opacity: 0;
-      transform: translateY(4px);
+      translate: 0 4px;
     }
     20% {
       opacity: 1;
-      transform: translateY(-6px);
+      translate: 0 -6px;
     }
     100% {
       opacity: 0;
-      transform: translateY(-22px);
+      translate: 0 -22px;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .thinking i {
-      animation: none;
-      opacity: 0.6;
+  :global(:root[data-motion='reduced']) .gain {
+    animation-name: gain-fade;
+  }
+  @keyframes gain-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    20%,
+    70% {
+      opacity: 1;
     }
   }
   .dot {
@@ -334,7 +325,7 @@
     justify-content: center;
     align-items: center;
     gap: 4px;
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
@@ -342,136 +333,17 @@
   .meta {
     min-height: 20px;
   }
-  .team {
-    padding: 1px 8px;
-    border-radius: 999px;
-    font-size: 12px;
-    line-height: 18px;
-    /* A ring of table colour keeps the badge apart from a robe of the
-       same team colour behind it. */
-    box-shadow: 0 0 0 2px var(--table);
-  }
-  .team.declarer {
-    background: var(--team-declarer);
-    color: #1c1915;
-  }
-  .team.defense {
-    background: var(--team-defense);
-    color: var(--on-team-defense);
-  }
-  /* The 프렌드 only you know about: the team colour as an outline, not yet
-     a filled badge, until the called card is played. */
-  .team.secret {
-    color: var(--ink);
-    box-shadow:
-      inset 0 0 0 1.5px var(--team-declarer),
-      0 0 0 2px var(--table);
-    background: var(--table);
-  }
-  /* 자리 비움: a quiet outlined pill, like a note pinned on the robe. */
-  .away {
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--table);
-    color: var(--ink-muted);
-    line-height: 18px;
-    font-size: 12px;
-    box-shadow: inset 0 0 0 1px var(--ink-muted);
-    white-space: nowrap;
-  }
-  /* Points won: a small pill; the count only, never the cards. */
-  .points {
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--table);
-    color: var(--ink);
-    line-height: 18px;
-    box-shadow: 0 0 0 1px var(--line);
-  }
-  /* Rises above the seat, holds, then fades; the client drops it after 2.8 s. */
-  .reaction {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    z-index: 5;
-    padding: 4px 12px;
-    border-radius: 16px;
-    background: var(--card);
-    /* The bubble is card paper in both themes, so its text is card ink. */
-    color: var(--card-ink);
-    box-shadow: 0 4px 14px rgb(0 0 0 / 0.16);
-    font-size: 15px;
-    font-weight: 700;
-    white-space: nowrap;
-    pointer-events: none;
-    transform: translate(-50%, -100%);
-    animation: react 2.8s var(--ease-standard, ease) both;
-  }
-  .reaction.emoji {
-    padding: 2px 8px;
-    font-size: 28px;
-  }
-  .reaction.side-left,
-  .reaction.side-right {
-    top: 2px;
-    transform: none;
-    animation-name: react-side;
-  }
-  .reaction.side-right {
-    left: calc(50% + var(--figure-w) / 2 + 4px);
-  }
-  .reaction.side-left {
-    left: auto;
-    right: calc(50% + var(--figure-w) / 2 + 4px);
-  }
-  @keyframes react-side {
-    0% {
-      opacity: 0;
-      transform: scale(0.6);
-    }
-    10% {
-      opacity: 1;
-      transform: scale(1.08);
-    }
-    16%,
-    82% {
-      opacity: 1;
-      transform: none;
-    }
-    100% {
-      opacity: 0;
-      transform: translateY(-12px);
-    }
-  }
-  @keyframes react {
-    0% {
-      opacity: 0;
-      transform: translate(-50%, -40%) scale(0.6);
-    }
-    10% {
-      opacity: 1;
-      transform: translate(-50%, -100%) scale(1.08);
-    }
-    16%,
-    82% {
-      opacity: 1;
-      transform: translate(-50%, -100%) scale(1);
-    }
-    100% {
-      opacity: 0;
-      transform: translate(-50%, -130%) scale(1);
-    }
-  }
   .bubble {
     position: absolute;
     left: calc(100% - 6px);
     top: 0;
     z-index: 4;
     padding: 2px 9px;
-    border-radius: 999px;
+    border-radius: var(--r-pill);
     background: var(--ink);
     color: var(--table);
-    font-size: 13px;
+    --suit-tone: currentColor;
+    font-size: var(--text-label);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     /* A long note (노기루다 20) takes two short lines, so the
@@ -481,6 +353,29 @@
     line-height: 1.2;
     text-align: center;
     word-break: keep-all;
+  }
+  /* Phones: a long name on a top seat ends sooner, so it keeps clear of
+     the trick's top cards beside it. */
+  @media (max-width: 599px) {
+    :is(.top-right, .top-left) .name {
+      max-width: 5em;
+    }
+  }
+  /* Phones and tablets: a bid on a right-hand seat hangs inwards. */
+  @media (max-width: 1023px), (max-height: 639px) {
+    :is(.right, .top-right) .bubble {
+      left: auto;
+      right: calc(100% - 6px);
+    }
+  }
+  /* Phones on their side: the bottom seats show their bid above, clear of
+     the hand. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    :is(.right, .left) .bubble {
+      top: -12px;
+      bottom: auto;
+      transform: translate(-50%, -50%);
+    }
   }
   /* Tablets: the seats grow with the table instead of staying phone-sized. */
   @media (min-width: 600px) {
@@ -500,12 +395,6 @@
     }
     .name {
       font-size: 16px;
-    }
-    .reaction.side-right {
-      left: calc(100% + 4px);
-    }
-    .reaction.side-left {
-      right: calc(100% + 4px);
     }
   }
 </style>

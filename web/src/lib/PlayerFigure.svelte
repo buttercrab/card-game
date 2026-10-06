@@ -6,10 +6,10 @@
   // they blink (one shared timer, see blink.ts), glance toward `lookAt`,
   // drift up and aside while thinking, turn to ^^ after a won trick, sink
   // after a loss, and go to dashes when the player is offline.
-  import { prefersReducedMotion } from 'svelte/motion';
   import { blinker } from './blink';
   import { hop } from './motion';
-  import { settings } from './settings.svelte';
+  import { motion } from './settings.svelte';
+  import { FIXED } from './tokens';
   import type { Suit } from './types';
 
   let {
@@ -39,14 +39,14 @@
     still?: boolean;
   } = $props();
 
-  const GOLD = '#A77A12';
-  const SKIN = '#F3E3CF';
+  const GOLD = FIXED['card-gold'];
+  const SKIN = FIXED.skin;
   // Eyes are drawn darker and a little larger than on the cards: the figure
   // is small, and the face must read on a dark table too.
-  const EYE = '#2B2620';
+  const EYE = FIXED['figure-eye'];
   const GLANCE = 3.5;
 
-  const moving = $derived(!still && settings.speed !== 'off' && !prefersReducedMotion.current);
+  const moving = $derived(!still && motion.level === 'full');
   const robe = $derived(
     team === 'defense' ? 'var(--team-defense)' : team ? 'var(--team-declarer)' : 'var(--ink-muted)',
   );
@@ -127,6 +127,7 @@
 
 <style>
   .figure {
+    position: relative;
     display: block;
     width: 100%;
     height: auto;
@@ -152,10 +153,5 @@
   .eyes {
     transform-box: fill-box;
     transform-origin: center;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .gaze {
-      transition: none;
-    }
   }
 </style>

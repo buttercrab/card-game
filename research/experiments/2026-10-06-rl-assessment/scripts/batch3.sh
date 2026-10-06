@@ -7,9 +7,9 @@ LAB=$PWD/target/release/lab
 A=$HOME/card-game-artifacts/assess-2026-10-06
 D=$A/dmc-v2-final
 while pgrep -f "lab --threads [35] --out $A/results/(normal|signal)" > /dev/null; do sleep 20; done
-mkdir -p $A/results/hard
+mkdir -p "$A"/results/hard
 run() { # name spec
-  nice -n 10 $LAB --threads 8 --out $A/results/hard/$1.jsonl declare --deals 1000 --bot "$2" --field hard 2>/dev/null
+  nice -n 10 "$LAB" --threads 8 --out "$A"/results/hard/"$1".jsonl declare --deals 1000 --bot "$2" --field hard 2>/dev/null
   echo "hard/$1 done $(date +%T)"
 }
 run normal normal
