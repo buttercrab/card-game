@@ -257,6 +257,9 @@
   .page {
     max-width: max(1100px, calc((100dvh - 64px) * 1.7));
     margin: 0 auto;
+    /* Edge seats and their chips can round a pixel past a narrow screen
+     * (fonts differ by platform); the table never scrolls sideways. */
+    overflow-x: clip;
     padding: 8px 16px 16px;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
