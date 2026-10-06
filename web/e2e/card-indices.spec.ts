@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('joker corner words fit their columns and card borders at every illustrated size', async ({ page }) => {
   await page.goto('/deck');
+  await expect(page.locator('.joker-samples figure')).toHaveCount(64);
   await page.evaluate(() => document.fonts.ready);
   const problems = await page.locator('.joker-samples figure').evaluateAll(figures => {
     const out: string[] = [];
@@ -19,12 +20,12 @@ test('joker corner words fit their columns and card borders at every illustrated
     return out;
   });
   expect(problems).toEqual([]);
-  await expect(page.locator('.joker-samples figure')).toHaveCount(64);
 });
 
 
 test('all unavailable suits use the same inactive ink on opaque card paper', async ({ page }) => {
   await page.goto('/deck');
+  await expect(page.locator('.legality-samples .card')).toHaveCount(48);
   const cards = await page.locator('.legality-samples .card').evaluateAll(els => els.map(e => {
     const style = getComputedStyle(e);
     const rank = e.querySelector('.index-rank')!;
