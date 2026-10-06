@@ -1,34 +1,8 @@
-// Where rule sets come from: the server's presets (fetched once and kept),
-// and the custom sets a group saved on this device.
-import { PRESETS } from './presets';
+// The custom sets a group saved on this device; the presets come with the
+// build (catalog.ts).
+import { CATALOG } from './catalog';
 import { same } from './ruleFields';
 import type { Rules } from './types';
-
-const cache = new Map<string, Promise<Rules>>();
-
-/** A preset's full rules; the same promise for every caller. */
-export function presetRules(id: string): Promise<Rules> {
-  let p = cache.get(id);
-  if (!p) {
-    p = fetch(`/api/presets/${id}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
-    p.catch(() => cache.delete(id));
-    cache.set(id, p);
-  }
-  return p;
-}
-
-/** What a table plays by: its own rules, or its preset's as the table
- * pinned them (which may differ from the preset's today); null from a
- * server too old to say. */
-export function tableRules(settings: { rules?: Rules; preset_rules?: Rules }): Rules | null {
-  return settings.rules ?? settings.preset_rules ?? null;
-}
-
-/** Every preset's rules, by id. */
-export async function allPresetRules(): Promise<Record<string, Rules>> {
-  const entries = await Promise.all(PRESETS.map(async (p) => [p.id, await presetRules(p.id)] as const));
-  return Object.fromEntries(entries);
-}
 
 /** Rules a group made from a preset and kept on this device. */
 export interface CustomSet {
@@ -46,11 +20,26 @@ export function customName(set: CustomSet): string {
   return set.name.trim() || '우리 규칙';
 }
 
+/** `saved` with every option it leaves out (rules saved before the option
+ * existed) filled from `defaults`, as the server reads them. */
+export function fillGaps<T>(saved: T, defaults: T): T {
+  if (saved === undefined) return structuredClone(defaults);
+  const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!plain(saved) || !plain(defaults)) return saved;
+  const out: Record<string, unknown> = { ...saved };
+  for (const [key, value] of Object.entries(defaults)) out[key] = fillGaps(saved[key], value);
+  return out as T;
+}
+
 /** Saved sets, the last used first. */
 export function loadCustom(): CustomSet[] {
   try {
     const list = JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? '[]');
-    return Array.isArray(list) ? list.filter((s) => s && typeof s.base === 'string' && s.rules) : [];
+    return Array.isArray(list)
+      ? list
+          .filter((s) => s && typeof s.base === 'string' && s.rules)
+          .map((s: CustomSet) => ({ ...s, rules: fillGaps(s.rules, CATALOG.rule_defaults) }))
+      : [];
   } catch {
     return [];
   }
@@ -79,27 +68,4 @@ export function saveCustom(set: Omit<CustomSet, 'id'> & { id?: string }): Custom
 
 export function removeCustom(id: string) {
   store(loadCustom().filter((s) => s.id !== id));
-}
-
-// A table made from home with custom rules starts on the preset; the rules
-// are set once its maker sits down, since only seated players may.
-const PENDING_KEY = 'mighty.rules.pending';
-
-export function setPending(room: string, base: string, rules: Rules) {
-  try {
-    sessionStorage.setItem(PENDING_KEY, JSON.stringify({ room, base, rules }));
-  } catch {
-    // The table just keeps its preset.
-  }
-}
-
-export function takePending(room: string): { base: string; rules: Rules } | null {
-  try {
-    const p = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? 'null');
-    if (!p || p.room !== room) return null;
-    sessionStorage.removeItem(PENDING_KEY);
-    return { base: p.base, rules: p.rules };
-  } catch {
-    return null;
-  }
 }

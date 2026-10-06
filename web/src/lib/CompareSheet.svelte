@@ -2,9 +2,9 @@
   // How one rule set differs from another: pick the other side with a chip,
   // read only the rows that differ.
   import { untrack } from 'svelte';
-  import { PRESETS } from './presets';
+  import { PRESET_RULES, PRESETS } from './catalog';
   import RuleDiff from './RuleDiff.svelte';
-  import { allPresetRules, customName, type CustomSet } from './rulesets';
+  import { customName, type CustomSet } from './rulesets';
   import type { Rules } from './types';
 
   let {
@@ -27,16 +27,13 @@
   } = $props();
 
   let other = $state(untrack(() => against));
-  let all = $state<Record<string, Rules> | null>(null);
-  allPresetRules()
-    .then((r) => (all = r))
-    .catch((e) => console.error('presets', e));
+  const all = PRESET_RULES;
 
   const choices = $derived([
     ...customs.map((c) => ({ key: `custom:${c.id}`, name: customName(c), rules: c.rules as Rules | undefined })),
-    ...PRESETS.map((p) => ({ key: p.id, name: p.name, rules: all?.[p.id] })),
+    ...PRESETS.map((p) => ({ key: p.id as string, name: p.title, rules: p.rules as Rules | undefined })),
   ]);
-  const left = $derived(rules ?? (preset ? all?.[preset] : undefined));
+  const left = $derived(rules ?? (preset ? all[preset] : undefined));
   const right = $derived(choices.find((c) => c.key === other) ?? choices.find((c) => c.key === 'default'));
 
   let dialog: HTMLDialogElement;

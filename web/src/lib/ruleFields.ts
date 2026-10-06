@@ -13,6 +13,7 @@
 //
 // Values are compared as JSON, so a field can be a number, a flag, a card
 // pair or a whole sub-object.
+import { RULE_TEXT } from './errorText';
 import { cardLabel, deckSize, jokers } from './cards';
 import type { BackRun, Card, CardPolicy, Doubling, LoseScore, Rules, TrickPolicy, WinScore } from './types';
 
@@ -268,7 +269,7 @@ export const RULE_FIELDS: Field[] = [
     label: '공약 뒤에도 딜미스',
     help: '이미 공약한 사람도 공약이 끝나기 전엔 딜미스할 수 있어요',
     control: { kind: 'toggle', on: '돼요', off: '안 돼요' },
-    show: (r) => !r.misdeal?.ask_first,
+    show: (r) => !r.misdeal.ask_first,
     trait: (v) => (v ? '공약 뒤에도 딜미스' : '공약 전에만 딜미스'),
     weight: 2,
   },
@@ -744,29 +745,29 @@ export function traits(r: Rules, base: Rules): string[] {
  * crates/mighty/src/rules.rs; each problem names the fields to fix. */
 export function problems(r: Rules): { paths: string[]; message: string }[] {
   const out: { paths: string[]; message: string }[] = [];
-  const lowest = r.lowest_rank ?? 2;
-  const extra = r.extra_cards ?? [];
-  if (lowest < 2 || lowest > 10) out.push({ paths: [], message: '점수 카드(10~A)는 모두 덱에 있어야 해요' });
+  const lowest = r.lowest_rank;
+  const extra = r.extra_cards;
+  if (lowest < 2 || lowest > 10) out.push({ paths: [], message: RULE_TEXT.point_cards_missing });
   const rank = (c: Card) => ('Normal' in c ? c.Normal[1] : null);
   const distinct = new Set(extra.map((c) => JSON.stringify(c))).size === extra.length;
   if (!distinct || !extra.every((c) => (rank(c) ?? 99) < lowest))
-    out.push({ paths: [], message: '더 넣는 카드는 가장 낮은 숫자보다 낮은 서로 다른 카드여야 해요' });
-  if (r.players < 2 || r.players > 8 || r.hand_size === 0) out.push({ paths: [], message: '인원이나 패 장수가 맞지 않아요' });
-  if (r.players * r.hand_size > deckSize(r)) out.push({ paths: ['deck'], message: '나눠 줄 카드가 모자라요' });
+    out.push({ paths: [], message: RULE_TEXT.bad_extra_cards });
+  if (r.players < 2 || r.players > 8 || r.hand_size === 0) out.push({ paths: [], message: RULE_TEXT.table_size });
+  if (r.players * r.hand_size > deckSize(r)) out.push({ paths: ['deck'], message: RULE_TEXT.too_few_cards });
   const inDeck = (c: Card) => (rank(c) ?? 99) >= lowest || extra.some((x) => same(x, c));
   if (!r.joker_call.calls.flat().every(inDeck))
-    out.push({ paths: ['joker_call.calls.0', 'joker_call.calls.1'], message: '조커콜 카드가 덱에 없어요' });
+    out.push({ paths: ['joker_call.calls.0', 'joker_call.calls.1'], message: RULE_TEXT.joker_call_not_in_deck });
   if (r.bidding.min === 0 || r.bidding.min > r.bidding.max)
-    out.push({ paths: ['bidding.min', 'bidding.max'], message: '최소 공약이 최대 공약보다 클 수 없어요' });
+    out.push({ paths: ['bidding.min', 'bidding.max'], message: RULE_TEXT.empty_bid_range });
   if (r.bidding.no_trump_bonus >= r.bidding.min)
-    out.push({ paths: ['bidding.no_trump_bonus'], message: '노기루다 보너스는 최소 공약보다 작아야 해요' });
-  const lose = r.scoring?.lose;
-  if (lose && lose !== 'Shortfall' && lose.PaysBack > lowestContract(r))
-    out.push({ paths: ['scoring.lose'], message: '갚는 기준이 가장 낮은 공약보다 크면 지고도 점수를 받게 돼요' });
+    out.push({ paths: ['bidding.no_trump_bonus'], message: RULE_TEXT.no_trump_bonus_too_high });
+  const lose = r.scoring.lose;
+  if (lose !== 'Shortfall' && lose.PaysBack > lowestContract(r))
+    out.push({ paths: ['scoring.lose'], message: RULE_TEXT.pays_back_too_much });
   if (r.joker_call.calls.length !== jokers(r).length)
-    out.push({ paths: ['deck'], message: '조커마다 조커콜 카드가 하나씩 있어야 해요' });
+    out.push({ paths: ['deck'], message: RULE_TEXT.joker_call_per_joker });
   const f = r.friend;
   if (f && !(f.by_card || f.by_seat || f.first_trick || f.last_trick || f.alone))
-    out.push({ paths: ['friend'], message: '프렌드를 정하는 방법을 하나는 켜 주세요 (가짜 프렌드만으로는 안 돼요)' });
+    out.push({ paths: ['friend'], message: RULE_TEXT.no_friend_rule });
   return out;
 }

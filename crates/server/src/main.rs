@@ -26,7 +26,7 @@ struct Args {
     #[arg(long, default_value_t = 500)]
     max_rooms: usize,
     /// Close a table after this many minutes with nobody connected.
-    #[arg(long, default_value_t = 30)]
+    #[arg(long, default_value_t = server::IDLE_MINUTES)]
     idle_minutes: u64,
     /// Save tables here so they survive restarts and deploys.
     #[arg(long)]
@@ -44,6 +44,14 @@ struct Args {
     /// it heard from its server in the last minute.
     #[arg(long)]
     healthcheck: bool,
+    /// Write the web client's generated files (the protocol's types) into
+    /// this directory, `web/src/lib/generated`, then exit.
+    #[arg(long)]
+    write_generated: Option<PathBuf>,
+    /// Print the catalog (presets, bot levels, the table's choices and
+    /// limits) as JSON, then exit.
+    #[arg(long)]
+    dump_catalog: bool,
     /// A worker keeps this file fresh while its server talks to it.
     #[arg(long)]
     worker_alive: Option<PathBuf>,
@@ -73,6 +81,13 @@ async fn main() -> std::io::Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
     let args = Args::parse();
+    if let Some(dir) = args.write_generated {
+        return server::codegen::write(&dir);
+    }
+    if args.dump_catalog {
+        println!("{}", serde_json::to_string_pretty(&server::catalog::catalog())?);
+        return Ok(());
+    }
     if args.healthcheck {
         return match &args.worker_alive {
             // Heard from within the time the link allows for silence.

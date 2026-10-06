@@ -6,3 +6,7 @@ research/evals/** -text
 # diffs of them mean nothing to read.
 crates/infer/tests/tiny/** -text -diff linguist-generated
 crates/infer/tests/tiny-q/** -text -diff linguist-generated
+
+# Generated from the server's types (crates/server/src/codegen.rs), which
+# a test compares byte for byte.
+web/src/lib/generated/** text eol=lf linguist-generated

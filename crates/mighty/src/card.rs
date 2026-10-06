@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 pub enum Suit {
     Spade,
     Diamond,
@@ -20,7 +21,7 @@ impl Suit {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 pub enum Color {
     Black,
     Red,
@@ -29,7 +30,7 @@ pub enum Color {
 pub const ACE: u8 = 14;
 
 /// A playing card. Ranks run from 2 to 14 (ace).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 pub enum Card {
     Normal(Suit, u8),
     Joker(Color),
@@ -89,7 +90,7 @@ impl fmt::Display for Card {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 pub enum DeckKind {
     /// 52 cards and a black joker.
     OneJoker,

@@ -1,13 +1,15 @@
 use crate::card::Card;
 use crate::rules::{Contract, Rules};
+use crate::score::HandValue;
 use crate::state::{Action, Bid, FriendCall, Phase, Play, Redealt, State};
 use crate::trick::{Lead, Played, Trick};
 use engine::{Seat, Viewer};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Everything one viewer may know. Other hands, the kitty and (for anyone
 /// but the declarer) the discards are never included.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct View {
     pub viewer: Viewer,
     pub rules: Rules,
@@ -27,7 +29,7 @@ pub struct View {
     pub redealt: Option<Redealt>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub enum PhaseView {
     Dealing,
     Bidding {
@@ -77,6 +79,8 @@ pub enum PhaseView {
         friend: Option<Seat>,
         team_points: u8,
         payoffs: Vec<i64>,
+        /// How the hand was scored, step by step: what one opponent pays.
+        value: HandValue,
         tricks: Vec<Trick>,
         /// Shown to everyone once the hand is over.
         discards: Vec<Card>,
@@ -155,6 +159,7 @@ impl View {
                 friend: d.friend,
                 team_points: d.team_points,
                 payoffs: d.payoffs.clone(),
+                value: crate::score::breakdown(&state.rules, d.contract, d.call == FriendCall::Alone, d.team_points),
                 tricks: d.tricks.clone(),
                 discards: if state.rules.reveal_discards {
                     d.discards.clone()

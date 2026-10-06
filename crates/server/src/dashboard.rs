@@ -245,18 +245,19 @@ fn time(t: u64) -> String {
     format!("{} {:02}:{:02}", date(day(t)), minutes / 60, minutes % 60)
 }
 
-fn level_name(level: &str) -> &str {
-    match level {
-        "easy" => "초보",
-        "normal" => "보통",
-        "hard" => "고수",
-        other => other,
-    }
+/// A bot level as the stats record it, by its name at the table.
+fn level_name(level: &str) -> String {
+    level
+        .parse::<mighty::bot::Level>()
+        .map_or_else(|_| level.to_string(), |l| l.label().to_string())
 }
 
 fn preset_label(id: &str) -> String {
     match id.parse() {
-        Ok(preset) => format!("{} <span class=\"muted\">{id}</span>", crate::site::preset_name(preset)),
+        Ok(preset) => format!(
+            "{} <span class=\"muted\">{id}</span>",
+            mighty::rules::Preset::title(preset)
+        ),
         Err(_) => escape(id),
     }
 }
@@ -569,6 +570,13 @@ summary{cursor:pointer;color:var(--accent);font-weight:600}
 mod tests {
     use super::*;
     use crate::stats::{Event, Hand, Stats};
+
+    #[test]
+    fn bot_levels_go_by_their_names_at_the_table() {
+        assert_eq!(level_name("hard"), "고수");
+        assert_eq!(level_name("easy"), "초보");
+        assert_eq!(level_name("legendary"), "legendary");
+    }
 
     fn get(uri: &str, headers: &[(&'static str, &str)]) -> (Uri, HeaderMap) {
         let mut map = HeaderMap::new();

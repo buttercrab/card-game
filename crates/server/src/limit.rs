@@ -1,10 +1,11 @@
 //! Rate limits: in-memory token buckets keyed by IP address, the same per
 //! WebSocket connection, and a cap on hint searches running at once.
 
+use crate::protocol::{ErrorCode, ServerError};
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::StatusCode;
 use axum::http::request::Parts;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Mutex;
@@ -154,11 +155,7 @@ impl Default for Limits {
 
 /// The answer once a client is over its limit.
 pub fn too_many() -> Response {
-    (
-        StatusCode::TOO_MANY_REQUESTS,
-        "요청이 너무 잦아요. 잠시 후에 다시 해 주세요.",
-    )
-        .into_response()
+    ServerError::new(ErrorCode::RateLimited).respond(StatusCode::TOO_MANY_REQUESTS)
 }
 
 /// The client's address: from `X-Forwarded-For` when the request came

@@ -5,6 +5,7 @@
 use crate::Mighty;
 use crate::card::{ACE, Card, Color, Suit};
 use crate::rules::{CardPolicy, Contract, Rules};
+use crate::search::SearchBot;
 use crate::state::hand_value;
 use crate::state::{Action, FriendCall};
 use crate::trick::{self, Lead, Played, TrickContext};
@@ -12,6 +13,7 @@ use crate::view::{PhaseView, View};
 use engine::{Bot, Seat, Viewer};
 use rand::seq::IndexedRandom;
 use rand::{Rng, RngCore};
+use std::time::Duration;
 
 /// The weights and thresholds behind the rules. The defaults were tuned
 /// with `sim --baseline`, one weight at a time against the previous best;
@@ -121,6 +123,122 @@ pub const EASY_SLIPS: f64 = 0.35;
 
 /// How many points more carefully the table's 초보 bids.
 pub const EASY_CAUTION: f32 = 1.0;
+
+/// How well a bot plays: the levels players pick at the table. Defined
+/// once here for the server, the environment, `sim` and the evals alike.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(rename = "BotLevel")]
+pub enum Level {
+    /// 초보: the simple bot, bidding more carefully and slipping now and
+    /// then when it plays a card ([`Clumsy::easy`]).
+    Easy,
+    /// 보통: the simple bot.
+    Normal,
+    /// 고수: the search bot; the strongest.
+    #[default]
+    Hard,
+}
+
+impl Level {
+    pub const ALL: [Level; 3] = [Level::Easy, Level::Normal, Level::Hard];
+
+    /// Its name at the table.
+    pub fn label(self) -> &'static str {
+        match self {
+            Level::Easy => "초보",
+            Level::Normal => "보통",
+            Level::Hard => "고수",
+        }
+    }
+
+    /// Its name in specs and on the wire.
+    pub fn name(self) -> &'static str {
+        match self {
+            Level::Easy => "easy",
+            Level::Normal => "normal",
+            Level::Hard => "hard",
+        }
+    }
+
+    /// The simple bot it plays by, or searches with, before a seat's temper.
+    pub fn policy(self) -> SimpleBot {
+        match self {
+            Level::Easy => Clumsy::easy(SimpleBot::default()).inner,
+            Level::Normal | Level::Hard => SimpleBot::default(),
+        }
+    }
+
+    /// How often it slips to a cheap card, if it does.
+    pub fn slips(self) -> Option<f64> {
+        (self == Level::Easy).then_some(EASY_SLIPS)
+    }
+
+    /// The search it runs, without a clock: a fixed 200 deals a decision,
+    /// so the same randomness always gives the same move. None for the
+    /// levels that do not search.
+    pub fn search(self) -> Option<SearchBot> {
+        (self == Level::Hard).then(|| SearchBot {
+            samples: 200,
+            confidence: 1.0,
+            budget: None,
+            ..SearchBot::default()
+        })
+    }
+
+    /// The bot for `seat`, bidding a little bolder or more carefully by
+    /// seat ([`TEMPER`]) so a table of bots does not play as one. With a
+    /// `budget`, the 고수 deals until it is spent instead (the table's
+    /// bots); without, it plays as [`Level::search`] says.
+    pub fn build(self, seat: Seat, budget: Option<Duration>) -> Box<dyn Bot<Mighty> + Send> {
+        self.build_on(seat, budget, 1)
+    }
+
+    /// [`Level::build`], the 고수 searching on `threads` threads.
+    pub fn build_on(self, seat: Seat, budget: Option<Duration>, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
+        let mut policy = self.policy();
+        policy.bid_base += TEMPER[seat % TEMPER.len()];
+        match (self.slips(), self.search()) {
+            (_, Some(search)) => Box::new(match budget {
+                // More sampled deals keep helping a little (2000 beat 200
+                // by about a third of a point per hand), so deal until the
+                // time is up.
+                Some(think) => SearchBot {
+                    samples: 5000 * threads.max(1),
+                    budget: Some(think),
+                    threads,
+                    policy,
+                    ..search
+                },
+                None => SearchBot {
+                    threads,
+                    policy,
+                    ..search
+                },
+            }),
+            (Some(slips), None) => Box::new(Clumsy { inner: policy, slips }),
+            (None, None) => Box::new(policy),
+        }
+    }
+}
+
+impl std::fmt::Display for Level {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl std::str::FromStr for Level {
+    type Err = String;
+
+    /// By its name in specs or at the table: `hard` or `고수`.
+    fn from_str(s: &str) -> Result<Level, String> {
+        Level::ALL
+            .into_iter()
+            .find(|l| l.name() == s || l.label() == s)
+            .ok_or_else(|| format!("unknown level `{s}`"))
+    }
+}
 
 /// The simple bot, slipping to a random card this often when it plays
 /// one: the table's 초보. A slip picks among the cheap cards (never the

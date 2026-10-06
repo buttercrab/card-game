@@ -84,12 +84,15 @@ afterEach(() => {
 const sockets = () => FakeSocket.all.length;
 const last = () => FakeSocket.all[FakeSocket.all.length - 1];
 
-function state(version: number): StateMsg {
+function state(version: number): { type: 'state' } & StateMsg {
   return {
     type: 'state',
     view: {} as StateMsg['view'],
     legal: [],
+    notes: { unplayable: [], contracts: [] },
     turn: 'Over',
+    out_of_turn: [],
+    grace_ms: 0,
     version,
   };
 }
@@ -212,14 +215,27 @@ describe('toasts', () => {
     expect(client.toasts.current?.kind).toBe('notice');
     expect(played.errors).toBe(0);
 
-    last().receive({ type: 'error', message: 'it is not your turn' });
+    last().receive({ type: 'error', code: 'not_your_turn' });
     const first = client.toasts.current!;
     expect(first).toMatchObject({ kind: 'error', text: '아직 내 차례가 아니에요' });
-    last().receive({ type: 'error', message: 'it is not your turn' });
+    last().receive({ type: 'error', code: 'not_your_turn' });
     const second = client.toasts.current!;
     expect(second.text).toBe(first.text);
     expect(second.id).not.toBe(first.id);
     expect(played.errors).toBe(2);
+    client.close();
+  });
+
+  test('refusals are worded by code, rules by what failed', () => {
+    const client = new RoomClient('abc');
+    last().open();
+    last().receive({ type: 'error', code: 'invalid_rules', rule: 'empty_bid_range' });
+    expect(client.toasts.current?.text).toBe('최소 공약이 최대 공약보다 클 수 없어요');
+    // A code from a newer server, or an old server's English, still gets words.
+    last().receive({ type: 'error', code: 'from_the_future' });
+    expect(client.toasts.current?.text).toBe('요청을 처리하지 못했어요');
+    last().receive({ type: 'error', message: 'it is not your turn' });
+    expect(client.toasts.current?.text).toBe('요청을 처리하지 못했어요');
     client.close();
   });
 

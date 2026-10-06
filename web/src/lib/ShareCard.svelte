@@ -4,7 +4,7 @@
   // its point cards, then the standings. Drawn on a canvas, shared through
   // the phone's share sheet or saved, or copied as text for KakaoTalk.
   import { occupantName } from './names';
-  import { PRESET_NAME } from './presets';
+  import { presetTitle } from './catalog';
   import { PATHS } from './SuitIcon.svelte';
   import type { HandSummary, RoomMsg, Suit } from './types';
 
@@ -19,14 +19,14 @@
   let status = $state<string | null>(null);
 
   const names = $derived(room.seats.map((s, i) => occupantName(s, i) ?? `자리 ${i + 1}`));
-  const hands = $derived(room.hands ?? []);
+  const hands = $derived(room.hands);
   const shown = $derived(hands.slice(-MAX_ROWS));
   const hidden = $derived(hands.length - shown.length);
   const standings = $derived(
     room.scores.map((score, seat) => ({ seat, score, name: names[seat] })).sort((a, b) => b.score - a.score),
   );
   const top = $derived(room.hands_played > 0 ? Math.max(...room.scores) : null);
-  const ruleset = $derived(PRESET_NAME[room.settings.preset] ?? room.settings.preset);
+  const ruleset = $derived(presetTitle(room.settings.preset));
 
   const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
   const short = (name: string) => (name.length > 10 ? `${name.slice(0, 10)}…` : name);

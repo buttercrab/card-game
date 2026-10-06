@@ -3,9 +3,8 @@
   // actual rule values so the book can never disagree with the game.
   import Card from './Card.svelte';
   import { cardLabel, jokers, kittyCount, rankLabel } from './cards';
-  import { PRESET_NAME } from './presets';
-  import { bidValue, handValue, scoring } from './scoring';
-  import type { Card as CardT, CardPolicy, Contract, Rules, TrickPolicy } from './types';
+  import { CATALOG, isPreset, presetRules, presetTitle } from './catalog';
+  import type { Card as CardT, CardPolicy, Contract, Examples, Rules, TrickPolicy } from './types';
 
   /** `rules` overrides the preset's: a table's own, or the preset's as the
    * table pinned them. `changed`: the table's players changed them (by
@@ -16,28 +15,26 @@
     changed = given !== null,
   }: { preset: string; rules?: Rules | null; changed?: boolean } = $props();
 
-  let rules = $state<Rules | null>(null);
-  /** Why the rules are missing: an id no preset has, or a failed fetch. */
-  let failed = $state<'unknown' | 'network' | null>(null);
-  let attempt = $state(0);
-  const known = $derived(preset in PRESET_NAME);
+  /** The rules, or null for an id no preset has. */
+  const rules = $derived(given ?? (isPreset(preset) ? presetRules(preset) : null));
   // On its own page (/rules/…) the book offers a way home; in a sheet the
   // sheet's own footer does that.
   const standalone = typeof location !== 'undefined' && location.pathname.startsWith('/rules/');
 
+  // The worked example is scored by the server, under these rules.
+  let examples = $state<Examples | null>(null);
   $effect(() => {
-    void attempt;
-    rules = given;
-    failed = null;
-    if (given) return;
-    if (!known) {
-      failed = 'unknown';
-      return;
-    }
-    fetch(`/api/presets/${preset}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((r: Rules) => (rules = r))
-      .catch((status) => (failed = status === 404 ? 'unknown' : 'network'));
+    const body = rules && JSON.stringify($state.snapshot(rules));
+    examples = null;
+    if (!body) return;
+    let live = true;
+    fetch('/api/rules/examples', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((e: Examples | null) => live && (examples = e))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
   });
 
   const n = (suit: 'Spade' | 'Diamond' | 'Heart' | 'Club', rank: number): CardT => ({ Normal: [suit, rank] });
@@ -48,8 +45,8 @@
 
   /** The deck in words: 52장, or 7부터 A까지 28장과 ♣3, ♠3. */
   function deckText(r: Rules): string {
-    const lowest = r.lowest_rank ?? 2;
-    const extras = (r.extra_cards ?? []).map(cardLabel);
+    const lowest = r.lowest_rank;
+    const extras = r.extra_cards.map(cardLabel);
     const base = lowest === 2 ? '52장' : `네 무늬의 ${rankLabel(lowest)}부터 A까지 ${4 * (15 - lowest)}장`;
     return extras.length ? `${base}과 ${extras.join(', ')}` : base;
   }
@@ -57,7 +54,7 @@
   /** A made contract's worth: the formula, and a note after it. */
   function winFormula(r: Rules): [string, string] {
     const min = r.bidding.min;
-    const w = scoring(r).win;
+    const w = r.scoring.win;
     if (typeof w === 'object') {
       const n = w.BothOver;
       return [`(가져온 점수 − ${n}) + (공약 − ${n})`, '(적어도 1)'];
@@ -72,9 +69,9 @@
 
   /** The rest of the scoring rules as sentences. */
   function scoringLines(r: Rules): string[] {
-    const s = scoring(r);
+    const s = r.scoring;
     const noTrump = r.bidding.allow_no_trump;
-    const alone = r.friend?.alone ?? true;
+    const alone = r.friend.alone;
     const winDoubles = [
       noTrump && s.no_trump !== 'Never' && '노기루다면',
       alone && s.alone !== 'Never' && '노프렌드면',
@@ -91,7 +88,7 @@
           : 'TeamAtMost' in b
             ? ` ${b.TeamAtMost}점 이하로 가져왔다면(백런) 두 배로 잃어요.`
             : ` ${b.ShortBy}점 이상 모자라면(백런) 두 배로 잃어요.`;
-    const lose = s.lose ?? 'Shortfall';
+    const lose = s.lose;
     if (lose === 'Shortfall') lines.push(`공약을 못 채우면 모자란 만큼 잃어요.${backRun}`);
     else {
       const n = lose.PaysBack;
@@ -104,7 +101,7 @@
       alone && s.alone === 'Always' && '노프렌드',
     ].filter((x): x is string => typeof x === 'string');
     if (lossDoubles.length) lines.push(`${lossDoubles.join('와 ')}는 져도 두 배예요.`);
-    const full = s.full_contract ?? 'Never';
+    const full = s.full_contract;
     if (full !== 'Never') lines.push(`공약이 20이면 ${full === 'Always' ? '이기든 지든' : '이겼을 때'} 또 두 배예요.`);
     if (r.next_dealer === 'FriendOrDeclarer')
       lines.push('다음 판은 이번 판의 프렌드가, 프렌드가 없었으면 주공이 나누고 먼저 불러요.');
@@ -164,7 +161,7 @@
         if (last) out.push({ who, round: '마지막 라운드', text: last });
       }
     }
-    if (r.joker_lead?.not_first_trick) out.push({ who: '조커', round: '첫 라운드', text: '먼저 낼 수 없어요' });
+    if (r.joker_lead.not_first_trick) out.push({ who: '조커', round: '첫 라운드', text: '먼저 낼 수 없어요' });
     if (r.policy.trump.first === 'NoLead')
       out.push({
         who: '기루다',
@@ -190,7 +187,7 @@
           Never: '노프렌드: 혼자 해요. 야당 모두와 혼자 주고받아요.',
           Win: '노프렌드: 혼자 해요. 이기면 점수가 두 배예요.',
           Always: '노프렌드: 혼자 해요. 이기든 지든 점수가 두 배예요.',
-        }[scoring(r).alone],
+        }[r.scoring.alone],
       f.fake && '자기가 가진 카드를 불러서 몰래 혼자 할 수도 있어요.',
     ].filter((x): x is string => typeof x === 'string');
   }
@@ -219,7 +216,10 @@
       `받은 패가 약하면 ${when} 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${num(m.threshold)}점 이하일 때예요.`,
     ];
     lines.push('자기 차례가 아니어도 되고, 패스한 뒤에는 못 해요. 먼저 부른 사람의 딜미스예요. 그 사람은 패를 보여 줘요.');
-    if (m.ask_first) lines.push('첫 공약은 패를 받고 2초쯤 기다렸다가 할 수 있어요. 그사이 딜미스할 사람이 있는지 봐요.');
+    if (m.ask_first)
+      lines.push(
+        `첫 공약은 패를 받고 ${CATALOG.first_bid_grace_ms / 1000}초쯤 기다렸다가 할 수 있어요. 그사이 딜미스할 사람이 있는지 봐요.`,
+      );
     if (m.caller_deals) lines.push('딜미스를 한 사람이 새로 나눈 판에서 먼저 불러요.');
     if (m.all_points) lines.push('받은 카드가 모두 점수 카드여도 딜미스를 할 수 있어요.');
     if (m.declarer) lines.push('주공도 키티를 가져온 뒤 버리기 전에, 가진 카드 전부로 세어 딜미스를 할 수 있어요.');
@@ -230,7 +230,7 @@
 <article class="book">
   <header>
     <h1>
-      {#if failed === 'unknown'}규칙을 찾을 수 없어요{:else}{PRESET_NAME[preset] ?? preset} 규칙{/if}{#if changed}<span
+      {#if !rules}규칙을 찾을 수 없어요{:else}{presetTitle(preset)} 규칙{/if}{#if changed}<span
           class="changed">바꾼 규칙</span
         >{/if}
     </h1>
@@ -244,32 +244,17 @@
     {/if}
   </header>
 
-  {#if failed}
+  {#if !rules}
     <div class="failed" role="alert">
-      <p class="muted">
-        {#if failed === 'unknown'}
-          ‘{preset}’라는 규칙은 없어요. 주소를 다시 확인해 주세요.
-        {:else}
-          규칙을 불러오지 못했어요. 연결을 확인하고 다시 해 보세요.
-        {/if}
-      </p>
+      <p class="muted">‘{preset}’라는 규칙은 없어요. 주소를 다시 확인해 주세요.</p>
       <div class="failed-actions">
         {#if standalone}<a class="home" href="/">홈으로</a>{/if}
-        {#if failed === 'network'}<button onclick={() => attempt++}>다시 시도</button>{/if}
       </div>
     </div>
-  {:else if !rules}
-    <p class="muted">불러오는 중…</p>
   {:else}
     {@const r = rules}
     {@const twoJokers = jokers(r).length === 2}
     {@const [formula, note] = winFormula(r)}
-    {@const f = r.friend}
-    {@const withFriend = !f || f.by_card || f.by_seat || f.first_trick || f.last_trick}
-    {@const opponents = r.players - (withFriend ? 2 : 1)}
-    {@const bid = { trump: 'Spade' as const, count: r.bidding.min + 1 }}
-    {@const v = handValue(r, bid, !withFriend, bid.count + 2)}
-    {@const lost = handValue(r, bid, !withFriend, bid.count - 2)}
     <section>
       <h2>목표</h2>
       <p>
@@ -343,7 +328,7 @@
       <ul>
         <li>
           주공이 키티 {kitty(r)}장을 가져가고 {kitty(r)}장을 버려요. 버린 점수 카드는
-          {scoring(r).discards_to_declarer ? '여당' : '야당'} 점수가 돼요.
+          {r.scoring.discards_to_declarer ? '여당' : '야당'} 점수가 돼요.
           {r.reveal_discards === false ? '버린 카드는 끝나도 보여 주지 않아요.' : ''}
         </li>
         {#if r.bidding.raise_on_exchange}
@@ -417,11 +402,11 @@
         <li>
           조커로 시작하면 따라 낼 무늬를 정해요.
           {#if twoJokers}조커 색의 무늬만 정할 수 있어요.{/if}
-          {#if r.joker_lead?.by_color}
+          {#if r.joker_lead.by_color}
             무늬 대신 색(빨강, 검정)을 정할 수도 있어요. 그러면 그 색 카드가 있는 사람은 그 색 카드를 내야 해요.
           {/if}
         </li>
-        {#if r.joker_lead?.powerless_passes}
+        {#if r.joker_lead.powerless_passes}
           <li>힘이 없는 조커로 시작하면, 다음 사람이 낸 카드의 무늬가 처음 낸 무늬가 돼요.</li>
         {/if}
       </ul>
@@ -470,11 +455,16 @@
           모두 더하면 항상 0이에요.
         </li>
       </ul>
-      <p class="example">
-        예: ♠ {bid.count} 공약에 {bid.count + 2}점을 가져오면 한 몫이 {v}점. 야당 {opponents}명이 {signed(-v)}씩,
-        {#if withFriend}프렌드 {signed(v)}, 주공 {signed(v * (opponents - 1))}.{:else}주공 {signed(v * opponents)}.{/if}
-        {bid.count - 2}점에 그치면 한 몫이 {signed(lost)}점이에요.
-      </p>
+      {#if examples}
+        {@const { made, failed: lost, contract: bid } = examples}
+        {@const opponents = r.players - (examples.alone ? 1 : 2)}
+        <p class="example">
+          예: ♠ {bid.count} 공약에 {made.value.team_points}점을 가져오면 한 몫이 {made.value.value}점. 야당 {opponents}명이
+          {signed(made.payoffs[r.players - 1])}씩,
+          {#if !examples.alone}프렌드 {signed(made.payoffs[1])},{/if} 주공 {signed(made.payoffs[0])}.
+          {lost.value.team_points}점에 그치면 한 몫이 {signed(lost.value.value)}점이에요.
+        </p>
+      {/if}
     </section>
   {/if}
 </article>

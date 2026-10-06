@@ -28,6 +28,7 @@ sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
 toml = "1"
+ts-rs = { version = "12", default-features = false, features = ["serde-compat"] }
 tokio = { version = "1", features = ["full"] }
 # The version axum's WebSockets use, so there is one tungstenite.
 tokio-tungstenite = "0.29"

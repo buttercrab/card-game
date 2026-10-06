@@ -1,6 +1,7 @@
 <script lang="ts">
   // The table's one menu, in place of a page header: invite, the rules, the
   // table's own settings, this device's settings, and the way out.
+  import { CATALOG } from './catalog';
   import Icon from './Icon.svelte';
   import type { RoomMsg } from './types';
 
@@ -37,12 +38,11 @@
     onleave: () => void;
   } = $props();
 
-  const TURN_CHOICES = [0, 20, 40, 60];
   const inHand = $derived(room.in_hand);
   /** The table's settings change between hands, by whoever sits there. */
   const editable = $derived(seated && !inHand);
-  const turnSecs = $derived(room.table?.turn_secs ?? 0);
-  const shuffle = $derived(room.table?.shuffle ?? false);
+  const turnSecs = $derived(room.table.turn_secs);
+  const shuffle = $derived(room.table.shuffle);
   /** Leaving mid-hand asks first: a bot plays your seat from then on. */
   let leaving = $state(false);
 
@@ -86,7 +86,7 @@
         <div class="set-row">
           <span class="set-label">턴 시간</span>
           <span class="seg" role="radiogroup" aria-label="턴 시간">
-            {#each TURN_CHOICES as secs (secs)}
+            {#each CATALOG.turn_limits as secs (secs)}
               <button role="radio" aria-checked={turnSecs === secs} onclick={() => turnSecs !== secs && onturn(secs)}>
                 {secs === 0 ? '끔' : `${secs}초`}
               </button>

@@ -120,18 +120,13 @@ test('leaving while reconnecting does not take the seat back', async ({ page }) 
   expect(await page.evaluate((id) => localStorage.getItem(`room:${id}`), id)).toBeNull();
 });
 
-// A table plays by the preset's rules as they were when it was made; the
-// rulebook at the table shows those, not the preset as it reads today.
-test("the table's rulebook shows the rules the table pinned", async ({ page }) => {
+// A table plays by the rules the server says: the preset's as pinned, or
+// rules of its own that start with the table (sent with it, checked by
+// the server), which the rulebook at the table then shows.
+test("the table's rulebook shows the rules the table plays by", async ({ page }) => {
   await speed(page, 'off');
-  const today = await (await page.request.get('/api/presets/default')).json();
-  const min = today.bidding.min as number;
-  // The preset changes after the table was made (a deploy between).
-  await page.route(/\/api\/presets\/[a-z]+$/, async (route) => {
-    const rules = await (await route.fetch()).json();
-    rules.bidding.min = min + 2;
-    await route.fulfill({ json: rules });
-  });
+  const rules = await (await page.request.get('/api/presets/default')).json();
+  const min = rules.bidding.min as number;
   await page.goto('/');
   await page.getByRole('button', { name: '테이블 만들기' }).click();
   await page.waitForURL(/\/r\/[a-z0-9]+$/);
@@ -140,5 +135,20 @@ test("the table's rulebook shows the rules the table pinned", async ({ page }) =
   await expect(book.locator('.facts')).toContainText(`공약 ${min}–`);
   await expect(book.locator('h1 .changed')).toHaveCount(0);
   // Nothing changed at this table: the chip names the preset alone.
+  await page.keyboard.press('Escape');
   await expect(page.locator('.rules-chip').first()).not.toContainText('바꾼');
+
+  // Rules of our own, saved on this device and picked at home.
+  const own = { ...rules, bidding: { ...rules.bidding, min: min + 1 } };
+  await page.evaluate((own) => {
+    localStorage.setItem('mighty.rules.custom', JSON.stringify([{ id: 'own', name: '', base: 'default', rules: own }]));
+    localStorage.setItem('mighty.preset', 'custom:own');
+  }, own);
+  await page.goto('/');
+  await page.getByRole('button', { name: '테이블 만들기' }).click();
+  await page.waitForURL(/\/r\/[a-z0-9]+$/);
+  await expect(page.locator('.rules-chip').first()).toContainText('바꾼');
+  await page.locator('.rules-chip').first().click();
+  await expect(book.locator('.facts')).toContainText(`공약 ${min + 1}–`);
+  await expect(book.locator('h1 .changed')).toHaveCount(1);
 });

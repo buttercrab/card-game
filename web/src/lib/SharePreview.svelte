@@ -1,5 +1,6 @@
 <script lang="ts">
   // /share: the session share card with made-up hands, to check its drawing.
+  import { CATALOG, presetRules } from './catalog';
   import ShareCard from './ShareCard.svelte';
   import type { HandSummary, RoomMsg, Suit } from './types';
 
@@ -24,22 +25,28 @@
     hand('Club', 14, true, [3, 0, 2, 1, -1, 2, 3, 0, 1, 2], 5),
   ];
   const room: RoomMsg = {
-    type: 'room',
+    protocol: CATALOG.protocol,
     id: 'preview',
     game: 'mighty',
-    settings: { preset: 'gshs' },
+    settings: { preset: 'gshs', preset_rules: presetRules('gshs') },
+    rules: presetRules('gshs'),
+    customized: false,
     seats: [
-      { kind: 'human', name: '재용', connected: true },
-      { kind: 'bot', name: '콩떡' },
-      { kind: 'human', name: '아주긴이름의친구입니다', connected: true },
-      { kind: 'human', name: '민수', connected: false },
-      { kind: 'bot', name: '호두' },
+      { kind: 'human', name: '재용', connected: true, away: false },
+      { kind: 'bot', name: '콩떡', level: 'hard' },
+      { kind: 'human', name: '아주긴이름의친구입니다', connected: true, away: false },
+      { kind: 'human', name: '민수', connected: false, away: false },
+      { kind: 'bot', name: '호두', level: 'hard' },
     ],
     scores: [18, -3, 5, -8, -12],
     hands_played: hands.length,
     history: hands.map(() => [0, 0, 0, 0, 0]),
     hands,
     in_hand: false,
+    table: { turn_secs: 0, shuffle: false, shuffle_next: false },
+    clock: null,
+    watching: 0,
+    showing: false,
   };
 </script>
 

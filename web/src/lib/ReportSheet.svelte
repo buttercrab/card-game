@@ -1,6 +1,7 @@
 <script lang="ts">
   // Sends a problem report. The server attaches this table's state and move
   // log, so a bug in the rules can be replayed exactly.
+  import { CATALOG } from './catalog';
   let { room = null, seat = null, onclose }: { room?: string | null; seat?: number | null; onclose: () => void } = $props();
 
   let text = $state('');
@@ -54,7 +55,7 @@
         <textarea
           bind:value={text}
           rows="5"
-          maxlength="2000"
+          maxlength={CATALOG.report_max}
           placeholder="예: 조커콜을 했는데 조커가 안 나왔어요"
           aria-label="문제 설명"
         ></textarea>

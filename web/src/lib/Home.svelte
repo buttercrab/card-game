@@ -11,21 +11,22 @@
   import PresetPicker from './PresetPicker.svelte';
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
-  import { PRESET_NAME } from './presets';
-  import { customName, loadCustom, setPending, type CustomSet } from './rulesets';
+  import { CATALOG, isPreset, presetTitle } from './catalog';
+  import { customName, loadCustom, type CustomSet } from './rulesets';
+  import { responseError } from './errorText';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
-  /** The preset last used here, if it still exists, or 기본. */
+  /** The preset last used here, if it still exists, or the default one. */
   function remembered(saved: CustomSet[]): string {
-    let id = 'default';
+    let id: string = CATALOG.default_preset;
     try {
-      id = localStorage.getItem('mighty.preset') ?? 'default';
+      id = localStorage.getItem('mighty.preset') ?? id;
     } catch {
-      // Private mode: start from 기본.
+      // Private mode: start from the default.
     }
-    const known = id.startsWith('custom:') ? saved.some((c) => `custom:${c.id}` === id) : id in PRESET_NAME;
-    return known ? id : 'default';
+    const known = id.startsWith('custom:') ? saved.some((c) => `custom:${c.id}` === id) : isPreset(id);
+    return known ? id : CATALOG.default_preset;
   }
   const saved = loadCustom();
   let customs = $state(saved);
@@ -33,7 +34,7 @@
   let choice = $state(remembered(saved));
   const chosen = $derived(choice.startsWith('custom:') ? (customs.find((c) => `custom:${c.id}` === choice) ?? null) : null);
   const preset = $derived(chosen?.base ?? choice);
-  const chosenName = $derived(chosen ? customName(chosen) : (PRESET_NAME[preset] ?? preset));
+  const chosenName = $derived(chosen ? customName(chosen) : presetTitle(preset));
   let comparing = $state(false);
   let editing = $state(false);
   let code = $state('');
@@ -60,19 +61,14 @@
       const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preset: practice ? 'default' : preset }),
+        // Rules of its own start with the table, checked by the server.
+        body: JSON.stringify({ preset: practice ? 'default' : preset, rules: practice ? undefined : chosen?.rules }),
       });
-      if (res.status === 503) {
-        error = '지금은 열린 테이블이 너무 많아요. 잠시 뒤에 다시 해 보세요.';
+      if (!res.ok) {
+        error = await responseError(res);
         return;
       }
-      if (res.status === 429) {
-        error = '테이블을 너무 자주 만들었어요. 잠시 뒤에 다시 해 보세요.';
-        return;
-      }
-      if (!res.ok) throw new Error(String(res.status));
       const id: string = (await res.json()).id;
-      if (!practice && chosen) setPending(id, chosen.base, chosen.rules);
       if (!practice) {
         try {
           localStorage.setItem('mighty.preset', choice);

@@ -7,9 +7,9 @@
   import { untrack } from 'svelte';
   import { cardLabel } from './cards';
   import PresetPicker from './PresetPicker.svelte';
-  import { PRESET_NAME } from './presets';
+  import { isPreset, presetRules, presetTitle } from './catalog';
   import { GROUPS, RULE_FIELDS, differences, getPath, problems, same, say, setField, shown, traits, type Field } from './ruleFields';
-  import { customName, loadCustom, presetRules, saveCustom, type CustomSet } from './rulesets';
+  import { customName, loadCustom, saveCustom, type CustomSet } from './rulesets';
   import type { Card, Rules } from './types';
 
   let {
@@ -43,7 +43,8 @@
   let from = $state<string>(untrack(() => customs.find((c) => c.base === preset && same(c.rules, rules))?.id ?? ''));
   let name = $state(untrack(() => givenName || customs.find((c) => c.id === from)?.name || ''));
   let base = $state<Rules | null>(null);
-  let defaults = $state<Rules | null>(null);
+  /** What sets the starting rules apart is said against 기본. */
+  const defaults = presetRules('default');
   let draft = $state<Rules | null>(null);
   let picking = $state(false);
 
@@ -51,29 +52,16 @@
   /** Loads `id`'s rules as the base; the draft becomes `start` or the preset. */
   function startFrom(id: string, start: Rules | null) {
     baseId = id;
-    base = null;
     // The table's own preset: as the table pinned it.
     const kept = id === untrack(() => preset) ? untrack(() => $state.snapshot(pinned) as Rules | null) : null;
-    if (kept) {
-      base = kept;
-      draft = structuredClone(start ?? kept);
-      return;
-    }
-    presetRules(id)
-      .then((r) => {
-        if (baseId !== id) return;
-        base = r;
-        draft = structuredClone(start ?? r);
-      })
-      .catch((e) => console.error('rule editor', e));
+    const found = kept ?? (isPreset(id) ? presetRules(id) : null);
+    base = found;
+    draft = found && structuredClone(start ?? found);
   }
   startFrom(
     untrack(() => preset),
     untrack(() => $state.snapshot(rules) as Rules | null),
   );
-  presetRules('default')
-    .then((r) => (defaults = r))
-    .catch(() => {});
 
   const changed = $derived(base && draft ? differences(draft, base) : []);
   const changedPaths = $derived(new Set(changed.map((f) => f.path)));
@@ -83,9 +71,9 @@
     draft ? issues.filter((p) => !p.paths.some((path) => RULE_FIELDS.some((f) => f.path === path && shown(f, draft!)))) : [],
   );
   const startName = $derived(
-    from ? customName(customs.find((c) => c.id === from)!) : (PRESET_NAME[baseId] ?? baseId),
+    from ? customName(customs.find((c) => c.id === from)!) : presetTitle(baseId),
   );
-  const baseName = $derived(PRESET_NAME[baseId] ?? baseId);
+  const baseName = $derived(presetTitle(baseId));
   const startTraits = $derived(base && defaults ? traits(base, defaults) : []);
 
   function choose(choice: string) {

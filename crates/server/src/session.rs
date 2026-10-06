@@ -1,15 +1,18 @@
 //! What a room needs from a game beyond one hand: table size, how each hand
 //! is set up, and a bot to fill empty seats.
 
+use crate::protocol::ServerError;
 use engine::{Bot, Game, Viewer};
 use mighty::Mighty;
-use mighty::bot::{Clumsy, tempered};
-use mighty::rules::{Preset, Rules};
-use mighty::search::SearchBot;
+use mighty::bot::Level;
+use mighty::card::Card;
+use mighty::explain::Refusal;
+use mighty::rules::{Contract, Preset, Rules};
 use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use ts_rs::TS;
 
 pub trait SessionGame:
     Game<
@@ -26,7 +29,7 @@ pub trait SessionGame:
     fn seats(settings: &Self::Settings) -> usize;
 
     /// Checks settings a player proposes for the table.
-    fn validate(settings: &Self::Settings) -> Result<(), String>;
+    fn validate(settings: &Self::Settings) -> Result<(), ServerError>;
 
     /// Pins whatever the settings take from outside the room (a preset's
     /// rules, say) as it is now, so the table keeps its rules for its whole
@@ -45,10 +48,24 @@ pub trait SessionGame:
     /// think for about `think` (zero for its own default) on `threads`
     /// threads. Bots differ a little in temperament so a table of bots
     /// does not play as one; a seated bot keeps its own when it moves.
-    fn bot(level: BotLevel, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
+    fn bot(level: Level, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Self> + Send>;
 
     /// A finished hand in brief, for the session's story.
     type Summary: Clone + Serialize + DeserializeOwned + Send + 'static;
+
+    /// The rules a table plays by, as the room message carries them.
+    type TableRules: Clone + Serialize + Send + 'static;
+
+    /// The rules `settings` play by: the table's own, or its preset's.
+    fn table_rules(settings: &Self::Settings) -> Self::TableRules;
+
+    /// What a seat's table says beyond the view and the legal actions, so
+    /// the client never works out the rules itself (why a card can't be
+    /// played, say).
+    type Notes: Clone + Serialize + Send + 'static;
+
+    /// The notes for `seat`, given what it may do now.
+    fn notes(state: &Self::State, seat: Option<usize>, legal: &[Self::Action]) -> Self::Notes;
 
     /// The hand in brief, once it is over.
     fn summary(state: &Self::State) -> Option<Self::Summary>;
@@ -73,7 +90,7 @@ pub trait SessionGame:
     /// which. The room asks once each deal, and plays the answer after a
     /// short pause if it is still allowed then. None by default.
     fn bot_out_of_turn(
-        _level: BotLevel,
+        _level: Level,
         _seat: usize,
         _state: &Self::State,
         _rng: &mut dyn RngCore,
@@ -122,28 +139,38 @@ pub enum Decision {
 /// so a fast bid never beats a 딜미스 to the table.
 pub const FIRST_BID_GRACE: Duration = Duration::from_secs(2);
 
-/// How well a seated bot plays.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BotLevel {
-    /// Plays sensibly but often slips when choosing a card.
-    Easy,
-    /// The rule-of-thumb bot.
-    Normal,
-    /// Searches sampled deals; the strongest.
-    #[default]
-    Hard,
+/// What a Mighty table says beyond the view, on the seat's turn.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
+pub struct MightyNotes {
+    /// In play: each card in hand that may not be played, with why.
+    pub unplayable: Vec<Unplayable>,
+    /// In the exchange: the contract each trump change or raise sets.
+    pub contracts: Vec<ContractChange>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+pub struct Unplayable {
+    pub card: Card,
+    pub why: Refusal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ContractChange {
+    pub action: mighty::Action,
+    pub contract: Contract,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct MightySettings {
     pub preset: Preset,
     /// The table's own rules, when its players changed the preset's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub rules: Option<Rules>,
     /// The preset's rules as they were when the table chose it; see
     /// [`SessionGame::freeze`]. Without it, the preset's rules today.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub preset_rules: Option<Rules>,
 }
 
@@ -175,6 +202,35 @@ impl Default for MightySettings {
 impl SessionGame for Mighty {
     type Settings = MightySettings;
     type Summary = mighty::HandSummary;
+    type TableRules = Rules;
+    type Notes = MightyNotes;
+
+    fn table_rules(settings: &MightySettings) -> Rules {
+        settings.rules()
+    }
+
+    fn notes(state: &mighty::State, seat: Option<usize>, legal: &[mighty::Action]) -> MightyNotes {
+        if seat.is_none() || legal.is_empty() {
+            return MightyNotes::default();
+        }
+        MightyNotes {
+            unplayable: state
+                .unplayable()
+                .into_iter()
+                .map(|(card, why)| Unplayable { card, why })
+                .collect(),
+            contracts: legal
+                .iter()
+                .filter_map(|action| {
+                    let contract = state.contract_after(action)?;
+                    Some(ContractChange {
+                        action: action.clone(),
+                        contract,
+                    })
+                })
+                .collect(),
+        }
+    }
 
     const NAME: &'static str = "mighty";
 
@@ -182,8 +238,8 @@ impl SessionGame for Mighty {
         settings.rules().players
     }
 
-    fn validate(settings: &MightySettings) -> Result<(), String> {
-        settings.rules().validate().map_err(|e| e.to_string())
+    fn validate(settings: &MightySettings) -> Result<(), ServerError> {
+        Ok(settings.rules().validate()?)
     }
 
     fn freeze(settings: &mut MightySettings) {
@@ -206,26 +262,10 @@ impl SessionGame for Mighty {
         mighty::Options { rules, first_bidder }
     }
 
-    fn bot(level: BotLevel, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
-        // Bolder or more careful bidders.
-        let policy = tempered(temper);
-        match level {
-            BotLevel::Easy => Box::new(Clumsy::easy(policy)),
-            BotLevel::Normal => Box::new(policy),
-            // More sampled deals keep helping a little (2000 beat 200 by about
-            // a third of a point per hand), so deal until the time is up.
-            BotLevel::Hard if !think.is_zero() => Box::new(SearchBot {
-                samples: 5000 * threads.max(1),
-                budget: Some(think),
-                threads,
-                policy,
-                ..SearchBot::default()
-            }),
-            BotLevel::Hard => Box::new(SearchBot {
-                policy,
-                ..SearchBot::default()
-            }),
-        }
+    /// Its own default is a second: tables always think against a clock.
+    fn bot(level: Level, temper: usize, think: Duration, threads: usize) -> Box<dyn Bot<Mighty> + Send> {
+        let think = if think.is_zero() { Duration::from_secs(1) } else { think };
+        level.build_on(temper, Some(think), threads)
     }
 
     fn summary(state: &mighty::State) -> Option<mighty::HandSummary> {
@@ -275,7 +315,7 @@ impl SessionGame for Mighty {
     /// to bid. Every level decides as 보통 does: the 고수 bot's search
     /// plays the seat whose turn it is, which this seat is not.
     fn bot_out_of_turn(
-        _level: BotLevel,
+        _level: Level,
         seat: usize,
         state: &mighty::State,
         rng: &mut dyn RngCore,
@@ -285,7 +325,7 @@ impl SessionGame for Mighty {
             return None;
         }
         let view = Mighty::view(state, Viewer::Seat(seat));
-        let choice = Self::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &state.bids_as(seat), rng);
+        let choice = Self::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &state.bids_as(seat), rng);
         (choice == misdeal).then_some(misdeal)
     }
 
@@ -335,7 +375,7 @@ mod tests {
                         };
                         assert!(expected.contains(&decision), "{decision:?} for {:?}", view.phase);
                         seen.push(decision);
-                        Mighty::bot(BotLevel::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
+                        Mighty::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
                     }
                 };
                 Mighty::apply(&mut state, action).unwrap();
@@ -344,5 +384,62 @@ mod tests {
         // Both real and obvious choices come up in twenty hands.
         let follows = seen.iter().filter(|d| **d == Decision::Follow).count();
         assert!(follows > 0 && seen.contains(&Decision::Obvious));
+    }
+
+    /// On every turn the notes say what the table would otherwise work out
+    /// for itself: every card in hand is either played or explained, and
+    /// every contract change or raise says what it sets. Others get none.
+    #[test]
+    fn notes_explain_every_unplayable_card_and_contract_change() {
+        use mighty::Action;
+        let (mut explained, mut changes) = (0, 0);
+        for (seed, preset) in [Preset::Default, Preset::Gshs, Preset::Skku, Preset::Yonsei]
+            .into_iter()
+            .cycle()
+            .take(24)
+            .enumerate()
+        {
+            let settings = MightySettings::new(preset);
+            let mut state = Mighty::new_game(&Mighty::hand_options(&settings, 0, None, 0)).unwrap();
+            let mut rng = StdRng::seed_from_u64(seed as u64);
+            loop {
+                let action = match Mighty::turn(&state) {
+                    Turn::Over => break,
+                    Turn::Chance => Mighty::sample_chance(&state, &mut rng),
+                    Turn::Seat(seat) => {
+                        let legal = Mighty::legal_actions(&state);
+                        let notes = Mighty::notes(&state, Some(seat), &legal);
+                        let other = (seat + 1) % 5;
+                        assert_eq!(Mighty::notes(&state, Some(other), &[]), MightyNotes::default());
+                        let view = Mighty::view(&state, Viewer::Seat(seat));
+                        if let mighty::PhaseView::Play { .. } = view.phase {
+                            for card in &view.hand {
+                                let playable = legal
+                                    .iter()
+                                    .any(|a| matches!(a, Action::Play { card: c, .. } if c == card));
+                                let refused = notes.unplayable.iter().any(|u| u.card == *card);
+                                assert!(playable != refused, "{card} is either played or explained");
+                            }
+                            explained += notes.unplayable.len();
+                        }
+                        for a in &legal {
+                            let change = notes.contracts.iter().find(|c| c.action == *a);
+                            match a {
+                                Action::ChangeTrump(trump) => {
+                                    let c = change.expect("a trump change says what it sets");
+                                    assert_eq!(c.contract.trump, *trump);
+                                    changes += 1;
+                                }
+                                Action::Raise(contract) => assert_eq!(change.unwrap().contract, *contract),
+                                _ => assert!(change.is_none()),
+                            }
+                        }
+                        Mighty::bot(Level::Normal, seat, Duration::ZERO, 1).act(&view, &legal, &mut rng)
+                    }
+                };
+                Mighty::apply(&mut state, action).unwrap();
+            }
+        }
+        assert!(explained > 0 && changes > 0, "{explained} {changes}");
     }
 }

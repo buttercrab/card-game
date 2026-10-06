@@ -28,6 +28,8 @@ while IFS= read -r file; do
         # Configs and specs the Python tests check.
         research/*) ml=true ;;
         ml/*) ml=true ;;
+        # Generated from the server's types; the lint job checks they are current.
+        web/src/lib/generated/*) rust=true web=true e2e=true ;;
         web/*) web=true e2e=true ;;
         *) everything ;;
     esac

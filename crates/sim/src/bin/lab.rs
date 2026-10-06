@@ -39,9 +39,6 @@ struct Args {
     command: Command,
 }
 
-/// The production 고수 bot without its time limit, so runs reproduce.
-const HARD: &str = "search:200:1:0";
-
 #[derive(Subcommand)]
 enum Command {
     /// Play and record hands, every seat the same bot.
@@ -50,7 +47,7 @@ enum Command {
         deals: u64,
         #[arg(long, default_value_t = 0)]
         start: u64,
-        #[arg(long, default_value = HARD)]
+        #[arg(long, default_value = "hard")]
         bot: String,
     },
     /// Replay the card play of recorded hands with another bot in one
@@ -59,7 +56,7 @@ enum Command {
         #[arg(long)]
         records: PathBuf,
         /// The bot everywhere else; the recorded one.
-        #[arg(long, default_value = HARD)]
+        #[arg(long, default_value = "hard")]
         base: String,
         /// `name=bot`, where bot is a `sim` bot or `cheat`.
         #[arg(long, required = true)]
@@ -82,7 +79,7 @@ enum Command {
     Bid {
         #[arg(long)]
         records: PathBuf,
-        #[arg(long, default_value = HARD)]
+        #[arg(long, default_value = "hard")]
         bot: String,
         /// Deals sampled for the playout oracle.
         #[arg(long, default_value_t = 300)]
@@ -112,7 +109,7 @@ enum Command {
         start: u64,
         #[arg(long)]
         bot: String,
-        #[arg(long, default_value = HARD)]
+        #[arg(long, default_value = "hard")]
         field: String,
     },
     /// Every bidding decision of hands played by `bot` in every seat, with
@@ -146,7 +143,7 @@ enum Command {
     Exchange {
         #[arg(long)]
         records: PathBuf,
-        #[arg(long, default_value = HARD)]
+        #[arg(long, default_value = "hard")]
         play: String,
         /// `name=bot:SPEC` (a bot's exchange), `name=joint:WORLDS` (search
         /// whole discard sets and the call), `name=call:WORLDS` (the

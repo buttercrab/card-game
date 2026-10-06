@@ -2,9 +2,12 @@
 //! task (see [`room`]).
 
 pub mod bots;
+pub mod catalog;
+pub mod codegen;
 pub mod dashboard;
 pub mod errors;
 pub mod limit;
+pub mod protocol;
 pub mod room;
 pub mod session;
 pub mod site;
@@ -19,9 +22,11 @@ use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use limit::{ClientIp, Limits, too_many};
 use mighty::Mighty;
-use mighty::rules::Preset;
+use mighty::rules::{Preset, Rules};
+use protocol::ClientMsg;
+use protocol::{CreateRoom, CreatedRoom, ErrorCode, ServerError};
 use rand::Rng;
-use room::{ClientMsg, Command, ConnId, Room};
+use room::{Command, ConnId, Room};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use session::{MightySettings, SessionGame};
@@ -77,7 +82,7 @@ impl AppState {
             bot_delay,
             bot_think: None,
             max_rooms: 500,
-            idle: Duration::from_secs(30 * 60),
+            idle: Duration::from_secs(IDLE_MINUTES * 60),
             data: None,
             reports: Arc::default(),
             error_issues: Arc::default(),
@@ -194,7 +199,6 @@ impl AppState {
             let loaded = std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|text| serde_json::from_str(&text).map_err(|e| e.to_string()))
-                .map(freeze_saved::<Mighty>)
                 .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.bot_delay));
             match loaded {
                 Ok(mut room) => {
@@ -322,18 +326,6 @@ impl AppState {
     }
 }
 
-/// Pins the settings of a room saved before rooms pinned their rules; see
-/// [`SessionGame::freeze`]. Pinned settings, or ones that do not load, pass.
-fn freeze_saved<G: SessionGame>(mut snapshot: Value) -> Value {
-    if let Ok(mut settings) = serde_json::from_value::<G::Settings>(snapshot["settings"].clone()) {
-        G::freeze(&mut settings);
-        if let Ok(frozen) = serde_json::to_value(settings) {
-            snapshot["settings"] = frozen;
-        }
-    }
-    snapshot
-}
-
 /// Refuses a body over `max` bytes. One whose declared length is over is
 /// refused before any of it is read, so a client that waits for `100
 /// Continue` never sends it.
@@ -349,7 +341,8 @@ pub fn router(state: AppState, web_dir: Option<PathBuf>) -> Router {
         .route("/version", get(version))
         .route("/api/presets", get(presets))
         .route("/api/presets/{id}", get(preset_rules))
-        .route("/api/rooms", post(create_room).layer(body_limit(4 * 1024)))
+        .route("/api/rooms", post(create_room).layer(body_limit(16 * 1024)))
+        .route("/api/rules/examples", post(rule_examples).layer(body_limit(16 * 1024)))
         .route("/api/rooms/{id}", get(room_info))
         .route("/api/rooms/{id}/ws", get(connect))
         .route("/api/reports", post(report).layer(body_limit(REPORT_BODY)))
@@ -411,34 +404,56 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// The rulebook's worked examples (see [`mighty::score::Examples`]) under
+/// the rules in the body, which may be any a table could play.
+async fn rule_examples(body: axum::body::Bytes) -> Response {
+    let rules: Rules = match serde_json::from_slice(&body) {
+        Ok(rules) => rules,
+        Err(e) => return ServerError::with_detail(ErrorCode::BadMessage, e).respond(StatusCode::BAD_REQUEST),
+    };
+    if let Err(e) = rules.validate() {
+        return ServerError::rules(e).respond(StatusCode::BAD_REQUEST);
+    }
+    Json(mighty::score::Examples::new(&rules)).into_response()
+}
+
 /// The full rules of a preset, for the rulebook.
 async fn preset_rules(Path(id): Path<String>) -> Response {
     match id.parse::<Preset>() {
         Ok(preset) => Json(preset.rules()).into_response(),
-        Err(e) => (StatusCode::NOT_FOUND, e).into_response(),
+        Err(e) => ServerError::with_detail(ErrorCode::UnknownPreset, e).respond(StatusCode::NOT_FOUND),
     }
 }
 
-#[derive(Deserialize, Default)]
-struct CreateRoom {
-    #[serde(default)]
-    preset: Option<Preset>,
+/// A JSON body, or what was wrong with it as a [`ServerError`]. An empty
+/// body is the type's default.
+fn parse_body<T: serde::de::DeserializeOwned + Default>(body: &[u8]) -> Result<T, ServerError> {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return Ok(T::default());
+    }
+    serde_json::from_slice(body).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))
 }
 
-async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: Option<Json<CreateRoom>>) -> Response {
+async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: axum::body::Bytes) -> Response {
     if !app.limits.tables.allow(ip) {
         return too_many();
     }
-    let preset = body.and_then(|Json(b)| b.preset).unwrap_or(Preset::Gshs);
-    match app.create_room::<Mighty>(MightySettings::new(preset)) {
-        Some(id) => Json(json!({ "id": id })).into_response(),
+    let request: CreateRoom = match parse_body(&body) {
+        Ok(request) => request,
+        Err(e) => return e.respond(StatusCode::BAD_REQUEST),
+    };
+    let mut settings = MightySettings::new(request.preset.unwrap_or(catalog::DEFAULT_PRESET));
+    Mighty::freeze(&mut settings);
+    // Rules no different from the preset's are the preset's.
+    settings.rules = request.rules.filter(|r| Some(r) != settings.preset_rules.as_ref());
+    if let Err(e) = Mighty::validate(&settings) {
+        return e.respond(StatusCode::BAD_REQUEST);
+    }
+    match app.create_room::<Mighty>(settings) {
+        Some(id) => Json(CreatedRoom { id }).into_response(),
         None => {
             tracing::warn!(max = app.max_rooms, "refused a table: too many are open");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "지금은 열린 테이블이 너무 많아요. 잠시 뒤에 다시 해 주세요.",
-            )
-                .into_response()
+            ServerError::new(ErrorCode::TooManyTables).respond(StatusCode::SERVICE_UNAVAILABLE)
         }
     }
 }
@@ -455,10 +470,16 @@ struct Report {
     client: Value,
 }
 
-/// Reports kept at most this long, and accepted at most this often.
-pub(crate) const REPORT_DAYS: u64 = 14;
+/// Reports (and new client errors) kept at most this long, in days.
+pub const REPORT_DAYS: u64 = 14;
+/// The longest report kept, in characters.
+pub const REPORT_MAX: usize = 2000;
+/// A table with nobody connected closes after this many minutes, unless
+/// the server is told otherwise.
+pub const IDLE_MINUTES: u64 = 30;
+/// Reports accepted at most this often, from everyone.
 const REPORTS_PER_HOUR: usize = 30;
-/// The largest report body: 2000 characters of text and the client's description.
+/// The largest report body: [`REPORT_MAX`] characters of text and the client's description.
 const REPORT_BODY: usize = 32 * 1024;
 
 /// Saves a player's problem report with the room's state and move log under
@@ -467,15 +488,15 @@ async fn report(State(app): State<AppState>, ClientIp(ip): ClientIp, Json(r): Js
     if !app.limits.reports.allow(ip) {
         return too_many();
     }
-    let text: String = r.text.trim().chars().take(2000).collect();
+    let text: String = r.text.trim().chars().take(REPORT_MAX).collect();
     if text.is_empty() {
-        return (StatusCode::BAD_REQUEST, "describe the problem").into_response();
+        return ServerError::new(ErrorCode::EmptyReport).respond(StatusCode::BAD_REQUEST);
     }
     {
         let mut recent = app.reports.lock().expect("report times poisoned");
         recent.retain(|t| t.elapsed() < Duration::from_secs(3600));
         if recent.len() >= REPORTS_PER_HOUR {
-            return (StatusCode::TOO_MANY_REQUESTS, "too many reports").into_response();
+            return ServerError::new(ErrorCode::TooManyReports).respond(StatusCode::TOO_MANY_REQUESTS);
         }
         recent.push(std::time::Instant::now());
     }
@@ -608,8 +629,8 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
             }
         }
     });
-    let error = |message: String| {
-        let _ = errors.send(json!({ "type": "error", "message": message }).to_string());
+    let error = |error: ServerError| {
+        let _ = errors.send(error.message());
     };
     let mut limits = ConnLimits::new();
     loop {
@@ -627,11 +648,11 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
                     }
                     let Message::Text(text) = message else { continue };
                     match serde_json::from_str::<ClientMsg>(&text) {
-                        Ok(ClientMsg::Hint) if !limits.hints.take() => error("hints too often".into()),
+                        Ok(ClientMsg::Hint) if !limits.hints.take() => error(ErrorCode::HintsTooOften.into()),
                         Ok(msg) => {
                             let _ = room.send(Command::Message { conn, msg });
                         }
-                        Err(e) => error(format!("bad message: {e}")),
+                        Err(e) => error(ServerError::with_detail(ErrorCode::BadMessage, e)),
                     }
                 }
                 Some(Ok(Message::Close(_)) | Err(_)) | None => break,

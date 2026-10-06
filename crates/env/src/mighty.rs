@@ -4,37 +4,20 @@
 //! Rule names are preset ids (`default`, `gshs`, ...), optionally at
 //! another table size as `Rules::for_players` adapts them: `gshs/4`.
 //!
-//! Bot names: the levels players pick at the table, set up as the server
-//! sets them up (`crates/server/src/session.rs`, `SessionGame::bot`), each
-//! seat a little bolder or more careful in its bidding:
-//!
-//! - `초보` or `easy`: the simple bot, bidding more carefully and slipping
-//!   to a random cheap card a third of the time.
-//! - `보통` or `normal`: the simple bot.
-//! - `고수` or `hard`: the search bot, without a time limit so that its
-//!   choices depend only on the seed; `고수:N` or `hard:N` deals `N`
-//!   samples a decision instead of its default 200.
-//!
-//! Anything else is a `sim` bot spec, played as written: `random`,
-//! `simple`, `search:50:1:0`, `simple@bid_base=7`, ... (see `sim --help`).
+//! Bots are `sim` bot specs (see `sim --help`): the levels players pick at
+//! the table, `초보`/`easy`, `보통`/`normal` and `고수`/`hard`, as
+//! [`mighty::bot::Level`] defines them (고수 without a clock, so its choices
+//! depend only on the seed), or any other bot as written: `random`,
+//! `simple`, `search:50:1:0`, `hard@threads=4`, `simple@bid_base=7`, ...
 
 use crate::game::EnvGame;
 use engine::{Bot, Seat};
-use mighty::bot::{Clumsy, tempered};
 use mighty::rules::{Preset, Rules};
-use mighty::search::SearchBot;
 use mighty::{Mighty, Options};
 use rand::{Rng, RngCore};
 
 /// A bot by name; see the module docs.
-#[derive(Debug, Clone, Copy)]
-pub enum BotSpec {
-    Easy,
-    Normal,
-    /// The search bot with this many samples, or its default.
-    Hard(Option<usize>),
-    Sim(sim::spec::Spec),
-}
+pub type BotSpec = sim::spec::Spec;
 
 impl EnvGame for Mighty {
     const MAX_SEATS: usize = mighty::encode::MAX_SEATS;
@@ -71,42 +54,10 @@ impl EnvGame for Mighty {
     }
 
     fn parse_bot(spec: &str) -> Result<BotSpec, String> {
-        let (name, samples) = match spec.split_once(':') {
-            Some((name, samples)) => (name, Some(samples)),
-            None => (spec, None),
-        };
-        let level = match name {
-            "초보" | "easy" => Some(BotSpec::Easy),
-            "보통" | "normal" => Some(BotSpec::Normal),
-            "고수" | "hard" => {
-                let samples = samples
-                    .map(|n| n.parse().map_err(|_| format!("bad sample count in {spec:?}")))
-                    .transpose()?;
-                return Ok(BotSpec::Hard(samples));
-            }
-            _ => None,
-        };
-        match level {
-            Some(level) if samples.is_none() => Ok(level),
-            Some(_) => Err(format!("{name} takes no samples: {spec:?}")),
-            None => spec.parse().map(BotSpec::Sim),
-        }
+        spec.parse()
     }
 
     fn bot(spec: &BotSpec, seat: Seat) -> Box<dyn Bot<Mighty> + Send> {
-        match *spec {
-            BotSpec::Easy => Box::new(Clumsy::easy(tempered(seat))),
-            BotSpec::Normal => Box::new(tempered(seat)),
-            BotSpec::Hard(samples) => {
-                let default = SearchBot::default();
-                Box::new(SearchBot {
-                    samples: samples.unwrap_or(default.samples),
-                    budget: None,
-                    policy: tempered(seat),
-                    ..default
-                })
-            }
-            BotSpec::Sim(sim_spec) => sim_spec.build(seat),
-        }
+        spec.build(seat)
     }
 }

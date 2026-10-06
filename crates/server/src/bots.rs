@@ -17,9 +17,10 @@
 //! worker may also keep a file fresh while its server talks to it
 //! ([`Liveness`]), for its container's health check ([`alive_within`]).
 
-use crate::session::{BotLevel, SessionGame};
+use crate::session::SessionGame;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
+use mighty::bot::Level;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
@@ -149,7 +150,7 @@ struct Hello {
 /// job that does not parse gets a reply).
 #[derive(Deserialize)]
 struct Job {
-    level: BotLevel,
+    level: Level,
     seat: usize,
     /// The bot's temperament; servers that send none mean the seat's.
     #[serde(default)]

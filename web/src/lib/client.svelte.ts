@@ -1,6 +1,8 @@
+import { CATALOG } from './catalog';
+import { errorText } from './errorText';
 import { sound } from './sound';
 import { Toasts } from './toast.svelte';
-import type { Action, BotLevel, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
+import type { Action, BotLevel, ClientMsg, Preset, RoomMsg, Rules, ServerMsg, StateMsg } from './types';
 
 interface Saved {
   token: string;
@@ -28,37 +30,6 @@ function load<T>(key: string): T | null {
   } catch {
     return null;
   }
-}
-
-// The server answers in English; players see Korean.
-const ERRORS: [RegExp, string][] = [
-  [/not your turn/, '아직 내 차례가 아니에요'],
-  [/not seated/, '먼저 자리에 앉아야 해요'],
-  [/only seated players/, '자리에 앉은 사람만 할 수 있어요'],
-  [/seat is taken/, '이미 누가 앉은 자리예요'],
-  [/bots stay/, '판이 끝날 때까지 봇을 뺄 수 없어요'],
-  [/already in progress/, '이미 판이 진행 중이에요'],
-  [/every seat needs/, '빈 자리를 먼저 채워 주세요'],
-  [/pick a name/, '이름을 적어 주세요'],
-  [/illegal action/, '지금은 그렇게 할 수 없어요'],
-  [/wait a moment after the deal/, '딜미스할 사람이 있는지 잠깐 기다려요'],
-  [/seats move only between hands/, '자리는 판과 판 사이에만 바꿀 수 있어요'],
-  [/only between hands/, '규칙은 판과 판 사이에만 바꿀 수 있어요'],
-  [/no such turn limit/, '그 시간으로는 정할 수 없어요'],
-  [/no player in that seat/, '그 자리에는 사람이 없어요'],
-  [/leave your own seat/, '내 자리는 직접 일어나 주세요'],
-  [/table is full/, '자리가 다 찼어요'],
-  [/nobody to move/, '바꿀 사람이 없어요'],
-  [/bidding range is empty/, '공약 최소가 최대보다 클 수 없어요'],
-  [/no-trump bonus/, '노기루다 보너스는 최소 공약보다 작아야 해요'],
-  [/no way to choose a friend/, '프렌드를 정하는 방법을 하나는 골라 주세요'],
-  [/invalid rules/, '그 규칙으로는 게임을 할 수 없어요'],
-  [/hints are busy/, '지금은 힌트를 보는 사람이 많아요. 잠시 뒤에 다시 해 주세요'],
-  [/hints too often/, '힌트는 잠시 뒤에 다시 볼 수 있어요'],
-];
-
-function translate(message: string): string {
-  return ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? '요청을 처리하지 못했어요';
 }
 
 function store(key: string, value: unknown) {
@@ -91,8 +62,8 @@ export class RoomClient {
   clock = $state<{ seat: number; deadline: number; total: number } | null>(null);
 
   /** Called as seats are about to move, while the table still shows them
-   * where they were; `order[s]` is where seat `s` goes (null: unknown). */
-  onmove: ((order: number[] | null) => void) | null = null;
+   * where they were; `order[s]` is where seat `s` goes. */
+  onmove: ((order: number[]) => void) | null = null;
 
   #id: string;
   #ws: WebSocket | null = null;
@@ -222,13 +193,14 @@ export class RoomClient {
         // it slides them to their new places. `order[s]` is where seat `s` went.
         const n = this.room?.seats.length ?? 0;
         const order =
-          msg.order ??
-          (msg.seats ? Array.from({ length: n }, (_, s) => (s === msg.seats![0] ? msg.seats![1] : s === msg.seats![1] ? msg.seats![0] : s)) : null);
+          msg.how === 'shuffle'
+            ? msg.order
+            : Array.from({ length: n }, (_, s) => (s === msg.seats[0] ? msg.seats[1] : s === msg.seats[1] ? msg.seats[0] : s));
         this.onmove?.(order);
         this.#moving = true;
         // A reaction still showing moves with its seat.
         const moved: typeof this.reactions = {};
-        if (order) for (const [seat, r] of Object.entries(this.reactions)) moved[order[Number(seat)] ?? Number(seat)] = r;
+        for (const [seat, r] of Object.entries(this.reactions)) moved[order[Number(seat)] ?? Number(seat)] = r;
         this.reactions = moved;
         // The table on screen was drawn for the old seats; the next hand
         // (or the room) draws afresh.
@@ -251,12 +223,12 @@ export class RoomClient {
       }
       case 'error':
         this.#starting = false;
-        this.toasts.show('error', translate(msg.message));
+        this.toasts.show('error', errorText(msg));
         break;
     }
   }
 
-  #send(msg: unknown) {
+  #send(msg: ClientMsg) {
     if (this.#ws?.readyState === WebSocket.OPEN) this.#ws.send(JSON.stringify(msg));
   }
 
@@ -306,7 +278,7 @@ export class RoomClient {
   }
 
   /** Seats a bot, or changes the level of the one already there. */
-  addBot(seat: number, level: BotLevel = 'hard') {
+  addBot(seat: number, level: BotLevel = CATALOG.default_bot_level) {
     this.#send({ type: 'add_bot', seat, level });
   }
 
@@ -316,7 +288,7 @@ export class RoomClient {
 
   /** `presetRules`: the preset's rules as the table pinned them, to keep
    * them; without it the server pins the preset as it is today. */
-  setRules(preset: string, rules: Rules | null, presetRules?: Rules) {
+  setRules(preset: Preset, rules: Rules | null, presetRules?: Rules) {
     this.#send({
       type: 'set_settings',
       settings: { preset, ...(rules ? { rules } : {}), ...(presetRules ? { preset_rules: presetRules } : {}) },

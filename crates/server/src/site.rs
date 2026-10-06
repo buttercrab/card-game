@@ -18,21 +18,6 @@ use tower_http::services::ServeDir;
 /// Where the site lives, for canonical links and the sitemap.
 pub const SITE_URL: &str = "https://cards.buttercrab.io";
 
-/// The short Korean name players know each preset by, as the client shows it.
-pub fn preset_name(preset: Preset) -> &'static str {
-    match preset {
-        Preset::Default => "기본",
-        Preset::Ddshs => "대전동신과고",
-        Preset::Dshs => "대구과고",
-        Preset::Kmla => "민사고",
-        Preset::Gsa => "광주과고",
-        Preset::Gshs => "경기과고",
-        Preset::Skku => "성균관대",
-        Preset::Sshs => "서울과고",
-        Preset::Yonsei => "연세대",
-    }
-}
-
 pub fn robots(site: &str) -> String {
     format!(
         "User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /internal/\nDisallow: /stats\nDisallow: /r/\n\nSitemap: {site}/sitemap.xml\n"
@@ -138,7 +123,7 @@ pub fn meta(page: &Page, path: &str, table: Option<&TableInfo>) -> Meta {
             "/privacy",
         ),
         Page::Rules(preset) => {
-            let name = preset_name(*preset);
+            let name = preset.title();
             let players = preset.rules().players;
             Meta {
                 title: format!("{name} 마이티 규칙 · 마이티"),
@@ -154,7 +139,7 @@ pub fn meta(page: &Page, path: &str, table: Option<&TableInfo>) -> Meta {
             if let Some(table) = table {
                 if let Some(preset) = table.preset {
                     let custom = if table.custom { " (바꾼 규칙)" } else { "" };
-                    title.push_str(&format!(" · {} 규칙{custom}", preset_name(preset)));
+                    title.push_str(&format!(" · {} 규칙{custom}", preset.title()));
                 }
                 title.push_str(&if table.empty > 0 {
                     format!(" · 빈 자리 {}", table.empty)
@@ -446,7 +431,7 @@ mod tests {
     #[test]
     fn every_preset_has_a_korean_name() {
         for preset in Preset::ALL {
-            assert!(!preset_name(preset).is_ascii(), "{preset}");
+            assert!(!preset.title().is_ascii(), "{preset}");
         }
     }
 

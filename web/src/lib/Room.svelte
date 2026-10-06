@@ -1,17 +1,15 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
+  import { CATALOG, isPreset, presetTitle } from './catalog';
   import { RoomClient, savedName } from './client.svelte';
   import GameMenu from './GameMenu.svelte';
   import Icon from './Icon.svelte';
   import { invite } from './invite';
   import { closeTop } from './layers';
-  import { PRESET_NAME } from './presets';
   import ReportSheet from './ReportSheet.svelte';
   import RuleEditor from './RuleEditor.svelte';
   import RulebookSheet from './RulebookSheet.svelte';
   import { differences } from './ruleFields';
-  import { presetRules, takePending } from './rulesets';
-  import type { Rules } from './types';
   import SettingsSheet from './SettingsSheet.svelte';
   import Table from './Table.svelte';
   import { keepAwake } from './wakeLock';
@@ -51,6 +49,8 @@
   let invitedTimer: ReturnType<typeof setTimeout> | undefined;
 
   const room = $derived(client.room);
+  /** The server speaks another protocol than this page was built for. */
+  const outdated = $derived(room !== null && room.protocol !== CATALOG.protocol);
   const seated = $derived(client.seat !== null);
   const inHand = $derived(room?.in_hand ?? false);
   $effect(() => keepAwake(inHand));
@@ -85,30 +85,14 @@
     if (empty >= 0) client.addBot(empty, 'easy');
     else client.start();
   });
-  // Rules picked on the home page start once their maker sits down.
-  $effect(() => {
-    if (!room || client.seat === null || room.in_hand || client.status !== 'open') return;
-    const pending = untrack(() => takePending(id));
-    if (pending) client.setRules(pending.base, pending.rules);
-  });
   // What this table changed from its preset, for the rules' name: against
   // the preset as the table pinned it, not as the preset reads today.
-  let fetchedBase = $state<Rules | null>(null);
-  const presetBase = $derived(room?.settings.preset_rules ?? fetchedBase);
-  $effect(() => {
-    const preset = room?.settings.preset;
-    // A server too old to say: the preset as it is today.
-    if (!preset || room?.settings.preset_rules) return;
-    presetRules(preset)
-      .then((r) => (fetchedBase = r))
-      .catch(() => (fetchedBase = null));
-  });
   const changedCount = $derived(
-    room?.settings.rules && presetBase ? differences(room.settings.rules, presetBase).length : 0,
+    room?.customized && room.settings.preset_rules ? differences(room.rules, room.settings.preset_rules).length : 0,
   );
   const rulesName = $derived(
     room
-      ? `${PRESET_NAME[room.settings.preset] ?? room.settings.preset} 규칙${changedCount ? ` · 바꾼 것 ${changedCount}개` : room.settings.rules ? ' · 바꾼 규칙' : ''}`
+      ? `${presetTitle(room.settings.preset)} 규칙${changedCount ? ` · 바꾼 것 ${changedCount}개` : room.customized ? ' · 바꾼 규칙' : ''}`
       : '',
   );
   const offline = $derived(
@@ -180,13 +164,20 @@
   {#if client.status === 'missing'}
     <section class="panel center">
       <h2>{id} 테이블이 없어요</h2>
-      <p class="muted">아무도 없이 30분이 지나면 테이블이 닫혀요.</p>
+      <p class="muted">아무도 없이 {CATALOG.idle_minutes}분이 지나면 테이블이 닫혀요.</p>
       <button class="primary" onclick={leave}>새 테이블 만들기</button>
     </section>
   {:else if !room}
     <p class="muted center">연결하는 중…</p>
   {:else}
-    {#if client.status !== 'open'}
+    {#if outdated}
+      <!-- A tab left open across a deploy: the server speaks a newer
+           protocol than this page was built for. -->
+      <div class="banner" role="status">
+        <span>새 버전이 나왔어요.</span>
+        <button onclick={() => location.reload()}>새로고침</button>
+      </div>
+    {:else if client.status !== 'open'}
       <!-- The link dropped (a deploy restarts the server): the client
            reconnects on its own and reclaims the seat with its token. -->
       <div class="banner" role="status">
@@ -247,7 +238,7 @@
     base={room.settings.preset_rules ?? null}
     onsave={(base, rules) =>
       // On the same preset, the table keeps the preset's rules it pinned.
-      client.setRules(base, rules, base === room.settings.preset ? room.settings.preset_rules : undefined)}
+      isPreset(base) && client.setRules(base, rules, base === room.settings.preset ? room.settings.preset_rules : undefined)}
     onclose={() => (editRules = false)}
   />
 {/if}
