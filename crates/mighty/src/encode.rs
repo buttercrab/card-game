@@ -1,4 +1,4 @@
-//! Mighty positions as model inputs ([`engine::Encode`]).
+//! Mighty positions as model inputs ([`engine_ml::Encode`]).
 //!
 //! One layout covers every rule set the engine accepts (up to
 //! [`MAX_SEATS`] players, either deck, any `lowest_rank` and
@@ -36,7 +36,8 @@ use crate::state::{Action, Bid, FriendCall, Phase, TrickState, powered};
 use crate::trick::{self, Lead, PlainSuit, Played, Trick, TrickContext, plain_suit, power};
 use crate::view::{PhaseView, View};
 use crate::{Mighty, Options, State};
-use engine::{Encode, Features, Game, Observation, Seat, Spec, Unsupported, Viewer};
+use engine::{Game, Seat, Viewer};
+use engine_ml::{Encode, Features, Observation, Spec, Unsupported};
 
 /// Names this encoding in data and models. Change it with any change to
 /// the layout or to what a feature means; `tests/encoding.json` pins the

@@ -2,7 +2,7 @@
   // Running text with its suits drawn (SuitIcon) instead of set as font
   // glyphs, which differ on every device: "♣를 따라 내야 해요" shows a
   // drawn club. Screen readers hear the suit's name.
-  import { suitRuns } from './cards';
+  import { suitRuns } from './suits';
   import SuitIcon, { SUIT_NAME } from './SuitIcon.svelte';
 
   let { text }: { text: string } = $props();

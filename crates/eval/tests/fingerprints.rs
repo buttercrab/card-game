@@ -1,7 +1,7 @@
 //! Field bots are told apart by what they do on fixed probe positions, so
 //! two runs that name the same opponent but met another are flagged.
 
-use eval::EvalGame;
+use eval::Research;
 use eval::fingerprint::{PROBES, fingerprint, probes};
 use mighty::Mighty;
 

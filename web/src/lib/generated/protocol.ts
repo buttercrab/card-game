@@ -62,8 +62,8 @@ last_chance_min: number | null,
 raise_on_exchange: boolean, };
 
 /**
- * How well a bot plays: the levels players pick at the table. Defined
- * once here for the server, the environment, `sim` and the evals alike.
+ * How well a bot plays: the levels players pick at a table, whatever the
+ * game. Each game says what plays at each ([`TableBots`]).
  */
 export type BotLevel = "easy" | "normal" | "hard";
 
@@ -98,7 +98,8 @@ release_with_mighty: boolean, };
 export type CardPolicy = "Valid" | "NoEffect" | "Invalid" | "NoLead";
 
 /**
- * Everything the client takes from the server at build time.
+ * Everything the client takes from the server at build time, whatever the
+ * game.
  */
 export type Catalog = { 
 /**
@@ -106,15 +107,9 @@ export type Catalog = {
  */
 protocol: string, 
 /**
- * In the order players pick them.
+ * The games, the first being what the routes without a game id mean.
  */
-presets: Array<PresetInfo>, default_preset: Preset, 
-/**
- * What the server assumes for a rule that saved rules leave out (rules
- * saved before it existed): a set kept on a device fills its gaps
- * from these, as the server would.
- */
-rule_defaults: Rules, 
+games: Array<GameListing>, 
 /**
  * From weakest to strongest.
  */
@@ -143,11 +138,6 @@ report_max: number,
  * How long reports and new client errors are kept, in days.
  */
 report_days: number, 
-/**
- * Where 딜미스 comes first, how long the first bid waits after the
- * deal, in milliseconds.
- */
-first_bid_grace_ms: number, 
 /**
  * A table with nobody connected closes after this many minutes.
  */
@@ -278,6 +268,19 @@ fake: boolean,
 alone: boolean, };
 
 /**
+ * A game the server offers.
+ */
+export type GameListing = { 
+/**
+ * Its id, in routes and in the room message's `game`.
+ */
+id: string, 
+/**
+ * For people: `마이티`.
+ */
+name: string, };
+
+/**
  * A finished hand in brief, for the session's story.
  */
 export type HandSummary = { contract: Contract, declarer: number, friend: number | null, made: boolean, team_points: number, 
@@ -371,6 +374,26 @@ export type Lead = { "Suit": Suit } | { "Color": Color };
 export type LoseScore = "Shortfall" | { "PaysBack": number };
 
 /**
+ * What the web client knows of Mighty before any table opens.
+ */
+export type MightyCatalog = { 
+/**
+ * In the order players pick them.
+ */
+presets: Array<PresetInfo>, default_preset: Preset, 
+/**
+ * What the server assumes for a rule that saved rules leave out (rules
+ * saved before it existed): a set kept on a device fills its gaps
+ * from these, as the server would.
+ */
+rule_defaults: Rules, 
+/**
+ * Where 딜미스 comes first, how long the first bid waits after the
+ * deal, in milliseconds.
+ */
+first_bid_grace_ms: number, };
+
+/**
  * What a Mighty table says beyond the view, on the seat's turn.
  */
 export type MightyNotes = { 
@@ -383,6 +406,9 @@ unplayable: Array<Unplayable>,
  */
 contracts: Array<ContractChange>, };
 
+/**
+ * What a Mighty table is set to play.
+ */
 export type MightySettings = { preset: Preset, 
 /**
  * The table's own rules, when its players changed the preset's.
@@ -390,7 +416,7 @@ export type MightySettings = { preset: Preset,
 rules?: Rules, 
 /**
  * The preset's rules as they were when the table chose it; see
- * [`SessionGame::freeze`]. Without it, the preset's rules today.
+ * [`Table::freeze`]. Without it, the preset's rules today.
  */
 preset_rules?: Rules, };
 
@@ -490,6 +516,9 @@ export type Played = { seat: number, card: Card, powered: boolean, };
  */
 export type Preset = "default" | "ddshs" | "dshs" | "kmla" | "gsa" | "gshs" | "skku" | "sshs" | "yonsei";
 
+/**
+ * A preset as the web client lists it.
+ */
 export type PresetInfo = { id: Preset, 
 /**
  * The short name players know it by.
@@ -641,7 +670,8 @@ export type SeatsMoved = { "how": "shuffle", order: Array<number>, } | { "how": 
  */
 export type ServerError = { code: ErrorCode, 
 /**
- * Which rule check failed, for [`ErrorCode::InvalidRules`].
+ * Which rule check failed, for [`ErrorCode::InvalidRules`], as the
+ * game names it.
  */
 rule?: InvalidRules, 
 /**
@@ -708,7 +738,7 @@ export type Suit = "Spade" | "Diamond" | "Heart" | "Club";
 export type TableSettings = { 
 /**
  * Seconds per decision, or 0 for no limit. The weightier decisions
- * (see [`SessionGame::long_decision`]) get twice as long.
+ * (see [`engine::Table::long_decision`]) get twice as long.
  */
 turn_secs: number, 
 /**
@@ -737,7 +767,9 @@ export type TrickPolicy = { first: CardPolicy, last: CardPolicy, };
 export type TrickWhen = "First" | "Last";
 
 /**
- * Who must act next.
+ * Whom the hand waits on. Legality is by seat ([`Game::legal_actions`]):
+ * this says only whose move paces the hand (a clock, a bot that should
+ * think now) and when chance must be drawn.
  */
 export type Turn = "Chance" | { "Seat": number } | "Over";
 

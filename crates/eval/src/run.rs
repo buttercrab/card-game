@@ -9,7 +9,7 @@ use crate::results::{
 };
 use crate::stats::{Estimate, ThinkTime};
 use crate::suite::{Loaded, Part, deals};
-use crate::{EvalGame, preset, rules};
+use crate::{Research, preset, rules};
 use harness::provenance::{self as machine, Machine};
 use std::time::Instant;
 
@@ -33,7 +33,7 @@ pub struct Request<'a> {
 
 /// Runs `request` for game `G`, telling `progress` about each table as it
 /// finishes.
-pub fn run<G: EvalGame>(request: &Request, progress: &mut dyn FnMut(&str)) -> Result<Results, String> {
+pub fn run<G: Research>(request: &Request, progress: &mut dyn FnMut(&str)) -> Result<Results, String> {
     let Request { suite, quick, .. } = *request;
     let s = &suite.suite;
     if s.game != G::ID {
@@ -112,26 +112,26 @@ pub fn run<G: EvalGame>(request: &Request, progress: &mut dyn FnMut(&str)) -> Re
 }
 
 /// A table to play, and how to name it in the results.
-struct Planned<G: EvalGame> {
+struct Planned<G: Research> {
     name: String,
     rules: String,
     field: String,
     table: Table<G>,
 }
 
-struct Runner<'p, G: EvalGame> {
-    bot: (String, G::Spec),
-    baseline: Option<(String, G::Spec)>,
+struct Runner<'p, G: Research> {
+    bot: (String, G::BotSpec),
+    baseline: Option<(String, G::BotSpec)>,
     threads: Option<usize>,
     /// Whether every bot played so far decides without a clock.
     reproducible: bool,
     /// Every field bot played so far, once each.
-    fields: Vec<(String, G::Spec)>,
+    fields: Vec<(String, G::BotSpec)>,
     progress: &'p mut dyn FnMut(&str),
 }
 
-impl<G: EvalGame> Runner<'_, G> {
-    fn field(&mut self, name: &str) -> Result<G::Spec, String> {
+impl<G: Research> Runner<'_, G> {
+    fn field(&mut self, name: &str) -> Result<G::BotSpec, String> {
         let spec = G::parse_bot(name)?;
         self.reproducible &= G::reproducible(&spec);
         if !self.fields.iter().any(|(n, _)| n == name) {

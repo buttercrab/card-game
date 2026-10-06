@@ -1,7 +1,7 @@
 //! Tables of one measured seat against a field, on paired deals.
 //!
 //! Deal `d` of a table is played on seed `seed + d` with the options
-//! [`EvalGame::options`] gives for `d` (who bids first turns with `d`).
+//! [`Research::options`] gives for `d` (who bids first turns with `d`).
 //! The measured seat is `(d / seats) % seats`, so over `seats²` deals it
 //! meets every first bidder from every seat once. Given a baseline, the
 //! deal is played again with the baseline in that seat: the cards are the
@@ -9,7 +9,7 @@
 //! This is `sim --bots search` exactly, so runs of either reproduce the
 //! other's numbers.
 
-use crate::EvalGame;
+use crate::Research;
 use engine::Bot;
 use harness::{Checks, Clock, Failure, Timed};
 use std::cell::RefCell;
@@ -17,9 +17,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 /// One table: a rule set, the bot in every other seat and the seeds.
-pub struct Table<G: EvalGame> {
+pub struct Table<G: Research> {
     pub rules: G::Rules,
-    pub field: G::Spec,
+    pub field: G::BotSpec,
     /// Deal `d` is played on seed `seed + d`.
     pub seed: u64,
     pub deals: u64,
@@ -38,10 +38,10 @@ pub struct Deal {
 /// Plays every deal of every table with `bot` (and `baseline`) in the
 /// measured seat, on `threads` workers (all cores when `None`). The deals
 /// of all tables share the workers, so none idles while a table finishes.
-pub fn play_tables<G: EvalGame>(
+pub fn play_tables<G: Research>(
     tables: &[Table<G>],
-    bot: &G::Spec,
-    baseline: Option<&G::Spec>,
+    bot: &G::BotSpec,
+    baseline: Option<&G::BotSpec>,
     threads: Option<usize>,
 ) -> Result<Vec<Vec<Deal>>, Failure> {
     // Job `i` is deal `i - starts[k]` of the last table `k` starting at or
@@ -73,7 +73,7 @@ pub fn play_tables<G: EvalGame>(
 }
 
 /// The measured seat's payoff and think times in deal `deal` of `table`.
-fn play_deal<G: EvalGame>(table: &Table<G>, bot: &G::Spec, deal: u64) -> Result<(i64, Vec<Duration>), Failure> {
+fn play_deal<G: Research>(table: &Table<G>, bot: &G::BotSpec, deal: u64) -> Result<(i64, Vec<Duration>), Failure> {
     let options = G::options(&table.rules, deal);
     let seats = G::seats(&table.rules);
     let focus = (deal as usize / seats) % seats;

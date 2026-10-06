@@ -32,7 +32,7 @@ fn play(hand: usize, game: &PinnedGame, bot: SearchBot, log: &mut Vec<String>) {
             Turn::Chance => ("deal".to_string(), Mighty::sample_chance(&state, &mut rng)),
             Turn::Seat(seat) => {
                 let view = Mighty::view(&state, Viewer::Seat(seat));
-                let action = bots[seat].act(&view, &Mighty::legal_actions(&state), &mut rng);
+                let action = bots[seat].act(&view, &engine::legal_on_turn::<Mighty>(&state), &mut rng);
                 (format!("seat {seat}"), action)
             }
         };
@@ -41,7 +41,7 @@ fn play(hand: usize, game: &PinnedGame, bot: SearchBot, log: &mut Vec<String>) {
             other => format!("{other:?}"),
         };
         log.push(serde_json::json!([hand, turn, who, text]).to_string());
-        Mighty::apply(&mut state, action).unwrap();
+        engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
     }
 }
 

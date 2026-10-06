@@ -3,8 +3,8 @@
 
 use super::seating::Occupant;
 use super::{ConnId, Msg, Room};
+use crate::game::ServerGame;
 use crate::protocol::{RoomMsg, SeatInfo, ServerMsg, StateMsg};
-use crate::session::SessionGame;
 use engine::{Turn, Viewer};
 
 /// A share link's preview of a table.
@@ -18,7 +18,7 @@ pub struct Preview {
     pub empty: usize,
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     fn room_message(&self) -> Msg<G> {
         let seats = self
             .seating
@@ -41,7 +41,7 @@ impl<G: SessionGame> Room<G> {
         ServerMsg::Room(RoomMsg {
             protocol: crate::protocol::version().to_string(),
             id: self.id.clone(),
-            game: G::NAME.to_string(),
+            game: G::ID.to_string(),
             settings: self.settings.clone(),
             rules: G::table_rules(&self.settings),
             customized: G::customized(&self.settings),
@@ -54,8 +54,9 @@ impl<G: SessionGame> Room<G> {
         })
     }
 
-    /// The hand as `seat` may see it, with its legal actions on its turn
-    /// and what it may do out of turn otherwise. `grace_ms` is how long
+    /// The hand as `seat` may see it, with its legal actions: as `legal`
+    /// on its turn, as `out_of_turn` off it (what it may take or leave,
+    /// such as a 딜미스). `grace_ms` is how long
     /// the slowest of its legal actions must still wait after the deal;
     /// `version` is the one a hint for this state carries, so the client
     /// can drop a hint that arrives after the hand moved on.
@@ -64,8 +65,8 @@ impl<G: SessionGame> Room<G> {
         let viewer = seat.map_or(Viewer::Spectator, Viewer::Seat);
         let turn = G::turn(game);
         let (legal, out_of_turn) = match seat {
-            Some(s) if turn == Turn::Seat(s) => (G::legal_actions(game), Vec::new()),
-            Some(s) => (Vec::new(), G::out_of_turn_actions(game, s)),
+            Some(s) if turn == Turn::Seat(s) => (G::legal_actions(game, s), Vec::new()),
+            Some(s) => (Vec::new(), G::legal_actions(game, s)),
             None => (Vec::new(), Vec::new()),
         };
         let grace_ms = self.hand.grace_left(&legal).as_millis() as u64;

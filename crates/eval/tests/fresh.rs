@@ -6,7 +6,7 @@
 //! exist.
 
 use eval::suite::{Loaded, RulesRef};
-use eval::{EvalGame, preset};
+use eval::{Research, preset};
 use mighty::Mighty;
 
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");

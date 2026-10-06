@@ -12,7 +12,8 @@ use crate::pimc::{self, Deal, Dealer, Dealt, Outcome, best_average, confident_be
 use crate::read::{Memo, Reading};
 use crate::seen::Seen;
 use crate::simple::SimpleBot;
-use engine::{ActionValues, Bot, Observation, Seat, Viewer};
+use engine::{Bot, Seat, Viewer};
+use engine_ml::{ActionValues, Observation};
 use mighty::card::{ACE, Card};
 use mighty::{Action, FriendCall, Mighty, PhaseView, State, View};
 use rand::{Rng, RngCore};
@@ -445,7 +446,10 @@ mod tests {
                         let world = determinize(&view, &mut deals).expect("a deal exists");
                         Mighty::check_invariants(&world).unwrap();
                         assert_eq!(Mighty::view(&world, Viewer::Seat(seat)), view);
-                        assert_eq!(Mighty::legal_actions(&world), Mighty::legal_actions(state));
+                        assert_eq!(
+                            engine::legal_on_turn::<Mighty>(&world),
+                            engine::legal_on_turn::<Mighty>(state)
+                        );
                     }
                     true
                 });

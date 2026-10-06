@@ -4,9 +4,8 @@
   import Home from './lib/Home.svelte';
   import NotFound from './lib/NotFound.svelte';
   import Privacy from './lib/Privacy.svelte';
-  import Room from './lib/Room.svelte';
-  import Rulebook from './lib/Rulebook.svelte';
-  import { isPreset, presetTitle } from './lib/catalog';
+  import Room from './lib/room/Room.svelte';
+  import { gameFor, MAIN_GAME, TOOLS } from './lib/games/registry';
 
   let path = $state(location.pathname);
 
@@ -31,29 +30,29 @@
   /** The page by name; a trailing slash is the same page. */
   const page = $derived(path.replace(/(.)\/$/, '$1'));
 
+  // The games' tool pages (Mighty's deck, the table's states, the share
+  // image) load on their own, so players never download them.
+  const tools: Record<string, () => Promise<{ default: Component }>> = TOOLS;
+  /** The rulebook pages are the main game's, as is the site's name. */
+  const RulebookPage = MAIN_GAME.RulebookPage;
+  const site = MAIN_GAME.name;
+
   // The server titles the first page it sends; moving around in the app
   // keeps the title in step.
   $effect(() => {
+    const preset = rulesFor && MAIN_GAME.presetTitle(rulesFor);
     document.title = rulesFor
-      ? `${isPreset(rulesFor) ? `${presetTitle(rulesFor)} 규칙` : '규칙'} · 마이티`
+      ? `${preset ? `${preset} 규칙` : '규칙'} · ${site}`
       : roomId
-        ? '마이티 · 테이블'
+        ? `${site} · 테이블`
         : page === '/about'
-          ? '소개 · 마이티'
+          ? `소개 · ${site}`
           : page === '/privacy'
-            ? '개인정보 처리방침 · 마이티'
-            : ['/', '/deck', '/preview', '/share'].includes(page)
-              ? '마이티'
-              : '페이지를 찾을 수 없어요 · 마이티';
+            ? `개인정보 처리방침 · ${site}`
+            : page === '/' || page in tools
+              ? site
+              : `페이지를 찾을 수 없어요 · ${site}`;
   });
-
-  // The tool pages (the deck, the table's states, the share image) load on
-  // their own, so players never download them.
-  const tools: Record<string, () => Promise<{ default: Component }>> = {
-    '/deck': () => import('./lib/DeckPreview.svelte'),
-    '/preview': () => import('./lib/TablePreview.svelte'),
-    '/share': () => import('./lib/SharePreview.svelte'),
-  };
 
   /** Links between the app's own pages move without reloading it. */
   function follow(event: MouseEvent) {
@@ -77,10 +76,10 @@
     <Tool />
   {/await}
 {:else if rulesFor}
-  <main class="page"><Rulebook preset={rulesFor} /></main>
+  <main class="page"><RulebookPage preset={rulesFor} /></main>
 {:else if roomId}
   {#key roomId}
-    <Room id={roomId} onleave={leaveTable} />
+    <Room id={roomId} games={gameFor} onleave={leaveTable} />
   {/key}
 {:else if page === '/about'}
   <main class="page"><About /></main>

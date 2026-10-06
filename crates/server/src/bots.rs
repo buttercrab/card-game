@@ -17,12 +17,10 @@
 //! worker may also keep a file fresh while its server talks to it
 //! ([`Liveness`]), for its container's health check ([`alive_within`]).
 
-use crate::session::SessionGame;
+use crate::game::{GameCatalog, Think};
 use axum::extract::ws::{Message, WebSocket};
+use engine::Level;
 use futures_util::{SinkExt, StreamExt};
-use mighty::bot::Level;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -150,6 +148,10 @@ struct Hello {
 /// job that does not parse gets a reply).
 #[derive(Deserialize)]
 struct Job {
+    /// The game, by id; servers that send none mean the first game
+    /// ([`GameCatalog::default_game`]).
+    #[serde(default)]
+    game: Option<String>,
     level: Level,
     seat: usize,
     /// The bot's temperament; servers that send none mean the seat's.
@@ -435,7 +437,8 @@ fn reply_for(id: u64, result: Result<Value, String>) -> String {
 /// asks for, at most `think`. Every job gets a reply: the move, or an
 /// error (a job it cannot read, a bot that failed, every slot busy), so a
 /// room never waits on a move that is not coming.
-pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Duration, mut alive: Liveness) {
+pub async fn run_worker(url: String, token: String, think: Duration, mut alive: Liveness) {
+    let games = Arc::new(GameCatalog::standard());
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::{Message, http::HeaderValue};
     let (slots, threads) = capacity();
@@ -525,10 +528,11 @@ pub async fn run_worker<G: SessionGame>(url: String, token: String, think: Durat
                         continue;
                     };
                     let tx = tx.clone();
+                    let games = games.clone();
                     tokio::task::spawn_blocking(move || {
-                        let result =
-                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve::<G>(&job, think, threads)))
-                                .unwrap_or_else(|_| Err("the bot panicked".into()));
+                        let solve = || solve(&games, job, think, threads);
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(solve))
+                            .unwrap_or_else(|_| Err("the bot panicked".into()));
                         drop(permit);
                         let _ = tx.send(reply_for(id, result));
                     });
@@ -593,18 +597,18 @@ pub fn alive_within(path: &Path, fresh: Duration) -> bool {
     now.saturating_sub(then) <= fresh.as_secs()
 }
 
-fn solve<G: SessionGame>(job: &Job, most: Duration, threads: usize) -> Result<Value, String> {
-    let think = job.think_ms.map_or(most, |ms| Duration::from_millis(ms).min(most));
-    let view: G::View = serde_json::from_value(job.view.clone()).map_err(|e| format!("unreadable view: {e}"))?;
-    let legal: Vec<G::Action> =
-        serde_json::from_value(job.legal.clone()).map_err(|e| format!("unreadable legal moves: {e}"))?;
-    if legal.is_empty() {
-        return Err("no legal moves".into());
-    }
-    let action = G::bot(job.level, job.temper.unwrap_or(job.seat), think, threads).act(
-        &view,
-        &legal,
-        &mut StdRng::seed_from_u64(job.seed),
-    );
-    serde_json::to_value(action).map_err(|e| e.to_string())
+/// The move `job` asks for, by its game's bots.
+fn solve(games: &GameCatalog, job: Job, most: Duration, threads: usize) -> Result<Value, String> {
+    let game = match &job.game {
+        Some(id) => games.get(id).ok_or_else(|| format!("no game {id:?} here"))?,
+        None => games.default_game(),
+    };
+    let bot = Think {
+        level: job.level,
+        temper: job.temper.unwrap_or(job.seat),
+        seed: job.seed,
+        think: job.think_ms.map_or(most, |ms| Duration::from_millis(ms).min(most)),
+        threads,
+    };
+    game.think(bot, job.view, job.legal)
 }

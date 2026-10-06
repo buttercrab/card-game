@@ -6,8 +6,8 @@ use super::seating::Conn;
 use super::snapshot::Persister;
 use super::view::Preview;
 use super::{ConnId, Msg, REACTIONS, Room, TURN_LIMITS, log_action};
+use crate::game::ServerGame;
 use crate::protocol::{ClientMsg, ErrorCode, ServerError};
-use crate::session::SessionGame;
 use crate::stats::Event;
 use serde_json::Value;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -96,7 +96,7 @@ pub(super) fn turn_away(cmd: Command) {
     }
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// Runs the room on the commands from `rx` until every sender is gone
     /// or nobody has been connected for the server's idle time.
     ///
@@ -309,8 +309,8 @@ impl<G: SessionGame> Room<G> {
         let mut settings: G::Settings =
             serde_json::from_value(settings).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))?;
         G::freeze(&mut settings);
-        G::validate(&settings)?;
-        if G::seats(&settings) != self.seating.len() {
+        crate::game::validate::<G>(&settings)?;
+        if crate::game::seats::<G>(&settings) != self.seating.len() {
             return Err(ErrorCode::PlayerCountFixed.into());
         }
         tracing::info!(room = %self.id, settings = %log_action(&settings), "settings");

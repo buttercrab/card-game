@@ -29,9 +29,10 @@ pub use snapshot::{SnapshotV2, migrate_v1};
 pub use view::Preview;
 
 use crate::bots::RemoteBots;
+use crate::game::ServerGame;
 use crate::protocol::ServerMsg;
-use crate::session::SessionGame;
 use crate::stats::Stats;
+use engine::TableBots;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
@@ -66,7 +67,7 @@ pub const REACTIONS: [&str; 12] = [
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct TableSettings {
     /// Seconds per decision, or 0 for no limit. The weightier decisions
-    /// (see [`SessionGame::long_decision`]) get twice as long.
+    /// (see [`engine::Table::long_decision`]) get twice as long.
     pub turn_secs: u32,
     /// Deal the players into new seats before every hand.
     pub shuffle: bool,
@@ -115,14 +116,20 @@ impl RoomEnv {
     }
 }
 
+/// Mighty's bots, for the tests' rooms.
+#[cfg(test)]
+pub(crate) fn mighty_bots() -> Arc<dyn TableBots<mighty::Mighty>> {
+    Arc::new(mighty_ai::MightyBots)
+}
+
 /// What a room of game `G` sends.
 type Msg<G> = ServerMsg<
-    <G as SessionGame>::Settings,
-    <G as SessionGame>::Summary,
-    <G as SessionGame>::TableRules,
+    <G as engine::Table>::Settings,
+    <G as engine::HandReport>::Summary,
+    <G as engine::GameInfo>::Rules,
     <G as engine::Game>::View,
     <G as engine::Game>::Action,
-    <G as SessionGame>::Notes,
+    <G as engine::HandReport>::Notes,
 >;
 
 /// One line of JSON per move, so a hand can be replayed from the server log.
@@ -130,7 +137,7 @@ fn log_action(action: &impl Serialize) -> String {
     serde_json::to_string(action).unwrap_or_else(|e| format!("unserializable: {e}"))
 }
 
-pub struct Room<G: SessionGame> {
+pub struct Room<G: ServerGame> {
     id: String,
     settings: G::Settings,
     table: TableSettings,
@@ -144,6 +151,8 @@ pub struct Room<G: SessionGame> {
     rng: StdRng,
     /// What every room on the server shares.
     env: Arc<RoomEnv>,
+    /// The game's bots, which fill empty seats and give hints.
+    bots: Arc<dyn TableBots<G>>,
     /// Where the room's bot tasks send their moves.
     internal: UnboundedSender<bots::Internal<G::Action>>,
     /// The other end, until [`Room::run`] takes it.
@@ -156,9 +165,9 @@ pub struct Room<G: SessionGame> {
     session_sent: u64,
 }
 
-impl<G: SessionGame> Room<G> {
-    pub fn new(id: String, settings: G::Settings, env: Arc<RoomEnv>) -> Room<G> {
-        let n = G::seats(&settings);
+impl<G: ServerGame> Room<G> {
+    pub fn new(id: String, settings: G::Settings, env: Arc<RoomEnv>, bots: Arc<dyn TableBots<G>>) -> Room<G> {
+        let n = crate::game::seats::<G>(&settings);
         let (internal, inbox) = tokio::sync::mpsc::unbounded_channel();
         Room {
             internal,
@@ -176,6 +185,7 @@ impl<G: SessionGame> Room<G> {
             thinking: None,
             rng: StdRng::from_os_rng(),
             env,
+            bots,
         }
     }
 

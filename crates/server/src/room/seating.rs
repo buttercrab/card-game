@@ -2,10 +2,10 @@
 //! away marks, and every way of sitting down, leaving and moving seats.
 
 use super::{ConnId, Msg, Room};
+use crate::game::ServerGame;
 use crate::protocol::{ErrorCode, SeatsMoved, ServerError};
-use crate::session::SessionGame;
 use crate::stats::Event;
-use mighty::bot::Level;
+use engine::Level;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ pub const NAME_MAX: usize = 24;
 
 /// Bots go by small, warm names. Each bot gets one when it sits down and
 /// keeps it when it moves, so a shuffle never looks like bots trading
-/// identities; it also keeps its temperament (see [`SessionGame::bot`]),
+/// identities; it also keeps its temperament (see [`ServerGame::bot`]),
 /// which is the name's place in this list.
 pub const BOT_NAMES: [&str; 7] = ["두부", "모과", "호두", "보리", "단추", "콩떡", "소금"];
 
@@ -203,7 +203,7 @@ pub(super) fn moved<T>(items: Vec<T>, new_seat: &[usize]) -> Vec<T> {
         .collect()
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// Whether `seat` is away (자리 비움): its last turn ran out, or, under a
     /// turn limit, its player's connection is gone.
     pub(super) fn is_away(&self, seat: usize) -> bool {
@@ -467,15 +467,20 @@ mod tests {
     use super::super::RoomEnv;
     use super::*;
     use crate::protocol::ClientMsg;
-    use crate::session::MightySettings;
     use mighty::Mighty;
     use mighty::rules::Preset;
+    use mighty::table::MightySettings;
     use std::sync::Arc;
     use std::time::Duration;
 
     fn room() -> Room<Mighty> {
         let env = Arc::new(RoomEnv::new(Duration::ZERO));
-        Room::new("t".into(), MightySettings::new(Preset::Gshs), env)
+        Room::new(
+            "t".into(),
+            MightySettings::new(Preset::Gshs),
+            env,
+            super::super::mighty_bots(),
+        )
     }
 
     /// Empty seats trading places is no shuffle, nor is one that leaves

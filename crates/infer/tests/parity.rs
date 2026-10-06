@@ -3,7 +3,8 @@
 //! PyTorch gave for them (`python -m cardgame_ml.export.fixture`); the
 //! Python suite checks the same logits against PyTorch.
 
-use engine::{Belief, Encode, Game, Viewer};
+use engine::{Game, Viewer};
+use engine_ml::{Belief, Encode};
 use infer::{BeliefNet, Parity};
 use mighty::rules::Preset;
 use mighty::{Mighty, Options};
@@ -41,7 +42,7 @@ fn the_model_reads_mightys_encoding() {
     let mut state = Mighty::new_game(&options).unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(1);
     let deal = Mighty::sample_chance(&state, &mut rng);
-    Mighty::apply(&mut state, deal).unwrap();
+    engine::apply_on_turn::<Mighty>(&mut state, deal).unwrap();
     let view = Mighty::view(&state, Viewer::Seat(1));
     let obs = Mighty::encode(&view, &[]);
     let logits = (&net as &dyn Belief).logits(&[&obs, &obs]).unwrap();

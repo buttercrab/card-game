@@ -61,13 +61,13 @@ fn proven(state: &State, seed: u64) -> Option<Vec<Action>> {
     if tricks > PROVABLE_TRICKS {
         return None;
     }
-    let legal = Mighty::legal_actions(state);
+    let legal = engine::legal_on_turn::<Mighty>(state);
     let values = |world: &State| {
         legal
             .iter()
             .map(|action| {
                 let mut s = world.clone();
-                Mighty::apply(&mut s, action.clone()).expect("legal");
+                engine::apply_on_turn::<Mighty>(&mut s, action.clone()).expect("legal");
                 Some(Mighty::payoffs(&s).or_else(|| endgame::solve(&s, tricks))?[me])
             })
             .collect::<Option<Vec<i64>>>()
@@ -263,14 +263,14 @@ fn mine() {
                 Turn::Over => break,
                 Turn::Chance => Mighty::sample_chance(&state, &mut chance),
                 Turn::Seat(seat) => {
-                    let legal = Mighty::legal_actions(&state);
+                    let legal = engine::legal_on_turn::<Mighty>(&state);
                     let view = Mighty::view(&state, Viewer::Seat(seat));
                     let chose = bot.build(seat).act(&view, &legal, &mut rng);
                     if let Some(pattern) = pattern(&state, seat, &legal) {
                         let proof = proven(&state, deal);
                         found.push(json!({
                             "pattern": format!("{pattern:?}"),
-                            "log_version": <Mighty as eval::EvalGame>::LOG_VERSION,
+                            "log_version": <Mighty as eval::Research>::LOG_VERSION,
                             "rules": preset.name(),
                             "deal": deal,
                             "seat": seat,
@@ -283,7 +283,7 @@ fn mine() {
                     chose
                 }
             };
-            Mighty::apply(&mut state, action.clone()).expect("legal");
+            engine::apply_on_turn::<Mighty>(&mut state, action.clone()).expect("legal");
             log.push(action);
         }
         found

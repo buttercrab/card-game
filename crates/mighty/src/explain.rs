@@ -142,7 +142,7 @@ mod tests {
                     first_bidder,
                 };
                 testing::play_hand(&options, &mut rng, &mut testing::random, &mut |state, seat| {
-                    let legal = Mighty::legal_actions(state);
+                    let legal = Mighty::legal_actions(state, seat);
                     let hand = &state.hands()[seat];
                     let refused = state.unplayable();
                     if matches!(state.phase(), crate::state::Phase::Play(_)) {

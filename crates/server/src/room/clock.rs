@@ -2,8 +2,8 @@
 //! out is played for them by a 보통 bot, and their seat is marked away.
 
 use super::Room;
+use crate::game::ServerGame;
 use crate::protocol::ClockInfo;
-use crate::session::SessionGame;
 use crate::stats::Event;
 use engine::Turn;
 use std::time::Duration;
@@ -72,7 +72,7 @@ impl TurnClock {
     }
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// Starts, keeps or stops the turn timer for whoever is to act now;
     /// returns whether it changed.
     pub(super) fn arm_clock(&mut self) -> bool {
@@ -94,7 +94,7 @@ impl<G: SessionGame> Room<G> {
         self.clock.set(key, || {
             let key = key.expect("a timer runs for a turn");
             let mut full = second * limit;
-            if game.is_some_and(|g| G::long_decision(&G::legal_actions(g))) {
+            if game.is_some_and(|g| G::long_decision(&G::legal_actions(g, key.seat))) {
                 full *= 2;
             }
             if key.away { (second * AWAY_SECS).min(full) } else { full }

@@ -227,7 +227,7 @@ fn named(variants: &[String]) -> Setup<Vec<(String, String)>> {
 }
 
 /// The Q network of a `dmc:MODEL_DIR` spec.
-fn network(s: &str) -> Setup<Arc<dyn engine::ActionValues>> {
+fn network(s: &str) -> Setup<Arc<dyn engine_ml::ActionValues>> {
     let spec: sim::spec::Spec = s.parse()?;
     match spec.kind {
         sim::spec::Kind::Dmc(bot) => Ok(bot.net),

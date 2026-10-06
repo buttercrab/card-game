@@ -10,7 +10,8 @@
 //! Python gets them), then the encoder's cost per observation on one
 //! thread.
 
-use engine::{Encode, Game, Turn, Viewer};
+use engine::{Game, Turn, Viewer};
+use engine_ml::Encode;
 use env::{Batch, BotPool, Config, Env, RuleSampler, RuleSource, Setup};
 use mighty::Mighty;
 use rand::seq::IteratorRandom;
@@ -85,12 +86,12 @@ fn main() {
                 Turn::Over => break,
                 Turn::Chance => Mighty::sample_chance(&state, &mut rng),
                 Turn::Seat(seat) => {
-                    let legal = Mighty::legal_actions(&state);
+                    let legal = engine::legal_on_turn::<Mighty>(&state);
                     positions.push((Mighty::view(&state, Viewer::Seat(seat)), legal.clone()));
                     legal.into_iter().choose(&mut rng).unwrap()
                 }
             };
-            Mighty::apply(&mut state, action).unwrap();
+            engine::apply_on_turn::<Mighty>(&mut state, action).unwrap();
         }
     }
     let start = Instant::now();

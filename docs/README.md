@@ -9,6 +9,32 @@
 | [Mighty rules](../crates/mighty/RULES.md) | The rules as the engine implements them, preset by preset |
 | [Research](../research/README.md) | Conventions for evals, experiments and artifacts, and the log of results |
 
+## Crate map
+
+Each crate depends only on those above it; everything above a game
+depends on the traits, never on the game, except where a game is
+registered (marked *registers*).
+
+| Crate | What it is | Traits it defines or implements |
+| --- | --- | --- |
+| `engine` | The game core | defines `Game` (legality by seat: `legal_actions(state, seat)`, `apply(state, seat, action)`; `turn` for pacing and chance), `Bot`, `GameInfo` (id, name, rules, presets, validate, seats, describe; serde), `Table`, `HandReport`, `TableBots<G>`; the platform's bot `Level` |
+| `engine-ml` | Games as model inputs | defines `Encode`, `Belief`, `ActionValues` |
+| `mighty` | Mighty's rules, presets, tables and encoding | implements `Game`, `GameInfo`, `Table`, `HandReport` (`mighty::table`), `Encode` |
+| `mighty-ai` | Mighty's bots | implements `TableBots<Mighty>` (`MightyBots`) and `Bot` |
+| `infer` | Models from Rust (ONNX, tract) | implements `Belief`, `ActionValues` |
+| `harness` | The play driver, threads, statistics, provenance | generic over `Game` |
+| `sim` | Bots by name, the simulator | defines `Research` (the research tools' hooks); Mighty's is here, by its bot specs |
+| `lab` | Experiments on Mighty's bots | Mighty only |
+| `env`, `env-py` | The RL environment and self-play data | generic over `Research + Encode` (`EnvGame`); env-py *registers* Mighty by id |
+| `eval` | The eval suites | generic over `Research`; the binary *registers* Mighty |
+| `server` | Rooms, sessions, the site | generic over `Table + HandReport` (`ServerGame`); `GameCatalog::standard` *registers* Mighty with `MightyBots`; `codegen` names each game's types for the client |
+
+In the web client (`web/src/lib`), `room/` is the room without a game
+(connection, seats, menu, lobby, toasts, timer), generic over a game's
+types, and `games/registry.ts` maps a game id to its table, rules sheet
+and labels; Mighty's are in `games/mighty/`. What a second game needs is
+the checklist in [PLAN.md](PLAN.md#adding-a-game).
+
 ## How-tos
 
 ### Measure a bot
@@ -48,7 +74,7 @@ needs it. On the Mac training runs on MPS
 
 ### Change what a model sees
 
-The encoding (`engine::Encode`, Mighty's in `crates/mighty/src/encode.rs`)
+The encoding (`engine_ml::Encode`, Mighty's in `crates/mighty/src/encode.rs`)
 defines every model's input, so it changes only on purpose:
 
 1. Change the encoder, bump its `VERSION` (`mighty-4` to `mighty-5`) and

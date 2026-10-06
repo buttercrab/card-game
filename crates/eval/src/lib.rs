@@ -19,11 +19,11 @@
 //! the versioned JSON the runner writes beside a Markdown report
 //! ([`report`]).
 //!
-//! The runner is generic over [`EvalGame`]: a game's bots by name, how a
-//! deal is set up, and its rule sets. Mighty's is in [`mighty`].
+//! The runner is generic over the research tools' hooks into a game
+//! ([`Research`]): its bots by name, how a deal is set up, its rule sets,
+//! and how old puzzle logs replay. Mighty's are in `sim`.
 
 pub mod fingerprint;
-pub mod mighty;
 pub mod play;
 pub mod puzzle;
 pub mod report;
@@ -33,89 +33,23 @@ pub mod suite;
 
 pub use harness::{provenance, stats};
 
-use engine::{Bot, JsonGame, Seat};
-
-/// What a game adds to be evaluated, beyond [`JsonGame`] (its rule sets,
-/// presets and serde).
-pub trait EvalGame: JsonGame<Rules: Clone + Send + Sync, Options: Send + Sync> + Sized {
-    /// A bot by name, as the command line and suites give it.
-    type Spec: Clone + Send + Sync;
-
-    fn parse_bot(name: &str) -> Result<Self::Spec, String>;
-
-    /// The bot `spec` names, for `seat`.
-    fn bot(spec: &Self::Spec, seat: Seat) -> Box<dyn Bot<Self>>;
-
-    /// Whether `spec` decides the same way in every run (no clock in its
-    /// decisions), so that a rerun gives identical results.
-    fn reproducible(spec: &Self::Spec) -> bool;
-
-    /// The options of deal number `deal` under `rules`: whatever turns
-    /// round the table from deal to deal (such as who bids first) is set
-    /// from `deal`.
-    fn options(rules: &Self::Rules, deal: u64) -> Self::Options;
-
-    fn seats(rules: &Self::Rules) -> usize;
-
-    /// A rule set in a few words, for reports.
-    fn describe(rules: &Self::Rules) -> String;
-
-    /// The version of the game's flow that action logs are recorded in
-    /// now. A puzzle file records the version of its logs
-    /// ([`puzzle::parse`]); a change to the game that makes old logs mean
-    /// something else bumps it, with an upgrade in [`EvalGame::upgrade_log`].
-    const LOG_VERSION: u32 = 1;
-
-    /// A log recorded in log version `version`, as steps that replay now:
-    /// each action with the seat taking it out of turn
-    /// ([`engine::Game::apply_out_of_turn`]), or `None` for the seat to
-    /// act. Published puzzles never change, so an old one is upgraded by
-    /// the version it was recorded in, never by trying it as it is first.
-    /// By default only [`EvalGame::LOG_VERSION`] is known, replayed as it is.
-    fn upgrade_log(
-        _options: &Self::Options,
-        log: &[Self::Action],
-        version: u32,
-    ) -> Result<Steps<Self::Action>, String> {
-        if version != Self::LOG_VERSION {
-            return Err(unknown_log_version(version, Self::LOG_VERSION));
-        }
-        Ok(as_recorded(log))
-    }
-}
-
-/// Actions to replay, each with the seat taking it out of turn, or `None`
-/// for the seat to act ([`EvalGame::upgrade_log`]).
-pub type Steps<A> = Vec<(Option<Seat>, A)>;
-
-/// A log's actions, each for the seat to act.
-pub fn as_recorded<A: Clone>(log: &[A]) -> Steps<A> {
-    log.iter().map(|a| (None, a.clone())).collect()
-}
-
-/// The error for a log version [`EvalGame::upgrade_log`] does not know.
-pub fn unknown_log_version(version: u32, current: u32) -> String {
-    format!("log version {version} is unknown: this build reads versions 1 to {current}")
-}
+pub use sim::Research;
+pub use sim::research::{Steps, as_recorded, unknown_log_version};
 
 /// The rule set `rules` names, and a label for it: the preset's id, or a
 /// description of rules given in full (checked to be playable).
-pub fn rules<G: EvalGame>(rules: &suite::RulesRef) -> Result<(String, G::Rules), String> {
+pub fn rules<G: Research>(rules: &suite::RulesRef) -> Result<(String, G::Rules), String> {
     match rules {
         suite::RulesRef::Preset(id) => Ok((id.clone(), preset::<G>(id)?)),
         suite::RulesRef::Given(json) => {
             let rules: G::Rules = serde_json::from_value(json.clone()).map_err(|e| format!("rules: {e}"))?;
-            G::validate(&rules)?;
+            G::validate(&rules).map_err(|e| e.to_string())?;
             Ok((G::describe(&rules), rules))
         }
     }
 }
 
 /// The rules of the preset `id`.
-pub fn preset<G: EvalGame>(id: &str) -> Result<G::Rules, String> {
-    G::presets()
-        .into_iter()
-        .find(|(name, _, _)| *name == id)
-        .map(|(_, _, rules)| rules)
-        .ok_or_else(|| format!("{} has no preset {id:?}", G::ID))
+pub fn preset<G: Research>(id: &str) -> Result<G::Rules, String> {
+    engine::info::preset::<G>(id).ok_or_else(|| format!("{} has no preset {id:?}", G::ID))
 }

@@ -10,7 +10,7 @@
 use crate::endgame::Mix;
 use crate::seen::Seen;
 use crate::simple::SimpleBot;
-use engine::{Game, Seat};
+use engine::Seat;
 use mighty::card::{Card, CardSet, Suit};
 use mighty::rules::{Contract, MAX_PLAYERS, Rules};
 use mighty::trick::{Lead, Played};
@@ -284,7 +284,7 @@ impl Reading {
         if matches!(call, FriendCall::Card(c) if state.hands()[e.declared.declarer].contains(&c)) {
             return OWN_CALL;
         }
-        let legal = Mighty::legal_actions(state);
+        let legal = engine::legal_on_turn::<Mighty>(state);
         let usual = policy.decide(&Seen::of_state(state, e.declared.declarer), &legal);
         let usual = if usual == Action::CallFriend(call) {
             1.0 - self.slip
@@ -340,7 +340,7 @@ fn replayed(
 
 /// The legal cards for `seat` in `state`, and the one the simple bot plays.
 fn decide(policy: &SimpleBot, state: &State, seat: Seat) -> (CardSet, Card) {
-    let legal = Mighty::legal_actions(state);
+    let legal = engine::legal_on_turn::<Mighty>(state);
     let cards: CardSet = legal.iter().map(card_of).collect();
     let choice = if cards.len() > 1 {
         card_of(&policy.decide(&Seen::of_state(state, seat), &legal))
@@ -382,7 +382,7 @@ fn log_sigmoid(x: f64) -> f64 {
 mod tests {
     use super::*;
     use crate::pimc::determinize;
-    use engine::Viewer;
+    use engine::{Game, Viewer};
     use mighty::{Options, cards, testing};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
@@ -393,7 +393,7 @@ mod tests {
             joker_lead: None,
             call_joker: false,
         };
-        Mighty::apply(state, action).expect("legal");
+        engine::apply_on_turn::<Mighty>(state, action).expect("legal");
     }
 
     /// Seat 0 declares hearts, calls ♥A and leads the mighty. Seats 1 and
@@ -414,15 +414,15 @@ mod tests {
             trump: Some(Suit::Heart),
             count: 13,
         };
-        Mighty::apply(&mut state, Action::Bid(hearts)).expect("legal");
+        engine::apply_on_turn::<Mighty>(&mut state, Action::Bid(hearts)).expect("legal");
         for _ in 1..5 {
-            Mighty::apply(&mut state, Action::Pass).expect("legal");
+            engine::apply_on_turn::<Mighty>(&mut state, Action::Pass).expect("legal");
         }
         for card in kitty {
-            Mighty::apply(&mut state, Action::Discard(card)).expect("legal");
+            engine::apply_on_turn::<Mighty>(&mut state, Action::Discard(card)).expect("legal");
         }
         let ace = testing::card("HA");
-        Mighty::apply(&mut state, Action::CallFriend(FriendCall::Card(ace))).expect("legal");
+        engine::apply_on_turn::<Mighty>(&mut state, Action::CallFriend(FriendCall::Card(ace))).expect("legal");
         for card in ["SA", "S2", "S3", "S10"] {
             play(&mut state, card);
         }

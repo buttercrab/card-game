@@ -7,10 +7,10 @@ pub mod codegen;
 pub mod config;
 pub mod dashboard;
 pub mod errors;
+pub mod game;
 pub mod limit;
 pub mod protocol;
 pub mod room;
-pub mod session;
 pub mod site;
 pub mod stats;
 
@@ -21,17 +21,16 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 pub use config::{Config, IDLE_MINUTES};
+use engine::TableBots;
 use futures_util::{SinkExt, StreamExt};
+use game::{GameCatalog, ServerGame};
 use limit::{ClientIp, Limits, too_many};
-use mighty::Mighty;
-use mighty::rules::{Preset, Rules};
 use protocol::ClientMsg;
-use protocol::{CreateRoom, CreatedRoom, ErrorCode, ServerError};
+use protocol::{CreatedRoom, ErrorCode, ServerError};
 use rand::Rng;
 use room::{BotConfig, Command, ConnId, Room, RoomEnv};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use session::{MightySettings, SessionGame};
 use stats::{Event, Stats};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,25 +38,34 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
+/// An open table: where its commands go, and the game it plays.
+#[derive(Clone)]
+struct OpenRoom {
+    tx: UnboundedSender<Command>,
+    game: &'static str,
+}
+
 /// The open tables, by id.
 #[derive(Default)]
 struct Rooms {
-    open: Mutex<HashMap<String, UnboundedSender<Command>>>,
+    open: Mutex<HashMap<String, OpenRoom>>,
     /// The next table connection's id.
     next_conn: AtomicU64,
 }
 
 impl Rooms {
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, UnboundedSender<Command>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, OpenRoom>> {
         self.open.lock().expect("room registry poisoned")
     }
 }
 
-/// What every request handler shares: the server's settings, its tables,
-/// what the tables share ([`RoomEnv`]), the rate limits and the stats.
+/// What every request handler shares: the server's settings, the games it
+/// offers, its tables, what the tables share ([`RoomEnv`]), the rate limits
+/// and the stats.
 #[derive(Clone)]
 pub struct AppState {
     config: Arc<Config>,
+    games: Arc<GameCatalog>,
     rooms: Arc<Rooms>,
     env: Arc<RoomEnv>,
     limits: Arc<Limits>,
@@ -94,6 +102,7 @@ impl AppState {
         };
         AppState {
             config: Arc::new(config),
+            games: Arc::new(GameCatalog::standard()),
             rooms: Arc::default(),
             env: Arc::new(env),
             limits: Arc::default(),
@@ -103,6 +112,16 @@ impl AppState {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// The games this server offers.
+    pub fn games(&self) -> &GameCatalog {
+        &self.games
+    }
+
+    /// What every room on this server shares.
+    pub(crate) fn room_env(&self) -> Arc<RoomEnv> {
+        self.env.clone()
     }
 
     /// The stats log, for recording from outside a request.
@@ -134,15 +153,15 @@ impl AppState {
             }
             let loaded = std::fs::read_to_string(&path)
                 .map_err(|e| e.to_string())
-                .and_then(|text| serde_json::from_str(&text).map_err(|e| e.to_string()))
-                .and_then(|snapshot| Room::<Mighty>::restore(snapshot, self.env.clone()));
+                .and_then(|text| serde_json::from_str::<Value>(&text).map_err(|e| e.to_string()))
+                .and_then(|snapshot| {
+                    // Every saved table names its game.
+                    let id = snapshot.get("game").and_then(Value::as_str).unwrap_or_default();
+                    let game = self.games.get(id).ok_or_else(|| format!("no game {id:?} here"))?;
+                    game.restore(self, snapshot)
+                });
             match loaded {
-                Ok(room) => {
-                    let id = room.id().to_string();
-                    let mut rooms = self.rooms.lock();
-                    self.spawn_room(&mut rooms, id, room);
-                    restored += 1;
-                }
+                Ok(_) => restored += 1,
                 Err(e) => {
                     tracing::warn!(file = %path.display(), "could not restore room: {e}");
                     let _ = std::fs::rename(&path, path.with_extension("bad"));
@@ -157,7 +176,7 @@ impl AppState {
     /// did within `wait`. For a restart: connections drop, and clients
     /// reconnect to the next server with their seat tokens.
     pub async fn shutdown(&self, wait: Duration) -> usize {
-        let rooms: Vec<_> = self.rooms.lock().values().cloned().collect();
+        let rooms: Vec<_> = self.rooms.lock().values().map(|r| r.tx.clone()).collect();
         let mut pending = Vec::new();
         for room in rooms {
             let (done, rx) = tokio::sync::oneshot::channel();
@@ -189,9 +208,10 @@ impl AppState {
         }
     }
 
-    /// Opens a room and returns its id, which is also its share link, or
-    /// `None` when the server already has as many rooms as it allows.
-    pub fn create_room<G: SessionGame>(&self, mut settings: G::Settings) -> Option<String> {
+    /// Opens a room of game `G` with `bots`, and returns its id, which is
+    /// also its share link, or `None` when the server already has as many
+    /// rooms as it allows.
+    pub fn create_room<G: ServerGame>(&self, mut settings: G::Settings, bots: Arc<dyn TableBots<G>>) -> Option<String> {
         const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
         G::freeze(&mut settings);
         let mut rooms = self.rooms.lock();
@@ -211,17 +231,20 @@ impl AppState {
             table: id.clone(),
             preset: G::preset_id(&settings).to_string(),
         });
-        let room = Room::<G>::new(id.clone(), settings, self.env.clone());
+        let room = Room::<G>::new(id.clone(), settings, self.env.clone(), bots);
         self.spawn_room(&mut rooms, id.clone(), room);
         Some(id)
     }
 
-    fn spawn_room<G: SessionGame>(
-        &self,
-        rooms: &mut HashMap<String, UnboundedSender<Command>>,
-        id: String,
-        room: Room<G>,
-    ) {
+    /// Runs a room restored from its file, returning its id.
+    pub(crate) fn open_restored<G: ServerGame>(&self, room: Room<G>) -> String {
+        let id = room.id().to_string();
+        let mut rooms = self.rooms.lock();
+        self.spawn_room(&mut rooms, id.clone(), room);
+        id
+    }
+
+    fn spawn_room<G: ServerGame>(&self, rooms: &mut HashMap<String, OpenRoom>, id: String, room: Room<G>) {
         let (tx, rx) = mpsc::unbounded_channel();
         let (registry, key) = (self.rooms.clone(), id.clone());
         tokio::spawn(async move {
@@ -229,12 +252,21 @@ impl AppState {
             registry.lock().remove(&key);
             tracing::info!(room = key, "room closed");
         });
-        rooms.insert(id, tx);
+        rooms.insert(id, OpenRoom { tx, game: G::ID });
     }
 
     /// The open room `id`; one closing (it stopped taking commands) is gone.
     fn room(&self, id: &str) -> Option<UnboundedSender<Command>> {
-        self.rooms.lock().get(id).filter(|tx| !tx.is_closed()).cloned()
+        self.open_room(id).map(|r| r.tx)
+    }
+
+    fn open_room(&self, id: &str) -> Option<OpenRoom> {
+        self.rooms.lock().get(id).filter(|r| !r.tx.is_closed()).cloned()
+    }
+
+    /// The game `id`, as a route names it.
+    fn game(&self, id: &str) -> Option<&dyn game::GameEntry> {
+        self.games.get(id)
     }
 }
 
@@ -246,10 +278,28 @@ fn body_limit(max: usize) -> tower_http::limit::RequestBodyLimitLayer {
 }
 
 /// The API under `/api`, plus the built web client from [`Config::web`] if given.
+///
+/// What belongs to a game is under `/api/games/{game}/`: its presets, its
+/// rulebook's examples and new tables. Tables themselves are by id alone
+/// (`/api/rooms/{id}`), whatever their game. The routes from before games
+/// had ids (`/api/presets`, `/api/rooms`, `/api/rules/examples`) stay, for
+/// the first game ([`GameCatalog::default_game`]), so live clients and
+/// links keep working.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/version", get(version))
+        .route("/api/games", get(games))
+        .route("/api/games/{game}/presets", get(game_presets))
+        .route("/api/games/{game}/presets/{id}", get(game_preset_rules))
+        .route(
+            "/api/games/{game}/rooms",
+            post(game_create_room).layer(body_limit(16 * 1024)),
+        )
+        .route(
+            "/api/games/{game}/rules/examples",
+            post(game_rule_examples).layer(body_limit(16 * 1024)),
+        )
         .route("/api/presets", get(presets))
         .route("/api/presets/{id}", get(preset_rules))
         .route("/api/rooms", post(create_room).layer(body_limit(16 * 1024)))
@@ -288,8 +338,57 @@ async fn version(State(app): State<AppState>) -> Response {
     ([(axum::http::header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
 }
 
-async fn presets() -> Json<Vec<&'static str>> {
-    Json(Preset::ALL.iter().map(|p| p.name()).collect())
+/// The games this server offers, in the order registered.
+async fn games(State(app): State<AppState>) -> Json<Value> {
+    let games: Vec<Value> = app
+        .games
+        .games()
+        .map(|g| json!({ "id": g.id(), "name": g.name() }))
+        .collect();
+    Json(Value::Array(games))
+}
+
+/// A game's presets, by id, in the game's own order.
+async fn game_presets(State(app): State<AppState>, Path(game): Path<String>) -> Response {
+    match app.game(&game) {
+        Some(game) => Json(game.presets()).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn game_preset_rules(State(app): State<AppState>, Path((game, id)): Path<(String, String)>) -> Response {
+    match app.game(&game) {
+        Some(game) => respond_preset_rules(game, &id),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn game_rule_examples(
+    State(app): State<AppState>,
+    Path(game): Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    match app.game(&game) {
+        Some(game) => respond_examples(game, &body),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn game_create_room(
+    State(app): State<AppState>,
+    ClientIp(ip): ClientIp,
+    Path(game): Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    match app.game(&game) {
+        Some(game) => respond_create(&app, ip, game, &body),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `/api/presets`: the first game's presets.
+async fn presets(State(app): State<AppState>) -> Json<Vec<&'static str>> {
+    Json(app.games.default_game().presets())
 }
 
 /// Where a bot worker dials in; it must present the bot token.
@@ -315,57 +414,56 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// The rulebook's worked examples (see [`mighty::score::Examples`]) under
-/// the rules in the body, which may be any a table could play.
-async fn rule_examples(body: axum::body::Bytes) -> Response {
-    let rules: Rules = match serde_json::from_slice(&body) {
-        Ok(rules) => rules,
-        Err(e) => return ServerError::with_detail(ErrorCode::BadMessage, e).respond(StatusCode::BAD_REQUEST),
-    };
-    if let Err(e) = rules.validate() {
-        return ServerError::rules(e).respond(StatusCode::BAD_REQUEST);
+/// `/api/rules/examples`: the first game's rulebook examples.
+async fn rule_examples(State(app): State<AppState>, body: axum::body::Bytes) -> Response {
+    respond_examples(app.games.default_game(), &body)
+}
+
+/// The rulebook's worked examples ([`engine::Table::examples`]) under the
+/// rules in the body, which may be any a table could play.
+fn respond_examples(game: &dyn game::GameEntry, body: &[u8]) -> Response {
+    match game.examples(body) {
+        Ok(examples) => Json(examples).into_response(),
+        Err(e) => e.respond(StatusCode::BAD_REQUEST),
     }
-    Json(mighty::score::Examples::new(&rules)).into_response()
+}
+
+/// `/api/presets/{id}`: a preset of the first game.
+async fn preset_rules(State(app): State<AppState>, Path(id): Path<String>) -> Response {
+    respond_preset_rules(app.games.default_game(), &id)
 }
 
 /// The full rules of a preset, for the rulebook.
-async fn preset_rules(Path(id): Path<String>) -> Response {
-    match id.parse::<Preset>() {
-        Ok(preset) => Json(preset.rules()).into_response(),
-        Err(e) => ServerError::with_detail(ErrorCode::UnknownPreset, e).respond(StatusCode::NOT_FOUND),
+fn respond_preset_rules(game: &dyn game::GameEntry, id: &str) -> Response {
+    match game.preset_rules(id) {
+        Some(rules) => Json(rules).into_response(),
+        None => ServerError::with_detail(ErrorCode::UnknownPreset, format!("no preset {id:?}"))
+            .respond(StatusCode::NOT_FOUND),
     }
 }
 
 /// A JSON body, or what was wrong with it as a [`ServerError`]. An empty
 /// body is the type's default.
-fn parse_body<T: serde::de::DeserializeOwned + Default>(body: &[u8]) -> Result<T, ServerError> {
+pub(crate) fn parse_body<T: serde::de::DeserializeOwned + Default>(body: &[u8]) -> Result<T, ServerError> {
     if body.iter().all(u8::is_ascii_whitespace) {
         return Ok(T::default());
     }
     serde_json::from_slice(body).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))
 }
 
+/// `/api/rooms`: a table of the first game.
 async fn create_room(State(app): State<AppState>, ClientIp(ip): ClientIp, body: axum::body::Bytes) -> Response {
+    respond_create(&app, ip, app.games.default_game(), &body)
+}
+
+/// A new table of `game`, as the body asks ([`protocol::CreateRoom`]).
+fn respond_create(app: &AppState, ip: std::net::IpAddr, game: &dyn game::GameEntry, body: &[u8]) -> Response {
     if !app.limits.tables.allow(ip) {
         return too_many();
     }
-    let request: CreateRoom = match parse_body(&body) {
-        Ok(request) => request,
-        Err(e) => return e.respond(StatusCode::BAD_REQUEST),
-    };
-    let mut settings = MightySettings::new(request.preset.unwrap_or(catalog::DEFAULT_PRESET));
-    Mighty::freeze(&mut settings);
-    // Rules no different from the preset's are the preset's.
-    settings.rules = request.rules.filter(|r| Some(r) != settings.preset_rules.as_ref());
-    if let Err(e) = Mighty::validate(&settings) {
-        return e.respond(StatusCode::BAD_REQUEST);
-    }
-    match app.create_room::<Mighty>(settings) {
-        Some(id) => Json(CreatedRoom { id }).into_response(),
-        None => {
-            tracing::warn!(max = app.config.max_rooms, "refused a table: too many are open");
-            ServerError::new(ErrorCode::TooManyTables).respond(StatusCode::SERVICE_UNAVAILABLE)
-        }
+    match game.create(app, body) {
+        Ok(id) => Json(CreatedRoom { id }).into_response(),
+        Err((status, e)) => e.respond(status),
     }
 }
 
@@ -449,9 +547,10 @@ pub(crate) fn prune_reports(dir: &std::path::Path, now: u64) {
     }
 }
 
+/// A table's id and the game it plays.
 async fn room_info(State(app): State<AppState>, Path(id): Path<String>) -> Response {
-    match app.room(&id) {
-        Some(_) => Json(json!({ "id": id, "game": Mighty::NAME })).into_response(),
+    match app.open_room(&id) {
+        Some(room) => Json(json!({ "id": id, "game": room.game })).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }

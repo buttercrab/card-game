@@ -10,7 +10,7 @@
 //!
 //! | Array | dtype | Shape | What |
 //! | --- | --- | --- | --- |
-//! | `global` | f32 | `[n, global]` | the observation, as the [`engine::Spec`] lays it out |
+//! | `global` | f32 | `[n, global]` | the observation, as the [`engine_ml::Spec`] lays it out |
 //! | `cards` | f32 | `[n, cards, card_features]` | |
 //! | `events` | f32 | `[rows, event_features]` | each decision's `events_len` rows, one after another (the zero padding is not stored) |
 //! | `event_cards` | i16 | `[rows]` | likewise |
@@ -43,7 +43,7 @@ use crate::Error;
 use crate::game::{EnvGame, RuleSampler, RuleSource, load_rule_sets, rules_id, rules_key};
 use crate::hand::{BotPool, Decision, Hand, Setup, Status, stream};
 use crate::npz::{Element, NpzWriter};
-use engine::{Observation, Spec};
+use engine_ml::{Observation, Spec};
 use flate2::{Compression, GzBuilder};
 use rand::RngCore;
 use rayon::prelude::*;
@@ -72,7 +72,7 @@ pub struct Config {
     /// The dataset's name: its directory in the artifact store and its
     /// manifest's name.
     pub name: String,
-    /// The game, by [`engine::JsonGame::ID`].
+    /// The game, by [`engine::GameInfo::ID`].
     pub game: String,
     pub seed: u64,
     pub games: u64,
@@ -369,7 +369,7 @@ pub fn run<G: EnvGame>(
     let spec = {
         let mut rng = stream(config.seed, 0);
         let rules = setup.rules.draw::<G>(&mut rng)?;
-        G::spec(&G::options(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?
+        G::spec(&crate::game::draw_options::<G>(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?
     };
     std::fs::create_dir(out).map_err(io(out))?;
     let pool = rayon::ThreadPoolBuilder::new()

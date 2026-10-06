@@ -8,24 +8,26 @@ before anyone plays it.
 
 | Part | What it is |
 | --- | --- |
-| [`engine`](crates/engine) | The `Game` trait every game implements and the `Bot` trait; `Encode` (positions as model inputs) and `DynGame` (any game through JSON) |
-| [`mighty`](crates/mighty) | Mighty rules, nine regional presets and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
+| [`engine`](crates/engine) | The `Game` trait every game implements (legality by seat) and the `Bot` trait; `GameInfo` (a game's id, name, rule sets and serde) and what the server's tables need of a game (`Table`, `HandReport`, `TableBots`) |
+| [`engine-ml`](crates/engine-ml) | Games as model inputs: `Encode` (an encoding spec, observations, belief targets) and the traits learned models answer through (`Belief`, `ActionValues`) |
+| [`mighty`](crates/mighty) | Mighty rules, nine regional presets, its tables (settings, notes, catalog) and its model encoding; see [RULES.md](crates/mighty/RULES.md) |
 | [`mighty-ai`](crates/mighty-ai) | Mighty's bots: a simple one, the search bot that plays at the table (PIMC, with an exact endgame and a reading of the other players) and the search with a Q network |
 | [`harness`](crates/harness) | What the research tools share: the checked play driver, games over threads, timing, statistics, provenance |
-| [`sim`](crates/sim) | Bots by name (`hard`, `search:400:1:0@threads=4`, `dmc:DIR`, ...), and a simulator that plays thousands of games with them and checks invariants after every step |
+| [`sim`](crates/sim) | Bots by name (`hard`, `search:400:1:0@threads=4`, `dmc:DIR`, ...), the research tools' hooks into a game (`Research`), and a simulator that plays thousands of games with them and checks invariants after every step |
 | [`lab`](crates/lab) | Experiments on where the bots lose points: recorded hands replayed with one change |
 | [`env`](crates/env) | The batched RL environment over any game with an encoding, and the self-play data generator |
 | [`env-py`](crates/env-py) | The environment in Python (`cardgame_env`, PyO3), which `ml` depends on |
 | [`eval`](crates/eval) | Runs the eval suites in [`research/evals`](research/evals): bots measured on fixed deals, with a JSON record and a report |
 | [`infer`](crates/infer) | Runs models trained in `ml` from Rust (ONNX, through the pure-Rust runtime tract): the belief model a search can deal hidden cards by |
-| [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats |
-| [`web`](web) | The table in the browser (Svelte 5 + Vite), in Korean; its look is specified in [DESIGN.md](docs/DESIGN.md) |
+| [`server`](crates/server) | Rooms over WebSockets: seats by share link, reconnect tokens, bots in empty seats; the games it offers by id (`GameCatalog`) |
+| [`web`](web) | The table in the browser (Svelte 5 + Vite), in Korean: a room that knows no game (`src/lib/room`) and each game's table in `src/lib/games`; its look is specified in [DESIGN.md](docs/DESIGN.md) |
 | [`ml`](ml) | Python training for learned bots (uv, PyTorch as an extra) |
 | [`research`](research) | Eval suites, experiments, artifact manifests and the experiment loop |
 | [`docs`](docs) | The plan, the design brief and how-tos; [index](docs/README.md) |
 
 A game is a deterministic state machine:
-- `legal_actions` is the only source of truth for what is allowed.
+- `legal_actions(state, seat)` is the only source of truth for what each
+  seat may do, on its turn or not.
 - `view` gives each seat only what it may see.
 - Shuffling is a server-drawn chance action, so any game replays exactly
   from its log.

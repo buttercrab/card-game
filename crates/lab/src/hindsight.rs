@@ -73,7 +73,7 @@ pub fn flags(state: &State, seat: Seat, action: &Action, attacking: &dyn Fn(Seat
         return Vec::new();
     };
     let rules = &view.rules;
-    let legal = Mighty::legal_actions(state);
+    let legal = engine::legal_on_turn::<Mighty>(state);
     let choice = legal.len() > 1;
     let last = trick_no + 1 == rules.hand_size;
     let mighty = rules.mighty(contract.trump);

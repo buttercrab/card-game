@@ -79,7 +79,7 @@ pub fn dealt_cards(rules: Rules, first_bidder: Seat, fixed: &[Vec<Card>], kitty:
     }
     kitty.extend(rest);
     let mut state = Mighty::new_game(&Options { rules, first_bidder }).expect("valid rules");
-    Mighty::apply(&mut state, Action::Deal { hands, kitty }).expect("a whole deck");
+    engine::apply_on_turn::<Mighty>(&mut state, Action::Deal { hands, kitty }).expect("a whole deck");
     state
 }
 
@@ -120,11 +120,11 @@ pub fn play_hand(
                 if !visit(&state, seat) {
                     return state;
                 }
-                let legal = Mighty::legal_actions(&state);
+                let legal = engine::legal_on_turn::<Mighty>(&state);
                 choose(&state, seat, &legal, rng)
             }
         };
-        Mighty::apply(&mut state, action).expect("a legal action");
+        engine::apply_on_turn::<Mighty>(&mut state, action).expect("a legal action");
     }
 }
 

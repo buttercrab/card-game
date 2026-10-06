@@ -2,7 +2,9 @@
 //! carries it.
 //!
 //! A room is saved as a [`SnapshotV2`]: the seats, the session and the
-//! hand as its typed log. Files in the first format (an untyped log) still
+//! hand as its typed log. Logs saved before moves were addressed by seat
+//! kept a 딜미스 off the caller's turn as an `out_of_turn` entry; it reads
+//! as the seat's move (`LogEntry::Act`) like any other. Files in the first format (an untyped log) still
 //! restore through [`migrate_v1`], so tables saved by the last server come
 //! back across the deploy that brings this one; they are written in the
 //! new format from then on.
@@ -13,7 +15,8 @@
 use super::hand::{LogEntry, replay};
 use super::seating::Occupant;
 use super::{Room, RoomEnv, TableSettings};
-use crate::session::SessionGame;
+use crate::game::ServerGame;
+use engine::TableBots;
 use engine::Turn;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -28,7 +31,7 @@ const FORMAT: u32 = 2;
 /// as its log, since a game replays exactly from it.
 #[derive(Serialize, Deserialize)]
 #[serde(bound = "")]
-pub struct SnapshotV2<G: SessionGame> {
+pub struct SnapshotV2<G: ServerGame> {
     /// Always [`FORMAT`].
     format: u32,
     id: String,
@@ -58,10 +61,10 @@ struct SavedHand<A> {
 /// of bare actions (whoever's turn it was, or the deal) and out-of-turn
 /// ones as `{"out_of_turn": {seat, action}}`: replaying it tells which
 /// each bare action was.
-pub fn migrate_v1<G: SessionGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
+pub fn migrate_v1<G: ServerGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
     #[derive(Deserialize)]
     #[serde(bound = "")]
-    struct V1<G: SessionGame> {
+    struct V1<G: ServerGame> {
         id: String,
         game: String,
         settings: G::Settings,
@@ -98,7 +101,7 @@ pub fn migrate_v1<G: SessionGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
             for (i, entry) in hand.actions.into_iter().enumerate() {
                 let parse = |v: Value| serde_json::from_value::<G::Action>(v).map_err(|e| format!("action {i}: {e}"));
                 let entry = match entry.get("out_of_turn") {
-                    Some(o) => LogEntry::OutOfTurn {
+                    Some(o) => LogEntry::Act {
                         seat: o["seat"].as_u64().ok_or(format!("action {i}: no seat"))? as usize,
                         action: parse(o["action"].clone())?,
                     },
@@ -137,14 +140,14 @@ pub fn migrate_v1<G: SessionGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
     })
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// The room as saved; see [`SnapshotV2`].
     pub fn snapshot(&self) -> SnapshotV2<G> {
         let session = &self.session;
         SnapshotV2 {
             format: FORMAT,
             id: self.id.clone(),
-            game: G::NAME.to_string(),
+            game: G::ID.to_string(),
             settings: self.settings.clone(),
             seats: self.seating.seats.clone(),
             scores: session.scores.clone(),
@@ -180,16 +183,16 @@ impl<G: SessionGame> Room<G> {
 
     /// Rebuilds a room from a saved snapshot, of this format or the first
     /// ([`migrate_v1`]), by replaying its hand.
-    pub fn restore(snapshot: Value, env: Arc<RoomEnv>) -> Result<Room<G>, String> {
+    pub fn restore(snapshot: Value, env: Arc<RoomEnv>, bots: Arc<dyn TableBots<G>>) -> Result<Room<G>, String> {
         let s: SnapshotV2<G> = match snapshot.get("format").and_then(Value::as_u64) {
             Some(1) => migrate_v1(snapshot)?,
             Some(2) => serde_json::from_value(snapshot).map_err(|e| e.to_string())?,
             format => return Err(format!("unknown snapshot format {format:?}")),
         };
-        if s.game != G::NAME {
-            return Err(format!("not a {} room", G::NAME));
+        if s.game != G::ID {
+            return Err(format!("not a {} room", G::ID));
         }
-        let mut room = Room::new(s.id, s.settings, env);
+        let mut room = Room::new(s.id, s.settings, env, bots);
         let n = room.seating.len();
         if s.seats.len() != n || s.scores.len() != n {
             return Err("seat count does not match the settings".into());
@@ -304,8 +307,8 @@ impl Persister {
 mod tests {
     use super::*;
     use crate::protocol::SeatsMoved;
-    use crate::session::MightySettings;
     use mighty::Mighty;
+    use mighty::table::MightySettings;
     use std::time::Duration;
 
     fn env() -> Arc<RoomEnv> {
@@ -316,7 +319,7 @@ mod tests {
     /// saved and restored too.
     #[test]
     fn the_rotation_survives_a_restore() {
-        let mut room = Room::<Mighty>::new("t".into(), MightySettings::default(), env());
+        let mut room = Room::<Mighty>::new("t".into(), MightySettings::default(), env(), crate::room::mighty_bots());
         room.session.hands_played = 3;
         let opener = |r: &Room<Mighty>| r.session.options(&r.settings, r.session.hands_played).first_bidder;
         let moved = |order: &[usize]| SeatsMoved::Shuffle { order: order.to_vec() };
@@ -324,7 +327,7 @@ mod tests {
         room.reseat(&[4, 3, 2, 1, 0], moved(&[4, 3, 2, 1, 0]));
         assert_eq!(opener(&room), 4);
         let saved = serde_json::to_value(room.snapshot()).unwrap();
-        let restored = Room::<Mighty>::restore(saved, env()).unwrap();
+        let restored = Room::<Mighty>::restore(saved, env(), crate::room::mighty_bots()).unwrap();
         assert_eq!(opener(&restored), 4);
     }
 
@@ -336,29 +339,29 @@ mod tests {
         use rand::SeedableRng;
         let mut rng = rand::rngs::StdRng::seed_from_u64(7);
         let settings = MightySettings::default();
-        let mut room = Room::<Mighty>::new("abc".into(), settings.clone(), env());
+        let mut room = Room::<Mighty>::new("abc".into(), settings.clone(), env(), crate::room::mighty_bots());
         let mut game = Mighty::new_game(&room.session.options(&settings, 0)).unwrap();
         // Written as the first format wrote it: bare actions, and the
         // out-of-turn ones wrapped.
         let mut actions = Vec::new();
-        let mut misdealt = false;
+        let mut misdealt = None;
         for _ in 0..12 {
             let entry = match Mighty::turn(&game) {
                 Turn::Chance => {
                     let deal = Mighty::sample_chance(&game, &mut rng);
-                    Mighty::apply(&mut game, deal.clone()).unwrap();
+                    Mighty::apply_chance(&mut game, deal.clone()).unwrap();
                     serde_json::to_value(deal).unwrap()
                 }
                 Turn::Seat(seat) => {
                     let other = (seat + 1) % 5;
                     let misdeal = mighty::Action::Misdeal;
-                    if !misdealt && Mighty::out_of_turn_actions(&game, other).contains(&misdeal) {
-                        misdealt = true;
-                        Mighty::apply_out_of_turn(&mut game, other, misdeal.clone()).unwrap();
+                    if misdealt.is_none() && Mighty::legal_actions(&game, other).contains(&misdeal) {
+                        misdealt = Some((actions.len(), other));
+                        Mighty::apply(&mut game, other, misdeal.clone()).unwrap();
                         json!({ "out_of_turn": { "seat": other, "action": misdeal } })
                     } else {
-                        let action = Mighty::legal_actions(&game)[0].clone();
-                        Mighty::apply(&mut game, action.clone()).unwrap();
+                        let action = Mighty::legal_actions(&game, seat)[0].clone();
+                        Mighty::apply(&mut game, seat, action.clone()).unwrap();
                         serde_json::to_value(action).unwrap()
                     }
                 }
@@ -374,38 +377,88 @@ mod tests {
         let mut v1 = serde_json::to_value(room.snapshot()).unwrap();
         v1["format"] = json!(1);
         v1["hand"] = json!({ "number": 0, "actions": actions, "started": 123 });
-        let restored = Room::<Mighty>::restore(v1, env()).unwrap();
+        let restored = Room::<Mighty>::restore(v1, env(), crate::room::mighty_bots()).unwrap();
         let view = |g: &mighty::State| Mighty::view(g, engine::Viewer::Seat(0));
         assert_eq!(view(restored.hand.game.as_ref().unwrap()), view(&game));
         assert_eq!(restored.hand.log.len(), actions.len());
         assert!(matches!(restored.hand.log[0], LogEntry::Chance { .. }));
-        assert_eq!(
-            restored
-                .hand
-                .log
-                .iter()
-                .any(|e| matches!(e, LogEntry::OutOfTurn { .. })),
-            misdealt
-        );
+        // The misdeal off turn reads as that seat's move.
+        if let Some((i, seat)) = misdealt {
+            let misdeal = mighty::Action::Misdeal;
+            assert_eq!(restored.hand.log[i], LogEntry::Act { seat, action: misdeal });
+        }
         assert_eq!(restored.hand.started, Some(123));
         assert_eq!(restored.seating.seats[0], room.seating.seats[0]);
         // Saved again, it is the new format, and restores the same.
         let v2 = serde_json::to_value(restored.snapshot()).unwrap();
         assert_eq!(v2["format"], 2);
-        let again = Room::<Mighty>::restore(v2.clone(), env()).unwrap();
+        let again = Room::<Mighty>::restore(v2.clone(), env(), crate::room::mighty_bots()).unwrap();
         assert_eq!(serde_json::to_value(again.snapshot()).unwrap(), v2);
+    }
+
+    /// A second-format file saved before moves were addressed by seat
+    /// (a 딜미스 off turn as `out_of_turn`) restores, and is saved again
+    /// with the misdeal as the seat's move.
+    #[test]
+    fn an_out_of_turn_entry_restores_as_the_seats_move() {
+        use engine::Game;
+        use rand::SeedableRng;
+        let settings = MightySettings::default();
+        let room = Room::<Mighty>::new("abc".into(), settings.clone(), env(), crate::room::mighty_bots());
+        let options = room.session.options(&settings, 0);
+        let mut game = Mighty::new_game(&options).unwrap();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        let mut log = Vec::new();
+        // Deal until a seat other than the first bidder may throw it in.
+        let caller = loop {
+            let deal = Mighty::sample_chance(&game, &mut rng);
+            Mighty::apply_chance(&mut game, deal.clone()).unwrap();
+            log.push(json!({ "kind": "chance", "action": deal }));
+            let Turn::Seat(to_act) = Mighty::turn(&game) else {
+                unreachable!()
+            };
+            if let Some(s) = (0..5).find(|&s| s != to_act && !Mighty::legal_actions(&game, s).is_empty()) {
+                break s;
+            }
+            let pass = mighty::Action::Pass;
+            if !Mighty::legal_actions(&game, to_act).contains(&pass) {
+                // Nobody can pass: start over on a fresh hand.
+                game = Mighty::new_game(&options).unwrap();
+                log.clear();
+                continue;
+            }
+            // Everyone passes: a redeal, and another try.
+            while let Turn::Seat(s) = Mighty::turn(&game) {
+                Mighty::apply(&mut game, s, pass.clone()).unwrap();
+                log.push(json!({ "kind": "act", "seat": s, "action": pass }));
+            }
+        };
+        Mighty::apply(&mut game, caller, mighty::Action::Misdeal).unwrap();
+        log.push(json!({ "kind": "out_of_turn", "seat": caller, "action": "Misdeal" }));
+        let mut saved = serde_json::to_value(room.snapshot()).unwrap();
+        saved["hand"] = json!({ "number": 0, "log": log });
+        let restored = Room::<Mighty>::restore(saved, env(), crate::room::mighty_bots()).unwrap();
+        assert_eq!(restored.hand.game.as_ref(), Some(&game));
+        let again = serde_json::to_value(restored.snapshot()).unwrap();
+        let last = again["hand"]["log"].as_array().unwrap().last().unwrap().clone();
+        assert_eq!(last, json!({ "kind": "act", "seat": caller, "action": "Misdeal" }));
     }
 
     #[test]
     fn an_unknown_format_or_a_broken_log_is_refused() {
-        let room = Room::<Mighty>::new("abc".into(), MightySettings::default(), env());
+        let room = Room::<Mighty>::new(
+            "abc".into(),
+            MightySettings::default(),
+            env(),
+            crate::room::mighty_bots(),
+        );
         let mut saved = serde_json::to_value(room.snapshot()).unwrap();
         saved["format"] = json!(3);
-        assert!(Room::<Mighty>::restore(saved.clone(), env()).is_err());
+        assert!(Room::<Mighty>::restore(saved.clone(), env(), crate::room::mighty_bots()).is_err());
         saved["format"] = json!(2);
         // A move by a seat whose turn it is not.
         saved["hand"] = json!({ "number": 0, "log": [{ "kind": "act", "seat": 0, "action": "Pass" }] });
-        assert!(Room::<Mighty>::restore(saved, env()).is_err());
+        assert!(Room::<Mighty>::restore(saved, env(), crate::room::mighty_bots()).is_err());
     }
 
     #[tokio::test]

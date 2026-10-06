@@ -222,14 +222,24 @@ impl SimpleBot {
         count + (self.bid_spread * (lost / won).ln()).max(0.0)
     }
 
+    /// Whether it throws `hand` in where the rules let it (a 딜미스): only
+    /// a hand that could not bid the minimum in any suit anyway. It decides
+    /// the same on its turn to bid and off it, the moment the cards land.
+    pub fn calls_misdeal(&self, rules: &Rules, hand: &[Card]) -> bool {
+        let best = Suit::ALL
+            .into_iter()
+            .map(|suit| self.estimate(rules, hand, Some(suit)))
+            .fold(f32::NEG_INFINITY, f32::max);
+        best < f32::from(rules.bidding.min)
+    }
+
     fn bid(&self, view: &Seen, legal: &[Action]) -> Option<Action> {
         let estimate = |trump: Option<Suit>| self.estimate(view.rules, view.hand, trump);
         let trump = Suit::ALL
             .into_iter()
             .map(Some)
             .max_by(|&a, &b| estimate(a).total_cmp(&estimate(b)))?;
-        // A misdeal only on a hand that could not bid the minimum anyway.
-        if legal.contains(&Action::Misdeal) && estimate(trump) < f32::from(view.rules.bidding.min) {
+        if legal.contains(&Action::Misdeal) && self.calls_misdeal(view.rules, view.hand) {
             return Some(Action::Misdeal);
         }
         let cheapest = |trump: Option<Suit>| {

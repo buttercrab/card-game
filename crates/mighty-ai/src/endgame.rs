@@ -437,9 +437,9 @@ mod tests {
                 _ => unreachable!(),
             },
             Turn::Seat(seat) => {
-                let values = Mighty::legal_actions(state).into_iter().map(|a| {
+                let values = engine::legal_on_turn::<Mighty>(state).into_iter().map(|a| {
                     let mut next = state.clone();
-                    Mighty::apply(&mut next, a).unwrap();
+                    engine::apply_on_turn::<Mighty>(&mut next, a).unwrap();
                     brute(&next, attack)
                 });
                 if attack[seat] { values.max() } else { values.min() }.unwrap()

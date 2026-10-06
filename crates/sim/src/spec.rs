@@ -478,12 +478,12 @@ fn load_q(dir: &str) -> Result<Arc<infer::QNet>, String> {
 }
 
 /// Whether a model reads Mighty's encoding.
-fn check_encoding(dir: &str, spec: &engine::Spec) -> Result<(), String> {
+fn check_encoding(dir: &str, spec: &engine_ml::Spec) -> Result<(), String> {
     let options = mighty::Options {
         rules: mighty::rules::Preset::Default.rules(),
         first_bidder: 0,
     };
-    let ours = <Mighty as engine::Encode>::spec(&options).map_err(|e| e.to_string())?;
+    let ours = <Mighty as engine_ml::Encode>::spec(&options).map_err(|e| e.to_string())?;
     if spec != &ours {
         return Err(format!("{dir}: the model reads {}, not {}", spec.version, ours.version));
     }
@@ -665,7 +665,7 @@ mod tests {
         let mut asked = 0;
         testing::play_hand(&options, &mut rng, &mut testing::random, &mut |state, seat| {
             let view = Mighty::view(state, Viewer::Seat(seat));
-            let legal = Mighty::legal_actions(state);
+            let legal = engine::legal_on_turn::<Mighty>(state);
             for level in [Level::Easy, Level::Normal] {
                 let ask = |mut bot: Box<dyn Bot<Mighty> + Send>| {
                     bot.act(&view, &legal, &mut rand_chacha::ChaCha8Rng::seed_from_u64(asked))

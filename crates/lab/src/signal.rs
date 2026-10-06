@@ -18,7 +18,8 @@ use crate::error::{LabError, Result};
 use crate::record::{new_hand, options, outcome};
 use crate::stream::{LabUse, Stream, lab, streams};
 use crate::table::{Actor, Phase, Table, advance};
-use engine::{ActionValues, Encode, Game, Seat, Viewer};
+use engine::{Game, Seat, Viewer};
+use engine_ml::{ActionValues, Encode};
 use mighty::rules::Rules;
 use mighty::{Action, Mighty, PhaseView, State};
 use mighty_ai::SimpleBot;
@@ -121,7 +122,7 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Result<Vec<Si
         .map(|(i, (before, seat, action, at))| -> Result<SignalRow> {
             let deal_no = dealt.iter().filter(|&&d| d < at).count().saturating_sub(1);
             let view = Mighty::view(&before, Viewer::Seat(seat));
-            let legal = Mighty::legal_actions(&before);
+            let legal = engine::legal_on_turn::<Mighty>(&before);
             let PhaseView::Bidding { best, .. } = &view.phase else {
                 unreachable!("kept bidding decisions")
             };
@@ -198,7 +199,7 @@ pub fn bid_signal(rules: &Rules, deal: u64, setup: SignalSetup) -> Result<Vec<Si
                     let mut total = 0.0;
                     for (world, weight) in &worlds {
                         let mut s = world.clone();
-                        Mighty::apply(&mut s, a.clone()).ok()?;
+                        engine::apply_on_turn::<Mighty>(&mut s, a.clone()).ok()?;
                         total += weight * play_out(simple, 0, s, seat) as f64;
                     }
                     Some(total)

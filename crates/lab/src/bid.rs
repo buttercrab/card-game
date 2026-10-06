@@ -32,11 +32,11 @@ pub fn bid_oracle(state: &State, seat: Seat, contract: Contract, worlds: usize, 
     let mut points = Vec::new();
     for (world, weight) in search.worlds(&view, worlds, rng) {
         let mut s = world;
-        if Mighty::apply(&mut s, Action::Bid(contract)).is_err() {
+        if engine::apply_on_turn::<Mighty>(&mut s, Action::Bid(contract)).is_err() {
             continue;
         }
         while phase(&s) == Phase::Bidding {
-            if Mighty::apply(&mut s, Action::Pass).is_err() {
+            if engine::apply_on_turn::<Mighty>(&mut s, Action::Pass).is_err() {
                 break;
             }
         }
@@ -129,7 +129,7 @@ pub fn bid_experiment(rules: &Rules, record: &Record, bot: &Actor, worlds: usize
     let (pass_instead, oracle) = match winning {
         Some(b) => {
             let state = replay(rules, record, b.index)?;
-            let pass = if Mighty::legal_actions(&state).contains(&Action::Pass) {
+            let pass = if engine::legal_on_turn::<Mighty>(&state).contains(&Action::Pass) {
                 Some(play_on(rules, record, b.index, Action::Pass, bot)?.payoffs[b.seat])
             } else {
                 None

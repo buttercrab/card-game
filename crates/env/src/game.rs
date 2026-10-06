@@ -2,49 +2,30 @@
 //! come from.
 
 use crate::Error;
-use engine::{Bot, Encode, JsonGame, Seat};
-use rand::RngCore;
+use engine_ml::Encode;
 use rand::seq::IndexedRandom;
+use rand::{Rng, RngCore};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
+pub use sim::Research;
 use std::fmt::Debug;
 use std::path::Path;
 
-/// A game the environment can run: a [`JsonGame`] (for its rule sets and
-/// presets) with an [`Encode`] (for observations), plus the few choices
-/// that differ between games: how a hand is set up from a rule set, how
-/// rule sets vary, and which bots fill seats nobody controls.
-///
-/// Everything else (seeding, batching, rewards, data) is shared, so a
-/// second game plugs in by implementing this.
-pub trait EnvGame:
-    Encode<State: Send + Sync, Action: Send + Sync, View: Send + Sync>
-    + JsonGame<Rules: Clone + PartialEq + Debug + Send + Sync>
-{
-    /// The most seats any table of this game has: the width of per-seat
-    /// outputs such as rewards.
-    const MAX_SEATS: usize;
+/// A game the environment can run: its research hooks ([`Research`]: rule
+/// sets by name, varied draws, bots by name) with a model encoding
+/// ([`Encode`]). Everything else (seeding, batching, rewards, data) is
+/// shared, so a second game plugs in by implementing those two.
+pub trait EnvGame: Research + Encode {}
 
-    /// A bot description, parsed once by [`EnvGame::parse_bot`].
-    type BotSpec: Clone + Debug + Send + Sync;
+impl<G: Research + Encode> EnvGame for G {}
 
-    /// The options of one hand under `rules`, with whatever else a hand
-    /// needs (who deals, who bids first) drawn from `rng`.
-    fn options(rules: &Self::Rules, rng: &mut dyn RngCore) -> Self::Options;
-
-    /// `base` with its optional rules drawn at random: the space a model
-    /// is trained on, beyond the presets.
-    fn vary(base: &Self::Rules, rng: &mut dyn RngCore) -> Self::Rules;
-
-    /// A rule set by name: a preset id, or a variant the game names (such
-    /// as a preset at another table size).
-    fn named_rules(name: &str) -> Result<Self::Rules, String>;
-
-    fn parse_bot(spec: &str) -> Result<Self::BotSpec, String>;
-
-    /// A fresh bot for `seat`, for one hand.
-    fn bot(spec: &Self::BotSpec, seat: Seat) -> Box<dyn Bot<Self> + Send>;
+/// The options of one hand under `rules`, the seat that opens it drawn
+/// from `rng`: any seat may, and in a session that rotates, so every seat
+/// gets every position.
+pub fn draw_options<G: EnvGame>(rules: &G::Rules, rng: &mut dyn RngCore) -> G::Options {
+    let deal = rng.random_range(0..G::seats(rules));
+    G::options(rules, deal as u64)
 }
 
 /// A stable id for a rule set: the SHA-256 of its JSON, in hex. Data
@@ -109,9 +90,7 @@ impl<R: Clone + DeserializeOwned> RuleSource<R> {
                 .map_err(|e| bad(e.to_string()));
         }
         if text == "varied" {
-            return Ok(RuleSource::Varied(
-                G::presets().into_iter().map(|(_, _, r)| r).collect(),
-            ));
+            return Ok(RuleSource::Varied(G::presets().into_iter().map(|p| p.rules).collect()));
         }
         if let Some(list) = text.strip_prefix("varied:") {
             return names(list).map(RuleSource::Varied);

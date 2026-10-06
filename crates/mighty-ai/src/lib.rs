@@ -10,8 +10,9 @@
 //!   exactly if asked ([`endgame`]), and keeps a move only when it beats
 //!   the simple bot's by enough.
 //! - [`HybridBot`]: the search leaning on a Q network.
-//! - [`LevelBots`]: what the table's levels ([`mighty::bot::Level`]) play
-//!   as.
+//! - [`LevelBots`]: what the table's levels ([`engine::Level`]) play as;
+//!   [`MightyBots`]: the bots at the server's tables
+//!   ([`engine::TableBots`]).
 
 mod deal;
 pub mod endgame;
@@ -22,6 +23,7 @@ mod read;
 mod search;
 mod seen;
 mod simple;
+mod table;
 
 pub use deal::Sampler;
 pub use hybrid::{Baseline, HybridBot};
@@ -31,3 +33,4 @@ pub use read::Reading;
 pub use search::{SearchBot, candidates};
 pub use seen::{Seen, SeenPhase};
 pub use simple::{Clumsy, EASY_CAUTION, EASY_SLIPS, SimpleBot, TEMPER, tempered};
+pub use table::MightyBots;

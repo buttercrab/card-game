@@ -9,6 +9,7 @@ license.workspace = true
 [dependencies]
 clap.workspace = true
 engine.workspace = true
+engine-ml.workspace = true
 harness.workspace = true
 flate2.workspace = true
 mighty.workspace = true

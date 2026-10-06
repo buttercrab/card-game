@@ -2,8 +2,8 @@
 //! the counters that tell a stale bot move from a current one.
 
 use super::{Room, log_action};
+use crate::game::ServerGame;
 use crate::protocol::{ErrorCode, ServerError};
-use crate::session::SessionGame;
 use crate::stats::Event;
 use engine::Turn;
 use rand::Rng;
@@ -19,27 +19,26 @@ use tokio::time::Instant;
 pub(super) enum LogEntry<A> {
     /// The deal, or whatever else chance decides.
     Chance { action: A },
-    /// `seat`'s move on its turn.
+    /// `seat`'s move, on its turn or not (a 딜미스 the moment the cards
+    /// land). Logs saved before moves were addressed by seat kept the
+    /// latter as `out_of_turn`; they read as this.
+    #[serde(alias = "out_of_turn")]
     Act { seat: usize, action: A },
-    /// `seat`'s move out of turn (a 딜미스).
-    OutOfTurn { seat: usize, action: A },
 }
 
 /// Plays `log` from `game`, its first state; says which entry failed.
-pub(super) fn replay<G: SessionGame>(game: &mut G::State, log: &[LogEntry<G::Action>]) -> Result<(), String> {
+pub(super) fn replay<G: ServerGame>(game: &mut G::State, log: &[LogEntry<G::Action>]) -> Result<(), String> {
     for (i, entry) in log.iter().enumerate() {
         let applied = match entry {
-            LogEntry::Chance { action } if G::turn(game) == Turn::Chance => G::apply(game, action.clone()),
-            LogEntry::Act { seat, action } if G::turn(game) == Turn::Seat(*seat) => G::apply(game, action.clone()),
-            LogEntry::OutOfTurn { seat, action } => G::apply_out_of_turn(game, *seat, action.clone()),
-            _ => return Err(format!("action {i}: not whose turn it is")),
+            LogEntry::Chance { action } => G::apply_chance(game, action.clone()),
+            LogEntry::Act { seat, action } => G::apply(game, *seat, action.clone()),
         };
         applied.map_err(|e| format!("action {i}: {e}"))?;
     }
     Ok(())
 }
 
-pub(super) struct Hand<G: SessionGame> {
+pub(super) struct Hand<G: ServerGame> {
     /// The current hand, or the last one once it is over.
     pub game: Option<G::State>,
     /// Every step of `game` so far, deals included, so it can be replayed.
@@ -50,17 +49,17 @@ pub(super) struct Hand<G: SessionGame> {
     pub started: Option<u64>,
     /// Bumped whenever the hand changes, so a bot's stale move is dropped.
     pub version: u64,
-    /// Deals so far, so a bot's out-of-turn action for an earlier deal is
+    /// Deals so far, so a bot's off-turn action for an earlier deal is
     /// dropped.
     pub deals: u64,
-    /// When the cards last landed, for [`SessionGame::grace`]; unknown
+    /// When the cards last landed, for [`ServerGame::grace`]; unknown
     /// after a restart, when any grace is long over.
     pub dealt_at: Option<Instant>,
     /// Whether the hand, once over, is in the session's scores.
     pub booked: bool,
 }
 
-impl<G: SessionGame> Default for Hand<G> {
+impl<G: ServerGame> Default for Hand<G> {
     fn default() -> Hand<G> {
         Hand {
             game: None,
@@ -76,7 +75,7 @@ impl<G: SessionGame> Default for Hand<G> {
 }
 
 /// What playing the chance actions did.
-pub(super) struct Advanced<G: SessionGame> {
+pub(super) struct Advanced<G: ServerGame> {
     /// Cards landed.
     pub dealt: bool,
     /// The hand is over, and not yet booked.
@@ -84,14 +83,14 @@ pub(super) struct Advanced<G: SessionGame> {
 }
 
 /// A hand just over.
-pub(super) struct Finished<G: SessionGame> {
+pub(super) struct Finished<G: ServerGame> {
     pub payoffs: Vec<i64>,
     pub summary: Option<G::Summary>,
     /// How it went, in a word, for the stats.
     pub outcome: &'static str,
 }
 
-impl<G: SessionGame> Hand<G> {
+impl<G: ServerGame> Hand<G> {
     pub fn turn(&self) -> Option<Turn> {
         self.game.as_ref().map(G::turn)
     }
@@ -118,25 +117,18 @@ impl<G: SessionGame> Hand<G> {
         self.version += 1;
     }
 
-    /// Plays `action` for whoever is to act.
-    pub fn apply(&mut self, action: G::Action) -> Result<(), String> {
+    /// Plays `seat`'s `action`, on its turn or not.
+    pub fn apply(&mut self, seat: usize, action: G::Action) -> Result<(), String> {
         let game = self.game.as_mut().ok_or("no hand")?;
-        let Turn::Seat(seat) = G::turn(game) else {
-            return Err("nobody is to act".into());
-        };
-        G::apply(game, action.clone()).map_err(|e| e.to_string())?;
+        G::apply(game, seat, action.clone()).map_err(|e| e.to_string())?;
         self.log.push(LogEntry::Act { seat, action });
         self.version += 1;
         Ok(())
     }
 
-    /// Plays `seat`'s out-of-turn `action`.
-    pub fn apply_out_of_turn(&mut self, seat: usize, action: G::Action) -> Result<(), String> {
-        let game = self.game.as_mut().ok_or("no hand")?;
-        G::apply_out_of_turn(game, seat, action.clone()).map_err(|e| e.to_string())?;
-        self.log.push(LogEntry::OutOfTurn { seat, action });
-        self.version += 1;
-        Ok(())
+    /// Whether the hand waits on `seat` ([`Turn::Seat`]).
+    pub fn waits_on(&self, seat: usize) -> bool {
+        self.turn() == Some(Turn::Seat(seat))
     }
 
     /// Plays the chance actions due (the deal), and says when the hand is
@@ -150,7 +142,7 @@ impl<G: SessionGame> Hand<G> {
         while G::turn(game) == Turn::Chance {
             let deal = G::sample_chance(game, rng);
             tracing::info!(room, action = %log_action(&deal), "deal");
-            G::apply(game, deal.clone()).expect("a sampled chance action is legal");
+            G::apply_chance(game, deal.clone()).expect("a sampled chance action is legal");
             self.log.push(LogEntry::Chance { action: deal });
             done.dealt = true;
         }
@@ -182,7 +174,7 @@ impl<G: SessionGame> Hand<G> {
     }
 }
 
-impl<G: SessionGame> Room<G> {
+impl<G: ServerGame> Room<G> {
     /// Deals the next hand once every seat is filled, moving the seats
     /// first when the table shuffles.
     pub(super) fn start(&mut self) -> Result<(), ServerError> {
@@ -207,16 +199,15 @@ impl<G: SessionGame> Room<G> {
         Ok(())
     }
 
-    /// `seat` plays `action`, on its turn or out of it.
+    /// `seat` plays `action`, on its turn or out of it. Off its turn, an
+    /// action it may not take is refused as not its turn.
     pub(super) fn act(&mut self, seat: usize, action: Value) -> Result<(), ServerError> {
         let game = self.hand.game.as_ref().ok_or(ErrorCode::NoHand)?;
         let action: G::Action =
             serde_json::from_value(action).map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))?;
-        if G::turn(game) != Turn::Seat(seat) {
-            if !G::out_of_turn_actions(game, seat).contains(&action) {
-                return Err(ErrorCode::NotYourTurn.into());
-            }
-            return self.out_of_turn(seat, action);
+        let on_turn = self.hand.waits_on(seat);
+        if !on_turn && !G::legal_actions(game, seat).contains(&action) {
+            return Err(ErrorCode::NotYourTurn.into());
         }
         if self
             .hand
@@ -225,31 +216,27 @@ impl<G: SessionGame> Room<G> {
         {
             return Err(ErrorCode::WaitAfterDeal.into());
         }
-        let logged = log_action(&action);
-        self.hand
-            .apply(action)
-            .map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
-        tracing::info!(room = %self.id, seat, action = %logged, "move");
-        Ok(())
+        let what = if on_turn { "move" } else { "off-turn move" };
+        self.apply_move(seat, action, what)
     }
 
-    /// Applies `seat`'s out-of-turn action, already known to be allowed.
-    pub(super) fn out_of_turn(&mut self, seat: usize, action: G::Action) -> Result<(), ServerError> {
+    /// Applies `seat`'s `action` and logs it as `what`.
+    pub(super) fn apply_move(&mut self, seat: usize, action: G::Action, what: &str) -> Result<(), ServerError> {
         let logged = log_action(&action);
         self.hand
-            .apply_out_of_turn(seat, action)
+            .apply(seat, action)
             .map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
-        tracing::info!(room = %self.id, seat, action = %logged, "out-of-turn move");
+        tracing::info!(room = %self.id, seat, action = %logged, "{what}");
         Ok(())
     }
 
     /// Plays the chance actions, books the hand when it ends, and lets the
-    /// bots decide whether to act out of turn on a new deal. Returns
+    /// bots decide whether to act off their turn on a new deal. Returns
     /// whether anything changed.
     pub(super) fn advance(&mut self) -> bool {
         let advanced = self.hand.advance(&self.id, &mut self.rng);
         if advanced.dealt {
-            self.plan_out_of_turn();
+            self.plan_off_turn();
         }
         let finished = advanced.finished.is_some();
         if let Some(Finished {

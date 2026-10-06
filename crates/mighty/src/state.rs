@@ -513,21 +513,23 @@ impl State {
         Action::Deal { hands, kitty }
     }
 
-    pub(crate) fn apply(&mut self, action: Action) -> Result<(), Error> {
-        match self.turn() {
-            Turn::Over => Err(Error::Over),
-            Turn::Chance => match action {
-                Action::Deal { hands, kitty } => self.deal(hands, kitty),
-                other => Err(Error::Illegal(other)),
-            },
-            Turn::Seat(seat) => {
-                if !self.legal_actions().contains(&action) {
-                    return Err(Error::Illegal(action));
-                }
-                self.step(seat, action);
-                Ok(())
-            }
+    pub(crate) fn apply_chance(&mut self, action: Action) -> Result<(), Error> {
+        match (self.turn(), action) {
+            (Turn::Over, _) => Err(Error::Over),
+            (Turn::Chance, Action::Deal { hands, kitty }) => self.deal(hands, kitty),
+            (_, other) => Err(Error::Illegal(other)),
         }
+    }
+
+    pub(crate) fn apply(&mut self, seat: Seat, action: Action) -> Result<(), Error> {
+        if self.turn() == Turn::Over {
+            return Err(Error::Over);
+        }
+        if !self.legal_actions(seat).contains(&action) {
+            return Err(Error::Illegal(action));
+        }
+        self.step(seat, action);
+        Ok(())
     }
 
     fn deal(&mut self, mut hands: Vec<Vec<Card>>, kitty: Vec<Card>) -> Result<(), Error> {
@@ -576,12 +578,20 @@ impl State {
         trumps
     }
 
-    pub(crate) fn legal_actions(&self) -> Vec<Action> {
+    /// What `seat` may do now. On its turn, whatever the phase offers; off
+    /// it, a misdeal from the moment the cards land, for a hand that may
+    /// call one ([`State::may_misdeal`]), and nothing else.
+    pub(crate) fn legal_actions(&self, seat: Seat) -> Vec<Action> {
+        if seat >= self.seats() {
+            return Vec::new();
+        }
         match &self.phase {
             Phase::Dealing | Phase::Done(_) => Vec::new(),
-            Phase::Bidding(b) => self.legal_bids(b),
-            Phase::Exchange(e) => self.legal_exchange(e),
-            Phase::Play(p) => self.legal_plays(p),
+            Phase::Bidding(b) if seat == b.to_act => self.legal_bids(b),
+            Phase::Bidding(b) if self.may_misdeal(b, seat) => vec![Action::Misdeal],
+            Phase::Exchange(e) if seat == e.declared.declarer => self.legal_exchange(e),
+            Phase::Play(p) if seat == (p.leader + p.plays.len()) % self.seats() => self.legal_plays(p),
+            Phase::Bidding(_) | Phase::Exchange(_) | Phase::Play(_) => Vec::new(),
         }
     }
 
@@ -595,25 +605,6 @@ impl State {
             MisdealWindow::BeforeFirstBid => b.best.is_none(),
         };
         open && !b.passed[seat] && self.rules.is_misdeal(&self.hands[seat])
-    }
-
-    /// See [`engine::Game::out_of_turn_actions`]: a misdeal, from the
-    /// moment the cards land, for a seat that may call one.
-    pub(crate) fn out_of_turn_actions(&self, seat: Seat) -> Vec<Action> {
-        match &self.phase {
-            Phase::Bidding(b) if seat < self.seats() && seat != b.to_act && self.may_misdeal(b, seat) => {
-                vec![Action::Misdeal]
-            }
-            _ => Vec::new(),
-        }
-    }
-
-    pub(crate) fn apply_out_of_turn(&mut self, seat: Seat, action: Action) -> Result<(), Error> {
-        if !self.out_of_turn_actions(seat).contains(&action) {
-            return Err(Error::Illegal(action));
-        }
-        self.step(seat, action);
-        Ok(())
     }
 
     /// The rules this hand is played by.
@@ -649,21 +640,6 @@ impl State {
     /// Whether the bidding is on and nobody has bid yet (passes aside).
     pub fn before_first_bid(&self) -> bool {
         matches!(&self.phase, Phase::Bidding(b) if b.best.is_none())
-    }
-
-    /// What `seat` could do were it their turn to bid now. Bots use it to
-    /// decide on a misdeal out of turn as they would on their turn.
-    pub fn bids_as(&self, seat: Seat) -> Vec<Action> {
-        match &self.phase {
-            Phase::Bidding(b) if seat < self.seats() && !b.passed[seat] => {
-                let b = Bidding {
-                    to_act: seat,
-                    ..b.clone()
-                };
-                self.legal_bids(&b)
-            }
-            _ => Vec::new(),
-        }
     }
 
     fn legal_bids(&self, b: &Bidding) -> Vec<Action> {
@@ -1625,7 +1601,7 @@ mod tests {
             [joker, c(Suit::Club, 9), c(Suit::Spade, 9), c(Suit::Heart, 9)],
         );
         assert!(
-            s.legal_actions()
+            s.legal_actions(0)
                 .iter()
                 .all(|a| matches!(a, Action::Play { call_joker: false, .. }))
         );
@@ -1645,7 +1621,7 @@ mod tests {
             joker_lead: Some(Lead::Suit(Suit::Heart)),
             call_joker: false,
         };
-        assert!(s.legal_actions().contains(&lead));
+        assert!(s.legal_actions(0).contains(&lead));
         s.step(0, lead);
         let Phase::Play(p) = &s.phase else { unreachable!() };
         assert!(!p.plays[0].powered);
@@ -1665,7 +1641,7 @@ mod tests {
     }
 
     /// Hands scored by [`settle`], with their breakdowns, for the web
-    /// client's wording of the count (`web/src/lib/ledger.ts`) to check
+    /// client's wording of the count (`web/src/lib/games/mighty/ledger.ts`) to check
     /// itself against: every preset and a few drawn rule sets, each over contracts above and
     /// below the minimum, with and without a friend, failed, made and run.
     fn payoff_fixture() -> serde_json::Value {

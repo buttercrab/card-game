@@ -1,15 +1,18 @@
 //! The files the web client is built from, generated from the server's own
 //! definitions: `protocol.ts`, the TypeScript types of every message (see
-//! [`crate::protocol`]), and `catalog.ts`, the presets and the table's
-//! other choices (see [`crate::catalog`]). `server --write-generated
+//! [`crate::protocol`]) and every game's types in them; `catalog.ts`, the
+//! games and the table's choices (see [`crate::catalog`]); and
+//! `<game>/catalog.ts` for each game, its presets and the like
+//! ([`engine::Table::Catalog`]). `server --write-generated
 //! web/src/lib/generated` writes them; a test and CI fail when the
 //! committed ones are stale.
 
 use crate::catalog::{Catalog, catalog};
+use crate::game::{GameCatalog, GameEntry};
 use crate::protocol::{ClientMsg, CreateRoom, CreatedRoom, ServerMsg};
-use crate::session::{MightyNotes, MightySettings};
-use mighty::rules::Rules;
+use mighty::rules::{Preset, Rules};
 use mighty::score::Examples;
+use mighty::table::{MightyCatalog, MightyNotes, MightySettings};
 use mighty::{Action, HandSummary, View};
 use std::any::TypeId;
 use std::collections::HashSet;
@@ -61,10 +64,12 @@ pub fn typescript() -> String {
     };
     d.visit::<ServerMsg<MightySettings, HandSummary, Rules, View, Action, MightyNotes>>();
     d.visit::<Examples>();
-    d.visit::<CreateRoom>();
+    d.visit::<CreateRoom<Preset, Rules>>();
     d.visit::<CreatedRoom>();
     d.visit::<ClientMsg>();
     d.visit::<Catalog>();
+    // Each game's catalog, for its `<game>/catalog.ts`.
+    d.visit::<MightyCatalog>();
     let mut ts = String::from(HEADER);
     for decl in d.out.into_values() {
         ts.push('\n');
@@ -81,23 +86,41 @@ pub fn catalog_module() -> String {
     format!("{HEADER}\nimport type {{ Catalog }} from './protocol';\n\nexport const CATALOG: Catalog = {json};\n")
 }
 
-/// Every generated file, by name within [`DIR`].
-pub fn files() -> Vec<(&'static str, String)> {
-    vec![("protocol.ts", typescript()), ("catalog.ts", catalog_module())]
+/// A game's catalog as a TypeScript module, `<game>/catalog.ts`, typed by
+/// `protocol.ts`.
+fn game_catalog_module(game: &dyn GameEntry) -> String {
+    let json = game.catalog_json();
+    let ty = game.catalog_type();
+    format!("{HEADER}\nimport type {{ {ty} }} from '../protocol';\n\nexport const CATALOG: {ty} = {json};\n")
+}
+
+/// Every generated file, by path within [`DIR`].
+pub fn files() -> Vec<(String, String)> {
+    let mut files = vec![
+        ("protocol.ts".to_string(), typescript()),
+        ("catalog.ts".to_string(), catalog_module()),
+    ];
+    for game in GameCatalog::standard().games() {
+        files.push((format!("{}/catalog.ts", game.id()), game_catalog_module(game)));
+    }
+    files
 }
 
 /// Writes every generated file into `dir`.
 pub fn write(dir: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
     for (name, contents) in files() {
-        std::fs::write(dir.join(name), contents)?;
+        let path = dir.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, contents)?;
     }
     Ok(())
 }
 
 /// The generated files in `dir` that differ from what the server would
 /// write now.
-pub fn stale(dir: &Path) -> Vec<&'static str> {
+pub fn stale(dir: &Path) -> Vec<String> {
     files()
         .into_iter()
         .filter(|(name, contents)| std::fs::read_to_string(dir.join(name)).ok().as_ref() != Some(contents))

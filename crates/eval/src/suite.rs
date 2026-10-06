@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 pub struct Suite {
     /// The suite's name and version, as runs cite it: `v1`.
     pub suite: String,
-    /// The game, by [`engine::JsonGame::ID`].
+    /// The game, by [`engine::GameInfo::ID`].
     pub game: String,
     /// What the suite is for, in a sentence or two.
     pub about: String,

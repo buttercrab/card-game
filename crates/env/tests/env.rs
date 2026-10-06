@@ -4,7 +4,8 @@
 mod common;
 
 use common::{choose, env, legal, setup};
-use engine::{Encode, Game, Turn, Viewer};
+use engine::{Game, Turn, Viewer};
+use engine_ml::Encode;
 use env::{Batch, Error};
 use mighty::Mighty;
 
@@ -81,7 +82,10 @@ fn rows_are_the_hands_encoded() {
                 panic!("slot {slot} waits on the caller");
             };
             assert_eq!(batch.seat[slot], seat as i32);
-            let obs = Mighty::encode(&Mighty::view(state, Viewer::Seat(seat)), &Mighty::legal_actions(state));
+            let obs = Mighty::encode(
+                &Mighty::view(state, Viewer::Seat(seat)),
+                &Mighty::legal_actions(state, seat),
+            );
             spec.check(&obs).unwrap();
             assert_eq!(obs.global, batch.global[slot * g..(slot + 1) * g]);
             assert_eq!(obs.legal, batch.legal[slot * actions..(slot + 1) * actions]);

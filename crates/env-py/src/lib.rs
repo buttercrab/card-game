@@ -24,7 +24,7 @@ fn py_err(e: Error) -> PyErr {
 
 /// An environment of some game, without its types.
 trait AnyEnv: Send {
-    fn spec(&self) -> &engine::Spec;
+    fn spec(&self) -> &engine_ml::Spec;
     fn max_seats(&self) -> usize;
     fn reset(&mut self, seed: Option<u64>) -> Result<Batch, Error>;
     fn step(&mut self, actions: &[usize]) -> Result<Batch, Error>;
@@ -35,7 +35,7 @@ trait AnyEnv: Send {
 }
 
 impl<G: EnvGame> AnyEnv for Env<G> {
-    fn spec(&self) -> &engine::Spec {
+    fn spec(&self) -> &engine_ml::Spec {
         Env::spec(self)
     }
 
@@ -108,7 +108,7 @@ fn build<G: EnvGame>(o: Options) -> Result<Box<dyn AnyEnv>, Error> {
 struct PyEnv {
     // Steps run without the GIL; the lock keeps them one at a time.
     inner: Mutex<Box<dyn AnyEnv>>,
-    spec: engine::Spec,
+    spec: engine_ml::Spec,
     max_seats: usize,
     num_envs: usize,
 }
@@ -167,7 +167,7 @@ impl PyEnv {
             threads,
         };
         let inner = match game {
-            <Mighty as engine::JsonGame>::ID => build::<Mighty>(options),
+            <Mighty as engine::GameInfo>::ID => build::<Mighty>(options),
             _ => Err(Error::Config(format!("unknown game {game:?}"))),
         }
         .map_err(py_err)?;
@@ -232,7 +232,7 @@ fn selfplay(py: Python<'_>, config: &str, root: PathBuf, out: PathBuf, threads: 
     let config = SelfplayConfig::from_toml(config).map_err(py_err)?;
     let dataset = py
         .detach(|| match config.game.as_str() {
-            <Mighty as engine::JsonGame>::ID => env::selfplay::run::<Mighty>(&config, &root, &out, threads, |_| {}),
+            <Mighty as engine::GameInfo>::ID => env::selfplay::run::<Mighty>(&config, &root, &out, threads, |_| {}),
             game => Err(Error::Config(format!("unknown game {game:?}"))),
         })
         .map_err(py_err)?;

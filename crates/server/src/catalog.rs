@@ -1,43 +1,15 @@
-//! What the web client knows before it talks to a table: the presets with
-//! their rules, the bot levels, the table's choices and limits.
-//! [`crate::codegen`] writes it into the client's build as
-//! `generated/catalog.ts`, so the client never keeps copies of its own.
+//! What the web client knows before it talks to a table: the games, the bot
+//! levels, the table's choices and limits. [`crate::codegen`] writes it
+//! into the client's build as `generated/catalog.ts`, and each game's own
+//! catalog ([`engine::Table::Catalog`]: its presets with their rules, and
+//! the like) as `generated/<game>/catalog.ts`, so the client never keeps
+//! copies of its own.
 
+use crate::game::GameCatalog;
 use crate::room::{NAME_MAX, REACTIONS, TURN_LIMITS};
-use crate::session::FIRST_BID_GRACE;
-use mighty::bot::Level;
-use mighty::rules::{Preset, Rules};
+use engine::Level;
 use serde::Serialize;
 use ts_rs::TS;
-
-/// The presets in the order players pick them from: 기본 first, then the
-/// one with two jokers, then the rest.
-pub const PRESET_ORDER: [Preset; 9] = [
-    Preset::Default,
-    Preset::Gshs,
-    Preset::Ddshs,
-    Preset::Dshs,
-    Preset::Kmla,
-    Preset::Gsa,
-    Preset::Skku,
-    Preset::Sshs,
-    Preset::Yonsei,
-];
-
-/// The table a new table plays unless its maker picks another.
-pub const DEFAULT_PRESET: Preset = Preset::Default;
-
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct PresetInfo {
-    pub id: Preset,
-    /// The short name players know it by.
-    pub title: String,
-    /// What sets it apart, where the title does not say.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub note: Option<String>,
-    pub rules: Rules,
-}
 
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct BotLevelInfo {
@@ -46,18 +18,23 @@ pub struct BotLevelInfo {
     pub label: String,
 }
 
-/// Everything the client takes from the server at build time.
+/// A game the server offers.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GameListing {
+    /// Its id, in routes and in the room message's `game`.
+    pub id: String,
+    /// For people: `마이티`.
+    pub name: String,
+}
+
+/// Everything the client takes from the server at build time, whatever the
+/// game.
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct Catalog {
     /// The protocol the client is built for; see [`crate::protocol::version`].
     pub protocol: String,
-    /// In the order players pick them.
-    pub presets: Vec<PresetInfo>,
-    pub default_preset: Preset,
-    /// What the server assumes for a rule that saved rules leave out (rules
-    /// saved before it existed): a set kept on a device fills its gaps
-    /// from these, as the server would.
-    pub rule_defaults: Rules,
+    /// The games, the first being what the routes without a game id mean.
+    pub games: Vec<GameListing>,
     /// From weakest to strongest.
     pub bot_levels: Vec<BotLevelInfo>,
     /// The level a bot sits down at unless asked for another.
@@ -72,9 +49,6 @@ pub struct Catalog {
     pub report_max: usize,
     /// How long reports and new client errors are kept, in days.
     pub report_days: u64,
-    /// Where 딜미스 comes first, how long the first bid waits after the
-    /// deal, in milliseconds.
-    pub first_bid_grace_ms: u64,
     /// A table with nobody connected closes after this many minutes.
     pub idle_minutes: u64,
 }
@@ -82,17 +56,13 @@ pub struct Catalog {
 pub fn catalog() -> Catalog {
     Catalog {
         protocol: crate::protocol::version().to_string(),
-        presets: PRESET_ORDER
-            .iter()
-            .map(|&p| PresetInfo {
-                id: p,
-                title: p.title().to_string(),
-                note: p.note().map(str::to_string),
-                rules: p.rules(),
+        games: GameCatalog::standard()
+            .games()
+            .map(|g| GameListing {
+                id: g.id().to_string(),
+                name: g.name().to_string(),
             })
             .collect(),
-        default_preset: DEFAULT_PRESET,
-        rule_defaults: Rules::web_mighty(),
         bot_levels: Level::ALL
             .iter()
             .map(|&id| BotLevelInfo {
@@ -106,59 +76,16 @@ pub fn catalog() -> Catalog {
         name_max: NAME_MAX,
         report_max: crate::REPORT_MAX,
         report_days: crate::REPORT_DAYS,
-        first_bid_grace_ms: FIRST_BID_GRACE.as_millis() as u64,
         idle_minutes: crate::IDLE_MINUTES,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Rules saved without an option read it as `rule_defaults` has it,
-    /// so the client filling gaps from them agrees with the server.
-    #[test]
-    fn rule_defaults_are_what_the_server_assumes() {
-        let defaults = serde_json::to_value(catalog().rule_defaults).unwrap();
-        let mut saved = serde_json::to_value(Preset::Gshs.rules()).unwrap();
-        let optional = [
-            "/lowest_rank",
-            "/extra_cards",
-            "/joker_lead",
-            "/scoring",
-            "/reveal_discards",
-            "/next_dealer",
-            "/misdeal/all_points",
-            "/misdeal/window",
-            "/misdeal/declarer",
-            "/misdeal/caller_deals",
-            "/bidding/change_to_no_trump_cost",
-            "/bidding/pass_is_final",
-            "/bidding/last_chance_min",
-            "/bidding/raise_on_exchange",
-            "/policy/release_with_mighty",
-        ];
-        for path in optional {
-            let (parent, key) = path.rsplit_once('/').unwrap();
-            let parent = if parent.is_empty() {
-                &mut saved
-            } else {
-                saved.pointer_mut(parent).unwrap()
-            };
-            parent.as_object_mut().unwrap().remove(key).unwrap();
-        }
-        let read = serde_json::to_value(serde_json::from_value::<Rules>(saved).unwrap()).unwrap();
-        for path in optional {
-            assert_eq!(read.pointer(path), defaults.pointer(path), "{path}");
-        }
-    }
-
-    #[test]
-    fn every_preset_is_offered_once() {
-        let mut order = PRESET_ORDER.to_vec();
-        order.sort_by_key(|p| p.name());
-        let mut all = Preset::ALL.to_vec();
-        all.sort_by_key(|p| p.name());
-        assert_eq!(order, all);
-    }
+/// The site's catalog with every game's, as `server --dump-catalog` prints
+/// it.
+pub fn everything() -> serde_json::Value {
+    let games: serde_json::Map<String, serde_json::Value> = GameCatalog::standard()
+        .games()
+        .map(|g| (g.id().to_string(), g.catalog()))
+        .collect();
+    serde_json::json!({ "site": catalog(), "games": games })
 }

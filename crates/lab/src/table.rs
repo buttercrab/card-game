@@ -45,7 +45,7 @@ impl Actor {
     }
 
     pub fn act(&self, state: &State, seat: Seat, rng: &mut ChaCha8Rng) -> Action {
-        let legal = Mighty::legal_actions(state);
+        let legal = engine::legal_on_turn::<Mighty>(state);
         if legal.len() == 1 {
             return legal[0].clone();
         }
@@ -61,7 +61,7 @@ impl Actor {
                     let round = rng.random::<u64>();
                     for (a, score) in legal.iter().zip(&mut scores) {
                         let mut s = state.clone();
-                        Mighty::apply(&mut s, a.clone()).expect("legal");
+                        engine::apply_on_turn::<Mighty>(&mut s, a.clone()).expect("legal");
                         let mut r = ChaCha8Rng::seed_from_u64(round);
                         score.push(noisy_playout(s, seat, slip, &mut r) as f64);
                     }

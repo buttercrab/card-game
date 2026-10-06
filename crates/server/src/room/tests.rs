@@ -6,9 +6,9 @@
 use super::bots::Internal;
 use super::*;
 use crate::protocol::ClientMsg;
-use crate::session::MightySettings;
 use mighty::Mighty;
 use mighty::rules::Preset;
+use mighty::table::MightySettings;
 use serde_json::{Value, json};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -40,7 +40,7 @@ impl Table {
 
     fn open_with(settings: MightySettings, env: RoomEnv) -> Table {
         let stats = env.stats.clone();
-        let room = Room::<Mighty>::new("t".into(), settings, Arc::new(env));
+        let room = Room::<Mighty>::new("t".into(), settings, Arc::new(env), super::mighty_bots());
         let (tx, rx) = mpsc::unbounded_channel();
         let task = tokio::spawn(room.run(rx));
         Table {
@@ -424,9 +424,9 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
 #[tokio::test]
 async fn a_failed_bot_think_is_played_by_the_stand_in() {
     let env = Arc::new(RoomEnv::new(Duration::ZERO));
-    let mut room = Room::<Mighty>::new("t".into(), MightySettings::new(Preset::Gshs), env);
+    let mut room = Room::<Mighty>::new("t".into(), MightySettings::new(Preset::Gshs), env, super::mighty_bots());
     for seat in 0..5 {
-        room.add_bot(seat, mighty::bot::Level::Easy).unwrap();
+        room.add_bot(seat, engine::Level::Easy).unwrap();
     }
     room.start().unwrap();
     room.advance();
@@ -445,9 +445,9 @@ async fn a_failed_bot_think_is_played_by_the_stand_in() {
 /// Five bots, the first hand dealt, and a bot to act.
 fn bots_dealt() -> Room<Mighty> {
     let env = Arc::new(RoomEnv::new(Duration::from_secs(1)));
-    let mut room = Room::<Mighty>::new("t".into(), MightySettings::new(Preset::Gshs), env);
+    let mut room = Room::<Mighty>::new("t".into(), MightySettings::new(Preset::Gshs), env, super::mighty_bots());
     for seat in 0..5 {
-        room.add_bot(seat, mighty::bot::Level::Easy).unwrap();
+        room.add_bot(seat, engine::Level::Easy).unwrap();
     }
     room.start().unwrap();
     room.advance();
@@ -473,7 +473,7 @@ async fn a_bot_rethinks_at_once_when_the_hand_moves_under_it() {
         .hand
         .game
         .as_ref()
-        .map(|g| <Mighty as engine::Game>::legal_actions(g)[0].clone())
+        .map(|g| <Mighty as engine::Game>::legal_actions(g, seat)[0].clone())
         .unwrap();
     assert!(!room.on_internal(Internal::BotMove {
         version: old,

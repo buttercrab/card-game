@@ -3,7 +3,8 @@
 use crate::Error;
 use crate::game::EnvGame;
 use crate::hand::{Hand, Setup, Status, stream};
-use engine::{Game, Seat, Spec, Viewer};
+use engine::{Game, Seat, Viewer};
+use engine_ml::Spec;
 use rand::RngCore;
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
@@ -14,7 +15,7 @@ const MAX_IDLE_HANDS: usize = 1000;
 
 /// One step's output for every slot, one contiguous buffer per field,
 /// row-major with the slot first. The observation fields have the
-/// [`Spec`]'s shapes; see [`engine::Observation`].
+/// [`Spec`]'s shapes; see [`engine_ml::Observation`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Batch {
     /// `[n, global]`.
@@ -145,7 +146,7 @@ impl<G: EnvGame> Slot<G> {
                     self.pending = Some(Pending {
                         seat,
                         view: G::view(state, Viewer::Seat(seat)),
-                        legal: G::legal_actions(state),
+                        legal: G::legal_actions(state, seat),
                     });
                     return Ok(ended);
                 }
@@ -236,7 +237,8 @@ impl<G: EnvGame> Env<G> {
         // Every rule set of a game has the same spec; any one gives it.
         let mut rng = stream(config.seed, 0);
         let rules = setup.rules.draw::<G>(&mut rng)?;
-        let spec = G::spec(&G::options(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?;
+        let spec =
+            G::spec(&crate::game::draw_options::<G>(&rules, &mut rng)).map_err(|e| Error::Rules(e.to_string()))?;
         let mut env = Env {
             setup,
             config,
@@ -364,7 +366,7 @@ impl<G: EnvGame> Env<G> {
     }
 
     /// For each slot, where the cards the seat to act cannot see really
-    /// are (see [`engine::Encode::belief_targets`]): `[n, cards]`, for training
+    /// are (see [`engine_ml::Encode::belief_targets`]): `[n, cards]`, for training
     /// a belief model. Never part of an observation.
     pub fn belief_targets(&self) -> Result<Vec<i32>, Error> {
         let mut targets = Vec::with_capacity(self.slots.len() * self.spec.cards.len());

@@ -137,7 +137,7 @@ file names its **log version**: `{"log_version": N, "puzzles": [...]}`.
 A bare array, as in `v1/puzzles.json`, is log version 1 (recorded before
 2026-10-05, when 기본 still asked each seat about a misdeal after the
 deal). A log is upgraded from its version to the current one
-(`EvalGame::upgrade_log`), never replayed as it is on the chance it still
+(`sim::Research::upgrade_log`), never replayed as it is on the chance it still
 works. Mighty's log versions: 1, the misdeal round; 2 (current), a misdeal
 called out of turn from the deal. New puzzle files use the current one.
 

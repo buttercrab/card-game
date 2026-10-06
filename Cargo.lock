@@ -432,11 +432,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "engine-ml"
+version = "0.1.0"
+dependencies = [
+ "engine",
+ "serde",
+]
+
+[[package]]
 name = "env"
 version = "0.1.0"
 dependencies = [
  "clap",
  "engine",
+ "engine-ml",
  "flate2",
  "harness",
  "mighty",
@@ -458,6 +467,7 @@ name = "env-py"
 version = "0.1.0"
 dependencies = [
  "engine",
+ "engine-ml",
  "env",
  "mighty",
  "numpy",
@@ -807,6 +817,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "engine",
+ "engine-ml",
  "mighty",
  "mighty-ai",
  "rand 0.9.5",
@@ -861,6 +872,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "engine",
+ "engine-ml",
  "harness",
  "mighty",
  "mighty-ai",
@@ -968,6 +980,7 @@ name = "mighty"
 version = "0.1.0"
 dependencies = [
  "engine",
+ "engine-ml",
  "mighty",
  "rand 0.9.5",
  "rand_chacha",
@@ -982,6 +995,7 @@ name = "mighty-ai"
 version = "0.1.0"
 dependencies = [
  "engine",
+ "engine-ml",
  "mighty",
  "rand 0.9.5",
  "rand_chacha",
@@ -1717,6 +1731,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "engine",
+ "engine-ml",
  "harness",
  "infer",
  "mighty",

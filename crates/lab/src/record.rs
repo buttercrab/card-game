@@ -98,7 +98,7 @@ pub fn generate(rules: &Rules, deal: u64, bot: &Actor) -> Result<Record> {
         Phase::Bidding,
         &mut |d| {
             let view = Mighty::view(d.state, Viewer::Seat(d.seat));
-            let legal = Mighty::legal_actions(d.state);
+            let legal = engine::legal_on_turn::<Mighty>(d.state);
             let (trump, estimate, cheapest) = simple_read(&view, &legal);
             bids.push(BidDecision {
                 index: d.index,
@@ -151,7 +151,7 @@ pub fn generate(rules: &Rules, deal: u64, bot: &Actor) -> Result<Record> {
 pub fn replay(rules: &Rules, record: &Record, upto: usize) -> Result<State> {
     let mut state = new_hand(rules, record.deal)?;
     for (step, action) in record.log[..upto.min(record.log.len())].iter().enumerate() {
-        Mighty::apply(&mut state, action.clone()).map_err(|e| LabError::Replay {
+        engine::apply_on_turn::<Mighty>(&mut state, action.clone()).map_err(|e| LabError::Replay {
             deal: record.deal,
             step,
             action: action.clone(),
@@ -163,7 +163,7 @@ pub fn replay(rules: &Rules, record: &Record, upto: usize) -> Result<State> {
 
 /// Applies an action an experiment chose.
 pub fn apply(deal: u64, state: &mut State, action: Action) -> Result<()> {
-    Mighty::apply(state, action.clone()).map_err(|e| LabError::Refused {
+    engine::apply_on_turn::<Mighty>(state, action.clone()).map_err(|e| LabError::Refused {
         deal,
         action,
         why: e.to_string(),

@@ -172,7 +172,7 @@ async fn the_version_names_the_build_and_the_worker() {
 async fn the_worker_says_hello_and_answers_every_job() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(server::bots::run_worker::<mighty::Mighty>(
+    tokio::spawn(server::bots::run_worker(
         format!("ws://{addr}/internal/bots"),
         "secret".into(),
         Duration::from_millis(10),
@@ -216,7 +216,7 @@ async fn the_worker_keeps_its_liveness_file_while_welcomed() {
     let path = dir.path().join("alive");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(server::bots::run_worker::<mighty::Mighty>(
+    tokio::spawn(server::bots::run_worker(
         format!("ws://{addr}/internal/bots"),
         "secret".into(),
         Duration::from_millis(10),

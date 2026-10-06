@@ -249,7 +249,7 @@ fn time(t: u64) -> String {
 /// A bot level as the stats record it, by its name at the table.
 fn level_name(level: &str) -> String {
     level
-        .parse::<mighty::bot::Level>()
+        .parse::<engine::Level>()
         .map_or_else(|_| level.to_string(), |l| l.label().to_string())
 }
 
