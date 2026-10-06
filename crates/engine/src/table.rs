@@ -44,7 +44,7 @@ pub trait Table: GameInfo + HandReport {
     /// What the web client knows of this game before any table opens: the
     /// presets in the order players pick them, with their rules, and the
     /// like. Generated into the client's build.
-    type Catalog: Serialize + 'static;
+    type Catalog: Serialize + ts_rs::TS + 'static;
 
     /// The rulebook's worked examples under a rule set: what a table under
     /// those rules would score in a few typical hands.

@@ -223,6 +223,54 @@ async fn the_room_names_its_protocol() {
     assert_eq!(server::catalog::catalog().protocol, server::protocol::version());
 }
 
+/// What belongs to a game is under `/api/games/{game}/`; the routes from
+/// before games had ids still answer, for Mighty, the same.
+#[tokio::test]
+async fn game_scoped_routes_and_their_old_aliases_agree() {
+    let addr = spawn_server().await;
+    let (status, games) = http(addr, "GET", "/api/games", "").await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        serde_json::from_str::<Value>(&games).unwrap(),
+        json!([{ "id": "mighty", "name": "마이티" }])
+    );
+    for (new, old) in [
+        ("/api/games/mighty/presets", "/api/presets"),
+        ("/api/games/mighty/presets/gshs", "/api/presets/gshs"),
+    ] {
+        let (new, old) = (http(addr, "GET", new, "").await, http(addr, "GET", old, "").await);
+        assert_eq!((new.0, &new.1), (200, &old.1));
+    }
+    let (_, rules) = http(addr, "GET", "/api/presets/default", "").await;
+    let new = http(addr, "POST", "/api/games/mighty/rules/examples", &rules).await;
+    let old = http(addr, "POST", "/api/rules/examples", &rules).await;
+    assert_eq!((new.0, &new.1), (200, &old.1));
+    // A table made either way plays Mighty, and says so.
+    let body = json!({ "preset": "gshs" }).to_string();
+    for path in ["/api/games/mighty/rooms", "/api/rooms"] {
+        let (status, body) = http(addr, "POST", path, &body).await;
+        assert_eq!(status, 200, "{body}");
+        let id = serde_json::from_str::<Value>(&body).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let (status, info) = http(addr, "GET", &format!("/api/rooms/{id}"), "").await;
+        assert_eq!(status, 200);
+        assert_eq!(serde_json::from_str::<Value>(&info).unwrap()["game"], "mighty");
+        let mut ws = connect(addr, &id).await;
+        join(&mut ws, "A", None).await;
+        assert_eq!(next(&mut ws, "room").await["game"], "mighty");
+    }
+    // An unknown game, or a preset it does not have.
+    for path in ["/api/games/poker/presets", "/api/games/poker/presets/gshs"] {
+        assert_eq!(http(addr, "GET", path, "").await.0, 404, "{path}");
+    }
+    assert_eq!(http(addr, "POST", "/api/games/poker/rooms", "{}").await.0, 404);
+    let (status, body) = http(addr, "POST", "/api/games/mighty/rooms", "{\"preset\": \"nope\"}").await;
+    assert_eq!(status, 400);
+    assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["code"], "unknown_preset");
+}
+
 #[tokio::test]
 async fn unknown_rooms_are_not_found() {
     let addr = spawn_server().await;

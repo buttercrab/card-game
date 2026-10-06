@@ -1,13 +1,13 @@
-//! What the web client knows before it talks to a table: the presets with
-//! their rules, the bot levels, the table's choices and limits.
-//! [`crate::codegen`] writes it into the client's build as
-//! `generated/catalog.ts`, so the client never keeps copies of its own.
+//! What the web client knows before it talks to a table: the games, the bot
+//! levels, the table's choices and limits. [`crate::codegen`] writes it
+//! into the client's build as `generated/catalog.ts`, and each game's own
+//! catalog ([`engine::Table::Catalog`]: its presets with their rules, and
+//! the like) as `generated/<game>/catalog.ts`, so the client never keeps
+//! copies of its own.
 
+use crate::game::GameCatalog;
 use crate::room::{NAME_MAX, REACTIONS, TURN_LIMITS};
-use engine::{Level, Table};
-use mighty::Mighty;
-use mighty::rules::{Preset, Rules};
-use mighty::table::PresetInfo;
+use engine::Level;
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -18,18 +18,23 @@ pub struct BotLevelInfo {
     pub label: String,
 }
 
-/// Everything the client takes from the server at build time.
+/// A game the server offers.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GameListing {
+    /// Its id, in routes and in the room message's `game`.
+    pub id: String,
+    /// For people: `마이티`.
+    pub name: String,
+}
+
+/// Everything the client takes from the server at build time, whatever the
+/// game.
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct Catalog {
     /// The protocol the client is built for; see [`crate::protocol::version`].
     pub protocol: String,
-    /// In the order players pick them.
-    pub presets: Vec<PresetInfo>,
-    pub default_preset: Preset,
-    /// What the server assumes for a rule that saved rules leave out (rules
-    /// saved before it existed): a set kept on a device fills its gaps
-    /// from these, as the server would.
-    pub rule_defaults: Rules,
+    /// The games, the first being what the routes without a game id mean.
+    pub games: Vec<GameListing>,
     /// From weakest to strongest.
     pub bot_levels: Vec<BotLevelInfo>,
     /// The level a bot sits down at unless asked for another.
@@ -44,20 +49,20 @@ pub struct Catalog {
     pub report_max: usize,
     /// How long reports and new client errors are kept, in days.
     pub report_days: u64,
-    /// Where 딜미스 comes first, how long the first bid waits after the
-    /// deal, in milliseconds.
-    pub first_bid_grace_ms: u64,
     /// A table with nobody connected closes after this many minutes.
     pub idle_minutes: u64,
 }
 
 pub fn catalog() -> Catalog {
-    let mighty = Mighty::catalog();
     Catalog {
         protocol: crate::protocol::version().to_string(),
-        presets: mighty.presets,
-        default_preset: mighty.default_preset,
-        rule_defaults: mighty.rule_defaults,
+        games: GameCatalog::standard()
+            .games()
+            .map(|g| GameListing {
+                id: g.id().to_string(),
+                name: g.name().to_string(),
+            })
+            .collect(),
         bot_levels: Level::ALL
             .iter()
             .map(|&id| BotLevelInfo {
@@ -71,7 +76,16 @@ pub fn catalog() -> Catalog {
         name_max: NAME_MAX,
         report_max: crate::REPORT_MAX,
         report_days: crate::REPORT_DAYS,
-        first_bid_grace_ms: mighty.first_bid_grace_ms,
         idle_minutes: crate::IDLE_MINUTES,
     }
+}
+
+/// The site's catalog with every game's, as `server --dump-catalog` prints
+/// it.
+pub fn everything() -> serde_json::Value {
+    let games: serde_json::Map<String, serde_json::Value> = GameCatalog::standard()
+        .games()
+        .map(|g| (g.id().to_string(), g.catalog()))
+        .collect();
+    serde_json::json!({ "site": catalog(), "games": games })
 }

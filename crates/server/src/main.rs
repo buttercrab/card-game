@@ -31,7 +31,7 @@ async fn main() -> std::io::Result<()> {
         return server::codegen::write(dir);
     }
     if config.dump_catalog {
-        println!("{}", serde_json::to_string_pretty(&server::catalog::catalog())?);
+        println!("{}", serde_json::to_string_pretty(&server::catalog::everything())?);
         return Ok(());
     }
     if config.healthcheck {

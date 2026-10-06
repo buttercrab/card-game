@@ -53,6 +53,12 @@ pub trait GameEntry: Send + Sync {
     /// ([`Table::Catalog`]).
     fn catalog(&self) -> Value;
 
+    /// [`GameEntry::catalog`] as pretty JSON, its fields in their order.
+    fn catalog_json(&self) -> String;
+
+    /// The TypeScript name of the catalog's type, in `protocol.ts`.
+    fn catalog_type(&self) -> String;
+
     /// The rulebook's examples under the rules in `body`.
     fn examples(&self, body: &[u8]) -> Result<Value, ServerError>;
 
@@ -102,6 +108,14 @@ impl<G: ServerGame> GameEntry for Entry<G> {
 
     fn catalog(&self) -> Value {
         serde_json::to_value(G::catalog()).expect("a catalog serializes")
+    }
+
+    fn catalog_json(&self) -> String {
+        serde_json::to_string_pretty(&G::catalog()).expect("a catalog serializes")
+    }
+
+    fn catalog_type(&self) -> String {
+        <G::Catalog as ts_rs::TS>::ident(&ts_rs::Config::new())
     }
 
     fn examples(&self, body: &[u8]) -> Result<Value, ServerError> {

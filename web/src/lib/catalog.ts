@@ -1,10 +1,11 @@
 // What the server knows before any table opens (crates/server/src/catalog.rs),
-// generated into the build: the presets with their rules, and the table's
-// other choices.
-import { CATALOG } from './generated/catalog';
+// generated into the build: the table's choices, and Mighty's own catalog
+// (its presets with their rules).
+import { CATALOG as SITE } from './generated/catalog';
+import { CATALOG as MIGHTY } from './generated/mighty/catalog';
 import type { BotLevel, Preset, PresetInfo, Rules } from './types';
 
-export { CATALOG };
+export const CATALOG = { ...SITE, ...MIGHTY };
 
 /** The presets in the order players pick them. */
 export const PRESETS: PresetInfo[] = CATALOG.presets;
