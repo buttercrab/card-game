@@ -1,57 +1,62 @@
 # Research
 
-Results of the AI track live here, next to the code that produced them.
-[docs/PLAN.md](../docs/PLAN.md) says what to do and in what order; this
-folder records what happened.
+Results live beside the code that produced them. [PLAN](../docs/PLAN.md) owns
+direction and restart authority; this index owns evidence and outcomes.
 
-| Folder | What it holds |
+## Current status (2026-10-06)
+
+Learned-bot training, scaling and unattended research are paused by the owner.
+The environment, evaluation, training/export and loop code exist, but no learned
+model has passed the promotion gate. The table's 고수 still uses built-in search.
+
+| Stage | Recorded result | Disposition |
+| --- | --- | --- |
+| Foundations | Encoding, ML package, parity/provenance conventions | Delivered; current encoding traits are in engine-ml |
+| [Evals v1](experiments/2026-10-04-eval-v1-baseline) | Historical hard rating +6.81 ± 0.29; [benchmark reproduction](experiments/2026-10-04-bench-reproduction) | Baseline predates scoring G/later bots; not today's strength |
+| [Self-play v1](experiments/2026-10-04-selfplay-v1) | 1.19M decisions from mixed bots/varied rules | Dataset recorded as mighty-1; not directly compatible with mighty-4 |
+| [Belief v1](experiments/2026-10-05-belief-v1) | Better hidden-owner log-loss; equal-time preset play +0.02 ± 0.29 | Prediction gate passed; playing-strength gate not established; not promoted |
+| [DMC v1](experiments/2026-10-05-dmc-v1) | ~510k hands; −0.40 ± 0.31 vs 초보, −1.38 ± 0.32 vs 보통 | Shakedown, mighty-1, exit not met |
+| [DMC v2](experiments/2026-10-05-dmc-v2) | ~119k hands, larger network, 경기과고-only | Stopped and assessed; mighty-3 |
+| [RL assessment](experiments/2026-10-06-rl-assessment) | −2.97 ± 0.21 vs assessment 보통; poor contract data and cross-redeal targets | Fix data/targets before more unchanged training |
+| [Bot fixes](experiments/2026-10-05-bot-fixes) | Paired rule/policy ablations and discard follow-up | Historical measurements; reproduce removed settings at their recorded commit |
+| Scaling / [loop](loop) | Runner/queue/policy implemented | No completed scaling report or qualifying unattended batch recorded |
+
+The v2 assessment's thirty manifest artifacts matched sizes/checksums at the
+takeover check. That is provenance verification, not a new experimental rerun.
+Intervals and opponents are defined in the linked reports; do not compare
+numbers across changed rules, fields or encodings as if they were one ladder.
+
+## Layout
+
+| Folder | Holds |
 | --- | --- |
-| [`evals/`](evals) | Eval suite definitions, by version: the scoreboard |
-| [`experiments/`](experiments) | One folder per experiment: config, results, notes |
-| [`manifests/`](manifests) | Manifests of large artifacts kept outside git |
-| [`loop/`](loop) | The experiment runner and the rules for agents that use it |
+| [evals](evals) | Versioned scoreboards and held-out rule definitions |
+| [experiments](experiments) | Config, results and interpretation per experiment |
+| [manifests](manifests) | Checksums/provenance for large external artifacts |
+| [loop](loop) | Runner, researcher protocol, queue and operating policy |
 
-## Conventions
+## Evidence conventions
 
-- **An experiment is a config file, a commit and seeds.** Anyone with the
-  repository reproduces it from those three; nothing else may matter.
-- **Large artifacts stay outside git.** Self-play shards and weights are
-  stored elsewhere; their manifests (path, size, SHA-256, the producing
-  commit, config and seeds) are committed in `manifests/`.
-- **Evals are out of reach of training.** The training side and the loop
-  read eval results but never change suites or see held-out rule sets.
-- **A win counts once it repeats on fresh deals**, and reaches players
-  only after beating what is live and the owner's go-ahead.
-- **Public repository:** no secrets, no player data, no real game logs.
+- Record config, commit, seeds, rule source/encoding, opponents, machine and
+  load. A preset name alone does not freeze its rules across revisions.
+- Keep large weights, shards and raw synthetic results outside git with
+  manifests. No secrets, player data or real player logs in the public tree.
+- Exclusion lists may be read to reject held-out rules; those rules must not
+  enter training examples. Keep scoreboards independent of the researcher.
+- Pair comparisons on the same deals; rotate seats and use fresh-deal
+  confirmation. A quick CI eval is a smoke test, not strength evidence.
+- Do not infer generalization from training loss, or strong bidding from a
+  payoff regression score. Separate phases/roles and use the current opponent.
+- Promote only after beating the intended served baseline/time budget, checking
+  rule regressions and receiving owner approval.
 
-## Log
+## Reproducing historical experiments
 
-Each phase ends with a short entry here.
+Use the commit/config/seeds named by the report or manifest in a separate
+checkout. Old scripts can name deleted switches, former package paths or Cargo
+feature flags that existed then. Keep them as historical recipes; do not alter
+the scoreboard or silently rerun them on current main.
 
-- **P0, foundations (2026-10):** `engine::Encode` (encoding spec
-  `mighty-1`, pinned in `crates/mighty/tests/encoding.json`),
-  `engine::DynGame`, the `ml/` project and these folders. No results yet.
-- **P1, evals v1 (2026-10):** `crates/eval` and suite
-  [v1](evals/v1); the table's 고수 rates +6.81 ± 0.29 on it
-  ([baseline](experiments/2026-10-04-eval-v1-baseline)), and the runner
-  reproduces the 2026-10-04 benchmark's head-to-head tables exactly
-  ([reproduction](experiments/2026-10-04-bench-reproduction)).
-- **P2, environment and data (2026-10):** `crates/env` and its Python
-  bindings `cardgame_env`, with a Rust–Python parity test; the first
-  dataset, [self-play v1](experiments/2026-10-04-selfplay-v1): 1.19
-  million decisions by mixed bots over varied rules, manifest
-  `manifests/selfplay-v1.json`.
-- **P3, belief model (2026-10):** [belief v1](experiments/2026-10-05-belief-v1)
-  says where hidden cards are better than the counts (0.13 nats a card,
-  also on held-out rules) and better than the search's own reading, but
-  dealing by it does not make 고수 measurably stronger at equal think
-  time (presets +0.02 ± 0.29); at a fifth of the time it plays as well.
-  Stopped by the owner for self-play RL; self-play v2 was cut short.
-- **P3b, self-play RL, shakedown (2026-10):** [DMC v1](experiments/2026-10-05-dmc-v1):
-  a Q network learnt from random weights by Deep Monte Carlo on pure
-  self-play reaches −0.40 a seat-hand against 초보 and −1.38 against
-  보통 after 510 000 hands (2.5 h), then plateaus: card play is learnt,
-  bidding is not (it mostly passes). Exit not met; stopped by the
-  owner for a 경기과고-only run with a bigger network and a search
-  hybrid. The pipeline (actors, learner, curve, export, the `dmc:` bot
-  at 1.45 ms a decision) is in place.
+Current tool instructions are in [DEVELOPMENT](../docs/DEVELOPMENT.md).
+The current encoding is mighty-4; loaders refuse older incompatible weights.
+Training/loop command references do not revoke the pause.

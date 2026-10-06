@@ -1,5 +1,11 @@
 # Research agenda
 
+**Paused (2026-10-06).** The runnable/next lists below are the original
+seeded research agenda, not active work. Reconcile them with the
+[RL assessment](../experiments/2026-10-06-rl-assessment) and
+[restart conditions](../../docs/PLAN.md#conditions-for-restarting-ai)
+before any new batch; old queue entries reference incompatible models.
+
 What the loop tries, in order of expected value per hour of compute. The
 researcher reads this before every batch, queues from **Now**, moves items
 as results come in and says why; people edit it too. Items marked
@@ -20,9 +26,14 @@ Newest first: one short dated entry each, with the runs behind it (links
 to their `summary.md`). A finding counts once its runs are confirmed on
 fresh deals, or it is a clear loss.
 
-Nothing yet: the first batch waits for DMC v1 (P3b).
+- 2026-10-06: DMC v2 was stopped near 119k hands. Its assessment found poor
+  declarer-side contract data and discarded-deal target noise; more unchanged
+  self-play is not the next experiment. See the linked assessment.
+- Belief v1 improved prediction but did not establish stronger equal-time
+  play; DMC v1 missed the target of beating 보통. These are manual experiment
+  findings, not outcomes from a completed autonomous-loop batch.
 
-## Now (runnable)
+## Seeded candidates (paused; revalidation required)
 
 The seeded queue covers the first round of each; extend from results.
 

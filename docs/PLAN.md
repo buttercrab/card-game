@@ -1,469 +1,151 @@
-# Plan
+# Project direction
 
-A platform for card games with house rules, and the AI that plays them.
-Mighty is the first game; the service and the AI are built so that a second
-game (poker) plugs in without changing either.
+Updated 2026-10-06 against `4c4b8aa`. This document owns goals, priorities,
+decisions and completion criteria. Implementation details belong in
+[ARCHITECTURE.md](ARCHITECTURE.md), instructions in
+[DEVELOPMENT.md](DEVELOPMENT.md), and experiment evidence in [research](../research).
 
-This file is the source of truth for direction and order of work. It changes
-by commit, like the code. Results live next to it in `research/`.
+## Goal
 
-## Where we are (2026-10-04)
+Build a platform where friends play card games with their own rules, starting
+with Mighty (마이티), and build bots that play those rules well. Mighty is the
+driving use case. Texas hold'em is the second game that will test the shared
+platform.
 
-- **Service:** cards.buttercrab.io plays Mighty with nine presets plus 기본 (the
-  base rules), custom rules with an editor, bots, share links, stats and error
-  reports on `/stats`, Cloudflare Web Analytics. The server and web client
-  still know Mighty by name.
-- **Engine:** `engine::Game` and `engine::Bot` are generic; Mighty implements
-  them. The simulator checks invariants over every preset and random rule
-  combinations (`sim --vary`, 3–7 players).
-- **Bot:** 고수 is a determinised search (PIMC). Measured headroom is in early
-  card play under hidden information (up to +1.46 points per seat-hand with
-  every hand known); bidding, exchange and endgame show none. The search is
-  2.5× cheaper with identical decisions; more samples did not add strength.
+1. **Product:** a responsive Korean table with understandable rules, stable
+   seats, reliable reconnects and useful bots. Friend groups first; site and
+   repository are public.
+2. **Platform:** share rooms, links, seating, sessions, persistence, reports
+   and infrastructure. Each game supplies rules, presets, bots and table UI.
+3. **AI:** one model per game, eventually covering that game's presets,
+   custom rules and player counts. Games share training infrastructure;
+   shared weights across games are not a requirement.
+4. **Research:** reproducible evaluations and scaling studies that show where
+   the next hour of compute should go. Building an experiment loop is not
+   proof that this goal has been reached.
 
-## Goals
+## Current state
 
-1. **Service:** one platform, many games. A game is a plugin: rules engine,
-   presets, a rule schema, a table screen. Rooms, links, bots, stats, reports,
-   the rulebook and the rule editor are shared.
-2. **AI:** one model per game that plays any rules of that game (one Mighty
-   model for 기본, the presets, custom sets and 3–7 players; its own model for
-   poker). The engine says what is legal and what each card means right now,
-   so the model needs no rules built in. Games share the code (environment,
-   evals, training library, architecture), not the weights.
-3. **Research setup** that keeps improving bots on its own: fixed evals, an
-   RL environment, scaling studies, and an experiment loop, all reproducible
-   from this repository.
+| Track | State | Evidence and remaining boundary |
+| --- | --- | --- |
+| Mighty product | Implemented and deployed at takeover | Server and connected worker reported `4c4b8aa`; its CI passed. A dated receipt, not a permanent health claim. |
+| Codebase cleanup | Phases 0–7 merged | [REFACTOR.md](REFACTOR.md) records delivered changes and residual items. |
+| Game boundary | Substantially implemented | Typed game/table traits, catalog and frontend registry; only Mighty is registered and some site pages remain specific to it. |
+| Evals and environment | Implemented | Suite v1, Rust/Python parity, self-play manifests and historical baseline reports; refresh the current-rules baseline. |
+| Belief model | Experiment concluded; not promoted | Prediction improved; equal-time playing-strength gate was not met. |
+| Self-play RL | Paused by the owner | DMC v1/v2 missed the target; v2 assessment identifies data and target problems. |
+| Scaling study | Not completed | No controlled report selects model size or compute allocation. |
+| Autonomous loop | Built; operation unproven and paused | No qualifying overnight batch or daily-report series is recorded. |
+| Texas hold'em | Not implemented | No poker engine, table, bots, encoding or suite. |
+
+**REFACTOR phases 0–7** are the delivered cleanup. **Roadmap P0–P7** below
+are the product/AI program. Finishing cleanup did not finish poker or AI.
 
 ## Principles
 
-- **Rules are input, not code.** Models get rule-derived features from the
-  engine (per card: point value, special role, power in this trick, may it
-  lead) plus a global rules vector, and score only legal actions.
-- **Generic boundaries.** Everything above a game (server, evals, env,
-  training) depends on `engine` traits, never on `mighty`.
-- **Evals are the scoreboard and are out of reach.** Versioned suites; the
-  training side and the experiment loop read results but cannot change suites
-  or see held-out rule sets. A win counts once it repeats on fresh deals.
-- **Reproducible from a commit.** Every experiment is a config file plus a
-  commit hash plus seeds. Large artifacts (self-play data, weights) live
-  outside git; their manifests (path, size, SHA-256, producing config) are
-  committed.
-- **Nothing reaches players without beating what is live**, head to head, and
-  the owner's go-ahead.
-- **Public repository.** No secrets, no player data, no real game logs in git.
+- **Rules are data.** The engine owns validation, legality, scoring and card
+  meanings. Models receive rule-derived features and choose legal actions.
+- **Hidden information stays hidden.** Clients and bots receive a seat's
+  view. Full-state belief targets are training labels, never model inputs.
+- **Boundaries follow responsibilities.** Shared drivers depend on game
+  traits; registration and game-specific UI are explicit. Prove generality
+  with a second game.
+- **Results belong to a revision.** Record commit, config, seeds, rules,
+  encoding, opponents and machine/load. Historical numbers do not describe
+  current performance after rules or bots change.
+- **Keep the scoreboard independent.** Freeze evaluation definitions,
+  exclude held-out rule sets from training, confirm wins on fresh deals.
+- **Promotion is separate.** Beat the served baseline at the intended
+  thinking budget, avoid material rule regressions, and obtain the owner's
+  approval before a learned bot reaches players.
+- **Use PRs.** Main auto-deploys; merging is a release action. No secrets,
+  player data or real game logs in the public repository.
 
-## Target layout
+## Roadmap and acceptance criteria
 
-```
-crates/
-  engine/         Game (legality by seat), Bot, GameInfo, the table traits (Table, HandReport, TableBots), Level
-  engine-ml/      Encode (model features), Belief, ActionValues
-  mighty/         the Mighty game: rules, presets, its tables and its Encode
-  mighty-ai/      Mighty's bots, its TableBots
-  harness/        play driver, statistics, provenance, generic over Game
-  sim/            bots by name and the Research hooks; the simulator
-  lab/            experiments on Mighty's bots
-  eval/           eval suites and runner (new)
-  env/            batched RL environment over Game (new)
-  env-py/         Python bindings for env (PyO3, maturin) (new)
-  infer/          model inference from Rust (ONNX via tract), used by bots (new)
-  server/         rooms, sessions, bots, stats; games registered by id (GameCatalog)
-ml/               Python training (uv project)
-  pyproject.toml
-  src/cardgame_ml/
-    data/         shard reading, batching
-    models/       belief, policy/value networks
-    train/        training loops, configs
-    export/       ONNX export, parity checks against Rust
-    scaling/      sweeps and curve fitting
-  tests/
-research/
-  evals/          suite definitions by version (v1, v2, …)
-  experiments/    one folder each: config, results (JSON), notes
-  manifests/      artifact manifests
-  loop/           the experiment runner and its agent protocol
-web/              the client: room/ without a game, games/<id>/ per game, games/registry.ts
-docs/             PLAN.md (this), DESIGN.md, RULES links, how-tos
-```
+| Phase | Outcome | Status / exit requirement |
+| --- | --- | --- |
+| P0 — foundations | Encoding, ML project, provenance and CI | Delivered. Encoding now lives in `engine-ml`; the early dynamic API was replaced by the table/catalog boundary. |
+| P1 — evaluations | Paired deals, rotated seats, presets, held-out rules, timing and puzzles | Historical reproduction delivered; freeze current rules and refresh the served-bot baseline before promotion claims. |
+| P2 — environment/data | Deterministic batches, Python bindings, parity and reproducible shards | Delivered, including 1.19M decisions in self-play v1. Historical data uses older encodings. |
+| P3 — belief | Predict hidden-card owners and guide search | Prediction gate A passed; equal-time strength gate B did not. Not promoted. |
+| P3b — self-play RL | Learn all phases from self-play | Paused. Exit: beat 보통 on the agreed suite with a learning curve; report whether it beats 고수 alone or in search. |
+| P4 — scaling | Compare strength against games, size and compute | Paused. Exit: a controlled report selecting served sizes and the next compute investment. |
+| P5 — experiment loop | Queue, run, evaluate, confirm and report | Built, paused. Exit: at least ten unattended overnight experiments with readable results. |
+| P6 — shared service | Preserve Mighty behind shared room/game interfaces | Mostly delivered by cleanup Phase 7. Resolve residual site coupling and validate the same player flows. |
+| P7 — Texas hold'em | Limit/no-limit rules, table, bots, encoding and suite | Unstarted. Exit: friends/bots can play, and env/evals integrate without rewriting shared drivers. |
 
-## Code standards
+### Results already obtained
 
-- **Rust:** as today: `cargo fmt`, `clippy -D warnings`, tests beside the
-  code, comments that say why. New crates get a crate-level doc comment and
-  examples in tests.
-- **Python:** `uv` for environments and the lockfile; `ruff` (lint and
-  format); `pyright` in strict mode; `pytest`; typed configs (dataclasses);
-  no notebooks in the tree; seeds explicit everywhere. Training code is a
-  library plus thin CLIs, not scripts.
-- **CI:** Rust jobs as today, plus `ml/` lint, types and tests, plus a parity
-  test that the Rust and Python sides encode the same position identically.
-- **Every new boundary gets a test before use:** encoder parity, env
-  determinism, export parity, eval reproducibility.
+- [Baseline](../research/experiments/2026-10-04-eval-v1-baseline): historical
+  고수 rating +6.81 ± 0.29 on v1's four-rung mean, including random opponents.
+  Predates scoring G and later bot changes.
+- [Belief v1](../research/experiments/2026-10-05-belief-v1): validation loss
+  1.461 versus 1.595 nats per hidden card; held-out 1.517 versus 1.645.
+  Equal-time preset play +0.02 ± 0.29 points per seat-hand. Home-server cost
+  was not rechecked; playing-strength target not established.
+- [DMC v1](../research/experiments/2026-10-05-dmc-v1): about 510k hands;
+  −0.40 ± 0.31 against 초보 and −1.38 ± 0.32 against 보통 on recorded rules.
+  Stopped before the full-suite exit check.
+- [DMC v2 assessment](../research/experiments/2026-10-06-rl-assessment):
+  stopped near 119k hands; −2.97 ± 0.21 against the assessment's 보통.
+  Almost all contracts came from exploration, mostly poor ones. Exchange
+  and declarer play stayed weak; discarded deals inherited later rewards.
+  All thirty assessment artifacts matched their manifest at takeover.
 
-## Phases
+### Conditions for restarting AI
 
-Each phase ends with its exit check met and a short entry in `research/`.
-P1–P5 are the AI track; P6–P7 the service track. The tracks share only the
-`engine` traits, added in P0, so they can run side by side.
+Training, scaling and unattended research remain paused. Before a restart:
 
-### P0 — Foundations
+1. Correct discarded-deal targets and reset exploring-start bookkeeping at
+   redeals; verify targets by seat and deal.
+2. Make declarer training useful. The assessment recommends plausible
+   contracts chosen by lookahead using the network's own play. Using a
+   hand-written teacher remains an owner decision.
+3. Establish frozen rules, the served-bot spec/time budget, primary metric
+   and fresh-deal confirmation.
+4. Use a new compatible run: current encoding is `mighty-4`; v1 weights use
+   `mighty-1`, v2 uses `mighty-3`. Loaders refuse mismatches by design.
+5. Agree compute/spending limits before loop installation. The $5/call and
+   $20/day policy values are defaults, not a new approval.
 
-- Add `engine::Encode` (positions to features, actions to indices, hidden
-  card owners as belief targets) and `engine::DynGame` (serde JSON in and
-  out, object-safe) with Mighty implementations.
-- Create `ml/` (uv, ruff, pyright, pytest), `research/` (folders above), CI
-  jobs for both.
-- Move `docs/` to the structure above; link RULES and DESIGN from it.
+More capacity or more unchanged self-play is not the recommended next step.
 
-Exit: CI green with the new jobs; `Encode` and `DynGame` tested on Mighty.
+## Next milestone: not selected
 
-Done (2026-10-04), pending CI on the branch:
-- `engine::Encode`: a spec (shapes and feature names) plus observations as
-  flat arrays: a global vector (the rules whole, then public state), one
-  row per card of the largest deck (meaning under the current contract
-  and trick, and where the viewer knows it to be), up to 160 events, and
-  a legal mask over a fixed action space. Seats are relative to the
-  viewer, with presence masks for seats and cards. Belief targets come
-  from the full state, separately. Mighty's spec, `mighty-1` (now
-  `mighty-3`: `mighty-2` added the failed-contract scoring, `mighty-3`
-  dropped the misdeal round), is one for
-  every rule set the engine accepts (up to 8 seats, contracts up to 30)
-  and is pinned in `crates/mighty/tests/encoding.json`, which `ml/` reads.
-  About 40 µs an encoding in release.
-- `engine::DynGame`/`DynState` over serde JSON, with `JsonGame` for games
-  to opt in and a `Registry`; the server does not use it yet (P6).
-- `ml/` (uv; ruff, strict pyright, pytest; PyTorch as the `torch` extra),
-  `research/` with its conventions and a manifest schema
-  (`cardgame_ml.manifest`), the `ml` CI job, `docs/README.md`, and
-  DESIGN.md moved here.
-- Deviations: `sim --vary`'s rule sampler moved into `mighty` as
-  `Rules::varied` (same draws). The Rust–Python parity test proper waits
-  for `env-py` (P2); until then the two sides share the pinned spec.
+[FIXES.md](FIXES.md) lists cleanup and acceptance gaps. Close or explicitly
+defer them before choosing between Texas hold'em (prove the platform) and
+a corrected learned-bot experiment (prove the AI direction).
 
-### P1 — Evals v1
+Later ideas remain optional: learned search priors/values, belief-state
+search, search-free difficulty levels, cross-game transfer, and AI-assisted
+translation of house rules into simulator-validated rule data.
 
-- `crates/eval` with one CLI: `eval run --suite v1 --bot <spec>` writes JSON
-  and a Markdown report.
-- Suites: ladder (random, 초보, 보통, 고수) as points per seat-hand with 95%
-  intervals and a rating; presets; held-out rule sets (fixed list, hashed);
-  cost (median and p99 think time, measured on the home server); regression
-  puzzles (known misplays, kept as positions).
-- Paired deals, rotated seats, fixed seeds; built from today's `lab`/`sim`.
+## Adding a game
 
-Exit: the 2026-10-04 benchmark numbers reproduce from one command; two runs
-of the same suite agree within their intervals.
-
-Done (2026-10-04), pending CI on the branch:
-- `crates/eval`: `eval run --suite <name> --bot <spec> [--baseline <spec>]`
-  writes `results.json` (schema `eval-results/1`) and `report.md`;
-  `--quick` is a smoke test (in CI), `--parts` runs some parts.
-  Generic over an `EvalGame` trait (bot specs, deal options, rule sets);
-  Mighty's bots are `sim`'s specs, which gained the table's levels
-  `easy`, `normal` and `hard` (a test checks 초보 and 보통 against the
-  server's; `hard` deals a fixed 200 times instead of a time budget).
-  Tables are `sim --bots search` exactly; the worker loop, timing and
-  statistics moved into `sim`'s library.
-- Suite v1 (`research/evals/v1`): ladder under 경기과고 (2000 deals a
-  rung) with a rating, the mean over rungs; every preset (500 each) and 40
-  held-out rule sets (25 each) against 고수; think time; 10 puzzles, 6
-  scored with answers proven by solving the rest of the hand in every
-  redeal of the hidden cards, 4 informational. The held-out sets are a
-  JSON array of `Rules` that training must exclude.
-- Baseline (`research/experiments/2026-10-04-eval-v1-baseline`): the
-  table's 고수 rates +6.81 ± 0.29 (random +18.84, 초보 +3.95, 보통 +4.71,
-  itself −0.26), draws itself in every preset and on held-out rules,
-  thinks median 131 ms, p99 346 ms per decision on the home server, and
-  passes 6 of 6 puzzles; it still calls its own side's joker early.
-- Exit met (`research/experiments/2026-10-04-bench-reproduction`): every
-  head-to-head table of the benchmark reproduces exactly from one
-  command, and two runs agree exactly (deterministic bots; tested).
-  Deviations: the benchmark's `default` was web-mighty's base rules, so
-  the suite gives them in full; its pooled default (−0.20) was a slip for
-  −0.13; the card-play breakdown (`cheat`, `x10`) stays in the lab.
-
-### P2 — RL environment and data
-
-- `crates/env`: batched, deterministic, any `Game` with `Encode`; rules as an
-  environment parameter (fixed, sampled from `--vary`, or held out).
-- `crates/env-py`: Python package with step/reset over many games at once,
-  legal-action masks, observations as arrays.
-- Self-play data generator writing shards plus manifests: mixed bot styles
-  (고수 at reduced samples, 보통, random), with belief targets.
-
-Exit: Python runs thousands of games per second with random play; Python and
-Rust encodings match on recorded positions; a shard set of ≥1M decisions with
-a committed manifest.
-
-Done (2026-10-04), pending CI on the branch:
-- `crates/env`: `Env` steps a batch of hands for a caller playing any
-  seats, bots (by level or `sim` spec) in the rest; one contiguous buffer
-  per field per step; auto-reset, with every seat's payoff (times a
-  scale) as the reward on the step that ends a hand. Each slot draws its
-  hands' seeds from its own stream, so trajectories depend on neither
-  batch size nor threads. Rules: a preset, a pool, or `varied` draws,
-  never one of an excluded list (the evals' held-out sets), compared by
-  equality. Per-game choices sit behind a small `EnvGame` trait.
-- `crates/env-py` (`cardgame_env`, PyO3 and maturin, abi3) is a path
-  dependency of `ml/`, so `uv sync` builds it; numpy arrays take over the
-  Rust buffers. The parity test replays a run the Rust side records
-  (`crates/env/tests/parity.json`), every field of every step.
-- The encoder is 3.5× faster (about 11 µs), bit for bit the same: a pinned
-  fingerprint of every seat's encoding over random games proves it.
-  Encoding is still most of a step.
-- Throughput with random play in every seat: the Rust example reached
-  5 700 hands (464 000 decisions) a second on the Mac's 14 cores; from
-  Python, 312 hands a second a thread, and 1 280 on all cores while eval
-  runs held about 13 of them.
-- `selfplay` writes deflated `.npz` shards (numpy alone reads them; events
-  stored ragged) with `meta.json`, the rule sets played and a manifest,
-  byte-for-byte reproducible; `cardgame_ml.data.shards` reads them in
-  batches. [Self-play v1](../research/experiments/2026-10-04-selfplay-v1):
-  1.19M decisions, 633 MB in six shards, 20 000 varied rule sets.
-- Deviation: the held-out list came from the P1 branch before it was
-  committed; the dataset records its SHA-256.
-
-### P3 — Baseline belief model
-
-- `ml/`: a small transformer over the event sequence with per-card features;
-  predicts each hidden card's owner. Trained on the Mac (MPS).
-- Export to ONNX; `crates/infer` runs it from Rust; parity test.
-- Belief-guided sampling in 고수's search behind a setting.
-
-Exit (gates): A — log-loss better than uniform, including held-out rules;
-B — beats live 고수 at equal think time on 경기과고 and 기본 (aim +0.3 per
-seat-hand) with no loss on held-out rules; C — p99 think time within budget.
-Passing B and C, with the owner's go-ahead, ships it.
-
-Result (2026-10-05), stopped by the owner to move to self-play RL
-([belief v1](../research/experiments/2026-10-05-belief-v1)):
-- `cardgame_ml.models.belief` (0.6M parameters, logits relative to the
-  public counts), its training library and CLIs, ONNX export with a
-  parity fixture checked from both sides, `crates/infer` (tract, 1.4 ms
-  a call) and `SearchBot::sampler` (off by default; decisions with it
-  off pinned and checked identical), bot spec `belief:<model>:<samples>`.
-- Gate A passed: 1.461 against 1.595 nats per hidden card on validation
-  games, 1.517 against 1.645 on the held-out rules; better than the
-  search's own reading (1.33 against 1.40 on 경기과고).
-- Gate B not passed: at equal think time (1200 samples) presets +0.02 ±
-  0.29 a seat-hand against `hard`, 경기과고 −0.40 ± 0.95, 기본 +0.14 ±
-  0.81, held-out +0.87 ± 0.93; at 200 samples presets +0.15 ± 0.30.
-- Gate C: at 200 samples median 19 ms and p99 139 ms against `hard`'s
-  104 and 212 ms (Mac; not re-checked on the home server). Not shipped.
-- Not run: belief v2 on more data (self-play v2 cut short), larger
-  head-to-heads.
-
-### P3b — Self-play RL (owner, 2026-10-05: RL right after P3)
-
-The closest published match to Mighty is DouZero (DouDizhu, 2021): pure
-self-play, no human data, modest compute. Its method, Deep Monte Carlo, fits
-our environment directly.
-
-- **Agent:** a network scores every legal action, `Q(observation, action)`:
-  the observation is the Mighty encoding (`mighty-1` when planned,
-  `mighty-3` since the faster 딜미스 of 2026-10-05; shared with the belief model's token
-  layout), each action an embedding of its index plus features of the
-  card or contract it names. Play picks the best legal action, with
-  ε-greedy exploration while learning.
-- **Learning:** many actors play self-play hands in the batched environment
-  with the current network; when a hand ends, every decision in it is
-  labelled with that seat's final payoff (Monte Carlo return), and the
-  network regresses `Q` onto it. No search, no value bootstrapping; an
-  actor/learner split so the Mac's CPU plays while its GPU learns.
-- **Rules:** training samples rule sets (presets, `Rules::varied`, 3–7
-  players), excluding the held-out sets; one model plays all of them.
-- **Phases of the hand:** one network for bidding, exchange, friend call and
-  play (the encoding already marks the phase); if one phase lags, a head per
-  phase.
-- **Measured** with suite v1 against random, 초보, 보통 and 고수, presets and
-  held-out rules, plus checkpoints played against each other over time.
-- **Uses:** a fast search-free bot (natural 초보/보통 levels by temperature),
-  and as the policy inside 고수's playouts or to order its candidates.
-
-Exit: a self-play agent that beats 보통 on suite v1, with its learning curve
-(rating against fixed opponents by games played) in `research/`; whether it
-beats 고수, alone or inside the search, is the report's headline.
-
-Result (2026-10-05), a shakedown run stopped by the owner
-([DMC v1](../research/experiments/2026-10-05-dmc-v1)); exit not met:
-- Built: `cardgame_ml.models.q` (0.76M parameters; the belief model's
-  trunk, now `models.trunk`; actions from the spec's names, attending
-  over the card tokens), `cardgame_ml.train.dmc` (actor processes on the
-  CPU, a learner on MPS, a fixed learning-curve probe, resume), Q export
-  with parity, `infer::QNet`/`QBot` (1.45 ms a decision) and the bot
-  spec `dmc:<model>[:temperature]`. From random weights, pure
-  self-play, varied rules, held-out sets excluded.
-- 510 000 hands in 2.5 h: against four 초보 −0.40 ± 0.31 and four 보통
-  −1.38 ± 0.32 a seat-hand on 경기과고, flat since ~250 000 hands. Card
-  play is learnt (84% of late-trick payoff variance explained); the
-  bidding lags (11%): its own declarations lose, so it mostly passes
-  and defends. Uniform exploration alone made it pass every hand;
-  softmax and runner-up exploration and action attention were needed
-  for it to bid at all. Suite v1 not run.
-- Next (owner): 경기과고 only at 5 players with the current rules and
-  scoring, a bigger network, and a hybrid with 고수's search.
-
-### P4 — Scaling study
-
-- How the RL agent's strength grows with self-play games, model size and
-  compute (rating against fixed opponents), plus the belief model's log-loss
-  against model size and data (~0.1M–10M parameters, 1M–100M decisions),
-  with spot checks that log-loss tracks points per hand.
-
-Exit: a report in `research/` choosing the served model sizes under the
-think-time budget and the cheaper next step (games, size or compute).
-
-### P5 — Experiment loop (owner, 2026-10-05: now, autonomous, 24/7)
-
-Moved up: once the P3b DMC baseline exists, every method, hybrid, ablation,
-hyperparameter sweep and scaling study runs as an experiment in this loop.
-Compute: this Mac around the clock (one GPU job at a time) and the home
-server's CPU at low priority; the research agent queues experiments within
-the agenda on its own and writes a daily report. Agenda:
-`research/loop/agenda.md`.
-
-#### Original scope
-
-
-- `research/loop`: an experiment spec (hypothesis, config, budget, suite), a
-  queue run on the Mac and the home server (low priority beside the live bot
-  worker), automatic eval, results and notes written to
-  `research/experiments/`.
-- Agent protocol: how an agent proposes, what it may change (configs, `ml/`
-  code on a branch), what it may not (suites, held-out sets, production).
-- Promotion: a win repeats on fresh deals, then goes to the owner.
-
-Exit: an unattended overnight run of ≥10 experiments with readable results.
-
-Built (2026-10-05), not yet installed
-([research/loop](../research/loop/README.md)):
-- `cardgame_ml.loop`: typed TOML specs validated against
-  `research/loop/policy.toml` (hosts, budgets, the scoring protocol, what
-  the researcher may queue); method runners `dmc`, `belief`,
-  `eval-only`, `search-tuning`; a runner with one GPU job at a time,
-  thread caps per host, wall budgets, restart-safe steps and a lock;
-  CPU evals dispatched to the home server from `git archive` of the run's
-  commit at `nice` 15; records in `research/experiments/`, a leaderboard
-  with plots, daily reports in `research/reports/`.
-- Scoring is fixed: DMC v1's learning curve, suite v1 through `eval`
-  against 고수 deal by deal, think time on the home server; a win over
-  the parent is confirmed automatically on a fresh-deal twin of suite v1
-  (`research/loop/suites/v1-fresh-1`) before it counts.
-- The researcher is Claude Code headless, called when the queue runs
-  low (rate-limited), restricted to `research/loop/` and runs' notes;
-  the runner validates everything it writes and switches it off on a
-  violation. New methods are requests for people
-  (`research/loop/requests.md`).
-- Seeded queue: DMC v1 scored on the protocol, nine DMC variants
-  (exploration, learning rate, size, batch, replay, rules, reward
-  scale), three search settings and 고수's think time (1.3 s against
-  2.4 s, the owner's) on the home server; they wait for P3b's export.
-  Installing (`research/loop/ops/install.sh`) waits for review and for
-  P3b's branch to be merged.
-
-### P6 — Game-agnostic service
-
-Mostly done by the codebase plan's Phase 7 (2026-10-06,
-[REFACTOR.md](REFACTOR.md)): the server runs rooms over the table traits
-with games registered by id, the web room knows no game, and
-[Adding a game](#adding-a-game) lists what a new one needs. Still
-Mighty's: the share-link and rulebook page titles and the sitemap
-(`server/src/site.rs`), preset names on `/stats`, and the rule editor and
-rulebook, which are Mighty's own pages rather than driven by a schema.
-
-- Server rooms, sessions, bots, stats over `DynGame`; Mighty registered as a
-  plugin; presets and rule schema served by the game; the web rule editor and
-  rulebook driven by that schema; the table chosen per game.
-
-Exit: the site behaves exactly as before (seat-stability and live-play
-checks pass); no `mighty::` outside the Mighty plugin and its web module.
-
-### P7 — Second game: poker
-
-- Texas hold'em only (owner, 2026-10-05): engine, presets (limit and
-  no-limit), a simple table, bots, `Encode`, eval suite.
-
-Exit: poker playable with friends and bots; the env, evals and a baseline
-model work for it unchanged.
-
-### Adding a game
-
-What a second game (P7, Texas hold'em) needs, after Phase 7 of the
-codebase plan. Most of it is a new crate; the rest are registry lines.
-
-1. **Rules crate** (`crates/<game>`), depending on `engine` (and
-   `engine-ml` for the encoding):
-   - `engine::Game`: legality by seat (`legal_actions(state, seat)`,
-     `apply(state, seat, action)`), `turn` saying whom the hand waits on,
-     chance drawn by `sample_chance` and applied by `apply_chance`, views
-     that hide what a seat may not see, `reshuffle_hidden`, invariants.
-   - `engine::GameInfo`: `ID`, `NAME`, the `Rules` and `RulesError` types
-     (serde; the error also `ts-rs`), presets, `validate`, `seats`,
-     `describe`.
-   - `engine::Table` and `engine::HandReport`: the table's `Settings`
-     (preset, pinned, and the table's own rules), `new_table`, `freeze`,
-     `hand_options` (the opening seat turning hand by hand), `grace`,
-     `long_decision`, the client `Catalog` (`ts-rs`), rulebook `Examples`;
-     the hand `Summary`, `reseat`, `outcome` and the seat's `Notes`.
-   - `engine_ml::Encode`, with its spec pinned by a test, if models play it.
-2. **Bots crate** (`crates/<game>-ai`): `Bot`s, and `engine::TableBots<G>`
-   on a type of its own (bots by `engine::Level`, moves off turn, the
-   decision kind that paces them).
-3. **Research hooks**: `sim::Research` (bots by name, options per deal,
-   varied and named rule sets, log versions), in the bots crate if it can
-   depend on `sim`, else in `sim` beside the game's bot specs. Then `env`,
-   `env-py` (add the id to its match), `eval` (a suite under
-   `research/evals`) and `harness` work unchanged.
-4. **Server** (registry lines): `GameCatalog::standard` adds
-   `.with::<Game>(GameBots)`; `codegen` visits the game's types (settings,
-   rules, view, action, notes, summary, catalog) so `protocol.ts` declares
-   them. The messages' TypeScript is written concrete for the first game
-   (`#[ts(concrete)]` in `protocol.rs`), and the client's `room/types.ts`
-   puts another game's types in their place. Its routes are then
-   `/api/games/<id>/...`, its catalog `web/src/lib/generated/<id>/catalog.ts`,
-   and saved tables restore by their `game`.
-5. **Web**: `web/src/lib/games/<id>/` with a `game.ts` entry (its
-   `Table`, rules sheet, rules' name, refusals, preset titles, rulebook
-   page, tool pages) registered in `games/registry.ts`, and its types as a
-   `GameTypes` (`room/types.ts`) for `RoomClient<G>`. `room/` needs nothing.
-
-### Later
-
-- Search guided by the RL agent's policy and value (AlphaZero-style
-  improvement on top of P3b), and ReBeL-style search over belief states.
-- Search-free bots for 초보 and 보통, levels set by temperature.
-- Optional research question, nothing depends on it: whether one model
-  trained on several games transfers to a new one.
-- House rules written by AI: a group describes its rules, an agent turns
-  them into a validated rule set using the simulator.
+See [ARCHITECTURE.md](ARCHITECTURE.md#adding-a-game). Games are compiled and
+registered with the application; there is no runtime-download or user-script
+plugin system.
 
 ## Compute
 
-- **Mac** (Apple M4 Pro, 14 CPU cores, 20-core GPU, 24 GB): training (PyTorch
-  on MPS), self-play overnight.
-- **Home server** (12 cores, 31 GB): self-play and evals at low priority; it
-  also runs the live bot worker, which must stay responsive.
-- **Seoul instance:** the site only; never used for research.
+| Host | Intended role | Constraint |
+| --- | --- | --- |
+| Mac: M4 Pro, 14 CPU cores, 20-core GPU, 24 GB | MPS training/local research | One GPU job at a time; research paused. |
+| Home: 12 cores, 31 GB | Live worker, builds, low-priority CPU eval | Preserve worker responsiveness; loop policy caps research threads/load. |
+| Seoul instance | Interactive site | Never use for research. |
 
-## Risks
+## Decisions carried forward
 
-- **Bots unlike people:** mix bot styles in data. Real game logs only with a
-  notice on the privacy page and the owner's agreement.
-- **Rare rule options:** oversample them; held-out suites show the gap.
-- **No gain over 고수:** stop at the failed gate; evals and env stay useful.
-- **Over-generalising from one game:** keep P6/P7 honest by building poker,
-  not by guessing what a second game needs.
-
-## Decisions
-
-- 2026-10-05: P7 is Texas hold'em only.
-- 2026-10-05: ratings stay internal to the evals; players see none on the
-  site for now.
-- 2026-10-06: learned-bot training is paused (P3b, P4, P5). dmc-v2 was
-  stopped at about 119k hands and assessed
-  ([research/experiments/2026-10-06-rl-assessment](../research/experiments/2026-10-06-rl-assessment/README.md)).
-  Work moves to the codebase plan ([REFACTOR.md](REFACTOR.md)). When
-  training resumes, start from the assessment's recommendations: fix the
-  redeal labels, and start a share of hands from contracts chosen by
-  lookahead with the network's own play. Using 고수's search for those
-  contracts is still the owner's call.
+- Mighty first; friends first; public repository.
+- Korean UI, original four-color card art, raise-then-play default, calm
+  motion, sound and optional jazz. [Design contract](DESIGN.md).
+- Home starts with 기본 or the last selected preset; 고수 is the default bot.
+- Poker means Texas hold'em only. Ratings remain internal.
+- Scoring G applies to school presets; 기본 retains its specified scoring.
+  [Rule authority](../crates/mighty/RULES.md).
+- Research code/results stay here; large artifacts stay outside git with
+  manifests. Real player logs require an explicit privacy/product decision.
+- Training stopped for assessment, then paused while cleanup continued.
+  Takeover does not revoke that pause or approve a teacher, unattended
+  research, new spending or deployment.

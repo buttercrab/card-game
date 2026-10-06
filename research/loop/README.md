@@ -1,5 +1,16 @@
 # Experiment loop
 
+**Operating status (2026-10-06): built, not established as an operating loop;
+research is paused.** The standard Mac LaunchAgent was absent at takeover,
+and no qualifying overnight batch or daily-report series was recorded.
+Commands below describe the implementation, not authorization to install/run it.
+[PLAN](../../docs/PLAN.md) owns restart conditions; revalidate old queue
+configs/models against the current encoding before resuming.
+
+The headless researcher is still configured as Claude Code in policy.toml.
+Codex taking ownership of this project does not silently replace that backend
+or install it. The $5/call and $20/day values remain policy defaults.
+
 The runner that keeps improving bots unattended (P5): experiments are
 specs in a queue, run on the Mac (one GPU job at a time) and the home
 server (CPU, low priority beside the live bot worker), scored by the same
@@ -23,7 +34,7 @@ agent (Claude Code, headless) proposes the next batch within the
 | `leaderboard.md`, `.json`, `plots/` | Every run on one table; curves and scaling data | the runner (`report`) |
 | `researcher-log.jsonl` | Every researcher call: outcome, specs taken and refused, cost | the runner |
 | [`ops/`](ops) | The launchd agent and its install scripts | people |
-| [`../reports/`](../reports) | Daily reports, `YYYY-MM-DD.md` | the runner |
+| `../reports/` (generated when reports run) | Daily reports, `YYYY-MM-DD.md` | the runner |
 
 ## A spec
 

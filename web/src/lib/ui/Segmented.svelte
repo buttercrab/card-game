@@ -29,11 +29,14 @@
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
     if (!step) return;
     e.preventDefault();
-    const at = options.findIndex((o) => same(o.value, value));
-    const next = options[(at + step + options.length) % options.length];
-    onchange(next.value);
-    // Focus follows the choice, once it is drawn.
-    queueMicrotask(() => group.querySelector<HTMLElement>('[aria-checked="true"]')?.focus());
+    const buttons = [...group.querySelectorAll<HTMLButtonElement>('button[role="radio"]')];
+    const focused = buttons.indexOf(e.target as HTMLButtonElement);
+    const at = focused < 0 ? options.findIndex((o) => same(o.value, value)) : focused;
+    const next = (at + step + options.length) % options.length;
+    // A room setting is confirmed asynchronously by the server. Move from
+    // focus, not the last confirmed value, so rapid arrows keep advancing.
+    buttons[next]?.focus();
+    onchange(options[next].value);
   }
 </script>
 
@@ -62,7 +65,7 @@
     border-radius: var(--r-control);
   }
   button {
-    min-height: 40px;
+    min-height: 44px;
     padding: 4px 6px;
     border-radius: var(--r-pill);
     color: var(--ink-muted);

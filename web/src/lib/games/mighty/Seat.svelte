@@ -329,9 +329,10 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
-  /* Kept even when empty, so every seat is the same height in every phase. */
+  /* Reserve metadata during play; a compact between-hand layout may
+     release the empty spacer while keeping any badges at their own height. */
   .meta {
-    min-height: 20px;
+    min-height: var(--seat-meta-min, 20px);
   }
   .bubble {
     position: absolute;

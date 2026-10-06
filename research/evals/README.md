@@ -57,6 +57,14 @@ temperature)`; no search.
 
 ### v1
 
+**Current limitation:** ladder, cost and preset tables resolve named presets
+through the selected code revision; the suite hash alone does not freeze
+those rules. Held-out rules are stored explicitly. The original baseline
+predates scoring G and later bot changes. A frozen-rule successor and a
+current served-bot baseline remain open in [FIXES](../../docs/FIXES.md).
+Do not rewrite v1 or interpret a current run as a reproduction of the old
+benchmark without matching the revision/rules/opponent fingerprints.
+
 | Part | What is played | Size |
 | --- | --- | --- |
 | ladder | 경기과고; the bot in one seat against four of `random`, `easy` (초보), `normal` (보통), `hard` (고수) | 2000 deals a rung |
