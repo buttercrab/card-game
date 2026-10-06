@@ -1,10 +1,11 @@
 <script lang="ts" module>
-  import type { Card, Suit } from './types';
+  import type { Card } from './types';
   import type { Seal } from './cards';
+  import { SUIT_NAME } from './SuitIcon.svelte';
 
-  export type CardSize = 'hand' | 'trick' | 'mini';
+  /** 'fluid' takes its width from the --card-size its container sets. */
+  export type CardSize = 'hand' | 'trick' | 'mini' | 'fluid';
 
-  const SUIT_NAME: Record<Suit, string> = { Spade: '스페이드', Diamond: '다이아몬드', Heart: '하트', Club: '클로버' };
   const RANK: Record<number, string> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
   const SEAL_NAME: Record<Seal, string> = { mighty: '마이티', joker: '조커', call: '조커콜' };
 
@@ -35,6 +36,7 @@
 </script>
 
 <script lang="ts">
+  import type { Attachment } from 'svelte/attachments';
   import CardBack from './CardBack.svelte';
   import CourtArt from './CourtArt.svelte';
   import CueIcon, { type Cue } from './CueIcon.svelte';
@@ -52,8 +54,14 @@
     won = false,
     kitty = false,
     powerless = false,
+    picked = false,
+    leading = false,
+    dimmed = false,
+    overlapped = false,
+    tilt = 0,
     width,
     id,
+    attach,
     onclick,
   }: {
     /** null draws the back. */
@@ -70,10 +78,24 @@
     kitty?: boolean;
     /** Played where its special power does not apply. */
     powerless?: boolean;
+    /** Chosen among several (the exchange's discards): lifted clear of its
+     * row, with no raised shadow, which would show as a second edge. */
+    picked?: boolean;
+    /** Winning the round so far: it sits up a little, outlined in ink (news,
+     * not a call to act, which is what plum means). */
+    leading?: boolean;
+    /** Lost the round as it resolves: less colour, still solid paper. */
+    dimmed?: boolean;
+    /** Under the next card in a fan: its stray corner glyph is not drawn. */
+    overlapped?: boolean;
+    /** Lying a little crooked on the table, in degrees. */
+    tilt?: number;
     /** Overrides the size's width in pixels. */
     width?: number;
-    /** Exposed as data-card so motion can find this card on screen. */
+    /** Exposed as data-card, for tests and for the hand's own lookups. */
     id?: string;
+    /** Registers the card's element (the table's motion finds it so). */
+    attach?: Attachment<HTMLElement>;
     onclick?: () => void;
   } = $props();
 
@@ -100,7 +122,7 @@
   const jokerLabel = $derived(twoJokers ? (joker === 'Red' ? '홍' : '흑') : '조커');
   // On a desktop, a card under the pointer leans toward it a little, like
   // a real card picked up by one corner (Balatro, kept to a few degrees).
-  function tilt(e: PointerEvent) {
+  function lean(e: PointerEvent) {
     if (e.pointerType !== 'mouse' || unplayable) return;
     const el = e.currentTarget as HTMLElement;
     const r = el.getBoundingClientRect();
@@ -109,7 +131,7 @@
     el.style.setProperty('--ry', `${(x * 14).toFixed(1)}deg`);
     el.style.setProperty('--rx', `${(-y * 14).toFixed(1)}deg`);
   }
-  function untilt(e: PointerEvent) {
+  function unlean(e: PointerEvent) {
     const el = e.currentTarget as HTMLElement;
     el.style.removeProperty('--ry');
     el.style.removeProperty('--rx');
@@ -174,15 +196,21 @@
     class:unplayable
     class:won
     class:powerless
+    class:picked
+    class:leading
+    class:dimmed
+    class:overlapped
     style:--w={width ? `${width}px` : undefined}
+    style:rotate={tilt ? `${tilt}deg` : undefined}
     data-card={id}
     draggable="false"
     aria-label={label}
-    aria-pressed={raised}
+    aria-pressed={raised || picked}
     aria-disabled={unplayable}
     {onclick}
-    onpointermove={tilt}
-    onpointerleave={untilt}
+    onpointermove={lean}
+    onpointerleave={unlean}
+    {@attach attach}
   >
     {@render face()}
   </button>
@@ -197,11 +225,17 @@
     class:unplayable
     class:won
     class:powerless
+    class:picked
+    class:leading
+    class:dimmed
+    class:overlapped
     style:--w={width ? `${width}px` : undefined}
+    style:rotate={tilt ? `${tilt}deg` : undefined}
     data-card={id}
     draggable="false"
     role="img"
     aria-label={label}
+    {@attach attach}
   >
     {@render face()}
   </div>
@@ -222,6 +256,9 @@
     border-radius: 8px;
     background: var(--card);
     color: var(--ink-on-card);
+    /* Every suit drawn on the card takes the card's ink, which follows the
+       four-colour setting. */
+    --suit-tone: currentColor;
     box-shadow: var(--shadow-card);
     font-family: var(--font-display);
     font-variant-numeric: tabular-nums;
@@ -243,7 +280,10 @@
   }
   .mini {
     --w: 40px;
-    border-radius: 6px;
+    border-radius: var(--r-mini);
+  }
+  .fluid {
+    --w: var(--card-size, 60px);
   }
   @media (min-width: 1024px) {
     .hand {
@@ -474,9 +514,9 @@
     left: 5cqw;
     bottom: 5cqw;
     padding: 5px 1px;
-    border-radius: 999px;
-    background: #645d53;
-    color: #fbf8f2;
+    border-radius: var(--r-pill);
+    background: var(--card-ink-muted);
+    color: var(--card);
     font-family: var(--font);
     font-size: 11px;
     font-weight: 700;
@@ -497,20 +537,6 @@
   .raised {
     translate: 0 calc(var(--w) * -0.36);
     box-shadow: var(--shadow-raised);
-    /* A raised card sways a hair while it waits, as if held. */
-    animation: sway 2.6s ease-in-out 300ms infinite;
-  }
-  @keyframes sway {
-    0%,
-    100% {
-      rotate: 0deg;
-    }
-    30% {
-      rotate: 0.9deg;
-    }
-    70% {
-      rotate: -0.7deg;
-    }
   }
   /* Cards that cannot be played sink back and lose some colour, rather
      than greying out; they stay solid paper (never see-through, which
@@ -519,6 +545,27 @@
   .unplayable {
     translate: 0 4px;
     filter: saturate(0.4) brightness(0.9);
+  }
+  .picked {
+    translate: 0 -18px;
+    box-shadow: var(--shadow-card);
+  }
+  /* A phone's tray has less room above the row, under your role tag. */
+  @media (max-width: 599px) {
+    .picked {
+      translate: 0 -10px;
+    }
+  }
+  .leading {
+    translate: 0 -6px;
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .dimmed {
+    filter: saturate(0.4) brightness(0.9);
+  }
+  .overlapped .glyph {
+    visibility: hidden;
   }
   .hinted {
     outline: 2px dashed var(--accent);
@@ -532,7 +579,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    background: repeating-linear-gradient(-45deg, transparent 0 6px, rgb(28 25 21 / 0.08) 6px 8px);
+    background: repeating-linear-gradient(-45deg, transparent 0 6px, color-mix(in srgb, var(--card-ink) 8%, transparent) 6px 8px);
   }
 
   button.card {
@@ -543,7 +590,7 @@
     border-color: var(--card-edge);
   }
   /* Touching a card previews the lift. */
-  button.card:active:not(.unplayable):not(.raised) {
+  button.card:active:not(.unplayable):not(.raised):not(.picked) {
     translate: 0 -6px;
     box-shadow: var(--shadow-card);
   }
@@ -557,20 +604,16 @@
     cursor: default;
   }
   button.card:focus-visible {
-    outline: 3px solid var(--accent);
+    outline: 3px solid var(--ink);
     outline-offset: 2px;
   }
   @media (hover: hover) {
-    button.card:hover:not(.unplayable):not(.raised) {
+    button.card:hover:not(.unplayable):not(.raised):not(.picked) {
       translate: 0 -6px;
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .card {
-      transition: none;
-    }
-    button.card {
-      transform: none;
-    }
+  /* Reduced: no tilt toward the pointer. */
+  :global(:root[data-motion='reduced']) button.card {
+    transform: none;
   }
 </style>

@@ -20,6 +20,8 @@ colors:
   team-defense: "#3B4A6B"
   card-gold: "#A77A12"
   card-warm: "#FBF4E6"
+  gold: "#A77A12"
+  gold-text: "#7D5A09"
   danger: "#B3261E"
   table-dark: "#17191C"
   panel-dark: "#202327"
@@ -32,6 +34,9 @@ colors:
   accent-deep-dark: "#A2558A"
   on-accent-dark: "#17191C"
   team-defense-dark: "#8FA3C9"
+  card-warm-dark: "#EFE6D3"
+  gold-dark: "#D9B04F"
+  danger-dark: "#EF6B62"
 typography:
   display:
     fontFamily: "Wanted Sans Variable, Pretendard Variable, sans-serif"
@@ -60,6 +65,11 @@ typography:
     fontWeight: 600
     lineHeight: 1.3
     fontFeature: "'tnum'"
+  caption:
+    fontFamily: "Pretendard Variable, sans-serif"
+    fontSize: "12px"
+    fontWeight: 600
+    lineHeight: 1.3
   card-rank:
     fontFamily: "Wanted Sans Variable, Pretendard Variable, sans-serif"
     fontSize: "0.32em"
@@ -67,39 +77,55 @@ typography:
     lineHeight: 1
     fontFeature: "'tnum'"
 rounded:
+  mini: "6px"
   card: "8px"
   control: "12px"
   panel: "16px"
   pill: "999px"
 spacing:
-  xs: "4px"
-  sm: "8px"
-  md: "12px"
-  lg: "16px"
-  xl: "24px"
-  xxl: "32px"
+  "1": "4px"
+  "2": "8px"
+  "3": "12px"
+  "4": "16px"
+  "5": "24px"
+  "6": "32px"
 components:
   button-primary:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.on-accent}"
-    typography: "{typography.title}"
+    typography: "{typography.body}"
     rounded: "{rounded.control}"
-    padding: "12px 20px"
-    height: "48px"
+    padding: "10px 16px"
+    height: "44px"
   button-secondary:
     backgroundColor: "{colors.card}"
     textColor: "{colors.ink}"
-    typography: "{typography.title}"
+    typography: "{typography.body}"
     rounded: "{rounded.control}"
-    padding: "12px 20px"
-    height: "48px"
+    padding: "10px 16px"
+    height: "44px"
+  button-small:
+    typography: "{typography.body}"
+    rounded: "{rounded.control}"
+    padding: "4px 10px"
+    height: "36px"
+    target: "44px"
+  button-icon:
+    rounded: "{rounded.pill}"
+    size: "44px"
   chip:
     backgroundColor: "{colors.card}"
     textColor: "{colors.ink}"
-    typography: "{typography.label}"
+    typography: "{typography.body}"
     rounded: "{rounded.pill}"
     padding: "8px 14px"
     height: "40px"
+    target: "48px"
+  chip-small:
+    rounded: "{rounded.pill}"
+    padding: "4px 12px"
+    height: "34px"
+    target: "44px"
   chip-selected:
     backgroundColor: "{colors.ink}"
     textColor: "{colors.card}"
@@ -116,18 +142,26 @@ components:
   role-badge-declarer:
     backgroundColor: "{colors.team-declarer}"
     textColor: "{colors.ink}"
-    typography: "{typography.label}"
+    typography: "{typography.caption}"
     rounded: "{rounded.pill}"
   role-badge-defense:
     backgroundColor: "{colors.team-defense}"
     textColor: "{colors.on-accent}"
-    typography: "{typography.label}"
+    typography: "{typography.caption}"
     rounded: "{rounded.pill}"
+  sheet:
+    backgroundColor: "{colors.panel}"
+    rounded: "{rounded.panel}"
+    width: "420px (menu 400px, rules and replay 560px)"
+  popover:
+    backgroundColor: "{colors.panel}"
+    rounded: "{rounded.panel}"
+    width: "content, at most 300px (a seat's choices 240px)"
 ---
 
 # Design System: Mighty
 
-The brief for every change to the web table. Research and decisions behind it: [Design References](https://claude.ai/code/artifact/d3f60eeb-449e-4306-a61d-58006d90ac72). Tokens, components and card art as a browsable system: [마이티 Design System](https://claude.ai/artifact/RZQ4Jsz4xRrLb4LwQsVBoF).
+The brief for every change to the web table. The values live in `web/src/app.css` (custom properties, each colour written once as `light-dark()`) and `web/src/lib/tokens.ts` (the same values for canvases, SVG fills and media queries in script; `tokens.test.ts` keeps the two in step). The primitives that use them are in `web/src/lib/ui/`. Research and decisions behind it: [Design References](https://claude.ai/code/artifact/d3f60eeb-449e-4306-a61d-58006d90ac72). Tokens, components and card art as a browsable system: [마이티 Design System](https://claude.ai/artifact/RZQ4Jsz4xRrLb4LwQsVBoF).
 
 ## Overview
 
@@ -175,6 +209,10 @@ Badges always carry the word (주공, 프렌드, 야당); the colour is the seco
 
 ### Card gold
 - **Card Gold** (#A77A12) and **Card Warm** (#FBF4E6; dark #EFE6D3): crowns, props and the 마이티's rule and warmer stock. Flat ochre, never metallic; it does not flip in dark mode because cards stay light.
+- **Gold** (#A77A12; dark #D9B04F): the hand's one huge moment (the 런 word, earned awards). As small text on the paper (the 런 찬스 tag) it is **Gold Text** (#7D5A09), which reads at 4.5:1.
+
+### On fixed surfaces
+Card paper, the team colours and the reaction bubbles look the same in both themes, so what is written on them has fixed colours too: **Card Ink** (#1C1915) and **Card Ink Muted** (#645D53) on card paper, **On Team Declarer** (#1C1915) on the orange badge, and **Accent On Card** (#8E2F6B) for the plum word in the turn pill. A spade drawn on paper uses Card Ink; on the table it uses Ink.
 
 ### Named Rules
 **The One Meaning Rule.** Each colour means one thing. Plum means "act now"; suit inks mean suits; team colours mean teams. No colour is ever used for decoration.
@@ -191,9 +229,12 @@ Badges always carry the word (주공, 프렌드, 야당); the colour is the seco
 ### Hierarchy
 - **Display** (800, 32px, 1.1, tabular): result headline (주공 승리), the big contract number.
 - **Headline** (700, 22px, 1.25): sheet titles.
-- **Title** (600, 17px, 1.3): buttons, seat names, top-display values.
-- **Body** (400, 15px, 1.5): messages, settings, the event line.
-- **Label** (600, 13px, 1.3, tabular): badges, counters, captions.
+- **Title** (600, 17px, 1.3): the contract on the top line, sub-headings.
+- **Body** (400, 15px, 1.5; 600 on buttons and seat names): messages, settings, buttons, seat names.
+- **Label** (600, 13px, 1.3, tabular): counters, notes, the event line on phones.
+- **Caption** (600, 12px, 1.3): badges, small table headers.
+
+Tokens: `--text-display`, `--text-headline`, `--text-title`, `--text-body`, `--text-label`, `--text-caption`.
 - **Card rank** (Wanted Sans 800, 32% of card width, tabular): the card index. Never below 16px. "10" uses tightened tracking so it is no wider than other ranks.
 
 ### Named Rules
@@ -211,28 +252,32 @@ Phone portrait is the primary layout; desktop is the same table with more room.
 - **Hand tray.** Docked at the bottom, about 30% of the viewport height on phones including the strip. One flat row of 10 cards, overlapping so each corner index stays visible; the declarer's 13 cards wrap to two rows. Sorted by suit with trump first.
 - **Breakpoints.** Phone below 600px; tablet 600–1023px; desktop 1024px and up keeps the same stacked seat figures, larger (up to 80px), and puts your own seat at the tray's left and your tools at its right; from 1100px wide in landscape a 260–300px column with 상황판 and 점수판 replaces the top line.
 - **Players remember, the table does not.** Seats show how many points each player has, never which cards; there is no log of the hand and no look back at the last round. Remembering what was played is part of the game.
-- **Spacing.** A 4px base: 4, 8, 12, 16, 24, 32. Page gutter 16px on phones.
-- **Touch targets.** At least 44×44px; hand cards on phones are at least 56px wide.
+- **Spacing.** A 4px base: 4, 8, 12, 16, 24, 32 (`--space-1` to `--space-6`). Page gutter 16px on phones.
+- **Touch targets.** At least 44×44px. A control drawn smaller (a 36px small button, a 34px small chip, a 28px rule tag, a rules chip, the thrown-in hand's close) keeps a 44px target around it. Hand cards on phones are at least 56px wide: the exchange's fourteen cards on a 320px phone are drawn at 56–57px so they fit one row.
+- **Short phones.** On a felt under 260px tall (an iPhone SE), the side seats step up under the top ones while bids or the exchange rise over the felt's foot; on every phone your tools move to the end of the top line while those controls are out.
+- **Breakpoints in code.** `tokens.ts` (`BREAKPOINT`, `MEDIA`): 600, 1024 and 1100; stylesheets write the same numbers.
+- **Layers.** `--z-felt` 0, `--z-seat` 2, `--z-seat-over` 5 (bubbles, callouts), `--z-controls` 7, `--z-status` 8, `--z-result` 9, `--z-banner` 15, `--z-menu` 30, `--z-popover` 40, `--z-toast` 50.
 
 | Card size | Phone | Desktop |
 | --- | --- | --- |
-| Hand | 60 × 84px | 88 × 123px |
-| Trick | 48 × 67px | 72 × 101px |
+| Hand | 60–76px wide, as the screen allows a row of ten (56px for fourteen at 320px) | 88–124px (12% of the window's height) |
+| Trick | 40–92px, from the room between the seats (100px on tablets) | up to 1.2 × the hand's |
 | Mini (exchange, review) | 40 × 56px | 56 × 78px |
 
 All cards are 5:7.
 
 ## Elevation & Depth
 
-Flat. There are no blurred drop shadows. Depth comes from four devices only, and nothing else may be added:
+Flat. There are no blurred drop shadows. Depth comes from five devices only, and nothing else may be added:
 
 1. **Tone.** Panel is one step darker than Hanji; Card is brighter than both.
 2. **Contact shadow.** A hard, faint offset under cards: it says "object on a table".
 3. **The lip.** A hard same-hue offset under pressable buttons and chips; pressing moves the button down onto it.
 4. **Fade.** What is not in focus fades instead of gaining outlines: unplayable cards dim and sink 4px (desaturated, still opaque, so the hand never shows the table through it); seats not on turn use Ink Muted.
+5. **Paper over the table.** A reaction bubble, the turn pill, a popover, the hint's answer: a 1px line and the hard lip (`--lip`, `0 3px 0` at 12% ink; 40% black in dark).
 
 ### Shadow Vocabulary
-- **Card at rest** (`box-shadow: 0 2px 0 rgb(28 25 21 / 0.10)`; dark `0 2px 0 rgb(0 0 0 / 0.35)`): every card face and back.
+- **Card at rest** (`--shadow-card`: `0 2px 0 rgb(28 25 21 / 0.10)`; dark `0 2px 0 rgb(0 0 0 / 0.35)`): every card face and back.
 - **Card raised** (`transform: translateY(-12px)`, `box-shadow: 0 6px 0 rgb(28 25 21 / 0.07)`): the first tap of tap-twice; hover on desktop lifts -6px.
 - **Button lip** (`box-shadow: 0 3px 0 var(--accent-deep)`; secondary `0 3px 0 var(--line)`): pressed state `transform: translateY(3px); box-shadow: none`.
 - **Turn ring** (`outline: 3px solid var(--accent); outline-offset: 3px`): your tray on your turn. Seats show the turn as a plum name tag instead.
@@ -244,13 +289,16 @@ Flat. There are no blurred drop shadows. Depth comes from four devices only, and
 
 Rounded, friendly UI; crisp card faces.
 
-- **Cards:** 8px radius (6px for mini cards), 1px Card Edge border.
-- **Buttons and inputs:** 12px radius.
-- **Chips and badges:** full pill.
-- **Panels and sheets:** 16px on exposed corners.
-- **Suit glyphs:** drawn as SVG paths, never emoji or font glyphs, so they look identical on every device.
+- **Cards:** 8px radius (6px for mini cards), 1px Card Edge border (`--r-card`, `--r-mini`).
+- **Buttons and inputs:** 12px radius (`--r-control`).
+- **Chips and badges:** full pill (`--r-pill`).
+- **Panels and sheets:** 16px on exposed corners (`--r-panel`).
+- **Suit glyphs:** drawn as SVG paths, never emoji or font glyphs, so they look identical on every device. `SuitIcon` colours itself with its suit's ink; `SuitText` draws the suits in running text (공약 ♠ 15, "♣를 따라 내야 해요") the same way, and names them for screen readers.
 
 ## Components
+
+### Primitives
+`web/src/lib/ui/`: **Button** (primary, secondary, ghost, icon, danger; 44px, small 36px), **Chip** (a radio or a toggle; ink when chosen), **Segmented** (one strip of choices in a well, ink when chosen), **Switch** (a track that fills with ink, its words part of the target), **Sheet** (the native modal dialog: title, a scrolling body, a footer at the foot; 400, 420 or 560px), **Popover** (hung from its anchor, flipped and kept inside the visual viewport, closed by Escape, a tap outside or the back gesture), **Badge** (team, secret friend, count, outline, tag) and **Bubble** (a reaction). A bare `<button>` is unstyled; the looks are the `.btn` and `.chip` classes, so a link can wear them too.
 
 ### Card
 - **Face.** Corner index top-left (rank above suit glyph), mirrored bottom-right. Pips, figures and the bottom index appear from 80px wide; below that a card shows its index and one large glyph.
@@ -307,9 +355,11 @@ Motion explains what happened; it is never decoration. All movement is `transfor
 Everything else (deal, kitty pickup, discards, hand re-sort) is quick and plain.
 
 ### Rules
-- Animations play from a queue derived from successive server states; if the queue falls more than three steps behind, or the tab was hidden, jump straight to the latest state.
+- One source: `data-motion` on the root (`full`, `reduced` or `off`), set from the speed setting and the system's reduced motion (`settings.svelte.ts`); script reads the same `motion.level`. Components write their reduced fallbacks against the attribute, never the media query.
+- Animations play from a queue derived from successive server states (`table/animator.svelte.ts`); if the queue falls more than three steps behind, jump straight to the latest state.
 - No animation on connect or reconnect.
-- `prefers-reduced-motion` and the in-game speed setting (보통 / 빠르게 / 끄기, multipliers 1, 0.5, 0) are both honoured. Reduced motion keeps fades and highlights and drops movement.
+- `prefers-reduced-motion` and the in-game speed setting (보통 / 빠르게 / 끄기, multipliers 1, 0.5, 0) are both honoured. Reduced motion keeps fades and highlights and drops movement: entrances fade in place, swells stop, and transitions keep only colour and opacity.
+- Keyframes move `translate`, `scale` and `opacity` (never layout, never `transform` where it would fight a positioning one). A changed value swells with the one `pulse` keyframe (`--pulse` sets how far).
 - No screen shake, no particles, no idle wobble.
 
 ## Moments

@@ -52,25 +52,13 @@ const PAGES: { name: string; path: string }[] = [
   ...STATES.map((s) => ({ name: `preview-${s}`, path: `/preview?state=${s}` })),
 ];
 
-/** Known layout bugs, each to be fixed by docs/FIXES.md item 1.8, marked
- * expected-fail so CI stays green. A key is `<test>@<size>` (both themes).
- * When a fix lands the test passes, Playwright fails it as "expected to
- * fail", and the entry comes out. */
-const KNOWN: Record<string, string> = {
-  // 1.8: during the exchange at 360 px or less, the controls cover the hand.
-  'preview-exchange@320x568': 'FIXES.md 1.8: exchange controls cover hand cards at <=360px',
-  // 1.8: on short phones the controls and tool buttons sit over the seats.
-  'preview-bidding@320x568': 'FIXES.md 1.8: bid buttons cover the side seats on 320x568',
-  'preview-misdeal@320x568': 'FIXES.md 1.8: bid buttons cover the side seats on 320x568',
-  'preview-friend@320x568': 'FIXES.md 1.8: friend picker covers the side seats on 320x568',
-  'preview-bidding@375x667': 'FIXES.md 1.8: tool buttons (hint, reactions) cover a seat name',
-  'preview-misdeal@375x667': 'FIXES.md 1.8: tool buttons (hint, reactions) cover a seat name',
-  'preview-friend@375x667': 'FIXES.md 1.8: tool buttons (hint, reactions) cover a seat name',
-  // 1.8: the replay sheet does not shrink long names, so it scrolls sideways.
-  'replay@320x568': 'FIXES.md 1.8: replay sheet scrolls sideways on long names',
-  'replay@375x667': 'FIXES.md 1.8: replay sheet scrolls sideways on long names',
-  'replay@390x844': 'FIXES.md 1.8: replay sheet scrolls sideways on long names',
-};
+/** Known layout bugs, marked expected-fail so CI stays green while one
+ * waits for its fix. A key is `<test>@<size>` (both themes). When a fix
+ * lands the test passes, Playwright fails it as "expected to fail", and
+ * the entry comes out. FIXES.md 1.8's (the exchange at 360px or less,
+ * controls and tools over the seats on short phones, the replay's long
+ * names) are fixed; none is known now. */
+const KNOWN: Record<string, string> = {};
 
 /** The project's size, as named in playwright.config.ts. */
 function sizeOf(project: string): string {
@@ -252,6 +240,25 @@ test('replay', async ({ page }, info) => {
   }
   expect(problems).toEqual([]);
 });
+
+// The result rises from the table's foot and stops under the top seats:
+// they stay in view above it (the side seats it covers whole).
+for (const state of ['done', 'won', 'run']) {
+  test(`result-clear-${state}`, async ({ page }) => {
+    await page.goto(`/preview?state=${state}`);
+    await page.locator('html[data-ready]').waitFor({ state: 'attached' });
+    const covered = await page.evaluate(() => {
+      const out: string[] = [];
+      for (const el of document.querySelectorAll('.spot.top-left .seat .name, .spot.top-right .seat .name')) {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (hit?.closest('.result-layer')) out.push(`${(el.textContent ?? '').trim()} under the result`);
+      }
+      return out;
+    });
+    expect(covered).toEqual([]);
+  });
+}
 
 // The table from the home page: the back gesture opens the menu instead of
 // leaving, and 나가기 goes home with no table entry left behind.

@@ -1,7 +1,10 @@
 <script lang="ts">
   import { SUITS, trumpLabel } from './cards';
   import { eachFrame, share } from './frame';
-  import SuitIcon from './SuitIcon.svelte';
+  import SuitIcon, { SUIT_NAME } from './SuitIcon.svelte';
+  import SuitText from './SuitText.svelte';
+  import Button from './ui/Button.svelte';
+  import Chip from './ui/Chip.svelte';
   import type { Action, Contract, Suit } from './types';
 
   let {
@@ -83,15 +86,9 @@
     <div class="picks" class:more bind:this={picks} onscroll={measure}>
       <div class="chips" role="radiogroup" aria-label="기루다">
         {#each trumps as t (t ?? 'nt')}
-          <button
-            class="chip suit-{t ?? 'nt'}"
-            role="radio"
-            aria-checked={t === chosenTrump}
-            aria-label={t ? undefined : '노기루다'}
-            onclick={() => (trump = t)}
-          >
-            {#if t}<SuitIcon suit={t} class="suit" />{:else}노기루다{/if}
-          </button>
+          <Chip checked={t === chosenTrump} onclick={() => (trump = t)}>
+            {#if t}<SuitIcon suit={t} size="18px" label={SUIT_NAME[t]} />{:else}노기루다{/if}
+          </Chip>
         {/each}
       </div>
       <div class="chips counts" role="radiogroup" aria-label="공약 수">
@@ -102,13 +99,13 @@
     </div>
   {/if}
   <div class="actions">
-    {#if canMisdeal}<button onclick={() => onact('Misdeal')} title="패가 약하면 다시 돌릴 수 있어요">딜미스</button>{/if}
+    {#if canMisdeal}<Button onclick={() => onact('Misdeal')} title="패가 약하면 다시 돌릴 수 있어요">딜미스</Button>{/if}
     {#if canPass}
-      <button onclick={() => onact('Pass')}>패스</button>
+      <Button onclick={() => onact('Pass')}>패스</Button>
     {/if}
     {#if bids.length > 0}
-      <button class="primary" class:held disabled={held} onclick={() => onact({ Bid: bid })}>
-        공약 {trumpLabel(bid.trump)} {bid.count}
+      <button class="btn primary" class:held disabled={held} onclick={() => onact({ Bid: bid })}>
+        공약 <SuitText text={trumpLabel(bid.trump)} /> {bid.count}
         {#if held}<span class="hold" style:transform="scaleX({waited})" aria-hidden="true"></span>{/if}
       </button>
     {/if}
@@ -146,24 +143,6 @@
     padding-left: 8px;
     border-left: 1px solid var(--line);
   }
-  .chip :global(.suit) {
-    width: 18px;
-    height: 18px;
-  }
-  .suit-Heart {
-    color: var(--suit-heart);
-  }
-  .suit-Diamond {
-    color: var(--suit-diamond);
-  }
-  .suit-Club {
-    color: var(--suit-club);
-  }
-  /* Selected: the shared ink chip; its text is the table colour, which
-     flips with the theme, so it reads in light and dark. */
-  .chip[aria-checked='true'] {
-    color: var(--table);
-  }
   .num {
     min-width: 44px;
     font-family: var(--font-display);
@@ -177,10 +156,10 @@
   .caption {
     margin: 0;
     text-align: center;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
   }
-  .actions > button:not(.primary) {
+  .actions > :not(.primary) {
     flex: none;
     min-width: 88px;
   }

@@ -2,6 +2,7 @@
   // Only the rules that differ between two sets, grouped by phase, both
   // values in plain Korean side by side.
   import { GROUPS, differences, otherDifferences, say } from './ruleFields';
+  import SuitText from './SuitText.svelte';
   import type { Rules } from './types';
 
   let {
@@ -9,7 +10,15 @@
     b,
     aName,
     bName,
-  }: { a: Rules; b: Rules; aName: string; bName: string } = $props();
+    sticky = true,
+  }: {
+    a: Rules;
+    b: Rules;
+    aName: string;
+    bName: string;
+    /** The names' header sticks to the top of the sheet as it scrolls. */
+    sticky?: boolean;
+  } = $props();
 
   const diff = $derived(differences(a, b));
   const other = $derived(otherDifferences(a, b));
@@ -22,7 +31,7 @@
   {#if diff.length === 0 && other === 0}
     <p class="same muted">두 규칙이 같아요.</p>
   {:else}
-    <div class="head" aria-hidden="true">
+    <div class="head" class:sticky aria-hidden="true">
       <span></span><span class="name">{aName}</span><span class="name">{bName}</span>
     </div>
     {#each groups as g (g.id)}
@@ -32,8 +41,8 @@
           {#each g.fields as f (f.path)}
             <div class="row">
               <dt>{f.label}</dt>
-              <dd><span class="sr">{aName}: </span>{say(f, a)}</dd>
-              <dd><span class="sr">{bName}: </span>{say(f, b)}</dd>
+              <dd><span class="sr">{aName}: </span><SuitText text={say(f, a)} /></dd>
+              <dd><span class="sr">{bName}: </span><SuitText text={say(f, b)} /></dd>
             </div>
           {/each}
         </dl>
@@ -57,7 +66,7 @@
     margin: 0;
   }
   .other {
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   /* Phone: the label on its own line, the two values under it. Wider: one
      line of label, value, value. */
@@ -89,11 +98,13 @@
     }
   }
   .head {
-    position: sticky;
-    top: -20px;
-    z-index: 1;
     padding: 6px 0;
     border-bottom: 1.5px solid var(--ink);
+  }
+  .head.sticky {
+    position: sticky;
+    top: calc(-1 * var(--pad, 20px));
+    z-index: 1;
     background: var(--raised);
   }
   .name {
@@ -113,7 +124,7 @@
   }
   h4 {
     margin: 0 0 2px;
-    font-size: 12px;
+    font-size: var(--text-caption);
     font-weight: 700;
     color: var(--ink-muted);
   }
@@ -129,20 +140,12 @@
   }
   dt {
     font-weight: 700;
-    font-size: 13px;
+    font-size: var(--text-label);
     color: var(--ink-muted);
   }
   dd {
     margin: 0;
     font-weight: 600;
     word-break: keep-all;
-  }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 </style>

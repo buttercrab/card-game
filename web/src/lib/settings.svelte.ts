@@ -1,7 +1,9 @@
 // Per-player preferences, kept in this browser only.
 
-export type Speed = 'normal' | 'fast' | 'off';
+import { prefersReducedMotion } from 'svelte/motion';
 import type { CardBack, TableTone } from './achievements';
+
+export type Speed = 'normal' | 'fast' | 'off';
 
 interface Settings {
   /** ♦ blue and ♣ green instead of red and black. */
@@ -40,10 +42,29 @@ function load(): Settings {
 
 export const settings: Settings = $state(load());
 
+/** How much moves: 'full'; 'reduced' (the system asks for less motion:
+ * fades and highlights stay, movement goes); or 'off' (애니메이션 끄기:
+ * every change shows at once). */
+export type MotionLevel = 'full' | 'reduced' | 'off';
+
+/** The one source for motion, in script and (as `data-motion` on the
+ * root) in CSS: the speed setting and the system's reduced motion. */
+export const motion = {
+  get level(): MotionLevel {
+    if (settings.speed === 'off') return 'off';
+    return prefersReducedMotion.current ? 'reduced' : 'full';
+  },
+  /** Duration multiplier for what moves: 1, 0.5 at 빠르게, 0 when it does not. */
+  get speed(): number {
+    if (this.level !== 'full') return 0;
+    return settings.speed === 'fast' ? 0.5 : 1;
+  },
+};
+
 $effect.root(() => {
   $effect(() => {
     document.documentElement.dataset.fourColor = String(settings.fourColor);
-    document.documentElement.dataset.motion = settings.speed;
+    document.documentElement.dataset.motion = motion.level;
     document.documentElement.dataset.back = settings.cardBack;
     document.documentElement.dataset.table = settings.tableTone;
   });

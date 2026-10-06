@@ -14,6 +14,7 @@
   import { CATALOG, isPreset, presetTitle } from './catalog';
   import { customName, loadCustom, type CustomSet } from './rulesets';
   import { responseError } from './errorText';
+  import Button from './ui/Button.svelte';
 
   let { onopen }: { onopen: (id: string) => void } = $props();
 
@@ -119,11 +120,11 @@
     </div>
     <PresetPicker selected={choice} {customs} onselect={(c) => (choice = c)} />
     <div class="rule-tools">
-      <button class="ghost small" onclick={() => (showRules = true)}>규칙 보기</button>
-      <button class="ghost small" onclick={() => (comparing = true)}>비교</button>
-      <button class="ghost small" onclick={() => (editing = true)}>고쳐서 쓰기</button>
+      <button class="btn ghost sm" onclick={() => (showRules = true)}>규칙 보기</button>
+      <button class="btn ghost sm" onclick={() => (comparing = true)}>비교</button>
+      <button class="btn ghost sm" onclick={() => (editing = true)}>고쳐서 쓰기</button>
     </div>
-    <button class="primary" onclick={() => create()} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</button>
+    <Button variant="primary" onclick={() => create()} disabled={busy}>{busy ? '만드는 중…' : '테이블 만들기'}</Button>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
   </section>
 
@@ -136,16 +137,16 @@
     <h2>테이블 들어가기</h2>
     <form onsubmit={join}>
       <input bind:value={code} placeholder="테이블 코드나 링크" aria-label="테이블 코드나 링크" />
-      <button type="submit" disabled={!code.trim()}>들어가기</button>
+      <Button type="submit" disabled={!code.trim()}>들어가기</Button>
     </form>
   </section>
 
   <InstallHint />
   <footer>
     <div class="tools">
-      <button class="ghost small" onclick={() => (showStats = true)}>내 기록</button>
-      <button class="ghost small" onclick={() => (showSettings = true)}>설정</button>
-      <button class="ghost small" onclick={() => (reporting = true)}>문제 신고</button>
+      <button class="btn ghost sm" onclick={() => (showStats = true)}>내 기록</button>
+      <button class="btn ghost sm" onclick={() => (showSettings = true)}>설정</button>
+      <button class="btn ghost sm" onclick={() => (reporting = true)}>문제 신고</button>
     </div>
     <SiteLinks />
   </footer>
@@ -210,25 +211,6 @@
     align-items: flex-end;
     margin-bottom: 16px;
   }
-  /* The three cards on the home page drift gently, out of step. */
-  .mark > :global(.card) {
-    animation: float 5s ease-in-out infinite;
-  }
-  .mark > :global(.card:nth-child(2)) {
-    animation-delay: -1.6s;
-  }
-  .mark > :global(.card:last-child) {
-    animation-delay: -3.2s;
-  }
-  @keyframes float {
-    0%,
-    100% {
-      translate: 0 0;
-    }
-    50% {
-      translate: 0 -4px;
-    }
-  }
   .mark > :global(.card:first-child) {
     transform: rotate(-10deg) translate(18px, 6px);
   }
@@ -255,13 +237,10 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     padding: 20px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
   }
-  .small {
-    min-height: 36px;
-    padding: 4px 10px;
-    font-size: 14px;
+  .sm {
     color: var(--ink-muted);
   }
   /* A quiet panel, not a cream slab: the page's one bright button is the
@@ -272,10 +251,12 @@
     justify-items: start;
     justify-content: start;
     padding: 14px 20px;
-    border-radius: 16px;
+    border-radius: var(--r-panel);
     background: var(--panel);
     color: var(--ink);
     box-shadow: inset 0 0 0 1px var(--line);
+    font-size: var(--text-body);
+    line-height: 1.35;
     text-align: left;
   }
   @media (hover: hover) {
@@ -304,10 +285,10 @@
   }
   h2 {
     margin: 0;
-    font-size: 17px;
+    font-size: var(--text-title);
   }
   .head-note {
-    font-size: 13px;
+    font-size: var(--text-label);
   }
   /* Quiet tools under the list; the panel's one loud button is below. */
   .rule-tools {

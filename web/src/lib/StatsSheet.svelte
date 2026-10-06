@@ -3,6 +3,9 @@
   import { ACHIEVEMENTS, loadUnlocked } from './achievements';
   import { clearStats, loadStats, type Role } from './stats';
   import Icon from './Icon.svelte';
+  import SuitText from './SuitText.svelte';
+  import Button from './ui/Button.svelte';
+  import Sheet from './ui/Sheet.svelte';
 
   const unlocked = loadUnlocked();
 
@@ -24,11 +27,6 @@
   );
   const recent = $derived(hands.slice(-12).reverse());
 
-  let dialog: HTMLDialogElement;
-  $effect(() => {
-    dialog.showModal();
-  });
-
   function reset() {
     if (!confirm('이 기기에 남은 기록을 모두 지울까요?')) return;
     clearStats();
@@ -36,9 +34,7 @@
   }
 </script>
 
-<dialog class="sheet" bind:this={dialog} onclose={onclose} aria-labelledby="stats-title">
-  <div class="sheet-body">
-  <h2 id="stats-title">내 기록</h2>
+<Sheet title="내 기록" {onclose}>
   <p class="muted note">이 기기에서 플레이한 판만 기록돼요.</p>
   {#if hands.length === 0}
     <p>아직 끝낸 판이 없어요. 한 판 하고 오세요!</p>
@@ -63,7 +59,7 @@
         {/each}
       </tbody>
     </table>
-    {#if best}<p>주공으로 이긴 가장 큰 공약: <strong>{contractLabel(best.contract)}</strong></p>{/if}
+    {#if best}<p>주공으로 이긴 가장 큰 공약: <strong><SuitText text={contractLabel(best.contract)} /></strong></p>{/if}
     <h3>최근 판</h3>
     <ol class="recent">
       {#each recent as h (h.key)}
@@ -82,25 +78,20 @@
       </li>
     {/each}
   </ul>
-  </div>
-  <form method="dialog" class="sheet-foot">
-    {#if hands.length}<button type="button" class="ghost" onclick={reset}>기록 지우기</button>{/if}
-    <button>닫기</button>
-  </form>
-</dialog>
+  {#snippet footer(close)}
+    {#if hands.length}<Button variant="ghost" onclick={reset}>기록 지우기</Button>{/if}
+    <Button onclick={close}>닫기</Button>
+  {/snippet}
+</Sheet>
 
 <style>
-  h2 {
-    margin: 0;
-    font-size: 22px;
-  }
   h3 {
     margin: 16px 0 8px;
-    font-size: 15px;
+    font-size: var(--text-body);
   }
   .note {
-    margin: 2px 0 14px;
-    font-size: 13px;
+    margin: -10px 0 14px;
+    font-size: var(--text-label);
   }
   .big {
     display: grid;
@@ -112,8 +103,8 @@
     display: grid;
     justify-items: center;
     padding: 10px 4px;
-    border-radius: 12px;
-    background: var(--bg);
+    border-radius: var(--r-control);
+    background: var(--table);
   }
   .big strong {
     font-family: var(--font-display);
@@ -121,7 +112,7 @@
     font-variant-numeric: tabular-nums;
   }
   .big span {
-    font-size: 12px;
+    font-size: var(--text-caption);
     color: var(--ink-muted);
   }
   table {
@@ -140,7 +131,7 @@
   }
   thead th {
     border-top: none;
-    font-size: 12px;
+    font-size: var(--text-caption);
     color: var(--ink-muted);
   }
   .neg {
@@ -158,9 +149,9 @@
     min-width: 36px;
     padding: 2px 6px;
     border-radius: 8px;
-    background: var(--bg);
+    background: var(--table);
     color: var(--danger);
-    font-size: 13px;
+    font-size: var(--text-label);
     font-weight: 700;
     text-align: center;
     font-variant-numeric: tabular-nums;
@@ -181,7 +172,7 @@
     display: grid;
     padding: 6px 10px;
     border-radius: 10px;
-    background: var(--bg);
+    background: var(--table);
   }
   /* Locked: a dashed edge, a lock, muted text; still readable. */
   .achievements li:not(.got) {
@@ -200,13 +191,6 @@
     align-items: center;
     gap: 4px;
     font-size: 14px;
-  }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
   }
   .achievements span {
     font-size: 11px;

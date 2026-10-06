@@ -18,9 +18,9 @@
     suit?: Suit;
   } = $props();
 
-  const GOLD = 'var(--card-gold, #A77A12)';
-  const SKIN = '#F3E3CF';
-  const PAPER = 'var(--card, #FBF8F2)';
+  const GOLD = 'var(--card-gold)';
+  const SKIN = 'var(--skin)';
+  const PAPER = 'var(--card)';
 </script>
 
 {#snippet emblem(x: number, y: number, size: number)}

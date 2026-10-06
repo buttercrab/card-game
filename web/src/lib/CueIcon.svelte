@@ -13,7 +13,7 @@
 
   let { cue, suit = 'Spade', class: cls = '' }: { cue: Cue; suit?: Suit; class?: string } = $props();
 
-  const GOLD = 'var(--card-gold, #A77A12)';
+  const GOLD = 'var(--card-gold)';
 </script>
 
 <svg viewBox="0 0 100 100" class="cue {cls}" aria-hidden="true">
