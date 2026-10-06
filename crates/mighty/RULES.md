@@ -77,7 +77,8 @@ Not expressible or left to others:
      strictly higher. Which applies is a local rule.
    - A player whose hand qualifies under `misdeal` may ask for a redeal
      (딜미스) from the moment the cards land, on their turn or not
-     (`Game::out_of_turn_actions`), until they bid or pass
+     (off its turn, a seat's `Game::legal_actions` are just the misdeal),
+     until they bid or pass
      (`misdeal.window` = `OwnTurnUntilBid`); with `AllBidding`, all
      through the bidding until they pass. With `BeforeFirstBid` anyone
      may until the first bid, and nobody

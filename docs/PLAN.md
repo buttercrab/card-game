@@ -57,14 +57,18 @@ by commit, like the code. Results live next to it in `research/`.
 
 ```
 crates/
-  engine/         Game, Bot; plus Encode (model features), Describe (rule schema), DynGame (JSON boundary)
-  mighty/         the Mighty game: rules, presets, bots, its Encode and Describe
-  sim/            simulator and the lab, generic over Game
+  engine/         Game (legality by seat), Bot, GameInfo, the table traits (Table, HandReport, TableBots), Level
+  engine-ml/      Encode (model features), Belief, ActionValues
+  mighty/         the Mighty game: rules, presets, its tables and its Encode
+  mighty-ai/      Mighty's bots, its TableBots
+  harness/        play driver, statistics, provenance, generic over Game
+  sim/            bots by name and the Research hooks; the simulator
+  lab/            experiments on Mighty's bots
   eval/           eval suites and runner (new)
   env/            batched RL environment over Game (new)
   env-py/         Python bindings for env (PyO3, maturin) (new)
   infer/          model inference from Rust (ONNX via tract), used by bots (new)
-  server/         rooms, sessions, bots, stats; games registered as plugins
+  server/         rooms, sessions, bots, stats; games registered by id (GameCatalog)
 ml/               Python training (uv project)
   pyproject.toml
   src/cardgame_ml/
@@ -79,7 +83,7 @@ research/
   experiments/    one folder each: config, results (JSON), notes
   manifests/      artifact manifests
   loop/           the experiment runner and its agent protocol
-web/              the client; a table module per game
+web/              the client: room/ without a game, games/<id>/ per game, games/registry.ts
 docs/             PLAN.md (this), DESIGN.md, RULES links, how-tos
 ```
 
@@ -359,6 +363,14 @@ Built (2026-10-05), not yet installed
 
 ### P6 — Game-agnostic service
 
+Mostly done by the codebase plan's Phase 7 (2026-10-06,
+[REFACTOR.md](REFACTOR.md)): the server runs rooms over the table traits
+with games registered by id, the web room knows no game, and
+[Adding a game](#adding-a-game) lists what a new one needs. Still
+Mighty's: the share-link and rulebook page titles and the sitemap
+(`server/src/site.rs`), preset names on `/stats`, and the rule editor and
+rulebook, which are Mighty's own pages rather than driven by a schema.
+
 - Server rooms, sessions, bots, stats over `DynGame`; Mighty registered as a
   plugin; presets and rule schema served by the game; the web rule editor and
   rulebook driven by that schema; the table chosen per game.
@@ -373,6 +385,47 @@ checks pass); no `mighty::` outside the Mighty plugin and its web module.
 
 Exit: poker playable with friends and bots; the env, evals and a baseline
 model work for it unchanged.
+
+### Adding a game
+
+What a second game (P7, Texas hold'em) needs, after Phase 7 of the
+codebase plan. Most of it is a new crate; the rest are registry lines.
+
+1. **Rules crate** (`crates/<game>`), depending on `engine` (and
+   `engine-ml` for the encoding):
+   - `engine::Game`: legality by seat (`legal_actions(state, seat)`,
+     `apply(state, seat, action)`), `turn` saying whom the hand waits on,
+     chance drawn by `sample_chance` and applied by `apply_chance`, views
+     that hide what a seat may not see, `reshuffle_hidden`, invariants.
+   - `engine::GameInfo`: `ID`, `NAME`, the `Rules` and `RulesError` types
+     (serde; the error also `ts-rs`), presets, `validate`, `seats`,
+     `describe`.
+   - `engine::Table` and `engine::HandReport`: the table's `Settings`
+     (preset, pinned, and the table's own rules), `new_table`, `freeze`,
+     `hand_options` (the opening seat turning hand by hand), `grace`,
+     `long_decision`, the client `Catalog` (`ts-rs`), rulebook `Examples`;
+     the hand `Summary`, `reseat`, `outcome` and the seat's `Notes`.
+   - `engine_ml::Encode`, with its spec pinned by a test, if models play it.
+2. **Bots crate** (`crates/<game>-ai`): `Bot`s, and `engine::TableBots<G>`
+   on a type of its own (bots by `engine::Level`, moves off turn, the
+   decision kind that paces them).
+3. **Research hooks**: `sim::Research` (bots by name, options per deal,
+   varied and named rule sets, log versions), in the bots crate if it can
+   depend on `sim`, else in `sim` beside the game's bot specs. Then `env`,
+   `env-py` (add the id to its match), `eval` (a suite under
+   `research/evals`) and `harness` work unchanged.
+4. **Server** (registry lines): `GameCatalog::standard` adds
+   `.with::<Game>(GameBots)`; `codegen` visits the game's types (settings,
+   rules, view, action, notes, summary, catalog) so `protocol.ts` declares
+   them. The messages' TypeScript is written concrete for the first game
+   (`#[ts(concrete)]` in `protocol.rs`), and the client's `room/types.ts`
+   puts another game's types in their place. Its routes are then
+   `/api/games/<id>/...`, its catalog `web/src/lib/generated/<id>/catalog.ts`,
+   and saved tables restore by their `game`.
+5. **Web**: `web/src/lib/games/<id>/` with a `game.ts` entry (its
+   `Table`, rules sheet, rules' name, refusals, preset titles, rulebook
+   page, tool pages) registered in `games/registry.ts`, and its types as a
+   `GameTypes` (`room/types.ts`) for `RoomClient<G>`. `room/` needs nothing.
 
 ### Later
 

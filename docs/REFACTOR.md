@@ -171,7 +171,18 @@ Work goes in phases. Each phase ships on its own, keeps every test green, and ge
 - **Preview and tools:** a `TableClient` interface with a fake for previews (no preview props or sentinels in production code); lazy-load `/preview`, `/deck` and `/share`.
 - **DESIGN.md** updated to the sizes actually kept.
 
-## Phase 7: game boundary (before a second game)
+## Phase 7: game boundary (before a second game) — done (2026-10-06)
+
+Done: legality by seat (`legal_actions(state, seat)`, `apply(state, seat,
+action)`; the 딜미스 window is ordinary legality, and saved `out_of_turn`
+log entries read as the seat's move); the traits are `Game`, `GameInfo`,
+the table's `Table`/`HandReport`/`TableBots` (Mighty's in `mighty` and
+`mighty-ai`, none in the server) and the research tools' `sim::Research`
+(replacing `EnvGame` and `EvalGame`); `engine::dynamic` is gone; a
+`GameCatalog` with `/api/games/{game}/...` routes (the old ones alias the
+first game) and a generated catalog per game; `engine-ml` split out; a
+web `room/` without Mighty and a game registry. What a new game needs is
+in [PLAN.md](PLAN.md#adding-a-game). The plan as written:
 
 - `Game` legality addressed by seat: `legal_actions(state, seat)`, `apply(state, seat, action)`. This removes out-of-turn actions and `bids_as`.
 - Merge the five game traits (`Game`, `JsonGame`, `SessionGame`, `EnvGame`, `EvalGame`).

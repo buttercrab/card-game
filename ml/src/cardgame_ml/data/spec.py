@@ -1,4 +1,4 @@
-"""The layout of a game's observations, as its Rust ``engine::Encode`` reports it.
+"""The layout of a game's observations, as its Rust ``engine_ml::Encode`` reports it.
 
 A spec names every number a model sees. Observations are flat arrays; the
 spec gives their shapes:
