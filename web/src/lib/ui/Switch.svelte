@@ -3,6 +3,7 @@
   // beside it (the label, or what the state means) are part of the target,
   // so the state never reads by colour alone.
   import type { Snippet } from 'svelte';
+  import SwitchTrack from './SwitchTrack.svelte';
 
   let {
     checked = $bindable(false),
@@ -35,7 +36,7 @@
 <button type="button" class={['switch', children && 'row', className]} role="switch" aria-checked={checked} aria-label={label} {disabled} onclick={flip}>
   {#if children}<span class="text">{@render children()}</span>{/if}
   {#if word}<span class="word">{word}</span>{/if}
-  <span class="track" aria-hidden="true"><span class="knob"></span></span>
+  <SwitchTrack {checked}/>
 </button>
 
 <style>
@@ -67,33 +68,5 @@
   }
   .switch:disabled {
     opacity: 0.4;
-  }
-  .track {
-    position: relative;
-    flex: none;
-    width: 42px;
-    height: 26px;
-    border-radius: var(--r-pill);
-    background: var(--off);
-    box-shadow: inset 0 0 0 1.5px var(--ink-muted);
-    transition: background-color var(--dur-quick) var(--ease-standard);
-  }
-  .knob {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--ink-muted);
-    transition: transform var(--dur-quick) var(--ease-standard);
-  }
-  .switch[aria-checked='true'] .track {
-    background: var(--ink);
-    box-shadow: none;
-  }
-  .switch[aria-checked='true'] .knob {
-    background: var(--table);
-    transform: translateX(16px);
   }
 </style>

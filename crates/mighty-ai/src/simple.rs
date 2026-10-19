@@ -214,7 +214,9 @@ impl SimpleBot {
         if self.bid_spread <= 0.0 {
             return count;
         }
-        let won = mighty::score::value(rules, contract, false, (contract.count + 1).min(20)) as f32;
+        let won_points =
+            u8::try_from((u16::from(contract.count) + 1).min(20)).expect("illustrative points are at most20");
+        let won = mighty::score::value(rules, contract, false, won_points) as f32;
         let lost = -mighty::score::value(rules, contract, false, contract.count.saturating_sub(2)) as f32;
         if won <= 0.0 || lost <= 0.0 {
             return count;
@@ -796,5 +798,28 @@ mod tests {
             }
         }
         assert!(declarer_with_discards > 100, "{declarer_with_discards}");
+    }
+    #[test]
+    fn maximum_contract_estimate_does_not_overflow_before_illustrative_point_cap() {
+        let mut rules = mighty::rules::Rules::web_mighty();
+        rules.bidding.min = 2;
+        rules.bidding.max = 255;
+        rules.bidding.no_trump_bonus = 1;
+        rules.validate().unwrap();
+        let policy = SimpleBot {
+            bid_spread: 1.0,
+            ..Default::default()
+        };
+        assert!(
+            policy
+                .needed(
+                    &rules,
+                    Contract {
+                        trump: None,
+                        count: 255
+                    }
+                )
+                .is_finite()
+        );
     }
 }

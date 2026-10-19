@@ -1,3 +1,5 @@
+import type {CommandWindow} from '../generated/protocol';
+import type {NativeAdvice,NativeReaction} from './ephemeral';
 // What the room page and a game's table need of a connection to one room,
 // for any game `G`. The real one is RoomClient (client.svelte.ts); /preview
 // draws the same pages on a made-up one (fakeClient.svelte.ts).
@@ -13,13 +15,30 @@ export interface TableClient<G extends GameTypes = GameTypes> {
   readonly game: StateMsgOf<G> | null;
   /** This tab's seat, or null when watching. */
   readonly seat: number | null;
+  readonly viewerId: string | null;
+  readonly viewerName: string;
+  readonly observerReactions: Record<string, { text: string; id: number }>;
+  observe(name: string): void;
+  requestSeat(requested: boolean, seat?: number): void;
+  offerSeat(requesterId: string | null): void;
+  acceptSeat(seat: number, targetId: string): void;
+  resetScores(): void;
+  ready(ready: boolean): void;
   readonly status: 'connecting' | 'open' | 'closed' | 'missing';
+  readonly deliveryIssue?:import('./delivery').DeliveryIssue|null;
   /** The toast on screen: an error the server sent, or a notice. */
   readonly toasts: { readonly current: Toast | null };
   /** The latest reaction per seat; `id` restarts its animation. */
   readonly reactions: Record<number, { text: string; id: number }>;
   /** What the bot would do in your place, until the hand moves on. */
   readonly hint: G['action'] | null;
+  /** Authoritative receive-time sidecars; absent on legacy/proof clients. */
+  readonly nativeHint?:NativeAdvice<G['action']>|null;
+  readonly nativeReactions?:readonly NativeReaction[];
+  readonly ephemeralConnectionEpoch?:string;
+  readonly roomCommandWindow?:CommandWindow|null;
+  /** Exact authenticated public checkpoint; does not admit game actions. */
+  readonly roomPublicationReady?:boolean;
   /** The turn timer, with its deadline on this page's clock (performance.now()). */
   readonly clock: { seat: number; deadline: number; total: number } | null;
   /** Whether finished hands go into this browser's record (내 기록). */

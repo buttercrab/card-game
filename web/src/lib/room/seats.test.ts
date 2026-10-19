@@ -14,14 +14,6 @@ describe('Ring', () => {
     expect(ring.around(true)).toEqual([1, 2, 3, 4]);
     expect(ring.around(false)).toEqual([0, 1, 2, 3, 4]);
   });
-  it('lands five players’ cards in mirror-image bands', () => {
-    expect(ring.slot(1)).toEqual([1.15, 0.05]);
-    expect(ring.slot(4)).toEqual([-1.15, 0.05]);
-    const [x, y] = new Ring(4, 0).slot(1);
-    // Four players: the next seat sits straight to the right.
-    expect(x).toBeCloseTo(1);
-    expect(y).toBeCloseTo(0);
-  });
   it('looks at whoever is to play, and at the middle on its own turn', () => {
     const r = new Ring(5, 0);
     expect(r.lookAt(1, 1, false, false)).toEqual({ x: -r.direction(1).x, y: -r.direction(1).y });

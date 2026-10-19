@@ -1,0 +1,37 @@
+import {test,expect} from '@playwright/test';
+
+test('shared seating supports an empty-seat move, bot configuration, standing and named rejoin',async({page},info)=>{
+  test.skip(info.project.name!=='1440x900-dark','one complete common-room interaction path');
+  await page.addInitScript(()=>{localStorage.setItem('name',JSON.stringify('수연'));localStorage.setItem('mighty.settings',JSON.stringify({speed:'off',sound:false,music:false}));});
+  await page.goto('/');await page.getByRole('button',{name:'테이블 만들기',exact:true}).click();await page.waitForURL(/\/r\/[a-z0-9]+$/);
+  await page.getByRole('button',{name:'빈자리에 앉기',exact:true}).click();
+  await page.getByRole('button',{name:'내 자리 자리 메뉴',exact:true}).click();
+  await page.getByRole('button',{name:'자리 바꾸기',exact:true}).click();
+  await page.getByRole('button',{name:'3번 자리: 여기와 바꾸기',exact:true}).click();
+  await expect(page.locator('.me-seat .name')).toHaveText('수연');
+  await expect(page.locator('.ring > .spot[data-seat="0"]')).toBeVisible();
+  await expect(page.locator('.ring > .spot[data-seat="2"]')).toHaveCount(0);
+  await page.locator('.watching').click();
+  let people=page.getByRole('dialog',{name:'함께 있는 사람',exact:true});
+  await people.getByText('봇 구성',{exact:true}).click();
+  await people.getByRole('radiogroup',{name:'새 봇 실력',exact:true}).getByRole('radio').last().click();
+  await people.getByRole('button',{name:'빈자리 봇으로 채우기',exact:true}).click();
+  await expect(people.locator('.bot-row')).toHaveCount(4);
+  await people.locator('.bot-row').first().getByRole('button',{name:'봇 빼기',exact:true}).click();
+  await expect(people.locator('.bot-row')).toHaveCount(3);
+  await people.getByRole('button',{name:'닫기',exact:true}).click();
+  const orientation=()=>page.locator('.ring > .spot').evaluateAll(nodes=>nodes.map(e=>({seat:e.getAttribute('data-seat'),place:e.className})));
+  const before=await orientation();
+  await page.locator('.watching').click();
+  await people.getByRole('button',{name:'관전으로 전환',exact:true}).click();
+  await expect(page.locator('.observer-entry')).toBeVisible();
+  expect(await orientation()).toEqual(before);
+  await page.locator('.watching').click();
+  await people.getByLabel('내 관전 이름',{exact:true}).fill('재용');
+  await people.getByRole('button',{name:'빈자리에 앉기',exact:true}).click();
+  const confirm=page.getByRole('button',{name:'이 자리에서 참여',exact:true});
+  await expect(confirm).toBeVisible();
+  await confirm.click();
+  await expect(page.locator('.me-seat .name')).toHaveText('재용');
+  await page.reload();await expect(page.locator('.me-seat .name')).toHaveText('재용');
+});

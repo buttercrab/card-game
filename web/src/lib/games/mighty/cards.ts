@@ -22,6 +22,9 @@ export function cardLabel(card: Card): string {
   return `${SUIT_SYMBOL[suit]}${rankLabel(rank)}`;
 }
 
+/** Stable identity shared by the presentation model and DOM registry. */
+export const cardKey = (card: unknown) => JSON.stringify(card);
+
 export function sameCard(a: Card, b: Card): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -61,8 +64,16 @@ export function jokers(rules: Rules): Card[] {
 
 /** Cards in the deck: four suits from the lowest rank to A, the jokers,
  * and any cards kept below the lowest rank (4마 keeps ♣3 and ♠3). */
+export function deckCards(rules: Rules): Card[] {
+  const extra = new Set(rules.extra_cards.map(cardKey));
+  const normals = SUITS.flatMap(suit => Array.from({length:13}, (_,index):Card => ({Normal:[suit,index+2]})));
+  // Match Rules::cards: extras retain real deck cards, never invent ranks or
+  // duplicate cards. This also gives validation the actual joker membership.
+  return [...normals.filter(card => 'Normal' in card && (card.Normal[1] >= rules.lowest_rank || extra.has(cardKey(card)))), ...jokers(rules)];
+}
+
 export function deckSize(rules: Rules): number {
-  return 4 * (15 - rules.lowest_rank) + jokers(rules).length + rules.extra_cards.length;
+  return deckCards(rules).length;
 }
 
 /** Cards left face down after the deal. */

@@ -4,6 +4,10 @@
   // it is always the tick just before, so it needs no mark of its own.)
   // Ticks that just filled hop once, in the order the cards came in.
   import type { Tally } from './view';
+  import { onDestroy } from 'svelte';
+  import { innerWidth } from 'svelte/reactivity/window';
+  import { tableCoordinates } from '../../../table/coordinateContext';
+  import { createFrameMeasurements } from '../../../table/frameMeasurements';
 
   let { tally, goal, wide = false }: { tally: Tally; goal: number; wide?: boolean } = $props();
 
@@ -13,8 +17,15 @@
   $effect(() => {
     from = { decl: tally.decl, def: tally.def };
   });
-  /** Where the line after tick `k` sits in a 20-column grid with 2px gaps. */
-  const edge = (k: number) => `calc((100% - 38px) * ${k / 20} + ${2 * k - 2}px)`;
+  let host: HTMLSpanElement;
+  const shared = tableCoordinates();
+  const measurements = shared?.measurements ?? createFrameMeasurements(() => host);
+  let width = $state(0);
+  $effect(() => host && measurements.observeSize(host, size => { width = size.width; }));
+  const intrinsicWidth = $derived(Math.min(320, Math.max(160, (innerWidth.current ?? 390) * 0.4)));
+  const tickWidth = $derived(Math.max(0, (width - 38) / 20));
+  const goalX = $derived((tickWidth + 2) * goal - 2);
+  onDestroy(() => { if (!shared) measurements.dispose(); });
   /** Ticks hop only for points taken after the tally appeared. */
   let live = $state(false);
   $effect(() => {
@@ -23,39 +34,26 @@
   });
 </script>
 
-<span class="tally" class:wide class:live role="img" aria-label="점수 카드 20장 중 여당 {tally.decl}장, 야당 {tally.def}장">
+<span class="tally" bind:this={host} style:width={wide ? '100%' : `${intrinsicWidth}px`} class:live role="img" aria-label="점수 카드 20장 중 여당 {tally.decl}장, 야당 {tally.def}장">
   {#each TICKS as i (i)}
     {@const side = i < tally.decl ? 'decl' : i >= 20 - tally.def ? 'def' : ''}
     <span
       class="tick {side}"
+      style:left={`${i * (tickWidth + 2)}px`} style:width={`${tickWidth}px`}
       style:--d="{Math.max(0, side === 'decl' ? i - from.decl : side === 'def' ? 19 - i - from.def : 0) * 40}ms"
     ></span>
   {/each}
-  <span class="goal" style:left={edge(goal)}></span>
+  <span class="goal" style:left={`${goalX}px`}></span>
 </span>
 
 <style>
   .tally {
     position: relative;
-    display: grid;
-    grid-template-columns: repeat(20, 1fr);
-    gap: 2px;
-    width: clamp(160px, 40vw, 320px);
+    display: block;
     height: 10px;
   }
-  .wide {
-    width: 100%;
-  }
-  /* On phones the tally takes its own row, as wide as the row allows. */
-  @media (max-width: 599px) {
-    .tally:not(.wide) {
-      flex: 1 1 auto;
-      width: auto;
-      min-width: 160px;
-      max-width: 320px;
-    }
-  }
   .tick {
+    position: absolute; top: 0; height: 10px;
     border-radius: 2px;
     background: var(--line);
     transition: background-color var(--dur-quick) var(--ease-standard);

@@ -4,6 +4,7 @@
 
 use super::seating::moved;
 use crate::game::ServerGame;
+#[cfg(test)]
 use crate::protocol::SessionMsg;
 
 pub(super) struct Session<G: ServerGame> {
@@ -35,12 +36,20 @@ impl<G: ServerGame> Session<G> {
     }
 
     /// The session as the clients see it.
+    #[cfg(test)]
     pub fn message(&self) -> SessionMsg<G::Summary> {
         SessionMsg {
+            room_version: 0,
             scores: self.scores.clone(),
             hands_played: self.hands_played,
             history: self.history.clone(),
             hands: self.hands.clone(),
+            session_id: 1,
+            ended: false,
+            records: vec![],
+            current_hand: None,
+            standings: vec![],
+            archives: vec![],
         }
     }
 
@@ -64,6 +73,22 @@ impl<G: ServerGame> Session<G> {
         G::hand_options(settings, hand, self.last_hand(hand), self.rotation)
     }
 
+    /// Construct next-hand options for a proposed seat move before committing it.
+    pub fn options_after_reseat(&self, settings: &G::Settings, hand: u32, new_seat: &[usize]) -> G::Options {
+        let mut last = self.last_hand(hand).cloned();
+        if let Some(last) = &mut last {
+            G::reseat(last, new_seat);
+        }
+        G::hand_options(settings, hand, last.as_ref(), self.rotation_after_reseat(new_seat))
+    }
+
+    fn rotation_after_reseat(&self, new_seat: &[usize]) -> usize {
+        let n = self.scores.len();
+        let played = self.hands_played as usize % n;
+        let opener = (played + self.rotation) % n;
+        (new_seat[opener] + n - played) % n
+    }
+
     /// Books a finished hand.
     pub fn book(&mut self, payoffs: Vec<i64>, summary: Option<G::Summary>) {
         for (score, payoff) in self.scores.iter_mut().zip(&payoffs) {
@@ -80,9 +105,7 @@ impl<G: ServerGame> Session<G> {
     /// hand still does, from their new seat.
     pub fn reseat(&mut self, new_seat: &[usize]) {
         let n = self.scores.len();
-        let played = self.hands_played as usize % n;
-        let opener = (played + self.rotation) % n;
-        self.rotation = (new_seat[opener] + n - played) % n;
+        self.rotation = self.rotation_after_reseat(new_seat);
         self.scores = moved(std::mem::take(&mut self.scores), new_seat);
         for payoffs in self.history.iter_mut().filter(|p| p.len() == n) {
             *payoffs = moved(std::mem::take(payoffs), new_seat);
@@ -109,7 +132,10 @@ mod tests {
         let opener = |s: &Session<Mighty>| s.options(&settings, s.hands_played).first_bidder;
         assert_eq!(opener(&session), 3);
         // Seat 3 goes to seat 0, the rest one further round.
+        let prepared = session.options_after_reseat(&settings, session.hands_played, &[1, 2, 4, 0, 3]);
+        assert_eq!(opener(&session), 3, "preparing does not change the opener");
         session.reseat(&[1, 2, 4, 0, 3]);
+        assert_eq!(opener(&session), prepared.first_bidder);
         assert_eq!(opener(&session), 0);
         session.reseat(&[4, 3, 2, 1, 0]);
         assert_eq!(opener(&session), 4);

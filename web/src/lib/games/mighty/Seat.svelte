@@ -6,16 +6,26 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
   import type { Attachment } from 'svelte/attachments';
-  import { juice } from '../../motion';
-  import PlayerFigure from './PlayerFigure.svelte';
+  import PlayerFigure from '../../ui/PlayerFigure.svelte';
   import TurnRing from '../../room/TurnRing.svelte';
   import type { Suit } from './types';
   import Badge, { type Team } from '../../ui/Badge.svelte';
   import FeedbackDock from '../../ui/FeedbackDock.svelte';
+  import EngineFlow from '../../table/EngineFlow.svelte';
+  import { tableCoordinates } from '../../table/coordinateContext';
+  import { createFrameMeasurements } from '../../table/frameMeasurements';
+  import { calculateSeatIdentity, boundsStyle } from '../../table/seatIdentityLayout';
+  import type { Size } from '../../table/layout';
   let {
     name,
+    layoutViewport,
+    layoutRegion,
+    layoutWidth,
+    local = false,
+    waiting = false,
+    compact = false,
     bot = false,
     offline = false,
     team = null,
@@ -38,9 +48,18 @@
     empty = false,
     score = null,
     collecting = false,
+    target,
+    actions,
     gained = $bindable<Gain | null>(null),
   }: {
     name: string;
+    layoutViewport?: Size; layoutRegion?: Size; layoutWidth?: number; local?: boolean; waiting?:boolean; compact?: boolean;
+    /** Occupied identity menu target, contained by the identity footprint. */
+    target?: Snippet;
+    /** Empty seat choices, in normal flow after the identity. */
+    actions?: Snippet<[(height:number)=>void]>;
+    ready?: boolean | null;
+    reviewing?: boolean;
     bot?: boolean;
     offline?: boolean;
     team?: Team | null;
@@ -53,7 +72,7 @@
     bubble?: string | null;
     /** A reaction the player just sent; `id` replays it when repeated. */
     reaction?: { text: string; id: number } | null;
-    /** Where it sits round the table. Feedback always stays below its name. */
+    /** Where it sits round the table. Bid/status stay below the name; reactions float at a separate anchor. */
     place?: Place;
     /** Chosen first in a swap: it stands up a little. */
     picked?: boolean;
@@ -86,9 +105,20 @@
 
 
   let el: HTMLElement;
-  $effect(() => {
-    if (cue) juice(el, 0.6);
-  });
+  const shared=tableCoordinates();
+  const measurements=shared?.measurements??createFrameMeasurements(()=>el);
+  let measuredViewport=$state({width:390,height:844});
+  let measuredRegion=$state({width:92,height:106});
+  let naturalNameWidth=$state(0);
+  let actionsHeight=$state(0);
+  let resolvedActionsHeight=$state(0);
+  const reportActionsHeight=(height:number)=>{resolvedActionsHeight=height;};
+  $effect(()=>el&&measurements.observeRegion(el,({viewport,region})=>{measuredViewport=viewport;measuredRegion={width:region.width,height:region.height};}));
+  const nameMeasurement:Attachment<HTMLElement>=element=>measurements.observeSize(element,({width})=>{naturalNameWidth=width;});
+  const actionMeasurement:Attachment<HTMLElement>=element=>measurements.observeSize(element,({height})=>{actionsHeight=height;});
+  const geometry=$derived(calculateSeatIdentity({viewport:layoutViewport??measuredViewport,region:layoutRegion??measuredRegion,width:layoutWidth??measuredRegion.width,local,waiting,hasMeta:!!(team||secretFriend||points>0||score!==null&&!empty),compact,empty,nameWidth:naturalNameWidth,statusCount:Number(away)+Number(offline),thinking:turn&&bot,actionsHeight:actions?resolvedActionsHeight:0}));
+  const metaItems=$derived([...(team||secretFriend?[{id:'role'}]:[]),...(points>0?[{id:'points'}]:[]),...(score!==null&&!empty?[{id:'score'}]:[])]);
+  onDestroy(()=>{if(!shared)measurements.dispose();});
 
   // Credit appears below the name once collection finishes.
   let before = untrack(() => points);
@@ -114,9 +144,10 @@
   });
 </script>
 
-<div class="seat {place}" bind:this={el} class:turn class:dim class:reveal class:empty class:picked aria-current={turn ? 'true' : undefined} {@attach attach}>
+<div class="seat {place}" data-engine-layout="seat-identity" style:visibility={(name.length===0||naturalNameWidth>0)&&(!actions||resolvedActionsHeight>0&&Math.abs(actionsHeight-resolvedActionsHeight)<=1)?undefined:'hidden'} style:width={`${geometry.width}px`} style:height={`${geometry.height}px`} style:translate={picked?`0 ${geometry.pickedOffset}px`:undefined} style:--name-size={`${geometry.nameSize}px`} style:--meta-size={`${geometry.metaSize}px`} style:--badge-size={`${geometry.badgeSize}px`} style:--badge-line={geometry.badgeLineHeight===undefined?undefined:`${geometry.badgeLineHeight}px`} style:--badge-padding={`${geometry.badgePadding}px`} bind:this={el} class:turn class:dim class:reveal class:empty class:picked aria-current={turn ? 'true' : undefined} {@attach attach}>
+  <div class="identity" style={boundsStyle(geometry.identity)}>
   <!-- On its turn the name tag lights up in plum. -->
-  <div class="stand">
+  <div class="stand" style={boundsStyle(geometry.figure)}>
     {#if empty}
       <!-- The dashed outline of a figure waiting to be filled. -->
       <svg class="outline" viewBox="0 0 120 110" aria-hidden="true"><path d="M20 108 Q22 76 60 72 Q98 76 100 108" /><circle cx="60" cy="48" r="20" /></svg>
@@ -133,205 +164,56 @@
     {/if}
     {#if clock}<TurnRing deadline={clock.deadline} total={clock.total} />{/if}
   </div>
-  <div class="meta">
-    <!-- The badge itself announces 주공 and 프렌드: it pops in when it appears. -->
-    {#if team}{#key team}<Badge {team} size="sm" ringed class="pop" />{/key}
-    {:else if secretFriend}<Badge secret size="sm" ringed class="pop" title="나만 알아요: 부른 카드를 내면 모두 알게 돼요" />{/if}
-    {#if points > 0}
-      {#key points}<Badge class={gained ? 'bump' : ''}>{points}점</Badge>{/key}
-    {/if}
-    {#if score !== null && !empty}<Badge class="score" negative={score < 0} title="누적 점수" label="누적 {score}점">{score > 0 ? '+' : ''}{score}</Badge>{/if}
+  <!-- Production's shared role/points row overlaps the lower edge of the
+       figure; the centered name follows it rather than splitting the row. -->
+  <div class="meta" style={boundsStyle(geometry.meta)} style:display={empty||geometry.meta.height===0?'none':undefined}>
+    <EngineFlow items={metaItems} fill justify="center" gap={compact?2:4} minHeight={geometry.meta.height}>
+      {#snippet children(id)}
+        {#if id==='role' && team}{#key team}<Badge {team} size="sm" ringed class="pop" />{/key}
+        {:else if id==='role' && secretFriend}<Badge secret size="sm" ringed class="pop" title="나만 알아요: 부른카드를 내면 모두 알게 돼요" />
+        {:else if id==='points'}{#key points}<Badge class={gained?'bump':''}>{points}점</Badge>{/key}
+        {:else if id==='score' && score!==null}<Badge class="score" negative={score<0} title="누적 점수" label="누적 {score}점">{score>0?'+':''}{score}</Badge>{/if}
+      {/snippet}
+    </EngineFlow>
   </div>
-  <div class="name-row">
+  <div class="name-row" style={boundsStyle(geometry.name)}>
     {#if away || offline}
-      <span class="status-icons">
-        {#if away}<span class="away-dot" title="자리 비움" aria-label="자리 비움"></span>{/if}
-        {#if offline}<span class="dot" title="연결 끊김" aria-label="연결 끊김"></span>{/if}
+      <span class="status-icons" style={boundsStyle({...geometry.status,x:geometry.status.x-geometry.name.x,y:geometry.status.y-geometry.name.y})}>
+        {#if away}<span class="away-dot" style:left={`${geometry.statusOffsets[0]}px`} title="자리 비움" aria-label="자리 비움"></span>{/if}
+        {#if offline}<span class="dot" style:left={`${geometry.statusOffsets[away?1:0]}px`} title="연결 끊김" aria-label="연결 끊김"></span>{/if}
       </span>
     {/if}
-    <span class="name" title={name}>{name}</span>
-    {#if turn && bot}<span class="thinking" aria-label="생각하는 중"><i></i><i></i><i></i></span>{/if}
+    <span class="name" {@attach nameMeasurement} style:max-width={`${geometry.nameTextMax}px`} style:left="8px" style:top="0px" style:line-height={`${geometry.name.height}px`} title={name}>{name}</span>
+    {#if geometry.showThinking}<span class="thinking" style={boundsStyle({...geometry.dots,x:geometry.dots.x-geometry.name.x,y:geometry.dots.y-geometry.name.y})} aria-label="생각하는 중">{#each geometry.thinkingOffsets as x}<i style:left={`${x}px`}></i>{/each}</span>{/if}
   </div>
-  <FeedbackDock {reaction} {cue} credit={gained} bid={bubble} />
+  {@render target?.()}
+  </div>
+  {#if !empty}<div class="feedback-slot" style={boundsStyle(geometry.feedbackBox)}><FeedbackDock {reaction} {cue} credit={gained} bid={bubble} geometry={geometry.feedback} /></div>{/if}
+  {#if actions}<div class="seat-actions" style={boundsStyle(geometry.actions)}><div {@attach actionMeasurement}>{@render actions(reportActionsHeight)}</div></div>{/if}
 </div>
 
 <style>
-  .away-dot { width: 7px; height: 7px; flex: none; border: 1px solid currentColor; border-radius: 50%; }
-  .seat {
-    position: relative;
-    display: grid;
-    /* One column no wider than the seat, so long names end in an ellipsis. */
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: center;
-    gap: 2px;
-    /* The figure grows with the table's height (the ring is a size
-       container): small on phones, larger on desktop. */
-    --figure-w: var(--seat-figure, clamp(36px, 10cqh, 64px));
-    width: var(--seat-w, 92px);
-    padding: 2px 4px;
-    color: var(--ink-muted);
-    text-align: center;
-    transition: color var(--dur-quick) var(--ease-standard);
-  }
-  .seat.turn {
-    color: var(--ink);
-  }
-  /* The figure; on its turn the name tag below lights up. */
-  .stand::before {
-    /* SVG head centre: (60, 48) in its 120 × 110 viewBox. A true circle
-       behind the head, with the shoulders deliberately extending below. */
-    content: ''; position: absolute; left: 50%; top: calc(48 / 110 * 100%);
-    width: 72%; aspect-ratio: 1; border-radius: 50%;
-    transform: translate(-50%, -50%);
-    background: var(--accent); opacity: 0; pointer-events: none;
-    transition: opacity var(--dur-quick) var(--ease-standard);
-  }
-  .seat.turn .stand::before { opacity: 0.14; }
-  .meta :global(.count) { font-size: 11px; padding-inline: 4px; }
-  @media (orientation: portrait) and (min-height: 700px) and (max-width: 599px) {
-    .seat { --figure-w: var(--seat-figure, clamp(44px, 10cqh, 68px)); }
-  }
-  .stand {
-    position: relative;
-    width: var(--figure-w);
-  }
-  /* The friend's seat turns over like a card. */
-  .seat.reveal {
-    animation: reveal 520ms var(--ease-standard);
-  }
-  @keyframes reveal {
-    0% {
-      transform: perspective(500px) rotateX(0);
-    }
-    50% {
-      transform: perspective(500px) rotateX(90deg);
-    }
-    100% {
-      transform: perspective(500px) rotateX(0);
-    }
-  }
-  :global(:root[data-motion='reduced']) .seat.reveal {
-    animation: none;
-  }
-  .seat.dim {
-    opacity: 0.6;
-  }
-  /* Picked first in a swap: it stands up a little, in ink. */
-  .seat.picked {
-    translate: 0 -4px;
-    color: var(--ink);
-  }
-  /* An empty seat: an outline the size of a figure, and a muted name. */
-  .outline {
-    display: block;
-    width: 100%;
-    height: auto;
-    overflow: visible;
-    fill: none;
-    stroke: var(--ink-muted);
-    stroke-width: 4;
-    stroke-dasharray: 8 7;
-    stroke-linecap: round;
-  }
-  .seat.empty .name {
-    font-weight: 500;
-  }
-  .name-row {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    max-width: 100%;
-    padding: 1px 8px;
-    border-radius: var(--r-pill);
-    transition:
-      background-color var(--dur-quick) var(--ease-standard),
-      color var(--dur-quick) var(--ease-standard);
-  }
-  /* Whose turn it is: the name tag fills with plum. */
-  .seat.turn .name-row {
-    background: var(--accent);
-    color: var(--on-accent);
-  }
-  .name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 7em;
-    font-size: var(--name-size, 15px);
-    font-weight: 600;
-    line-height: 1.27;
-  }
-  /* Status and thinking sit outside the centered name, without moving it. */
-  .status-icons { position: absolute; right: calc(100% + 4px); display: inline-flex; align-items: center; gap: 3px; }
-  .status-icons, .thinking { color: var(--ink-muted); }
-  /* A bot deciding: three dots breathing in turn. */
-  .thinking {
-    position: absolute;
-    left: calc(100% + 4px);
-    display: inline-flex;
-    gap: 2px;
-  }
-  .thinking i {
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: think 1.2s ease-in-out infinite;
-  }
-  .thinking i:nth-child(2) {
-    animation-delay: 150ms;
-  }
-  .thinking i:nth-child(3) {
-    animation-delay: 300ms;
-  }
-  @keyframes think {
-    0%,
-    100% {
-      opacity: 0.25;
-    }
-    40% {
-      opacity: 1;
-    }
-  }
-  /* Team badge and points are pinned on the robe, like a name tag, so the
-     seat stays about as short as the old plate. */
-  .meta {
-    position: relative;
-    margin-top: calc(var(--figure-w) * -0.14);
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
-    font-size: var(--text-label);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  /* Reserve metadata during play; a compact between-hand layout may
-     release the empty spacer while keeping any badges at their own height. */
-  .meta {
-    min-height: var(--seat-meta-min, 20px);
-  }
-  /* Tablets: the seats grow with the table instead of staying phone-sized. */
-  @media (min-width: 600px) {
-    .seat {
-      --figure-w: var(--seat-figure, clamp(40px, 9cqh, 84px));
-      --name-size: clamp(15px, 2.3cqw, 19px);
-    }
-    .meta {
-      font-size: clamp(13px, 1.8cqw, 15px);
-    }
-  }
-  @media (min-width: 1024px) and (min-height: 640px) {
-    /* Desktop: the same stacked character as on phones (figure, badge on
-       its chest, name tag below), just larger. */
-    .seat {
-      --figure-w: var(--seat-figure, clamp(56px, 14cqh, 80px));
-    }
-    .name {
-      font-size: 16px;
-    }
-  }
+  .seat { position:relative; color:var(--ink-muted); text-align:center; transition:color var(--dur-quick) var(--ease-standard); }
+  .seat.turn { color:var(--ink); }
+  .identity,.stand,.meta,.name-row,.feedback-slot,.seat-actions,.name,.status-icons,.thinking { position:absolute; box-sizing:border-box; }
+  .stand::before { content:''; position:absolute; left:14%; top:3.7%; width:72%; aspect-ratio:1; border-radius:50%; background:var(--accent); opacity:0; pointer-events:none; transition:opacity var(--dur-quick) var(--ease-standard); }
+  .seat.turn .stand::before { opacity:.14; }
+  .seat.dim { opacity:.6; }
+  .seat.picked { color:var(--ink); }
+  .outline { display:block; width:100%; height:auto; overflow:visible; fill:none; stroke:var(--ink-muted); stroke-width:4; stroke-dasharray:8 7; stroke-linecap:round; }
+  .name-row { border-radius:var(--r-pill); transition:background-color var(--dur-quick) var(--ease-standard),color var(--dur-quick) var(--ease-standard); }
+  .seat.turn .name-row { background:var(--accent); color:var(--on-accent); }
+  .name { width:max-content; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--name-size); font-weight:600; }
+  .seat.empty .name { font-weight:500; }
+  .meta { font-size:var(--meta-size); font-weight:600; font-variant-numeric:tabular-nums; }
+  .meta :global(.count) { font-size:var(--badge-size); line-height:var(--badge-line,18px); padding:0 var(--badge-padding); }
+  .meta :global(.team) { font-size:var(--badge-size); line-height:var(--badge-line,16px); padding:0 var(--badge-padding); }
+  .status-icons,.thinking { color:var(--ink-muted); }
+  .status-icons > span { position:absolute; top:0; width:7px; height:7px; box-sizing:border-box; }
+  .away-dot { border:1px solid currentColor; border-radius:50%; }
+  .thinking i { position:absolute; top:0; width:4px; height:4px; border-radius:50%; background:currentColor; animation:think 1.2s ease-in-out infinite; }
+  .thinking i:nth-child(2) { animation-delay:150ms; }
+  .thinking i:nth-child(3) { animation-delay:300ms; }
+  @keyframes think { 0%,100% {opacity:.25;} 40% {opacity:1;} }
+  .identity :global(.seat-tap) { left:0; top:0; width:100%; height:100%; }
 </style>

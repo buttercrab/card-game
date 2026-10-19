@@ -1,3 +1,4 @@
+import type {CurrentRoomViewOf} from '../../room/currentRoom';
 // The server's types, generated from its Rust definitions (see
 // crates/server/src/codegen.rs), plus a few names for parts of them, and
 // Mighty's types as the room carries them (room/types.ts).
@@ -26,3 +27,6 @@ export type RoomView = RoomViewOf<Mighty>;
 
 /** The hand as this seat (or a watcher) sees it, and what it may do. */
 export type StateMsg = StateMsgOf<Mighty>;
+
+/** Bounded current presentation input; archives are resolved separately. */
+export type CurrentRoomView = CurrentRoomViewOf<Mighty>;

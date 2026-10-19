@@ -2,6 +2,7 @@
 // build (catalog.ts).
 import { MIGHTY } from './catalog';
 import { same } from './ruleFields';
+import {fillGaps,upgradeRules,decodeMightyCustomCatalog} from './ruleValidation';
 import type { Rules } from './types';
 
 /** Rules a group made from a preset and kept on this device. */
@@ -20,27 +21,7 @@ export function customName(set: CustomSet): string {
   return set.name.trim() || '우리 규칙';
 }
 
-/** Rules saved before `misdeal.window` said when by two flags; read them as
- * the server does (`ask_first` won over `after_bidding`). */
-export function upgradeRules(saved: Rules): Rules {
-  const misdeal = saved?.misdeal as (Partial<Rules['misdeal']> & { ask_first?: boolean; after_bidding?: boolean }) | undefined;
-  if (!misdeal || misdeal.window !== undefined || (misdeal.ask_first === undefined && misdeal.after_bidding === undefined))
-    return saved;
-  const { ask_first, after_bidding, ...rest } = misdeal;
-  const window = ask_first ? 'BeforeFirstBid' : after_bidding ? 'AllBidding' : 'OwnTurnUntilBid';
-  return { ...saved, misdeal: { ...rest, window } as Rules['misdeal'] };
-}
-
-/** `saved` with every option it leaves out (rules saved before the option
- * existed) filled from `defaults`, as the server reads them. */
-export function fillGaps<T>(saved: T, defaults: T): T {
-  if (saved === undefined) return structuredClone(defaults);
-  const plain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-  if (!plain(saved) || !plain(defaults)) return saved;
-  const out: Record<string, unknown> = { ...saved };
-  for (const [key, value] of Object.entries(defaults)) out[key] = fillGaps(saved[key], value);
-  return out as T;
-}
+export {fillGaps,upgradeRules} from './ruleValidation';
 
 /** Saved sets, the last used first. */
 export function loadCustom(): CustomSet[] {
@@ -59,21 +40,51 @@ export function loadCustom(): CustomSet[] {
 function store(list: CustomSet[]) {
   try {
     localStorage.setItem(CUSTOM_KEY, JSON.stringify(list.slice(0, CUSTOM_MAX)));
+    return true;
   } catch {
-    // Without storage the set lasts as long as the page.
+    return false;
   }
 }
 
-/** Saves `set` as the last used. A set with the same name, or the same rules
- * and no name, is replaced rather than kept twice. */
-export function saveCustom(set: Omit<CustomSet, 'id'> & { id?: string }): CustomSet {
+export type CustomSaveOutcome = {status:'stored';set:CustomSet;raw:string} | {status:'failed'|'conflict'|'unsupported'};
+/** Captured by the fixed storage host, never interpreted as a command. */
+export function readCustomStorageRaw(): string | null { return localStorage.getItem(CUSTOM_KEY); }
+
+function prepareSave(set: Omit<CustomSet, 'id'> & { id?: string }) {
   const list = loadCustom();
   const sameRules = (s: CustomSet) => same(s.rules, set.rules) && s.base === set.base;
   const old = list.find(
     (s) => s.id === set.id || (set.name.trim() ? s.name.trim() === set.name.trim() : !s.name.trim() && sameRules(s)),
   );
   const saved: CustomSet = { ...set, id: old?.id ?? set.id ?? crypto.randomUUID?.() ?? String(Date.now()) };
-  store([saved, ...list.filter((s) => s.id !== saved.id)]);
+  return {saved,list:[saved, ...list.filter((s) => s.id !== saved.id)]};
+}
+
+/** Truthful local outcome for an engine-admitted, already validated rules model.
+ * Refuse malformed existing catalogs instead of cleansing unrelated saved data.
+ * The optional exact snapshot check detects stale catalogs, not a cross-tab CAS.
+ */
+export function saveCustomWithOutcome(set: Omit<CustomSet, 'id'> & { id?: string }, options: {expectedRaw?:string|null} = {}): CustomSaveOutcome {
+  try {
+    const raw=readCustomStorageRaw();
+    if(Object.hasOwn(options,'expectedRaw')&&raw!==options.expectedRaw)return {status:'conflict'};
+    if(raw!==null&&new TextEncoder().encode(raw).length>65536)return {status:'unsupported'};
+    try { decodeMightyCustomCatalog(raw); } catch { return {status:'unsupported'}; }
+    const {saved,list}=prepareSave(set);
+    // A second check also protects against synchronous adapters mutating storage
+    // during preparation. localStorage itself offers no multi-tab transaction.
+    if(readCustomStorageRaw()!==raw)return {status:'conflict'};
+    const written=JSON.stringify(list.slice(0,CUSTOM_MAX));
+    localStorage.setItem(CUSTOM_KEY,written);
+    return {status:'stored',set:saved,raw:written};
+  }catch{return {status:'failed'};}
+}
+
+/** Saves `set` as the last used. A set with the same name, or the same rules
+ * and no name, is replaced rather than kept twice. */
+export function saveCustom(set: Omit<CustomSet, 'id'> & { id?: string }): CustomSet {
+  const {saved,list}=prepareSave(set);
+  store(list);
   return saved;
 }
 

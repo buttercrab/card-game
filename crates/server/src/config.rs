@@ -32,6 +32,45 @@ pub struct Config {
     /// Most tables open at once.
     #[arg(long, default_value_t = 500)]
     pub max_rooms: usize,
+    /// Maximum encoded outbound frame bytes (UTF-8 JSON source).
+    #[arg(long, default_value_t = 4 << 20)]
+    pub outbound_message_bytes: usize,
+    /// Queued plus in-flight bytes per socket. Must retain four message budgets.
+    #[arg(long, default_value_t = 16 << 20)]
+    pub outbound_connection_bytes: usize,
+    #[arg(long, default_value_t = 256)]
+    pub outbound_frames: usize,
+    /// Shared queued plus in-flight source bytes across all table sockets.
+    #[arg(long, default_value_t = 64 << 20)]
+    pub outbound_global_bytes: usize,
+    /// Shared native background computations, including already running blocking jobs.
+    #[arg(long, default_value_t = 64)]
+    pub cognition_jobs: usize,
+    /// Bounded room commands, including reserved disconnect/shutdown slots.
+    #[arg(long, default_value_t = 256)]
+    pub ingress_commands: usize,
+    #[arg(long, default_value_t = 8 << 20)]
+    pub ingress_room_bytes: usize,
+    #[arg(long, default_value_t = 64 << 20)]
+    pub ingress_global_bytes: usize,
+    #[arg(long, default_value_t = 128)]
+    pub room_connections: usize,
+    #[arg(long, default_value_t = 1024)]
+    pub global_connections: usize,
+    /// Native retained public checkpoint bytes, including recovery headroom.
+    #[arg(long, default_value_t = 4 << 20)]
+    pub resource_session_bytes: usize,
+    /// Persisted checkpoint bytes. Existing larger files remain unavailable in place.
+    #[arg(long, default_value_t = 64 << 20)]
+    pub resource_snapshot_bytes: usize,
+    #[arg(long, default_value_t = 2 << 20)]
+    pub resource_hand_log_bytes: usize,
+    #[arg(long, default_value_t = 64)]
+    pub resource_archives: usize,
+    #[arg(long, default_value_t = 2048)]
+    pub resource_period_records: usize,
+    #[arg(long, default_value_t = 8192)]
+    pub resource_total_records: usize,
     /// Close a table after this many minutes with nobody connected.
     #[arg(long, default_value_t = IDLE_MINUTES as f64)]
     pub idle_minutes: f64,
@@ -125,6 +164,36 @@ impl Config {
             site.to_string()
         };
         self
+    }
+
+    pub fn ingress_policy(&self) -> crate::ingress::Policy {
+        crate::ingress::Policy {
+            commands: self.ingress_commands,
+            room_bytes: self.ingress_room_bytes,
+            global_bytes: self.ingress_global_bytes,
+            room_connections: self.room_connections,
+            global_connections: self.global_connections,
+        }
+    }
+
+    pub fn resource_limits(&self) -> crate::resource_budget::ResourceLimits {
+        crate::resource_budget::ResourceLimits {
+            session_bytes: self.resource_session_bytes.min(self.outbound_message_bytes),
+            snapshot_bytes: self.resource_snapshot_bytes,
+            hand_log_bytes: self.resource_hand_log_bytes,
+            archives: self.resource_archives,
+            period_records: self.resource_period_records,
+            total_records: self.resource_total_records,
+        }
+    }
+
+    pub fn outbound_policy(&self) -> crate::outbound::Policy {
+        crate::outbound::Policy {
+            message_bytes: self.outbound_message_bytes,
+            connection_bytes: self.outbound_connection_bytes,
+            frames: self.outbound_frames,
+            global_bytes: self.outbound_global_bytes,
+        }
     }
 
     pub fn bot_delay(&self) -> Duration {

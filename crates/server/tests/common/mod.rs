@@ -144,6 +144,11 @@ pub async fn connect(addr: SocketAddr, room: &str) -> Socket {
 }
 
 pub async fn send(ws: &mut Socket, msg: Value) {
+    if msg["type"] == "start" {
+        ws.send(Message::Text(json!({"type":"ready","ready":true}).to_string().into()))
+            .await
+            .unwrap();
+    }
     ws.send(Message::Text(msg.to_string().into())).await.unwrap();
 }
 

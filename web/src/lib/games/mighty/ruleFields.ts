@@ -14,7 +14,7 @@
 // Values are compared as JSON, so a field can be a number, a flag, a card
 // pair or a whole sub-object.
 import { RULE_TEXT } from './refusals';
-import { cardLabel, deckSize, jokers } from './cards';
+import { cardLabel, deckCards, isPoint, jokers } from './cards';
 import type {
   BackRun,
   Card,
@@ -762,8 +762,9 @@ export function problems(r: Rules): { paths: string[]; message: string }[] {
   if (!distinct || !extra.every((c) => (rank(c) ?? 99) < lowest))
     out.push({ paths: [], message: RULE_TEXT.bad_extra_cards });
   if (r.players < 2 || r.players > 8 || r.hand_size === 0) out.push({ paths: [], message: RULE_TEXT.table_size });
-  if (r.players * r.hand_size > deckSize(r)) out.push({ paths: ['deck'], message: RULE_TEXT.too_few_cards });
-  const inDeck = (c: Card) => (rank(c) ?? 99) >= lowest || extra.some((x) => same(x, c));
+  const cards=deckCards(r),cardIds=new Set(cards.map(card=>JSON.stringify(card)));
+  if (r.players * r.hand_size > cards.length) out.push({ paths: ['deck'], message: RULE_TEXT.too_few_cards });
+  const inDeck = (c: Card) => cardIds.has(JSON.stringify(c));
   if (!r.joker_call.calls.flat().every(inDeck))
     out.push({ paths: ['joker_call.calls.0', 'joker_call.calls.1'], message: RULE_TEXT.joker_call_not_in_deck });
   if (r.bidding.min === 0 || r.bidding.min > r.bidding.max)
@@ -778,5 +779,15 @@ export function problems(r: Rules): { paths: string[]; message: string }[] {
   const f = r.friend;
   if (f && !(f.by_card || f.by_seat || f.first_trick || f.last_trick || f.alone))
     out.push({ paths: ['friend'], message: RULE_TEXT.no_friend_rule });
+  if(f?.fake&&!f.by_card)out.push({paths:['friend'],message:RULE_TEXT.fake_without_card});
+  // Rules::some_hand_plays maximizes the misdeal total over the actual deck.
+  // If all-point hands are disallowed, replace the weakest chosen point with
+  // the strongest non-point. First listed override wins, just as on server.
+  const values=cards.map(card=>({point:isPoint(card),value:r.misdeal.card_values.find(([candidate])=>same(candidate,card))?.[1]??('Joker' in card?r.misdeal.joker_value:isPoint(card)?r.misdeal.point_value:0)})).sort((a,b)=>b.value-a.value);
+  const best=values.slice(0,r.hand_size);let total=best.reduce((sum,card)=>sum+card.value,0),possible=true;
+  if(r.misdeal.all_points&&best.every(card=>card.point)){
+    const other=values.find(card=>!card.point);if(!other)possible=false;else total+=other.value-(best.at(-1)?.value??0);
+  }
+  if(!possible||total<=r.misdeal.threshold)out.push({paths:['misdeal.threshold','misdeal.all_points','misdeal.point_value','misdeal.joker_value','misdeal.card_values'],message:RULE_TEXT.always_misdeal});
   return out;
 }

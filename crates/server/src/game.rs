@@ -63,15 +63,28 @@ pub trait GameEntry: Send + Sync {
     fn examples(&self, body: &[u8]) -> Result<Value, ServerError>;
 
     /// Opens a table as `body` ([`CreateRoom`]) asks, returning its id.
-    fn create(&self, app: &AppState, body: &[u8]) -> Result<String, (StatusCode, ServerError)>;
+    fn create(&self, app: &AppState, body: &[u8]) -> Result<String, CreateError>;
 
     /// Reopens a table saved as `snapshot` ([`crate::room::SnapshotV2`] or
     /// the first format), returning its id.
-    fn restore(&self, app: &AppState, snapshot: Value) -> Result<String, String>;
+    fn restore(&self, app: &AppState, snapshot: Value) -> Result<String, RestoreError>;
 
     /// A bot's move, as a bot worker makes it: `view` and `legal` are the
     /// game's own, as JSON.
     fn think(&self, bot: Think, view: Value, legal: Value) -> Result<Value, String>;
+}
+
+#[derive(Debug)]
+pub enum CreateError {
+    Rejected(StatusCode, ServerError),
+    Capacity(crate::protocol::NativeCapacityReason),
+}
+
+/// Resource refusal preserves the original file and its registry identity.
+#[derive(Debug)]
+pub enum RestoreError {
+    Invalid(String),
+    Capacity(crate::protocol::NativeCapacityReason),
 }
 
 /// What a bot worker is asked to think about, apart from the position.
@@ -125,24 +138,73 @@ impl<G: ServerGame> GameEntry for Entry<G> {
         Ok(serde_json::to_value(G::examples(&rules)).expect("examples serialize"))
     }
 
-    fn create(&self, app: &AppState, body: &[u8]) -> Result<String, (StatusCode, ServerError)> {
-        let bad = |e: ServerError| (StatusCode::BAD_REQUEST, e);
+    fn create(&self, app: &AppState, body: &[u8]) -> Result<String, CreateError> {
+        let bad = |e: ServerError| CreateError::Rejected(StatusCode::BAD_REQUEST, e);
         let request: CreateRoom<String, G::Rules> = crate::parse_body(body).map_err(bad)?;
         let settings = G::new_table(request.preset.as_deref(), request.rules).map_err(|e| match e {
             TableError::UnknownPreset(id) => bad(ServerError::with_detail(ErrorCode::UnknownPreset, id)),
             TableError::Rules(e) => bad(ServerError::rules(&e)),
         })?;
-        app.create_room::<G>(settings, self.bots.clone()).ok_or_else(|| {
-            tracing::warn!(max = app.config().max_rooms, "refused a table: too many are open");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                ServerError::new(ErrorCode::TooManyTables),
-            )
-        })
+        app.try_create_room::<G>(settings, self.bots.clone())
     }
 
-    fn restore(&self, app: &AppState, snapshot: Value) -> Result<String, String> {
-        let room = Room::<G>::restore(snapshot, app.room_env(), self.bots.clone())?;
+    fn restore(&self, app: &AppState, snapshot: Value) -> Result<String, RestoreError> {
+        // Admission must precede Room::new and v1 replay: seat counts and
+        // game constructors are allocation-bearing, even for tiny JSON.
+        if !matches!(snapshot.get("format").and_then(Value::as_u64), Some(1 | 2)) {
+            return Err(RestoreError::Capacity(
+                crate::protocol::NativeCapacityReason::UnsupportedProfile,
+            ));
+        }
+        let certify = |value: &Value| -> Result<usize, RestoreError> {
+            let settings: G::Settings =
+                serde_json::from_value(value.clone()).map_err(|e| RestoreError::Invalid(e.to_string()))?;
+            crate::resource_budget::ResourceProfile::table::<G>(&settings).map_err(|error| {
+                RestoreError::Capacity(crate::protocol::NativeCapacityReason::from_budget(&error, true))
+            })?;
+            G::validate(&G::table_rules(&settings)).map_err(|e| RestoreError::Invalid(e.to_string()))?;
+            Ok(seats::<G>(&settings))
+        };
+        let seat_count = certify(
+            snapshot
+                .get("settings")
+                .ok_or_else(|| RestoreError::Invalid("missing settings".into()))?,
+        )?;
+        let check_rotation = |rotation: Option<&Value>| -> Result<(), RestoreError> {
+            if rotation
+                .and_then(Value::as_u64)
+                .is_some_and(|rotation| rotation >= seat_count as u64)
+            {
+                return Err(RestoreError::Capacity(
+                    crate::protocol::NativeCapacityReason::UnreservableLegacy,
+                ));
+            }
+            Ok(())
+        };
+        check_rotation(snapshot.get("rotation"))?;
+        if let Some(hand) = snapshot.get("hand").filter(|hand| !hand.is_null()) {
+            if let Some(settings) = hand.get("context").and_then(|context| context.get("settings")) {
+                certify(settings)?;
+            }
+            check_rotation(hand.get("context").and_then(|context| context.get("rotation")))?;
+            let log = hand.get("log").or_else(|| hand.get("actions"));
+            if let Some(log) = log {
+                crate::resource_budget::serialized_size_capped(
+                    log,
+                    crate::resource_budget::Resource::HandLog,
+                    app.config().resource_hand_log_bytes,
+                )
+                .map_err(|error| {
+                    RestoreError::Capacity(crate::protocol::NativeCapacityReason::from_budget(&error, true))
+                })?;
+            }
+        }
+        let mut room =
+            Room::<G>::restore(snapshot, app.room_env(), self.bots.clone()).map_err(RestoreError::Invalid)?;
+        room.admit_restore(app.config().outbound_message_bytes)
+            .map_err(|error| {
+                RestoreError::Capacity(crate::protocol::NativeCapacityReason::from_budget(&error, true))
+            })?;
         Ok(app.open_restored(room))
     }
 
@@ -173,7 +235,9 @@ pub struct GameCatalog {
 impl GameCatalog {
     /// Every game this build offers.
     pub fn standard() -> GameCatalog {
-        GameCatalog::default().with::<mighty::Mighty>(mighty_ai::MightyBots)
+        GameCatalog::default()
+            .with::<mighty::Mighty>(mighty_ai::MightyBots)
+            .with::<poker::Poker>(poker::PokerBots)
     }
 
     /// Adds `G`, played by `bots`. Two games with one id would make ids
@@ -214,7 +278,11 @@ mod tests {
         let games = GameCatalog::standard();
         assert_eq!(games.default_game().id(), "mighty");
         assert_eq!(games.get("mighty").map(|g| g.name()), Some("마이티"));
-        assert!(games.get("poker").is_none());
+        assert_eq!(games.get("poker").map(|g| g.name()), Some("텍사스 홀덤"));
+        assert_eq!(
+            games.games().map(|g| g.id()).collect::<Vec<_>>(),
+            vec!["mighty", "poker"]
+        );
         assert_eq!(games.default_game().presets().len(), mighty::rules::Preset::ALL.len());
     }
 

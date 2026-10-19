@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({page}) => { await page.addInitScript(() => localStorage.setItem('name', JSON.stringify('나'))); });
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('mighty.settings', JSON.stringify({ speed: 'off', sound: false, music: false }));
@@ -16,6 +18,16 @@ test('a single card is centered on the tray regardless of tool width', async ({ 
   const card = await page.locator('.hand .card').boundingBox();
   const tray = await page.locator('.tray').boundingBox();
   expect(Math.abs(card!.x + card!.width / 2 - tray!.x - tray!.width / 2)).toBeLessThan(1);
+});
+
+test('suit-prefixed bids use compact text instead of emoji typography', async ({ page }) => {
+  await page.goto('/preview?state=bidnotes&room');
+  await page.locator('html[data-ready]').waitFor();
+  const bids = page.locator('[data-kind="bid"]');
+  expect(await bids.count()).toBeGreaterThan(0);
+  await expect(bids.getByRole('img', { name: '하트', exact: true })).toHaveCount(1);
+  await expect(page.locator('[data-kind="bid"].emoji')).toHaveCount(0);
+  for(const bid of await bids.all()) expect(await bid.evaluate(e => parseFloat(getComputedStyle(e).fontSize))).toBeLessThanOrEqual(12);
 });
 
 test('reactions share identity docks; R and arrows send a reaction without opening another layer', async ({ page }) => {

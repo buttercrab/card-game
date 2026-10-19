@@ -125,7 +125,7 @@
     <Button wide onclick={onmovehere}><Icon name="swap" />내가 여기로 옮기기</Button>
   {:else if mine}
     <Button wide onclick={onswap}><Icon name="swap" />자리 바꾸기</Button>
-    <Button wide onclick={onstand}><Icon name="leave" />일어나서 구경하기</Button>
+    <Button wide onclick={onstand}><Icon name="leave" />관전으로 전환</Button>
   {:else}
     <Button wide onclick={onswap}><Icon name="swap" />자리 바꾸기</Button>
     {#if !info.connected}<Button wide onclick={onrelieve}><Icon name="bot" />봇에게 맡기기</Button>{/if}

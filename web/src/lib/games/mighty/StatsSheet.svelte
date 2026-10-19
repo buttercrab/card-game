@@ -2,6 +2,7 @@
   import { contractLabel } from './cards';
   import { ACHIEVEMENTS, loadUnlocked } from './achievements';
   import { clearStats, loadStats, type Role } from './stats';
+  import {readDeviceRecords} from './completionStore';
   import Icon from '../../Icon.svelte';
   import SuitText from '../../SuitText.svelte';
   import Button from '../../ui/Button.svelte';
@@ -12,6 +13,8 @@
   let { onclose }: { onclose: () => void } = $props();
 
   let hands = $state(loadStats());
+  const initial=readDeviceRecords();
+  let storageError=$state(initial.status==='ready'?null:initial.message);
   const ROLES: { id: Role; label: string }[] = [
     { id: 'declarer', label: '주공' },
     { id: 'friend', label: '프렌드' },
@@ -29,14 +32,15 @@
 
   function reset() {
     if (!confirm('이 기기에 남은 기록을 모두 지울까요?')) return;
-    clearStats();
-    hands = [];
+    const result=clearStats();
+    if(result.status==='stored'){hands=[];storageError=null;}else storageError='message'in result?result.message:null;
   }
 </script>
 
 <Sheet title="내 기록" {onclose}>
   <p class="muted note">이 기기에서 플레이한 판만 기록돼요.</p>
-  {#if hands.length === 0}
+  {#if storageError}<p role="alert">{storageError}</p>
+  {:else if hands.length === 0}
     <p>아직 끝낸 판이 없어요. 한 판 하고 오세요!</p>
   {:else}
     <div class="big">

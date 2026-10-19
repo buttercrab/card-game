@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.beforeEach(async ({page}) => { await page.addInitScript(() => localStorage.setItem('name', JSON.stringify('나'))); });
+
 // The empty/part-filled real table differs from the full preview lobby.
 // Keep its hit targets and server-confirmed controls usable at every size.
 test.beforeEach(async ({ page }, info) => {
@@ -18,10 +20,8 @@ async function create(page: Page) {
 }
 
 async function sit(page: Page) {
-  await page.locator('.seat-act', { hasText: '앉기' }).first().click();
-  await page.locator('.pop-card input').fill('키보드');
-  await page.locator('.pop-card button[type=submit]').click();
-  await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(4);
+  await page.getByRole('button', { name: '빈자리에 앉기', exact: true }).click();
+  await expect(page.locator('.seat-act', { hasText: '봇 추가' })).toHaveCount(4);
 }
 
 test('a partly filled table leaves every add-bot control reachable', async ({ page }) => {
@@ -29,36 +29,62 @@ test('a partly filled table leaves every add-bot control reachable', async ({ pa
   await sit(page);
   for (let i = 0; i < 4; i++) {
     // No force or offset: its center must really receive the tap.
-    await page.locator('.seat-act', { hasText: '+ 봇' }).first().click();
-    await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(3 - i);
+    await page.locator('.seat-act', { hasText: '봇 추가' }).first().click();
+    await expect(page.locator('.seat-act', { hasText: '봇 추가' })).toHaveCount(3 - i);
   }
   await expect(page.getByRole('button', { name: '시작', exact: true })).toBeVisible();
 });
 
-test('keyboard seat entry focuses the name and Escape returns to its opener', async ({ page }) => {
+test('empty seats have explicit spaced actions without a second hover menu target', async ({ page }) => {
   await create(page);
-  const opener = page.locator('.seat-act', { hasText: '앉기' }).first();
+  await expect(page.locator('.me-seat .seat-tap')).toHaveCount(0);
+  const join = page.getByRole('button', { name: '빈자리에 앉기', exact: true });
+  await join.hover();
+  const occupiedBounds = await page.locator('.me-seat').boundingBox();
+  const joinBounds = await join.boundingBox();
+  const verticalGap = Math.max(joinBounds!.y - occupiedBounds!.y - occupiedBounds!.height, occupiedBounds!.y - joinBounds!.y - joinBounds!.height);
+  const horizontalGap = Math.max(joinBounds!.x - occupiedBounds!.x - occupiedBounds!.width, occupiedBounds!.x - joinBounds!.x - joinBounds!.width);
+  expect(Math.max(verticalGap, horizontalGap)).toBeGreaterThanOrEqual(8);
+  await sit(page);
+  await expect(page.locator('.seat.empty .seat-tap')).toHaveCount(0);
+  // Newly mounted identities stay hidden until their engine child bounds resolve.
+  for (const seat of await page.locator('.spot .seat.empty').all()) await expect(seat).toBeVisible();
+  const gaps = await page.locator('.spot .seat.empty').evaluateAll(nodes => nodes.map(e => {
+    const name=e.querySelector('.name')!.getBoundingClientRect();
+    const button=e.querySelector('.seat-actions button')!.getBoundingClientRect();
+    const frame=e.getBoundingClientRect();
+    return {nameGap:button.top-name.bottom,height:button.height,inside:button.bottom<=frame.bottom+1};
+  }));
+  expect(gaps).toHaveLength(4);
+  for(const gap of gaps){expect(gap.nameGap).toBeGreaterThanOrEqual(10);expect(gap.height).toBeGreaterThanOrEqual(44);expect(gap.inside).toBe(true);}
+});
+
+test('keyboard observer name editing returns focus and participation works without a mouse', async ({ page }) => {
+  await create(page);
+  const opener = page.locator('.watching');
   await opener.focus();
   await opener.press('Enter');
-  await expect(page.locator('.pop-card input')).toBeFocused();
+  const name = page.getByRole('textbox', {name: '내 관전 이름', exact: true});
+  await name.focus();
+  await name.fill('키보드');
+  await name.press('Enter');
+  await expect(page.locator('.participation').getByLabel('내 이름')).toHaveValue('키보드');
   await page.keyboard.press('Escape');
-  await expect(page.locator('.pop-card')).toHaveCount(0);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
   await expect(opener).toBeFocused();
-
-  // Continue without a mouse: reopen, type and submit to take the seat.
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.pop-card input')).toBeFocused();
-  await page.keyboard.type('키보드');
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.pop-card')).toHaveCount(0);
-  await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(4);
+  const join = page.getByRole('button', {name:'빈자리에 앉기',exact:true});
+  await join.focus();
+  await join.press('Enter');
+  await expect(page.locator('.me-seat .name')).toHaveText('키보드');
+  await expect(page.locator('.seat-act', { hasText: '봇 추가' })).toHaveCount(4);
 });
 
 test('bot level arrows keep focus with the server-confirmed choice', async ({ page }) => {
   await create(page);
   await sit(page);
-  await page.locator('.seat-act', { hasText: '+ 봇' }).first().click();
+  await page.locator('.seat-act', { hasText: '봇 추가' }).first().click();
   const opener = page.locator('.spot[data-seat="1"] .seat-tap');
+  await expect(opener).toBeVisible();
   await opener.focus();
   await opener.press('Enter');
   const group = page.getByRole('radiogroup');
@@ -99,9 +125,10 @@ for (const [width, height] of [[568, 320], [800, 360]]) {
     const watcher = await browser.newPage({ viewport: { width, height } });
     await watcher.goto(page.url());
 
+
     for (let i = 0; i < 4; i++) {
-      await page.locator('.seat-act', { hasText: '+ 봇' }).first().click();
-      await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(3 - i);
+      await page.locator('.seat-act', { hasText: '봇 추가' }).first().click();
+      await expect(page.locator('.seat-act', { hasText: '봇 추가' })).toHaveCount(3 - i);
     }
     for (const button of await page.locator('.centre button').all()) {
       await button.click({ trial: true });

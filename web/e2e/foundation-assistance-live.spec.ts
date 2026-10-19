@@ -1,0 +1,85 @@
+import {writeFile} from 'node:fs/promises';
+import {expect,test,type APIRequestContext,type BrowserContext,type Page} from '@playwright/test';
+import {foundationBotButton,joinFoundation} from './foundationHelpers';
+const port=Number(process.env.PORT??4317),baseURL=`http://127.0.0.1:${port+1}`;
+test.use({baseURL});
+interface Probe{sent:any[];received:any[];state:any;room:any;viewer:any;}
+const ready=(page:Page)=>expect(page.locator('.live-surface')).toHaveAttribute('data-foundation-status','ready');
+const press=async(page:Page,key:string)=>{await ready(page);await page.keyboard.press(key);};
+const hint=(page:Page)=>page.getByRole('dialog',{name:'힌트',exact:true});
+const palette=(page:Page)=>page.getByRole('dialog',{name:'반응',exact:true});
+async function install(page:Page,name:string){
+ await page.addInitScript(name=>{
+  localStorage.setItem('name',JSON.stringify(name));localStorage.setItem('mighty.settings',JSON.stringify({hints:true,tips:true,sound:false,music:false,haptics:false,speed:'off',singleTap:false}));
+  const scope=window as typeof window&{assistanceProbe:Probe};scope.assistanceProbe={sent:[],received:[],state:null,room:null,viewer:null};const Native=WebSocket;
+  window.WebSocket=class extends Native{constructor(url:string|URL,protocols?:string|string[]){super(url,protocols);this.addEventListener('message',event=>{const message=JSON.parse(String(event.data)),probe=scope.assistanceProbe;probe.received.push(message);if(message.type==='state')probe.state=message;if(message.type==='room')probe.room=message;if(message.type==='visitor_welcome')probe.viewer=message;});}send(data:string|ArrayBufferLike|Blob|ArrayBufferView){if(typeof data==='string')scope.assistanceProbe.sent.push(JSON.parse(data));super.send(data);}};
+ },name);
+}
+async function messages(page:Page,type:string){return page.evaluate(type=>(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.sent.filter(message=>message.type===type),type);}
+async function closeDialogs(page:Page){for(let index=0;index<8;index++){await ready(page);if(!await page.getByRole('dialog').count())return;await page.keyboard.press('Escape');await ready(page);}await expect(page.getByRole('dialog')).toHaveCount(0);}
+async function createRoom(request:APIRequestContext){const response=await request.post('/api/games/mighty/rooms',{data:{preset:'default'}});expect(response.ok()).toBe(true);return(await response.json()).id as string;}
+async function setup(page:Page,context:BrowserContext,request:APIRequestContext,errors?:string[]){
+ await install(page,'도움 검증');const id=await createRoom(request);await page.goto(`/r/${id}?foundation=1`);await joinFoundation(page);
+ // Remove automatic turns so the human's exact state remains reviewable while testing disclosures.
+ await page.getByRole('button',{name:'설정',exact:true}).click();await page.getByRole('dialog',{name:'설정',exact:true}).getByRole('button',{name:'테이블 설정',exact:true}).click();const table=page.getByRole('dialog',{name:'테이블 설정',exact:true});await table.getByRole('combobox',{name:'턴 시간',exact:true}).selectOption({label:'끔'});await table.getByRole('button',{name:'적용하기',exact:true}).click();await expect(table).toContainText('적용했어요');await closeDialogs(page);
+ for(let index=0;index<4;index++){await foundationBotButton(page).click();if(index<3)await expect(foundationBotButton(page)).toBeEnabled();}
+ await page.getByRole('button',{name:'시작',exact:true}).click();await expect(page.getByRole('button',{name:'봇이라면 뭘 할지 보기',exact:true})).toBeEnabled({timeout:30000});
+ const peerContext=await context.browser()!.newContext({baseURL,viewport:page.viewportSize()??undefined}),peer=await peerContext.newPage();if(errors)peer.on('pageerror',error=>errors.push(error.message));await install(peer,'관전 검증');await peer.goto(`/r/${id}?foundation=1`);await expect(peer.locator('[data-live-status]')).toHaveAttribute('data-live-status','open');await ready(peer);await expect(peer.getByRole('button',{name:'반응 보내기',exact:true})).toBeEnabled();return{id,peer,peerContext};
+}
+async function act(page:Page){
+ await ready(page);const snapshot=await page.evaluate(()=>(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.state);if(!snapshot)return;
+ const pass=page.getByRole('button',{name:'패스',exact:true});if(await pass.isEnabled({timeout:100}).catch(()=>false)){await pass.click();return;}
+ const legal=snapshot.legal?.find((action:any)=>action&&typeof action==='object'&&('Play'in action||'Discard'in action));
+ if(legal){const card='Play'in legal?legal.Play.card:legal.Discard,key=JSON.stringify(card);const button=page.locator(`button[data-foundation-zone="hand"][data-foundation-entity='${key}']`);if(await button.isEnabled({timeout:100}).catch(()=>false)){await button.click({position:{x:8,y:30}});const submit=page.getByRole('button',{name:/^선택 확정 /});if(await submit.isEnabled({timeout:100}).catch(()=>false))await submit.click();}return;}
+ const commands=page.locator(`button[data-foundation-kind="command"][data-foundation-node^='["command",']:enabled`).filter({hasNotText:'딜미스'}).filter({hasNotText:'다음 판'}).filter({hasNotText:'준비'});if(await commands.count())await commands.first().click();
+}
+async function blockedState(page:Page){return page.evaluate(()=>{const probe=(window as typeof window&{assistanceProbe:Probe}).assistanceProbe,state=probe.state;return !!state?.view?.phase?.Play&&state.turn?.Seat===probe.viewer?.seat&&state.notes?.unplayable?.length>0;});}
+async function deviceScale(page:Page,label:'100%'|'200%'){
+ await page.getByRole('button',{name:'설정',exact:true}).click();const settings=page.getByRole('dialog',{name:'설정',exact:true});await settings.getByRole('combobox',{name:'글자 크기',exact:true}).selectOption({label});await ready(page);await closeDialogs(page);
+}
+async function reactionPaint(page:Page){return page.evaluate(()=>{
+ const bounds=(element:Element)=>{const r=element.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};
+ const visible=(element:HTMLElement)=>{
+  const range=document.createRange();range.selectNodeContents(element);const glyphs=[...range.getClientRects()].filter(rect=>rect.width&&rect.height);let left=0,top=0,right=innerWidth,bottom=innerHeight,painted=true;
+  for(let parent:HTMLElement|null=element;parent;parent=parent.parentElement){const css=getComputedStyle(parent),box=parent.getBoundingClientRect();if(css.visibility!=='visible'||Number(css.opacity)===0||parent.hidden||parent.getAttribute('aria-hidden')==='true')painted=false;if(/auto|scroll|hidden|clip/.test(css.overflowX)){left=Math.max(left,box.left+parent.clientLeft);right=Math.min(right,box.left+parent.clientLeft+parent.clientWidth);}if(/auto|scroll|hidden|clip/.test(css.overflowY)){top=Math.max(top,box.top+parent.clientTop);bottom=Math.min(bottom,box.top+parent.clientTop+parent.clientHeight);}}
+  return{text:element.textContent,box:bounds(element),painted:painted&&glyphs.length>0&&glyphs.every(rect=>rect.left>=left-.5&&rect.top>=top-.5&&rect.right<=right+.5&&rect.bottom<=bottom+.5)};
+ };
+ return{layer:[...document.querySelectorAll<HTMLElement>('[data-foundation-node="observer-reactions-layer"]')].map(element=>({box:bounds(element),opacity:getComputedStyle(element).opacity,hidden:element.getAttribute('aria-hidden'),parent:element.dataset.foundationParent})),nativeNodes:[...document.querySelectorAll<HTMLElement>('.live-surface [data-foundation-node]')].map(element=>({id:element.dataset.foundationNode,kind:element.dataset.foundationKind,parent:element.dataset.foundationParent,box:bounds(element),label:element.getAttribute('aria-label')??element.textContent,opacity:getComputedStyle(element).opacity,hidden:element.getAttribute('aria-hidden'),overflow:getComputedStyle(element).overflow})),version:(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.state?.version,cards:[...document.querySelectorAll<HTMLElement>('.live-surface [data-foundation-kind="card"]')].map(element=>({id:element.dataset.foundationNode,box:bounds(element)})),status:[...document.querySelectorAll<HTMLElement>('[data-foundation-node="table-active-status"] [data-foundation-kind="text"]')].filter(element=>element.textContent?.trim()).map(visible),reaction:[...document.querySelectorAll<HTMLElement>('.live-surface [role="status"][aria-label="🔥"]')].map(visible)};
+});}
+
+test('real private hints, seated and observer reactions, and blocked-card inspection stay outside gameplay submission',async({page,context,request},info)=>{
+ test.skip(!['1440x900-dark','390x844-light'].includes(info.project.name),'desktop and phone actual assistance');test.setTimeout(120000);const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));const {id,peer,peerContext}=await setup(page,context,request,errors);
+ try{
+  const before=(await messages(page,'submit')).length;await page.mouse.click(2,2);await press(page,'h');await expect(hint(page)).toBeVisible();expect(await messages(page,'hint')).toHaveLength(1);await expect.poll(()=>page.evaluate(()=>(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.received.filter(message=>message.type==='hint').length)).toBe(1);expect(await messages(page,'submit')).toHaveLength(before);
+  await expect(peer.getByRole('dialog',{name:'힌트',exact:true})).toHaveCount(0);expect(await peer.evaluate(()=>(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.received.filter(message=>message.type==='hint'))).toEqual([]);
+  await hint(page).getByRole('button',{name:'닫기',exact:true}).click();await press(page,'h');await expect(hint(page)).toBeVisible();expect(await messages(page,'hint')).toHaveLength(1);expect(await messages(page,'submit')).toHaveLength(before);await hint(page).getByRole('button',{name:'닫기',exact:true}).click();
+  await press(page,'r');await expect(palette(page)).toBeVisible();await expect(palette(page).getByRole('button',{name:'박수',exact:true})).toBeEnabled();await palette(page).getByRole('button',{name:'박수',exact:true}).click();expect(await messages(page,'react')).toEqual([{type:'react',text:'👏'}]);
+  await expect(peer.getByRole('group',{name:'도움 검증',exact:true}).getByRole('status',{name:'👏',exact:true})).toBeVisible();
+  await deviceScale(page,'200%');const beforeObserver=await reactionPaint(page);
+  await press(peer,'r');await expect(palette(peer)).toBeVisible();await palette(peer).getByRole('button',{name:'불타오르기',exact:true}).click();expect(await messages(peer,'react')).toEqual([{type:'react',text:'🔥'}]);await expect.poll(()=>page.evaluate(()=>(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.received.some(message=>message.type==='observer_reaction'&&message.text==='🔥'))).toBe(true);await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));await ready(page);
+  const afterObserver=await reactionPaint(page),observerPath=info.outputPath('observer-status-200-paint.json');await writeFile(observerPath,JSON.stringify({before:beforeObserver,after:afterObserver},null,2));await info.attach('observer-status-200-paint',{path:observerPath,contentType:'application/json'});await page.screenshot({path:info.outputPath('observer-status-200-paint.png'),fullPage:true});
+  await expect(page.getByRole('status',{name:'🔥',exact:true})).toBeVisible();
+  expect(afterObserver.version).toBe(beforeObserver.version);expect(afterObserver.cards).toEqual(beforeObserver.cards);expect(afterObserver.status.length).toBeGreaterThan(0);for(const glyph of afterObserver.status)expect(glyph.painted,`essential status stays painted during observer reaction: ${glyph.text}`).toBe(true);expect(afterObserver.reaction).toHaveLength(1);expect(afterObserver.reaction[0].painted,'observer reaction glyph stays inside every native clip').toBe(true);
+  await expect.poll(()=>page.evaluate(()=>(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.received.some(message=>message.type==='observer_reaction'&&message.text==='🔥'))).toBe(true);
+  await expect(page.getByRole('status',{name:'🔥',exact:true})).toHaveCount(0,{timeout:6000});await expect(peer.getByRole('status',{name:'👏',exact:true})).toHaveCount(0,{timeout:6000});expect(await messages(peer,'submit')).toEqual([]);await deviceScale(page,'100%');
+  await expect(async()=>{if(!await blockedState(page))await act(page);expect(await blockedState(page)).toBe(true);}).toPass({timeout:60000,intervals:[150]});
+  const state=await page.evaluate(()=>(window as typeof window&{assistanceProbe:Probe}).assistanceProbe.state),card=state.notes.unplayable[0].card,key=JSON.stringify(card),blocked=page.locator(`button[data-foundation-zone="hand"][data-foundation-entity='${key}']`),submitted=(await messages(page,'submit')).length;
+  await expect(blocked).not.toHaveAttribute('aria-pressed');await expect(blocked).toHaveAttribute('aria-description','낼 수 없는 이유 보기');await expect(blocked).toHaveAttribute('data-foundation-activation','inspect');
+  await blocked.click({position:{x:8,y:30}});const inspection=page.getByRole('dialog',{name:'카드를 낼 수 없어요',exact:true});await expect(inspection).toBeVisible();await expect(inspection.getByRole('button',{name:/선택 확정/})).toHaveCount(0);expect(await messages(page,'submit')).toHaveLength(submitted);await expect(page.locator('button[data-foundation-zone="hand"][aria-pressed=true]')).toHaveCount(0);
+  const audit=await page.evaluate(()=>{const probe=(window as typeof window&{assistanceProbe:Probe}).assistanceProbe;return{actor:{id:probe.viewer.id,seat:probe.viewer.seat},hintRequests:probe.sent.filter(message=>message.type==='hint'),hintReplies:probe.received.filter(message=>message.type==='hint').map(message=>({version:message.version,action:message.action})),reactionRequests:probe.sent.filter(message=>message.type==='react'),observerReactions:probe.received.filter(message=>message.type==='observer_reaction').map(message=>({id:message.id,text:message.text})),gameSubmissions:probe.sent.filter(message=>message.type==='submit').map(message=>({operationId:message.operation_id,version:message.expected.version,action:message.action})),legacyActs:probe.sent.filter(message=>message.type==='act').length};});
+  const observerAudit=await peer.evaluate(()=>{const probe=(window as typeof window&{assistanceProbe:Probe}).assistanceProbe;return{actor:{id:probe.viewer.id,seat:probe.viewer.seat},hintReplies:probe.received.filter(message=>message.type==='hint').length,gameSubmissions:probe.sent.filter(message=>message.type==='submit').length,reactionRequests:probe.sent.filter(message=>message.type==='react')};});
+  const evidence={profile:info.project.name,room:id,player:audit,observer:observerAudit,blockedCard:card,refusal:await inspection.innerText(),gameSubmissionsBeforeInspection:submitted,gameSubmissionsAfterInspection:(await messages(page,'submit')).length,errors};
+  const json=JSON.stringify(evidence,null,2);await writeFile(`/tmp/foundation-assistance-${info.project.name}.json`,json);await info.attach('assistance-wire-and-inspection',{body:json,contentType:'application/json'});
+  await page.screenshot({path:`/tmp/foundation-assistance-${info.project.name}.png`,fullPage:true});await inspection.getByRole('button',{name:'닫기',exact:true}).click();expect(await messages(page,'act')).toEqual([]);expect(errors).toEqual([]);await expect(page).toHaveURL(new RegExp(`/r/${id}\\?foundation=1$`));
+ }finally{await peerContext.close();}
+});
+
+test('native editing, synthetic composition and held shortcuts do not leak H or R through modal input',async({page,context,request},info)=>{
+ test.skip(info.project.name!=='1440x900-dark','desktop keyboard/native editing gate');test.setTimeout(60000);const {peerContext}=await setup(page,context,request);
+ try{
+  await page.getByRole('button',{name:'설정',exact:true}).click();await page.getByRole('dialog',{name:'설정',exact:true}).getByRole('button',{name:'이름 바꾸기',exact:true}).click();const form=page.getByRole('dialog',{name:'이름 바꾸기',exact:true}),editor=form.getByRole('textbox',{name:'이름',exact:true});await editor.fill('검증');await editor.press('h');await editor.press('r');await expect(editor).toHaveValue('검증hr');
+  await editor.dispatchEvent('compositionstart',{data:'한'});await page.evaluate(()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'H',bubbles:true})));await editor.dispatchEvent('compositionend',{data:'한'});await expect(form).toBeVisible();expect(await messages(page,'hint')).toEqual([]);expect(await messages(page,'react')).toEqual([]);await closeDialogs(page);
+  await page.mouse.click(2,2);await page.keyboard.down('r');await expect(palette(page)).toBeVisible();await page.keyboard.down('r');await expect(palette(page)).toBeVisible();await page.keyboard.up('r');await press(page,'r');await expect(palette(page)).toHaveCount(0);expect(await messages(page,'react')).toEqual([]);
+  await page.keyboard.down('h');await expect(hint(page)).toBeVisible();await page.keyboard.down('h');await page.keyboard.up('h');expect(await messages(page,'hint')).toHaveLength(1);await hint(page).getByRole('button',{name:'닫기',exact:true}).click();
+ }finally{await peerContext.close();}
+});

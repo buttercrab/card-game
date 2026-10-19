@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Card from './games/mighty/Card.svelte';
-  import BackArt from './games/mighty/CardBack.svelte';
+  import BackArt from './ui/cards/CardBack.svelte';
   import Icon from './Icon.svelte';
   import SuitText from './SuitText.svelte';
   import { ACHIEVEMENTS, BACK_NAMES, TABLE_NAMES, isUnlocked, loadUnlocked, type CardBack, type TableTone } from './games/mighty/achievements';

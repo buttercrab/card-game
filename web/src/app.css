@@ -105,6 +105,7 @@
   --z-status: 8;
   --z-result: 9;
   --z-banner: 15;
+  --z-feedback: 15;
   --z-menu: 30;
   --z-popover: 40;
   --z-toast: 50;
@@ -244,6 +245,7 @@ body {
     opacity: 1;
     background: var(--off);
     color: var(--ink-muted);
+    box-shadow: none;
   }
   .btn.danger {
     color: var(--danger);
@@ -322,6 +324,7 @@ body {
     box-shadow: 0 3px 0 var(--chip-lip);
     /* A chip pulses as it is chosen (Wordle's tile pop). */
     --pulse: 1.08;
+    --choice-animation: pulse 180ms var(--ease-settle);
     animation: pulse 180ms var(--ease-settle);
   }
   .chip.sm {
@@ -400,11 +403,6 @@ body {
   .sheet-foot .primary {
     min-width: 108px;
   }
-  @media (max-width: 380px) {
-    dialog.sheet {
-      --pad: 16px;
-    }
-  }
 }
 
 input,
@@ -419,6 +417,9 @@ textarea {
   padding: 10px 12px;
   min-height: 44px;
 }
+
+/* The engine supplies the dialog allocation; native top layer owns modality. */
+dialog.foundation-modal::backdrop { background: var(--scrim); }
 
 ::placeholder {
   color: var(--ink-muted);
@@ -457,15 +458,17 @@ input[type='range'] {
 
 /* Choices in the action strip cascade in as the panel appears. */
 .strip .chips > .chip {
-  animation: fade-up 220ms var(--ease-standard) both;
+  /* Keep the entrance track when selection adds a pulse; changing choice
+     must not replay the entrance or override the selection animation. */
+  animation: fade-up 220ms var(--ease-standard) both, var(--choice-animation, none);
 }
-.strip .chips > .chip:nth-child(2) { animation-delay: 25ms; }
-.strip .chips > .chip:nth-child(3) { animation-delay: 50ms; }
-.strip .chips > .chip:nth-child(4) { animation-delay: 75ms; }
-.strip .chips > .chip:nth-child(5) { animation-delay: 100ms; }
-.strip .chips > .chip:nth-child(6) { animation-delay: 125ms; }
-.strip .chips > .chip:nth-child(7) { animation-delay: 150ms; }
-.strip .chips > .chip:nth-child(n + 8) { animation-delay: 175ms; }
+.strip .chips > .chip:nth-child(2) { animation-delay: 25ms, 0ms; }
+.strip .chips > .chip:nth-child(3) { animation-delay: 50ms, 0ms; }
+.strip .chips > .chip:nth-child(4) { animation-delay: 75ms, 0ms; }
+.strip .chips > .chip:nth-child(5) { animation-delay: 100ms, 0ms; }
+.strip .chips > .chip:nth-child(6) { animation-delay: 125ms, 0ms; }
+.strip .chips > .chip:nth-child(7) { animation-delay: 150ms, 0ms; }
+.strip .chips > .chip:nth-child(n + 8) { animation-delay: 175ms, 0ms; }
 
 /* Two-colour deck: diamonds red and clubs black everywhere suits appear. */
 :root[data-four-color='false'] {

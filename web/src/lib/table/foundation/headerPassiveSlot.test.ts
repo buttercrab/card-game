@@ -1,0 +1,20 @@
+import {expect,test} from 'vitest';
+import {headerPassiveSlot} from './headerPassiveSlot';
+import type {PlannedNode} from './contracts';
+const root=(width=358,height=132):PlannedNode=>({id:'room-header',parent:null,kind:'group',label:'header',box:{x:0,y:0,width,height}});
+const envelope=(id:string,x:number,y:number,width:number,height:number,parent='room-header'):PlannedNode=>({id,parent,kind:'group',label:id,box:{x,y,width,height}});
+function phone(){return[root(),envelope('code',0,0,190,68),envelope('people',198,0,72,68),envelope('settings',278,0,56,68),envelope('menu',0,76,56,56)];}
+function overlaps(a:PlannedNode['box'],b:PlannedNode['box']){return Math.min(a.x+a.width,b.x+b.width)>Math.max(a.x,b.x)&&Math.min(a.y+a.height,b.y+b.height)>Math.max(a.y,b.y);}
+test('native132px wrapped header yields exact passive slot beside the start-anchored second-row menu',()=>{const input=phone(),before=JSON.stringify(input),slot=headerPassiveSlot(input);expect(slot).toEqual({x:64,y:76,width:294,height:56});expect(Object.isFrozen(slot)).toBe(true);expect(input.slice(1).every(node=>!overlaps(slot!,node.box))).toBe(true);expect(JSON.stringify(input)).toBe(before);expect(Object.keys(slot!)).toEqual(['x','y','width','height']);});
+test('one packed row with a right-anchored menu and sub44px gaps has no passive slot',()=>{expect(headerPassiveSlot([root(358,68),envelope('code',0,0,190,68),envelope('people',198,0,72,68),envelope('menu',302,0,56,68)])).toBeNull();});
+test('large text and wider room code create three measured rows without inventing extra height',()=>{
+ const input=[root(358,248),envelope('code',0,0,340,96),envelope('people',0,104,190,68),envelope('settings',198,104,56,68),envelope('menu',0,180,72,68)],slot=headerPassiveSlot(input);expect(slot).toEqual({x:80,y:180,width:278,height:68});expect(input.slice(1).every(node=>!overlaps(slot!,node.box))).toBe(true);expect(slot!.y+slot!.height).toBe(248);
+});
+test('candidate bands avoid every actual envelope, including taller neighbors from another row',()=>{const input=[root(358,180),envelope('tall',150,0,100,180),envelope('menu',0,76,56,56)],slot=headerPassiveSlot(input);expect(slot).toEqual({x:258,y:0,width:100,height:180});expect(input.slice(1).every(node=>!overlaps(slot!,node.box))).toBe(true);});
+test('nested native paint does not masquerade as a new empty row or extra direct action',()=>{const input=phone();input.push(envelope('menu-native',4,4,48,48,'menu'));expect(headerPassiveSlot(input)).toEqual({x:64,y:76,width:294,height:56});});
+test('below44px width or height is unavailable rather than squeezing into a decorative sliver',()=>{expect(headerPassiveSlot([root(100,56),envelope('menu',0,0,56,56)])).toBeNull();expect(headerPassiveSlot([root(358,43),envelope('menu',0,0,56,43)])).toBeNull();});
+test('malformed bounds, foreign roots, duplicate IDs and disconnected/cyclic ancestry fail closed',()=>{
+ const cases=[[],[root()],[{...root(),id:'other'},envelope('menu',0,76,56,56)],[...phone(),envelope('menu',0,76,56,56)],[root(),envelope('escape',350,0,56,56)],[root(),envelope('missing',0,0,56,56,'foreign')],[root(),envelope('a',0,0,56,56,'b'),envelope('b',0,0,56,56,'a')],[root(),envelope('bad',NaN,0,56,56)],Array.from({length:129},(_,index)=>index?envelope(String(index),0,0,56,56):root())];for(const input of cases)expect(headerPassiveSlot(input)).toBeNull();
+ expect(headerPassiveSlot([root(1000,56),...Array.from({length:17},(_,i)=>envelope(String(i),i*56,0,48,56))])).toBeNull();
+});
+test('accessors and sparse arrays are rejected without invoking host code',()=>{let calls=0;const input=phone();Object.defineProperty(input[1],'box',{get(){calls++;return{x:0,y:0,width:1,height:1};},enumerable:true});expect(headerPassiveSlot(input)).toBeNull();expect(calls).toBe(0);const array=phone();Object.defineProperty(array,'1',{get(){calls++;return envelope('trap',0,0,56,56);}});expect(headerPassiveSlot(array)).toBeNull();expect(calls).toBe(0);expect(headerPassiveSlot([root(),,envelope('menu',0,76,56,56)] as PlannedNode[])).toBeNull();});

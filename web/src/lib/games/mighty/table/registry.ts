@@ -23,18 +23,10 @@ export class Registry<K> {
     return el?.isConnected ? el : null;
   }
 
-  /** Where `key`'s element is on screen, if it is drawn. */
-  rect(key: K): DOMRect | null {
-    const el = this.get(key);
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return r.width > 0 || r.height > 0 ? r : null;
-  }
-
   entries(): [K, HTMLElement][] {
     return [...this.#els].filter(([, el]) => el.isConnected);
   }
 }
 
 /** The key a card goes by in a registry. */
-export const cardKey = (card: unknown) => JSON.stringify(card);
+export { cardKey } from '../cards';

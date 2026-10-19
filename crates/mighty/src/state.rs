@@ -623,7 +623,7 @@ impl State {
     pub fn contract_after(&self, action: &Action) -> Option<Contract> {
         let Phase::Exchange(e) = &self.phase else { return None };
         match *action {
-            Action::ChangeTrump(trump) => Some(self.changed_contract(e.declared.contract, trump)),
+            Action::ChangeTrump(trump) => self.changed_contract(e.declared.contract, trump),
             Action::Raise(contract) => Some(contract),
             _ => None,
         }
@@ -678,12 +678,12 @@ impl State {
                 .map(move |count| Contract { trump, count })
                 .filter(move |&contract| {
                     let beats_best = best.is_none_or(|best| self.rules.bid_rank(contract) > self.rules.bid_rank(best));
-                    self.rules.bid_value(contract) >= min && beats_best
+                    self.rules.bid_value(contract) >= u16::from(min) && beats_best
                 })
         })
     }
 
-    fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
+    fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Option<Contract> {
         self.rules.changed_contract(contract, trump)
     }
 
@@ -698,7 +698,7 @@ impl State {
                 if trump == contract.trump {
                     c.count > contract.count
                 } else {
-                    c.count > least.count
+                    least.is_some_and(|least| c.count > least.count)
                 }
             })
         })
@@ -715,7 +715,9 @@ impl State {
             if !e.trump_changed && e.declared.discards.is_empty() {
                 for trump in self.trump_options() {
                     let changed = self.changed_contract(e.declared.contract, trump);
-                    if trump != e.declared.contract.trump && changed.count <= self.rules.bidding.max {
+                    if trump != e.declared.contract.trump
+                        && changed.is_some_and(|changed| changed.count <= self.rules.bidding.max)
+                    {
                         actions.push(Action::ChangeTrump(trump));
                     }
                 }
@@ -850,7 +852,9 @@ impl State {
     fn step_exchange(&mut self, mut e: Exchange, action: Action) -> Phase {
         match action {
             Action::ChangeTrump(trump) => {
-                e.declared.contract = self.changed_contract(e.declared.contract, trump);
+                e.declared.contract = self
+                    .changed_contract(e.declared.contract, trump)
+                    .expect("legal trump change has a representable count");
                 e.trump_changed = true;
             }
             Action::Raise(contract) => {
@@ -1717,5 +1721,36 @@ mod tests {
         let pinned: serde_json::Value =
             serde_json::from_str(include_str!("../tests/payoffs.json")).expect("the fixture parses");
         assert_eq!(pinned, payoff_fixture(), "scoring changed; rewrite tests/payoffs.json");
+    }
+    #[test]
+    fn maximum_no_trump_bid_is_playable_and_unrepresentable_changes_are_not_offered() {
+        use rand::SeedableRng;
+        let mut rules = Rules::web_mighty();
+        rules.bidding.min = 2;
+        rules.bidding.max = 255;
+        rules.bidding.no_trump_bonus = 1;
+        rules.bidding.raise_on_exchange = true;
+        rules.validate().unwrap();
+        let mut game = state(rules);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(4);
+        let deal = game.sample_deal(&mut rng);
+        game.apply_chance(deal).unwrap();
+        let bid = Action::Bid(Contract {
+            trump: None,
+            count: 255,
+        });
+        assert!(game.legal_actions(0).contains(&bid));
+        game.apply(0, bid).unwrap();
+        assert!(matches!(game.phase, Phase::Exchange(_)));
+        let legal = game.legal_actions(0);
+        assert!(
+            !legal
+                .iter()
+                .any(|action| matches!(action, Action::ChangeTrump(_) | Action::Raise(_)))
+        );
+        let before = game.clone();
+        assert!(game.apply(0, Action::ChangeTrump(Some(Suit::Heart))).is_err());
+        assert_eq!(game, before);
+        assert!(game.contract_after(&Action::ChangeTrump(Some(Suit::Heart))).is_none());
     }
 }

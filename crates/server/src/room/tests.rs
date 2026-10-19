@@ -5,12 +5,12 @@
 
 use super::bots::Internal;
 use super::*;
+use crate::ingress::Sender as CommandSender;
 use crate::protocol::ClientMsg;
 use mighty::Mighty;
 use mighty::rules::Preset;
 use mighty::table::MightySettings;
 use serde_json::{Value, json};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 /// Longer than anything a test waits for, on the paused clock.
@@ -18,7 +18,7 @@ const PATIENCE: Duration = Duration::from_secs(3600);
 
 /// A room running as its own task.
 struct Table {
-    tx: UnboundedSender<Command>,
+    tx: CommandSender,
     task: JoinHandle<()>,
     next: ConnId,
     stats: Arc<Stats>,
@@ -27,8 +27,8 @@ struct Table {
 /// One connection to it.
 struct Client {
     conn: ConnId,
-    rx: UnboundedReceiver<String>,
-    tx: UnboundedSender<Command>,
+    rx: crate::outbound::Receiver,
+    tx: CommandSender,
     /// The latest session message it was sent.
     session: Value,
 }
@@ -41,7 +41,7 @@ impl Table {
     fn open_with(settings: MightySettings, env: RoomEnv) -> Table {
         let stats = env.stats.clone();
         let room = Room::<Mighty>::new("t".into(), settings, Arc::new(env), super::mighty_bots());
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = crate::ingress::test_channel();
         let task = tokio::spawn(room.run(rx));
         Table {
             tx,
@@ -52,7 +52,7 @@ impl Table {
     }
 
     fn connect(&mut self) -> Client {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = crate::outbound::test_channel();
         self.next += 1;
         let conn = self.next;
         self.tx.send(Command::Connect { conn, tx }).unwrap();
@@ -71,6 +71,14 @@ impl Table {
 
 impl Client {
     fn send(&self, msg: Value) {
+        if msg["type"] == "start" {
+            self.tx
+                .send(Command::Message {
+                    conn: self.conn,
+                    msg: ClientMsg::Ready { ready: true },
+                })
+                .unwrap();
+        }
         let msg: ClientMsg = serde_json::from_value(msg).unwrap();
         let conn = self.conn;
         self.tx.send(Command::Message { conn, msg }).unwrap();
@@ -262,6 +270,7 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     assert_eq!(watcher.next("error").await["code"], "not_seated");
 
     a.send(json!({ "type": "set_table", "turn_secs": 20 }));
+    b.send(json!({ "type": "ready", "ready": true }));
     a.send(json!({ "type": "start" }));
     // Seats stay put while a hand is on.
     b.next_where("room", |r| r["in_hand"] == true).await;
@@ -283,6 +292,7 @@ async fn seats_shuffle_and_swap_between_hands_and_scores_follow_the_players() {
     // 섞기 waits for the next hand; 다음 판 shuffles, then deals.
     b.send(json!({ "type": "set_table", "shuffle_next": true }));
     watcher.next_where("room", |r| r["table"]["shuffle_next"] == true).await;
+    a.send(json!({ "type": "ready", "ready": true }));
     b.send(json!({ "type": "start" }));
     let news = a.next_where("seats_moved", |m| m["how"] == "shuffle").await;
     // B hears where everyone went before its own new seat, so its table can
@@ -394,6 +404,9 @@ async fn where_misdeals_come_first_the_first_bid_waits_after_the_deal() {
         c.join(name).await;
         players.push(c);
     }
+    for p in &players {
+        p.send(json!({ "type": "ready", "ready": true }));
+    }
     players[0].send(json!({ "type": "start" }));
     let mut states = Vec::new();
     for c in &mut players {
@@ -438,8 +451,16 @@ async fn a_failed_bot_think_is_played_by_the_stand_in() {
         seat
     }));
     assert!(room.on_internal(Internal::BotFailed { version, seat }));
-    assert_eq!(room.hand.log.len(), logged + 1);
     assert!(matches!(room.hand.log[logged], hand::LogEntry::Act { seat: s, .. } if s == seat));
+    // The staged stand-in may legally declare a misdeal. Its mandatory
+    // replacement deal is committed atomically with that one chosen action.
+    assert!(room.hand.log.len() == logged + 1 || room.hand.log.len() == logged + 2);
+    if room.hand.log.len() == logged + 2 {
+        assert!(matches!(room.hand.log[logged + 1], hand::LogEntry::Chance { .. }));
+    }
+    let staged = room.hand.log.len();
+    room.advance();
+    assert_eq!(room.hand.log.len(), staged, "settling must not sample the deal twice");
 }
 
 /// Five bots, the first hand dealt, and a bot to act.
@@ -490,7 +511,7 @@ async fn a_stale_turn_timer_plays_nothing_and_is_set_again() {
     let mut room = bots_dealt();
     let seat = room.bot_to_act().unwrap();
     // The seat to act is a person's, connected, under a limit.
-    let (tx, _rx) = mpsc::unbounded_channel();
+    let (tx, _rx) = crate::outbound::test_channel();
     room.seating.conns.insert(1, seating::Conn::new(tx));
     room.seating.seats[seat] = seating::Occupant::Human {
         name: "A".into(),
@@ -504,14 +525,16 @@ async fn a_stale_turn_timer_plays_nothing_and_is_set_again() {
     assert!(!room.on_clock(), "a stale timer plays nothing");
     assert_eq!(room.hand.log.len(), logged);
     assert!(room.clock.deadline().is_none());
-    room.settle(actor::Effects::default());
+    room.publication.begin();
+    let (_tx, mut rx) = crate::ingress::test_channel();
+    assert!(room.settle(actor::Effects::default(), &mut rx).await);
     assert!(room.clock.deadline().is_some(), "and the turn has its timer again");
 }
 
 /// Whoever reaches a table as it closes hears it is gone.
 #[tokio::test]
 async fn a_connection_to_a_closing_table_hears_it_is_gone() {
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, mut rx) = crate::outbound::test_channel();
     actor::turn_away(Command::Connect { conn: 1, tx });
     let gone: Value = serde_json::from_str(&rx.recv().await.unwrap()).unwrap();
     assert_eq!(gone, json!({ "type": "error", "code": "table_gone" }));
@@ -526,7 +549,58 @@ async fn a_connection_to_a_closing_table_hears_it_is_gone() {
         },
     );
     (&mut table.task).await.unwrap();
-    let (tx, _rx) = mpsc::unbounded_channel();
+    let (tx, _rx) = crate::outbound::test_channel();
     assert!(table.tx.send(Command::Connect { conn: 9, tx }).is_err());
     assert!(table.tx.is_closed());
+}
+
+#[tokio::test(start_paused = true)]
+async fn bounded_cpu_waiter_retries_after_lost_race_without_holding_a_grant() {
+    let mut room = bots_dealt();
+    let budget = crate::work_budget::Budget::new(1);
+    Arc::make_mut(&mut room.env).cognition = budget.clone();
+    let running = budget.try_acquire().unwrap();
+    room.think();
+    assert!(room.thinking.is_none());
+    let first = room.work_waiter.as_ref().unwrap().0;
+    assert!(room.job_tasks.is_empty());
+    drop(running);
+    let mut inbox = room.inbox.take().unwrap();
+    let notification = inbox.recv().await.unwrap();
+    let competitor = budget.try_acquire().expect("queued notification owns no CPU grant");
+    room.on_internal(notification);
+    room.think();
+    let second = room.work_waiter.as_ref().unwrap().0;
+    assert_ne!(first, second);
+    room.on_internal(Internal::ResourceReady { waiter: first });
+    assert_eq!(
+        room.work_waiter.as_ref().unwrap().0,
+        second,
+        "stale token cannot retire replacement waiter"
+    );
+    drop(competitor);
+    room.on_internal(inbox.recv().await.unwrap());
+    room.think();
+    assert_eq!(room.thinking, Some(room.hand.version));
+    assert!(room.work_waiter.is_none());
+    let before = room.hand.version;
+    room.on_internal(inbox.recv().await.unwrap());
+    assert!(
+        room.hand.version > before,
+        "ordinary cognition resumes after bounded wake/retry"
+    );
+}
+
+#[tokio::test]
+async fn dropping_a_room_retires_its_lightweight_work_waiter_without_cpu_retention() {
+    let mut room = bots_dealt();
+    let budget = crate::work_budget::Budget::new(1);
+    Arc::make_mut(&mut room.env).cognition = budget.clone();
+    let running = budget.try_acquire().unwrap();
+    room.think();
+    assert!(room.work_waiter.is_some());
+    drop(room);
+    drop(running);
+    tokio::task::yield_now().await;
+    assert!(budget.try_acquire().is_some());
 }

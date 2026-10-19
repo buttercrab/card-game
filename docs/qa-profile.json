@@ -1,0 +1,1224 @@
+{
+  "name": "Mighty full visual and gameplay acceptance",
+  "version": 2,
+  "scope": "Current web client; approved original Mighty design; blocked capability is not silently excluded. No native mobile/Electron app claimed.",
+  "visual_states": [
+    {
+      "id": "waiting-empty",
+      "expected": "Room controls, vacant seats, self identity and join actions preserve original composition."
+    },
+    {
+      "id": "waiting-full",
+      "expected": "Five identities and ready/start state are aligned and readable."
+    },
+    {
+      "id": "bidding-own",
+      "expected": "Hand, own identity, suit/count choices, Pass/Bid and minimum/current contract are usable together."
+    },
+    {
+      "id": "bidding-peer",
+      "expected": "Acting peer and pass/bid feedback readable; no stale own submission authority."
+    },
+    {
+      "id": "exchange-declarer",
+      "expected": "Kitty transfer, discard selection/count, contract/trump and confirmation remain understandable."
+    },
+    {
+      "id": "exchange-observer",
+      "expected": "Public exchange status visible without exposing private kitty/hand information."
+    },
+    {
+      "id": "friend-selection",
+      "expected": "Friend and Joker-call choices, trump and declarer status visible and usable."
+    },
+    {
+      "id": "play-own",
+      "expected": "Legal hand interaction, turn, contract/trump/declarer/friend, round and score progress are usable."
+    },
+    {
+      "id": "play-peer",
+      "expected": "Current trick ownership, acting peer, feedback and public facts remain clear."
+    },
+    {
+      "id": "result",
+      "expected": "Original compact current-hand summary, complete cumulative scoreboard and continuation are readable; current-hand review is secondary via 더보기, with no default 50-card matrix or live captured/stock fans."
+    },
+    {
+      "id": "replay",
+      "expected": "Exactly the current completed hand opens directly; frozen identities, round/detail navigation, exit and next-hand retention match the original replay, with no archive browser or live-action authority."
+    },
+    {
+      "id": "next-hand",
+      "expected": "Identity/name/score remain continuous through ready/shuffle and next hand."
+    },
+    {
+      "id": "menu",
+      "expected": "All menu items reachable, correct grouping, dismiss and focus return."
+    },
+    {
+      "id": "settings",
+      "expected": "Preferences scroll correctly, controls readable, keyboard/focus and dismiss work."
+    },
+    {
+      "id": "people",
+      "expected": "Players/observers/requests distinguished, identity and seat actions clear."
+    },
+    {
+      "id": "rulebook",
+      "expected": "Rule navigation, examples and long Korean text readable without clipping."
+    },
+    {
+      "id": "information",
+      "expected": "Contract/trump/friend/progress and five-player scoreboard readable and grouped."
+    },
+    {
+      "id": "history",
+      "expected": "Room menu has no prior-session/archive browser or duplicate device-record browser; current-hand replay remains the only room record entry and original Home/StatsSheet device statistics remain separate and usable."
+    },
+    {
+      "id": "reactions",
+      "expected": "Reaction picker and peer/observer bubbles anchored without blocking gameplay."
+    },
+    {
+      "id": "advice",
+      "expected": "Advice/inspection does not hide controls or imply an already-submitted action."
+    },
+    {
+      "id": "name-form",
+      "expected": "Korean/Latin long names, validation, text selection and focus survive resize."
+    },
+    {
+      "id": "error-recovery",
+      "expected": "Connection/loading/rejected-action states explain recovery without stale controls."
+    },
+    {
+      "id": "friend-card-picker",
+      "expected": "Complete friend card catalogue, held-card consequence, focus, cancellation and native confirmation remain readable and usable."
+    },
+    {
+      "id": "card-action-picker",
+      "expected": "Ambiguous selected-card action picker shows complete native options, clear pending/selected state and unobstructed cancel/confirmation."
+    }
+  ],
+  "viewports": [
+    {
+      "id": "compact-phone",
+      "width": 320,
+      "height": 568
+    },
+    {
+      "id": "phone",
+      "width": 390,
+      "height": 844
+    },
+    {
+      "id": "landscape-phone",
+      "width": 844,
+      "height": 390
+    },
+    {
+      "id": "tablet",
+      "width": 768,
+      "height": 1024
+    },
+    {
+      "id": "short-laptop",
+      "width": 1280,
+      "height": 720
+    },
+    {
+      "id": "desktop",
+      "width": 1440,
+      "height": 900
+    }
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "text_scales": [
+    1,
+    2
+  ],
+  "required_routes": [
+    "gstack-design",
+    "gstack-qa",
+    "dogfood",
+    "impeccable",
+    "vercel-guidelines",
+    "webapp-testing",
+    "frontend-testing",
+    "local-game",
+    "game-design",
+    "playtest",
+    "xbox",
+    "game-accessibility",
+    "android",
+    "wcag",
+    "istqb",
+    "htsm",
+    "playwright"
+  ],
+  "extra_cases": [
+    {
+      "id": "motion/deal/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "deal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/deal/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "deal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/deal/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "deal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/deal/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "deal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/deal/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "deal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/deal/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "deal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/kitty-transfer/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "kitty-transfer: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/kitty-transfer/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "kitty-transfer: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/kitty-transfer/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "kitty-transfer: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/kitty-transfer/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "kitty-transfer: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/kitty-transfer/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "kitty-transfer: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/kitty-transfer/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "kitty-transfer: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/discard/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "discard: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/discard/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "discard: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/discard/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "discard: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/discard/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "discard: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/discard/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "discard: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/discard/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "discard: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/friend-reveal/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "friend-reveal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/friend-reveal/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "friend-reveal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/friend-reveal/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "friend-reveal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/friend-reveal/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "friend-reveal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/friend-reveal/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "friend-reveal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/friend-reveal/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "friend-reveal: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-selection/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-selection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-selection/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-selection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-selection/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-selection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-selection/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-selection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-selection/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-selection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-selection/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-selection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-play/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-play: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-play/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-play: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-play/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-play: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-play/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-play: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-play/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-play: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/card-play/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "card-play: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/trick-collection/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "trick-collection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/trick-collection/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "trick-collection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/trick-collection/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "trick-collection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/trick-collection/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "trick-collection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/trick-collection/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "trick-collection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/trick-collection/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "trick-collection: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/misdeal-recycle/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "misdeal-recycle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/misdeal-recycle/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "misdeal-recycle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/misdeal-recycle/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "misdeal-recycle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/misdeal-recycle/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "misdeal-recycle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/misdeal-recycle/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "misdeal-recycle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/misdeal-recycle/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "misdeal-recycle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/result-reshuffle/compact-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "compact-phone",
+          "width": 320,
+          "height": 568
+        },
+        "pacing": "normal"
+      },
+      "expected": "result-reshuffle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/result-reshuffle/phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "phone",
+          "width": 390,
+          "height": 844
+        },
+        "pacing": "normal"
+      },
+      "expected": "result-reshuffle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/result-reshuffle/landscape-phone",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "landscape-phone",
+          "width": 844,
+          "height": 390
+        },
+        "pacing": "normal"
+      },
+      "expected": "result-reshuffle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/result-reshuffle/tablet",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "tablet",
+          "width": 768,
+          "height": 1024
+        },
+        "pacing": "normal"
+      },
+      "expected": "result-reshuffle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/result-reshuffle/short-laptop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "short-laptop",
+          "width": 1280,
+          "height": 720
+        },
+        "pacing": "normal"
+      },
+      "expected": "result-reshuffle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "motion/result-reshuffle/desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "desktop",
+          "width": 1440,
+          "height": 900
+        },
+        "pacing": "normal"
+      },
+      "expected": "result-reshuffle: moving frames retain correct ownership, legible exposure, intended path, clipping/z-order and no flicker; repeat under resize/interruption/reduced motion."
+    },
+    {
+      "id": "input/touch-emulated",
+      "kind": "input",
+      "environment": {
+        "input": "touch-emulated"
+      },
+      "expected": "Complete legal decisions and recover from cancel/scroll/focus interruption; document actual hardware/engine and accessible state."
+    },
+    {
+      "id": "input/physical-ios-safari",
+      "kind": "input",
+      "environment": {
+        "input": "physical-ios-safari"
+      },
+      "expected": "Complete legal decisions and recover from cancel/scroll/focus interruption; document actual hardware/engine and accessible state."
+    },
+    {
+      "id": "input/physical-android-chrome",
+      "kind": "input",
+      "environment": {
+        "input": "physical-android-chrome"
+      },
+      "expected": "Complete legal decisions and recover from cancel/scroll/focus interruption; document actual hardware/engine and accessible state."
+    },
+    {
+      "id": "input/keyboard-only",
+      "kind": "input",
+      "environment": {
+        "input": "keyboard-only"
+      },
+      "expected": "Complete legal decisions and recover from cancel/scroll/focus interruption; document actual hardware/engine and accessible state."
+    },
+    {
+      "id": "input/mouse-trackpad",
+      "kind": "input",
+      "environment": {
+        "input": "mouse-trackpad"
+      },
+      "expected": "Complete legal decisions and recover from cancel/scroll/focus interruption; document actual hardware/engine and accessible state."
+    },
+    {
+      "id": "input/screen-reader",
+      "kind": "input",
+      "environment": {
+        "input": "screen-reader"
+      },
+      "expected": "Complete legal decisions and recover from cancel/scroll/focus interruption; document actual hardware/engine and accessible state."
+    },
+    {
+      "id": "continuity/two-consecutive-bot-hands",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "two-consecutive-bot-hands"
+      },
+      "expected": "two-consecutive-bot-hands: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/five-controlled-client-handoff",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "five-controlled-client-handoff"
+      },
+      "expected": "five-controlled-client-handoff: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/observer-join-and-participation",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "observer-join-and-participation"
+      },
+      "expected": "observer-join-and-participation: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/reconnect-stale-command",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "reconnect-stale-command"
+      },
+      "expected": "reconnect-stale-command: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/background-resume",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "background-resume"
+      },
+      "expected": "background-resume: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/resize-rotate-mid-action",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "resize-rotate-mid-action"
+      },
+      "expected": "resize-rotate-mid-action: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/intermediate-breakpoints",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "intermediate-breakpoints"
+      },
+      "expected": "intermediate-breakpoints: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/long-name-and-max-hand",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "long-name-and-max-hand"
+      },
+      "expected": "long-name-and-max-hand: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/empty-loading-error",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "empty-loading-error"
+      },
+      "expected": "empty-loading-error: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/webkit-phase-flow",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "webkit-phase-flow"
+      },
+      "expected": "webkit-phase-flow: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/firefox-phase-flow",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "firefox-phase-flow"
+      },
+      "expected": "firefox-phase-flow: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "continuity/audio-settings-and-cues",
+      "kind": "continuity",
+      "environment": {
+        "scenario": "audio-settings-and-cues"
+      },
+      "expected": "audio-settings-and-cues: game rules/authority, state, identity and all relevant UI facts remain correct; record steps and observations."
+    },
+    {
+      "id": "human/uncoached-playtest",
+      "kind": "human",
+      "environment": {
+        "method": "non-leading participant session"
+      },
+      "expected": "Observe actual participant comprehension of table, turn, actions and results; separate observations from predictions and report decision rules."
+    },
+    {
+      "id": "input/card-action-choice-lifecycle",
+      "kind": "input",
+      "expected": "Ambiguous card and option activation send nothing; cancel/Escape restore draft and opener; chosen confirmation submits one exact current native action; stale/disabled/wrong-card/changed-authority inputs fail."
+    },
+    {
+      "id": "continuity/play-phase-presentation",
+      "kind": "continuity",
+      "expected": "Fresh passive, active and own-peer-own transitions preserve participant, hand-clearance and decision allocations without retaining native authority; resize/font changes match fresh allocation."
+    },
+    {
+      "id": "regression/original-bidding/intermediate-desktop",
+      "kind": "visual",
+      "environment": {
+        "viewport": {
+          "id": "intermediate-desktop",
+          "width": 1280,
+          "height": 800
+        },
+        "theme": "dark",
+        "text_scale": 1
+      },
+      "expected": "Compare the original same-role and same-data table against the engine: original control body proportions and gaps, colored suits, legal dependent counts, stable peer seats, complete own hand/status/scoreboard and native hit targets; no extra chrome."
+    },
+    {
+      "id": "regression/deal-handoff/intermediate-desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "intermediate-desktop",
+          "width": 1280,
+          "height": 800
+        },
+        "pacing": "normal",
+        "theme": "dark",
+        "text_scale": 1
+      },
+      "expected": "A real next-hand deal executes all50 backs with exact ownership/counts; own fronts remain concealed until complete, no peer fronts appear, and every moving frame preserves heads, figures, clock/name/status/control footprints and straight paths. Repeat interruption/resize/reduced-motion qualification separately."
+    },
+    {
+      "id": "regression/terminal-local-handoff/intermediate-desktop",
+      "kind": "motion",
+      "environment": {
+        "viewport": {
+          "id": "intermediate-desktop",
+          "width": 1280,
+          "height": 800
+        },
+        "pacing": "normal",
+        "theme": "dark",
+        "text_scale": 1
+      },
+      "expected": "A real local-winner last trick displays all5 cards before Done, preserves complete/read input fencing, then collects along safe straight paths into an exact current owned receive region. No stale hand/DOM rectangle, avatar occlusion, label crossing or false arrived status after fallback."
+    }
+  ],
+  "baseline_findings": [
+    {
+      "id": "V01",
+      "severity": "P1",
+      "blocking": true,
+      "title": "Existing visual-audit observation V01; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V02",
+      "severity": "P1",
+      "blocking": true,
+      "title": "Existing visual-audit observation V02; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V03",
+      "severity": "P1",
+      "blocking": true,
+      "title": "Existing visual-audit observation V03; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V04",
+      "severity": "P1",
+      "blocking": true,
+      "title": "Existing visual-audit observation V04; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V05",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V05; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V06",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V06; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V07",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V07; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V08",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V08; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V09",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V09; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V10",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V10; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V11",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V11; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V12",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V12; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V13",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V13; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V14",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V14; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V15",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V15; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V16",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V16; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V17",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V17; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V18",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V18; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V19",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V19; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V20",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V20; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V21",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V21; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V22",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V22; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V23",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V23; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V24",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V24; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    },
+    {
+      "id": "V25",
+      "severity": "P2",
+      "blocking": true,
+      "title": "Existing visual-audit observation V25; reconcile against ENGINE_VISUAL_AUDIT_2026-10-18.md"
+    }
+  ]
+}

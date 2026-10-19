@@ -1,0 +1,6 @@
+import {expect,test} from 'vitest';
+import {layoutEngineFlow} from './engineFlowLayout';
+test('measured fixed leaves reserve space while the name fills remaining width',()=>{const row=layoutEngineFlow([{id:'name',width:120,height:18,size:'fill'},{id:'badge',width:34,height:16}],100,{gap:6});expect(row.nodes.map(n=>n.bounds)).toEqual([{x:0,y:0,width:60,height:18},{x:66,y:1,width:34,height:16}]);});
+test('nested intrinsic rows establish their natural width without parent width feedback',()=>{expect(layoutEngineFlow([{id:'suit',width:16,height:16},{id:'count',width:22,height:22}],undefined,{gap:3}).width).toBe(41);});
+test('space-between and stacked wrapping produce numeric leaf positions',()=>{expect(layoutEngineFlow([{id:'a',width:20,height:10},{id:'b',width:30,height:20}],100,{justify:'between'}).nodes[1].bounds).toEqual({x:70,y:0,width:30,height:20});expect(layoutEngineFlow([{id:'a',width:70,height:10},{id:'b',width:50,height:20}],100,{gap:8,rowGap:2,nowrap:false}).nodes[1].bounds.y).toBe(12);});
+test('column intrinsic height and empty width remain finite',()=>{expect(layoutEngineFlow([{id:'a',width:30,height:10},{id:'b',width:50,height:20}],100,{direction:'column',gap:3}).height).toBe(33);expect(layoutEngineFlow([],0).height).toBe(0);});

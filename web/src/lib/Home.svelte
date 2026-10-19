@@ -84,7 +84,7 @@
         settings.tips = true;
         settings.hints = true;
         try {
-          sessionStorage.setItem('mighty.practice', id);
+          sessionStorage.setItem('card-game.practice', id);
         } catch {
           // Without storage the practice table just opens as a normal one.
         }

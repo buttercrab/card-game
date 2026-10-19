@@ -1,0 +1,41 @@
+# Connected engine text-size acceptance
+
+This is a local device preference and engine environment capability. Games provide no coordinates or text-specific layout overrides. Default-root cutover and deployment are outside this gate.
+
+## Source contract
+
+`Settings.textScale` is a strict finite domain: 1, 1.25, 1.5 or 2; missing/malformed saved values default to 1. `projectLocalPreferences` exposes opaque `local:13` / `scale:01..04` identifiers with labelled100/125/150/200% options. Only the existing whitelisted local-preference handler may assign the setting. Existing browser persistence stores it with the other device preferences; no Game/Room command is submitted.
+
+ConnectedRoom owns its browser surface. It sets the normalized size before attachment and forwards subsequent mounted preference changes to `setTextScale`. The surface changes `Environment.textScale`, which participates in measurement keys, candidate generations and publication/input fences. It does not change the outer viewport allocation, apply application geometry, or scale a previously measured scene through CSS. Before listening, and for an unchanged size, the setter does not allocate measurement probes. Existing typed surface range remains0.75..3; the connected user preference deliberately offers the smaller reviewed finite domain.
+
+The same typography recipes feed text probes and actual body/name/small/display/button/choice/native-select/editor paint. Card ranks, suits and illustrations retain their artwork proportions. The semantic last-five-second countdown receives the current text scale within its original64/72px participant figure. Only single-digit1..5 values are painted, separately from the proportional artwork.
+
+Native input/select/textarea chrome is declared once in `nativeTextControl.ts`: horizontal12px/vertical10px padding,1px border and44px minimum target. Both browser painting and planned border-box allocation consume that token. A single-line control reserves one measured line plus both padding and borders; a report textarea reserves four. The narrow permanent footer uses this same actual native height. This fixes the prior two-pixel line-area deficit instead of hiding overflow.
+
+## Required qualification
+
+- Strict normalization and opaque preference assignment/persistence, including malformed nonfinite/unsupported values.
+- Actual connected100→200% selection and reload, with computed fonts proving body32px, small28px, command30px (from15px), native text32px/line48px. CSS root-font changes alone are not proof.
+- Menu/settings, name/report, readonly tabs/matrix and long labels at common390/768/1440px widths.44px native targets, real measured no-overlap, complete scroll access and reachable primary actions. Native font fallback and borders must fit actual client/scroll geometry.
+- Four textarea lines fit the reserved content area; the fifth scrolls. Native editing value/selection/DOM and UA modality survive compatible pending resize.
+- Real server deadline at1× and2×: actual SVG countdown glyph `getBBox` mapped through screen CTM fits its measured figure viewport; original monotonic timing/no duplicate tick/no authority churn remains intact.
+- Matching original/candidate screenshots at1× for visual parity, plus candidate real-engine200% screenshots. The legacy root has no equivalent text-size preference; changing its root CSS font does not establish a matched engine200% comparison.
+- Refresh common-phone initial50-card deal and three-card counted pickup after the shared border allocation correction, with original hit/clip/revocation fences. At large text where the entire scene cannot fit one viewport, native scrolling must remain explicit and complete; do not invent visible endpoints or relax motion checks.
+
+## Source checkpoint
+
+The setting/bridge/token/countdown changes are implemented. Thirty-nine settings/preference tests, twenty-four2× planner scenarios, native chrome tests and assistance/countdown planner tests pass, with a clean frontend type check. Actual native-text-size/clock browser tests have been authored but not run at this checkpoint. Final integrated source/binary hashes and actual screenshots will be recorded after numeric-protocol integration is coherent; no current performance or physical-device claim is made.
+
+## Frozen qualification, 2026-10-18
+
+Final isolated source check is clean and **2,080 tests /150 files pass**. The production build takes690ms. Exact source/e2e/assets/logs/hashes are in `/tmp/foundation-text-size-20261018/namefit-frozen/`; tested assets are `domSurface-6nFu0dXW.js` / `game-DYC2n8dQ.js`. The protocol-matching immutable numeric backend is `/tmp/card-game-qualification-bin/3e7d/server`, SHA256 `3e7d3567535577c01abceb8a0f6fa63ca61612e79c03b0bf3c7413dbc082ca83`. Later server resource changes and later frontend source are outside this frozen receipt.
+
+The actual native/score/visual run passes **10 cases**: two phone/light and desktop/dark native2× paths, two safe-extreme/raw-and-localized-number paths, and six matching original/candidate waiting-table cases at390/768/1440px. Native fields demonstrate actual32px text, declared48px line height, painted12/10px padding/1px border and sufficient client area. Chromium's native select intentionally computes `line-height:normal` despite the declared recipe; its actual font and client area are checked, without replacing native appearance. Four textarea lines fit; the fifth scrolls. Editing value/selection/DOM survive resizing; preference reload, UA modality,44px targets, per-leaf scroll reachability and painted-control non-overlap pass. The overlap oracle intersects actual native clipping ancestors: hidden scroll content behind a fixed header is not a painted hit target. The actual safe-number check covers raw±MAX_SAFE_INTEGER and their21/22-character Korean-localized representations at full32px, using glyph-range bounds rather than font shrinking.
+
+A separate real-server run passes **20 cases /6 deliberate profile skips**: actual20-second clock at1×/2×, common-phone initial50-card deal and exactthree-card counted pickup, resize cancellation, tablet/tall allocation and held/direct input fences. The countdown is fully in the browser viewport before strict SVG `getBBox`→screen-CTM containment checks. It retains monotonic timing,5/4/3 ticks exactly once, unchanged authority frame and resize behavior. Native audio output remains disconnected in this test; no audible-device/haptics claim is made.
+
+Actual2× countdown testing found a real1.8CSS-pixel bottom overflow, corrected by shared `countdownTypography` that increases font and bottom clearance together (the original1× baseline113 remains unchanged;2× baseline106). Visual inspection also found a short Korean self-name squeezed to a one-glyph column beside the count marker. Name/count row composition now compares their full measured intrinsic footprints; constrained rows stack and give the name its full allocation. Preferred dock width includes the reserved count footprint. Directed1×long-name/2×short-name tests preserve the72px figure and stable1→104 count geometry, and the repeated actual screenshots show the full short name.
+
+Actual screenshots are archived in `namefit-pass/`, and the final clock/motion/input results in `namefit-motion-pass/`. Earlier attempts retain diagnostic evidence under the same archive root. Test-only corrections included native-select computed-line-height semantics, native-scroll clipping in the overlap oracle, waiting for actual resized table geometry, and reading `hands_played` from the Session packet rather than the Room packet. No clipping/hit/authority or font-size threshold was weakened to pass.
+
+This closes the bounded connected text-size capability and its isolated correctness/functional-motion gate. It does **not** establish full visual parity: matching waiting images still expose an active-game empty tray, vacant0-card counts, full stock presentation and missing in-table setup affordances. The explicit waiting-stage recipe is the next implementation, with real compact visible stock provenance retained for first-deal motion. Original fixed-pixel UI has no equivalent200% preference, so only its100% images are a matched baseline. Real screen-reader/OS IME, physical devices and final all-feature performance/broad acceptance remain separate.

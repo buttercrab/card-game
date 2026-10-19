@@ -73,3 +73,12 @@
     <div class="sheet-foot">{@render footer(close)}</div>
   {/if}
 </dialog>
+
+<style>
+  /* Dialog adaptation belongs to the dialog, not every playing surface. */
+  @layer primitives {
+    @media (max-width: 380px) {
+      dialog.sheet { --pad: 16px; }
+    }
+  }
+</style>

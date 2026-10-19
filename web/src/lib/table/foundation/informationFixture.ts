@@ -1,0 +1,8 @@
+import {arenaDocument} from './arenaFixture';
+import type {TableDocument} from './contracts';
+import type {ProofAction} from './fixtures';
+/** Synthetic authorized information fixture; no application geometry. */
+export function informationDocument(options:Parameters<typeof arenaDocument>[0]&{extremeTotals?:boolean}={}):TableDocument<ProofAction>{
+ const base=arenaDocument(options),people=[base.participant,...base.opponents];
+ return {...base,facts:[],information:[{id:'status',title:'상황판',summary:{text:'내 차례 · 카드 내기',tone:'accent'},primary:{label:'공약',value:{kind:'inline',values:[{kind:'suit',suit:'Spade',label:'스페이드'},{kind:'number',value:17}]}},fields:[{id:'declarer',label:'주공',value:{kind:'participant',participantId:'peer-3'}},{id:'friend',label:'프렌드',value:{kind:'inline',values:[{kind:'card',label:'마이티',visual:{kind:'standard',suit:'Spade',rank:14},emphasis:'special'},{kind:'text',text:'마이티'}]}},{id:'round',label:'라운드',value:{kind:'text',text:'6/10'}},...(options.extremeTotals?[{id:'positive-limit',label:'큰 점수 표시',value:{kind:'text' as const,text:Number.MAX_SAFE_INTEGER.toLocaleString('ko-KR')}},{id:'negative-limit',label:'음수 점수 표시',value:{kind:'text' as const,text:(-Number.MAX_SAFE_INTEGER).toLocaleString('ko-KR')}}]:[])],progress:{label:'점수 카드',total:20,target:17,series:[{id:'decl',label:'여당',value:4,tone:'gold',from:'start'},{id:'def',label:'야당',value:2,tone:'plain',from:'end'}]}}],scoreboard:{id:'scores',title:'점수판',columns:[{id:'hand',label:'점수'},{id:'total',label:'누적'}],rows:people.map((person,index)=>({participantId:person.id,values:options.extremeTotals?[Number.MAX_SAFE_INTEGER,-Number.MAX_SAFE_INTEGER]:[index,-100+index*25],...(index===4?{badges:[{text:'주공',tone:'gold' as const}]}:{})}))}};
+}

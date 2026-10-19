@@ -17,6 +17,7 @@
   import Room from '../../room/Room.svelte';
   import { mighty } from './game';
   import Table from './Table.svelte';
+  import { untrack } from 'svelte';
   import { CATALOG } from '../../catalog';
   import { presetRules } from './catalog';
   import { settled } from '../../motion';
@@ -24,7 +25,8 @@
   import { TableUi } from '../../room/ui.svelte';
   import type { Bid, Card, ContractChange, Mighty, PhaseView, Played, RoomView, Rules, StateMsg, Trick } from './types';
 
-  const which = new URLSearchParams(location.search).get('state') ?? 'play';
+  let {state:givenState,roomMode:givenRoom}:{state?:string;roomMode?:boolean}=$props();
+  const which = untrack(()=>givenState) ?? new URLSearchParams(location.search).get('state') ?? 'play';
 
   const n = (suit: 'Spade' | 'Diamond' | 'Heart' | 'Club', rank: number): Card => ({ Normal: [suit, rank] });
   // A real preset's rules (two jokers), as the server has them.
@@ -257,15 +259,20 @@
     clock: null,
     watching: 0,
     showing: true,
-    in_hand: !['done', 'won', 'run', 'replayrace', 'replaycopy', 'foldstability'].includes(which),
+    in_hand: !['done', 'won', 'run', 'replayrace', 'replaycopy', 'recordbeforestate', 'foldstability'].includes(which),
   };
 
+  if (which === 'session') {
+    room.ended = true; room.in_hand = false; room.showing = true;
+    room.standings = room.seats.flatMap((s,i) => s.kind === 'empty' ? [] : [{id: i === 0 ? 'preview' : `p${i}`, name:s.name, bot:s.kind === 'bot', score:room.scores[i]}]);
+  }
   if (which === 'feedbackstress' && typeof phases.play === 'object' && 'Play' in phases.play) phases.play.Play.friend = 1;
   const alias: Record<string, string> = {
     sweep: 'play',
     onecard: 'play',
     replayrace: 'done',
     replaycopy: 'done',
+    recordbeforestate: 'done',
     foldstability: 'done',
     arrival: 'play',
     resume: 'play',
@@ -273,11 +280,17 @@
     misdealtransition: 'bidding',
     misdeal: 'bidding',
     waiting: 'bidding',
+    bidnotes: 'bidding',
     misdealnow: 'bidding',
     timer: 'watch',
     spectate: 'watch',
     mytimer: 'play',
     contract: 'exchange',
+    contractrevision: 'exchange',
+    friendrevision: 'friend',
+    bidrevision: 'bidding',
+    discardrevision: 'exchange',
+    session: 'done',
   };
   const key = which === 'folded' ? 'done' : which === 'leave' ? 'play' : (alias[which] ?? which);
   const turn: StateMsg['turn'] =
@@ -301,7 +314,7 @@
     'menu',
     'leave',
   ];
-  const fullRoom = new URLSearchParams(location.search).has('room');
+  const fullRoom = untrack(()=>givenRoom) ?? new URLSearchParams(location.search).has('room');
   const inRoom = fullRoom || ROOM_STATES.includes(which);
   /** Watching between hands: the lobby with an empty seat, a watcher's name entry. */
   const watching = ['lobbywatch', 'seatsit', 'seatsitbot'].includes(which);
@@ -335,7 +348,7 @@
     room.watching = watching ? 1 : 0;
   }
   if (watching) room.seats[0] = { kind: 'empty' };
-  if (which === 'contract') {
+  if (which === 'contract' || which === 'contractrevision') {
     // 공약 올리기 on: a trump chip picks the trump, the row under it the contract.
     rules.bidding.raise_on_exchange = true;
     const counts = [16, 17, 18, 19, 20];
@@ -347,6 +360,7 @@
     ];
   }
   const game = key === 'exchange' ? msg(phases.bidding, 'bidding', { Seat: 0 }) : msg(phases[key] ?? phases.play, key, turn);
+  if (which === 'bidnotes' && typeof game.view.phase === 'object' && 'Bidding' in game.view.phase) game.view.phase.Bidding.passed[1] = false;
   if (which === 'foldstability') game.view.viewer = { Seat: 2 };
   if (which === 'spectate') {
     game.view.viewer = 'Spectator';
@@ -367,11 +381,16 @@
     // Between hands the seats carry their totals, so a side seat's rising
     // bubble can pass over the name above it for its two seconds; the other
     // states keep checking where bubbles land.
-    reactions: ['folded', 'sweep', 'arrival', 'resume'].includes(which) ? {} : { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
+    reactions: ['folded', 'sweep', 'arrival', 'resume', 'bidnotes'].includes(which) ? {} : { 2: { text: '나이스', id: 1 }, 4: { text: '👏', id: 2 } },
   });
 
   // Model a completed view crossing a copying boundary: equal data,
   // distinct object identities for the live source and displayed result.
+  if (which === 'recordbeforestate') {
+    room.showing = true;
+    room.current_hand = { number:1, names:room.seats.map((s,i)=>s.kind==='empty'?`${i+1}번 자리`:s.name), participant_ids:room.seats.map((_,i)=>`recorded:${i}`), payoffs:[-6,-6,12,6,-6], rules:game.view.rules, view:$state.snapshot(game.view) };
+    client.game = null;
+  }
   if (which === 'replaycopy') {
     const completed = $state.snapshot(game);
     Object.defineProperty(client, 'game', { get: () => structuredClone(completed) });
@@ -387,7 +406,6 @@
     seatMenu: SEAT_MENUS[which] ?? null,
     kicking: which === 'seatkick',
     swapFrom: which === 'swap' ? 1 : null,
-    folded: which === 'folded',
     menu: which === 'menu' || which === 'leave',
     leaving: which === 'leave',
   });
@@ -403,6 +421,26 @@
         }, ms),
       ),
     );
+  }
+
+  // Controlled offer revisions for decision-contract interaction proofs.
+  if (['friendrevision', 'contractrevision', 'bidrevision', 'discardrevision'].includes(which)) {
+    step(3000, () => {
+      const current = client.game;
+      if (!current) return;
+      let removed = false;
+      const nextLegal = current.legal.filter(action => {
+        const target = typeof action === 'object' && (
+          which === 'friendrevision' && 'CallFriend' in action ||
+          which === 'contractrevision' && 'Raise' in action && action.Raise.count === 16 ||
+          which === 'bidrevision' && 'Bid' in action && action.Bid.count === 16 ||
+          which === 'discardrevision' && 'Discard' in action
+        );
+        if (target && !removed) { removed = true; return false; }
+        return true;
+      });
+      client.game = { ...current, legal: nextLegal, version: current.version + 1 };
+    });
   }
 
   if (which === 'resume') step(1000, () => (client.game = game));
@@ -490,7 +528,7 @@
 {#if inRoom}
   <Room id="preview" games={() => mighty} onleave={() => {}} {client} {ui} />
 {:else}
-  <div class="page">
+  <div class="page" data-renderer="dom">
     <!-- Where the room's header sits (Room.svelte), so the table gets the same height. -->
     <header class="mock" aria-hidden="true">← 미리보기 · {which}</header>
     <Table {client} {ui} />

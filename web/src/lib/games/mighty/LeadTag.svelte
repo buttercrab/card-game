@@ -1,58 +1,36 @@
 <script lang="ts">
-  // What a led joker named: a suit, or its colour. Sits on the joker's card.
+  import { onDestroy } from 'svelte';
   import { leadLabel } from './cards';
+  import EngineFlow from '../../table/EngineFlow.svelte';
+  import { tableCoordinates } from '../../table/coordinateContext';
+  import { createFrameMeasurements } from '../../table/frameMeasurements';
+  import { leadTagLayout } from '../../table/overlayLayout';
   import SuitIcon from '../../SuitIcon.svelte';
   import type { Color, Lead, Suit } from './types';
-
-  /** `compact` drops the colour's name, for small cards: the suits say it. */
-  let { lead, compact = false }: { lead: Lead; compact?: boolean } = $props();
-
-  const SUITS_OF: Record<Color, Suit[]> = { Red: ['Heart', 'Diamond'], Black: ['Spade', 'Club'] };
-  /** The rim takes the named suit's ink, or the colour's first suit's. */
-  const tone = $derived('Suit' in lead ? lead.Suit : lead.Color === 'Red' ? 'Heart' : 'Spade');
+  let { lead, compact=false, cardWidth,cardHeight,short=false }: {lead:Lead;compact?:boolean;cardWidth?:number;cardHeight?:number;short?:boolean}=$props();
+  const SUITS_OF:Record<Color,Suit[]>={Red:['Heart','Diamond'],Black:['Spade','Club']};
+  const tone=$derived('Suit' in lead?lead.Suit:lead.Color==='Red'?'Heart':'Spade');
+  const parts=$derived('Suit' in lead?['suit']:[...(!compact?['label']:[]),...SUITS_OF[lead.Color]]);
+  let host:HTMLSpanElement;
+  let contentHost:HTMLSpanElement;
+  const shared=tableCoordinates()?.measurements;
+  const measurements=shared??createFrameMeasurements(()=>host);
+  let parentSize=$state({width:40,height:56});
+  let contentSize=$state({width:0,height:0});
+  $effect(()=>{const parent=host?.parentElement;if(parent)return measurements.observeSize(parent,size=>parentSize=size);});
+  $effect(()=>{const content=contentHost?.querySelector<HTMLElement>('[data-engine-layout]');if(content)return measurements.observeSize(content,size=>contentSize=size);});
+  const geometry=$derived(leadTagLayout({width:cardWidth??parentSize.width,height:cardHeight??parentSize.height},contentSize,compact,short));
+  onDestroy(()=>{if(!shared)measurements.dispose();});
 </script>
-
-<span class="tag" class:compact style:color="var(--suit-{tone.toLowerCase()})" aria-label="조커가 부른 무늬: {leadLabel(lead)}">
-  {#if 'Suit' in lead}
-    <SuitIcon suit={lead.Suit} size={compact ? '12px' : '14px'} />
-  {:else}
-    <!-- Name the suits that follow: with four colours, diamonds look blue but count as red. -->
-    {#if !compact}{leadLabel(lead)}{/if}
-    {#each SUITS_OF[lead.Color] as suit (suit)}
-      <SuitIcon {suit} size={compact ? '12px' : '14px'} />
-    {/each}
-  {/if}
+<span class="tag" bind:this={host} style:visibility={contentSize.height>0?undefined:'hidden'} style:color="var(--suit-{tone.toLowerCase()})" style:left={`${geometry.x}px`} style:top={`${geometry.y}px`} style:width={`${geometry.width}px`} style:height={`${geometry.height}px`} style:border-width={`${geometry.border}px`} aria-label="조커가 부른 무늬: {leadLabel(lead)}" data-engine-layout="lead-tag">
+  <span class="content" bind:this={contentHost} style:left={`${geometry.contentX}px`} style:top={`${geometry.contentY}px`}>
+    <EngineFlow items={parts.map(id=>({id}))} gap={geometry.gap}>
+      {#snippet children(id)}{#if id==='label'}<span>{leadLabel(lead)}</span>{:else}<span class="glyph" style:width={`${geometry.iconSize}px`} style:height={`${geometry.iconSize}px`}><SuitIcon suit={id==='suit'&&'Suit' in lead?lead.Suit:id as Suit} size={`${geometry.iconSize}px`} /></span>{/if}{/snippet}
+    </EngineFlow>
+  </span>
 </span>
-
 <style>
-  .tag {
-    /* Card paper: the spade is card ink here, in both themes. */
-    --spade-ink: var(--suit-spade);
-    position: absolute;
-    left: 50%;
-    bottom: -10px;
-    transform: translateX(-50%);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    min-width: 28px;
-    height: 24px;
-    padding: 0 8px;
-    border: 2px solid currentColor;
-    border-radius: var(--r-pill);
-    background: var(--card);
-    font-size: var(--text-label);
-    font-weight: 800;
-    white-space: nowrap;
-    z-index: 1;
-  }
-  .tag.compact {
-    min-width: 0;
-    max-width: 100%;
-    height: 20px;
-    padding: 0 4px;
-    gap: 1px;
-    border-width: 1.5px;
-  }
+  .tag { --spade-ink:var(--suit-spade); position:absolute; box-sizing:border-box; border-style:solid; border-color:currentColor; border-radius:var(--r-pill); background:var(--card); font-size:var(--text-label); font-weight:800; white-space:nowrap; z-index:1; }
+  .content { position:absolute; }
+  .glyph { display:block; line-height:0; }
 </style>

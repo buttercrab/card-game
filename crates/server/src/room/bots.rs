@@ -51,34 +51,88 @@ const HINT_THINK: Duration = Duration::from_millis(800);
 
 /// What the room's own bot tasks send it, for game action `A`.
 #[derive(Debug)]
-#[allow(clippy::enum_variant_names)] // The bots are all it carries, for now.
+#[allow(clippy::enum_variant_names)]
 pub(super) enum Internal<A> {
+    ResourceReady {
+        waiter: u64,
+    },
     /// A bot's move for hand `version`.
-    BotMove { version: u64, seat: usize, action: A },
+    BotMove {
+        version: u64,
+        seat: usize,
+        action: A,
+    },
     /// The bot for hand `version` failed to think (it panicked): the 보통
     /// bot moves for it instead.
-    BotFailed { version: u64, seat: usize },
+    BotFailed {
+        version: u64,
+        seat: usize,
+    },
     /// A bot's move off its turn (a 딜미스), decided when deal number
     /// `deal` landed.
-    BotOffTurn { deal: u64, seat: usize, action: A },
+    BotOffTurn {
+        deal: u64,
+        seat: usize,
+        action: A,
+    },
+    /// Private background work returns through the actor's publication fence.
+    Hint {
+        version: u64,
+        seat: usize,
+        conn: ConnId,
+        actor_id: String,
+        action: A,
+    },
 }
 
 impl<G: ServerGame> Room<G> {
+    fn background_admission(&mut self) -> Option<(tokio::sync::OwnedSemaphorePermit, crate::work_budget::Permit)> {
+        let job = self.jobs.clone().try_acquire_owned().ok()?;
+        let notice = self.env.cognition.notification();
+        if let Some(cpu) = self.env.cognition.try_acquire() {
+            return Some((job, cpu));
+        }
+        if self.work_waiter.is_none() {
+            let waiter = self.work_waiter_epoch.wrapping_add(1);
+            self.work_waiter_epoch = waiter;
+            let tx = self.internal.clone();
+            let task = tokio::spawn(async move {
+                notice.await;
+                let _ = tx.send(Internal::ResourceReady { waiter }).await;
+            });
+            self.work_waiter = Some((waiter, crate::work_budget::TaskGuard::new(&task)));
+        }
+        None
+    }
+    fn track_background(&mut self, task: &tokio::task::JoinHandle<()>) {
+        self.job_tasks.retain(|task| !task.finished());
+        self.job_tasks.push(crate::work_budget::TaskGuard::new(task));
+    }
+
     /// Starts a bot thinking if one is to act. Its move arrives as
     /// [`Internal::BotMove`] no sooner than its pace.
     pub(super) fn think(&mut self) {
         if self.thinking == Some(self.hand.version) {
             return;
         }
-        let (Some(seat), Some(game)) = (self.bot_to_act(), self.hand.game.as_ref()) else {
+        let Some(seat) = self.bot_to_act() else {
             return;
         };
         let Some((level, temper)) = self.seating.bot(seat) else {
             return;
         };
+        let Some((job_permit, cpu)) = self.background_admission() else {
+            return;
+        };
+        let Some(game) = self.hand.game.as_ref() else {
+            return;
+        };
         let bots = &self.env.bots;
         let view = G::view(game, Viewer::Seat(seat));
-        let legal = G::legal_actions(game, seat);
+        let legal = self.policy_actions(&G::legal_actions(game, seat));
+        if legal.is_empty() {
+            return;
+        }
         let (seed, version) = (self.rng.random::<u64>(), self.hand.version);
         // People take a moment, longer for a real choice, and every move
         // varies a little.
@@ -106,7 +160,8 @@ impl<G: ServerGame> Room<G> {
         let tx = self.internal.clone();
         let table_bots = self.bots.clone();
         self.thinking = Some(version);
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
+            let _job_permit = job_permit;
             let started = tokio::time::Instant::now();
             // A worker gets the move's thinking time and a grace period; past
             // that, or with no worker, the room thinks for itself.
@@ -119,9 +174,17 @@ impl<G: ServerGame> Room<G> {
                     .filter(|a| legal.contains(a));
             }
             let choice = match remote_choice {
-                Some(action) => Ok(action),
+                Some(action) => {
+                    // A successful remote choice no longer needs this private
+                    // snapshot during the presentation delay.
+                    drop(view);
+                    drop(legal);
+                    drop(cpu);
+                    Ok(action)
+                }
                 None => {
                     tokio::task::spawn_blocking(move || {
+                        let _cpu = cpu;
                         table_bots.bot(level, temper, local_think, 1).act(
                             &view,
                             &legal,
@@ -140,13 +203,20 @@ impl<G: ServerGame> Room<G> {
                     Internal::BotFailed { version, seat }
                 }
             };
-            let _ = tx.send(message);
+            let _ = tx.send(message).await;
         });
+        self.track_background(&task);
     }
 
     /// What the room's own tasks sent; returns whether anything changed.
     pub(super) fn on_internal(&mut self, message: Internal<G::Action>) -> bool {
         match message {
+            Internal::ResourceReady { waiter } => {
+                if self.work_waiter.as_ref().is_some_and(|(id, _)| *id == waiter) {
+                    self.work_waiter = None;
+                }
+                false
+            }
             Internal::BotMove { version, seat, action } => {
                 self.done_thinking(version);
                 self.is_current(version, seat) && self.bot_move(seat, action)
@@ -156,6 +226,22 @@ impl<G: ServerGame> Room<G> {
                 self.is_current(version, seat) && self.stand_in(seat, "the bot failed; a 보통 bot moved")
             }
             Internal::BotOffTurn { deal, seat, action } => self.bot_off_turn(deal, seat, action),
+            Internal::Hint {
+                version,
+                seat,
+                conn,
+                actor_id,
+                action,
+            } => {
+                if version == self.hand.version
+                    && self.seating.seat_of(conn) == Some(seat)
+                    && self.member(seat).id == actor_id
+                    && !self.policy_actions(std::slice::from_ref(&action)).is_empty()
+                {
+                    self.send(conn, &Msg::<G>::Hint { version, action });
+                }
+                false
+            }
         }
     }
 
@@ -168,17 +254,19 @@ impl<G: ServerGame> Room<G> {
 
     /// Whether a bot's move for hand `version` is still the one to make.
     fn is_current(&self, version: u64, seat: usize) -> bool {
-        version == self.hand.version && self.bot_to_act() == Some(seat)
+        version == self.hand.version && self.resources.held.is_none() && self.bot_to_act() == Some(seat)
     }
 
     /// Applies a bot's move. Returns whether it did.
     fn bot_move(&mut self, seat: usize, action: G::Action) -> bool {
-        let logged = log_action(&action);
-        if let Err(e) = self.hand.apply(seat, action) {
-            tracing::error!(room = %self.id, seat, action = %logged, "bot chose an illegal action: {e}");
+        if self.policy_actions(std::slice::from_ref(&action)).is_empty() {
             return false;
         }
-        tracing::info!(room = %self.id, seat, action = %logged, "bot move");
+        let logged = log_action(&action);
+        if let Err(e) = self.apply_move(seat, action, "bot move") {
+            tracing::error!(room = %self.id, seat, action = %logged, "bot move refused: {e:?}");
+            return false;
+        }
         true
     }
 
@@ -189,17 +277,20 @@ impl<G: ServerGame> Room<G> {
             return false;
         };
         let view = G::view(game, Viewer::Seat(seat));
-        let legal = G::legal_actions(game, seat);
+        let legal = self.policy_actions(&G::legal_actions(game, seat));
+        if legal.is_empty() {
+            return false;
+        }
+        let mut rng = self.rng.clone();
         let action = self
             .bots
             .bot(Level::Normal, seat, Duration::ZERO, 1)
-            .act(&view, &legal, &mut self.rng);
+            .act(&view, &legal, &mut rng);
         let logged = log_action(&action);
-        if let Err(e) = self.hand.apply(seat, action) {
-            tracing::error!(room = %self.id, seat, action = %logged, "the stand-in chose an illegal action: {e}");
+        if let Err(e) = self.apply_move_with_rng(seat, action, why, rng) {
+            tracing::error!(room = %self.id, seat, action = %logged, "stand-in move refused: {e:?}");
             return false;
         }
-        tracing::info!(room = %self.id, seat, action = %logged, "{why}");
         true
     }
 
@@ -213,6 +304,9 @@ impl<G: ServerGame> Room<G> {
             .as_ref()
             .is_some_and(|g| !self.hand.waits_on(seat) && G::legal_actions(g, seat).contains(&action));
         if deal != self.hand.deals || self.seating.bot(seat).is_none() || !allowed {
+            return false;
+        }
+        if self.policy_actions(std::slice::from_ref(&action)).is_empty() {
             return false;
         }
         self.apply_move(seat, action, "bot off-turn move").is_ok()
@@ -230,20 +324,26 @@ impl<G: ServerGame> Room<G> {
             if self.hand.waits_on(seat) {
                 continue;
             }
-            let legal = G::legal_actions(game, seat);
+            let legal = self.policy_actions(&G::legal_actions(game, seat));
             if legal.is_empty() {
                 continue;
             }
+            let Ok(job_permit) = self.jobs.clone().try_acquire_owned() else {
+                continue;
+            };
             let view = G::view(game, Viewer::Seat(seat));
             let Some(action) = self.bots.off_turn(level, seat, &view, &legal) else {
                 continue;
             };
             let pause = self.env.bots.delay.mul_f32(self.rng.random_range(1.0..1.5));
             let (tx, deal) = (self.internal.clone(), self.hand.deals);
-            tokio::spawn(async move {
+            let task = tokio::spawn(async move {
+                let _job_permit = job_permit;
                 tokio::time::sleep(pause).await;
-                let _ = tx.send(Internal::BotOffTurn { deal, seat, action });
+                let _ = tx.send(Internal::BotOffTurn { deal, seat, action }).await;
             });
+            self.job_tasks.retain(|task| !task.finished());
+            self.job_tasks.push(crate::work_budget::TaskGuard::new(&task));
         }
     }
 
@@ -253,22 +353,42 @@ impl<G: ServerGame> Room<G> {
         if !self.hand.waits_on(seat) {
             return Err(ErrorCode::NotYourTurn.into());
         }
-        let tx = self.seating.conns.get(&conn).ok_or(ErrorCode::NotSeated)?.tx.clone();
+        if self.seating.seat_of(conn) != Some(seat) {
+            return Err(ErrorCode::NotSeated.into());
+        }
+        let tx = self.internal.clone();
+        let actor_id = self.member(seat).id;
         // Searches are capped across the server (see `limit::HintPool`);
         // how often one connection asks, by its own limit (`limit::ws_hints`).
         let permit = self.env.hints.try_permit().ok_or(ErrorCode::HintsBusy)?;
+        let job_permit = self
+            .jobs
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ErrorCode::HintsBusy)?;
+        let cpu = self.env.cognition.try_acquire().ok_or(ErrorCode::HintsBusy)?;
         let view = G::view(game, Viewer::Seat(seat));
-        let legal = G::legal_actions(game, seat);
+        let legal = self.policy_actions(&G::legal_actions(game, seat));
+        if legal.is_empty() {
+            return Err(ErrorCode::ResourceCapacity.into());
+        }
         let (seed, version) = (self.rng.random::<u64>(), self.hand.version);
         let table_bots = self.bots.clone();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
+            let _job_permit = job_permit;
             let action =
                 table_bots
                     .bot(Level::Hard, seat, HINT_THINK, 1)
                     .act(&view, &legal, &mut StdRng::seed_from_u64(seed));
-            let msg = Msg::<G>::Hint { version, action };
-            let _ = tx.send(serde_json::to_string(&msg).expect("messages serialize"));
+            drop(cpu);
+            let _ = tx.blocking_send(Internal::Hint {
+                version,
+                seat,
+                conn,
+                actor_id,
+                action,
+            });
         });
         Ok(())
     }

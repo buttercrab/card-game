@@ -12,6 +12,7 @@ reports describe only their recorded revisions.
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Setup, checks, generated files and tool commands |
 | [OPERATIONS.md](OPERATIONS.md) | Serving/deploy design, verification, stats/privacy and backups |
 | [FIXES.md](FIXES.md) | Remaining cleanup and regression contracts |
+| [QA_PROCESS.md](QA_PROCESS.md) | Evidence-gated visual, responsive, interaction and game-flow acceptance |
 | [REFACTOR.md](REFACTOR.md) | Delivered cleanup phases 0–7 and evidence limits |
 | [Mighty rules](../crates/mighty/RULES.md) | Canonical description of implemented rules |
 | [Research](../research/README.md) | Experiment outcomes and artifact conventions |

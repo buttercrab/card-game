@@ -155,7 +155,8 @@ impl Reading {
         made: Option<Contract>,
     ) -> f64 {
         let estimate = |trump: Suit| f64::from(policy.estimate(rules, hand, Some(trump)));
-        let cheapest = best.map_or(rules.bidding.min, |b| rules.bidding.min.max(rules.bid_value(b) + 1));
+        let minimum = u16::from(rules.bidding.min);
+        let cheapest = best.map_or(minimum, |b| minimum.max(rules.bid_value(b) + 1));
         // What the policy's estimate must reach to bid `count` in a suit.
         let needed = |count: u8| {
             f64::from(policy.needed(
@@ -167,9 +168,10 @@ impl Reading {
             ))
         };
         let forced = best.is_none() && !rules.bidding.first_bidder_may_pass;
-        if cheapest > rules.bidding.max || forced {
+        if cheapest > u16::from(rules.bidding.max) || forced {
             return 0.0;
         }
+        let cheapest = u8::try_from(cheapest).expect("offered suit bid is within wire count range");
         match made {
             None => {
                 let top = Suit::ALL.map(estimate).into_iter().fold(f64::NEG_INFINITY, f64::max);
@@ -505,5 +507,26 @@ mod tests {
         assert!((9.9..12.0).contains(&kept), "{kept}");
         assert!(w[0] > w[1]);
         assert_eq!(reading.weights(&[3.0, 3.0]), vec![0.5, 0.5]);
+    }
+    #[test]
+    fn reading_a_rank_above_wire_maximum_does_not_invent_a_suit_bid() {
+        let mut rules = Rules::web_mighty();
+        rules.bidding.min = 2;
+        rules.bidding.max = 255;
+        rules.bidding.no_trump_bonus = 1;
+        rules.validate().unwrap();
+        assert_eq!(
+            Reading::default().bid(
+                &SimpleBot::default(),
+                &rules,
+                &[],
+                Some(Contract {
+                    trump: None,
+                    count: 255
+                }),
+                None
+            ),
+            0.0
+        );
     }
 }

@@ -9,6 +9,7 @@
   import SuitText from '../../../SuitText.svelte';
   import Button from '../../../ui/Button.svelte';
   import Popover from '../../../ui/Popover.svelte';
+  import EngineFlow from '../../../table/EngineFlow.svelte';
 
   let {
     hint,
@@ -35,14 +36,12 @@
 <svelte:window onkeydown={(e) => {
   if (e.key.toLowerCase() === 'h' && canHint && tableShortcut(e)) { e.preventDefault(); onhint(); }
 }} />
-<div class="tools">
-  {#if canHint || hint}
-    <Button aria-keyshortcuts="H" title="힌트 · H" variant="icon" raised aria-label="봇이라면 뭘 할지 보기" aria-expanded={!!hint} bind:element={button} onclick={() => (hint ? (dismissed = null) : onhint())}>
-      <Icon name="hint" />
-    </Button>
-  {/if}
-  <Reactions {onreact} />
-</div>
+<div class="tools"><EngineFlow items={[...(canHint||hint?[{id:'hint'}]:[]),{id:'reactions'}]} gap={8}>
+ {#snippet children(id)}
+  {#if id==='hint'}<Button aria-keyshortcuts="H" title="힌트 · H" variant="icon" raised aria-label="봇이라면 뭘 할지 보기" aria-expanded={!!hint} bind:element={button} onclick={() => (hint ? (dismissed = null) : onhint())}><Icon name="hint" /></Button>
+  {:else}<Reactions {onreact} />{/if}
+ {/snippet}
+</EngineFlow></div>
 {#if hint && button && dismissed !== hint}
   <Popover
     anchor={() => button!.getBoundingClientRect()}
@@ -58,11 +57,6 @@
 {/if}
 
 <style>
-  .tools {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
   .hint {
     margin: 0 4px;
     font-size: 14px;

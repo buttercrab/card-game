@@ -1,0 +1,9 @@
+import {expect,test} from 'vitest';
+import {tabNavigationTarget} from './tabNavigation';
+import type {PlannedNode} from './contracts';
+const group=(id:string,parent:string|null,semanticRole?:PlannedNode['semanticRole']):PlannedNode=>({id,parent,kind:'group',label:id,box:{x:0,y:0,width:100,height:100},...(semanticRole?{semanticRole}:{})});
+const tab=(id:string,parent:string,enabled=true):PlannedNode=>({...group(id,parent),kind:'command',semanticRole:'tab',enabled});
+const nodes=[group('root',null),group('tabs','root','tablist'),group('envelope-a','tabs'),tab('a','envelope-a'),group('envelope-b','tabs'),tab('b','envelope-b'),group('envelope-c','tabs'),tab('c','envelope-c'),group('other','root','tablist'),tab('foreign','other')];
+test('arrows cross measured envelopes within the nearest semantic tablist',()=>{expect(tabNavigationTarget(nodes,'a','ArrowRight')).toBe('b');expect(tabNavigationTarget(nodes,'a','ArrowLeft')).toBe('c');expect(tabNavigationTarget(nodes,'c','Home')).toBe('a');expect(tabNavigationTarget(nodes,'a','End')).toBe('c');});
+test('disabled controls and nested tablists do not join the parent tab sequence',()=>{const source=nodes.map(node=>node.id==='b'?{...node,enabled:false}:node);source.push(group('nested','tabs','tablist'),tab('inside','nested'));expect(tabNavigationTarget(source,'a','ArrowRight')).toBe('c');expect(tabNavigationTarget(source,'inside','ArrowRight')).toBe('inside');expect(tabNavigationTarget(source,'b','ArrowRight')).toBeNull();});
+test('unknown nodes, non-navigation keys and malformed ancestry fail closed',()=>{expect(tabNavigationTarget(nodes,'missing','Home')).toBeNull();expect(tabNavigationTarget(nodes,'a','Enter')).toBeNull();expect(tabNavigationTarget([group('loop','loop'),tab('a','loop')],'a','Home')).toBeNull();expect(tabNavigationTarget([tab('a','missing')],'a','Home')).toBeNull();});

@@ -49,11 +49,19 @@ async fn one_player_and_four_bots_finish_a_hand() {
     // Dealing the next hand changes the table but not the session, so only
     // the table is sent again.
     send(&mut ws, json!({ "type": "start" })).await;
-    let next_msg = next_text(&mut ws).await.unwrap();
-    assert_eq!(
-        (&next_msg["type"], &next_msg["in_hand"]),
-        (&json!("room"), &json!(true))
-    );
+    loop {
+        let next_msg = next_text(&mut ws).await.unwrap();
+        if next_msg["type"] == "session" {
+            assert!(
+                next_msg["current_hand"].is_null(),
+                "Start clears the just-finished replay"
+            );
+            assert_eq!(next_msg["hands_played"], 1);
+        }
+        if next_msg["type"] == "room" && next_msg["in_hand"] == true {
+            break;
+        }
+    }
     // Whoever comes to the table hears the session so far first.
     let mut watcher = connect(addr, &room).await;
     let session = next_text(&mut watcher).await.unwrap();
@@ -232,7 +240,7 @@ async fn game_scoped_routes_and_their_old_aliases_agree() {
     assert_eq!(status, 200);
     assert_eq!(
         serde_json::from_str::<Value>(&games).unwrap(),
-        json!([{ "id": "mighty", "name": "마이티" }])
+        json!([{ "id": "mighty", "name": "마이티" }, {"id":"poker","name":"텍사스 홀덤"}])
     );
     for (new, old) in [
         ("/api/games/mighty/presets", "/api/presets"),
@@ -262,10 +270,10 @@ async fn game_scoped_routes_and_their_old_aliases_agree() {
         assert_eq!(next(&mut ws, "room").await["game"], "mighty");
     }
     // An unknown game, or a preset it does not have.
-    for path in ["/api/games/poker/presets", "/api/games/poker/presets/gshs"] {
+    for path in ["/api/games/not-a-game/presets", "/api/games/not-a-game/presets/gshs"] {
         assert_eq!(http(addr, "GET", path, "").await.0, 404, "{path}");
     }
-    assert_eq!(http(addr, "POST", "/api/games/poker/rooms", "{}").await.0, 404);
+    assert_eq!(http(addr, "POST", "/api/games/not-a-game/rooms", "{}").await.0, 404);
     let (status, body) = http(addr, "POST", "/api/games/mighty/rooms", "{\"preset\": \"nope\"}").await;
     assert_eq!(status, 400);
     assert_eq!(serde_json::from_str::<Value>(&body).unwrap()["code"], "unknown_preset");
@@ -339,6 +347,13 @@ async fn a_saved_table_comes_back_mid_hand_after_a_restart() {
         let (_, token) = join(&mut ws, name, None).await;
         players.push((ws, token));
     }
+    for (ws, _) in &mut players {
+        send(ws, json!({"type":"ready","ready":true})).await;
+    }
+    next_where(&mut players[0].0, "room", |r| {
+        r["ready"].as_array().is_some_and(|a| a.iter().all(|v| v == true))
+    })
+    .await;
     send(&mut players[0].0, json!({ "type": "start" })).await;
     // Each move reaches everyone; whoever has legal actions makes the next one.
     let mut before = Value::Null;
@@ -669,6 +684,13 @@ async fn misdeal_table(addr: SocketAddr, preset: &str) -> (Vec<Socket>, Vec<Valu
     let settings = json!({ "preset": preset, "rules": rules });
     send(&mut players[0], json!({ "type": "set_settings", "settings": settings })).await;
     next_where(&mut players[0], "room", |r| r["settings"]["rules"].is_object()).await;
+    for ws in &mut players {
+        send(ws, json!({"type":"ready","ready":true})).await;
+    }
+    next_where(&mut players[0], "room", |r| {
+        r["ready"].as_array().is_some_and(|a| a.iter().all(|v| v == true))
+    })
+    .await;
     send(&mut players[0], json!({ "type": "start" })).await;
     let states = next_states(&mut players).await;
     (players, states)
@@ -907,4 +929,233 @@ async fn whoever_opens_the_next_hand_still_does_after_moving() {
     send(&mut a, json!({ "type": "start" })).await;
     let state = next(&mut a, "state").await;
     assert_eq!(state["view"]["first_bidder"], 2, "A opens it from seat 2");
+}
+
+/// Admission is an explicit consent transition, not a badge or an implicit Join.
+#[tokio::test]
+async fn observer_queue_and_last_duplicate_disconnect_are_live_room_state() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut player = connect(addr, &room).await;
+    join(&mut player, "재용", None).await;
+    for seat in 1..5 {
+        send(&mut player, json!({"type":"add_bot","seat":seat})).await;
+    }
+    next_where(&mut player, "room", |m| {
+        m["seats"].as_array().unwrap().iter().all(|s| s["kind"] != "empty")
+    })
+    .await;
+    let mut a = connect(addr, &room).await;
+    send(&mut a, json!({"type":"observe","name":"수연"})).await;
+    let visitor = next_where(&mut a, "visitor_welcome", |_| true).await;
+    let mut duplicate = connect(addr, &room).await;
+    send(
+        &mut duplicate,
+        json!({"type":"observe","name":"수연","token":visitor["token"]}),
+    )
+    .await;
+    next_where(&mut duplicate, "visitor_welcome", |_| true).await;
+    send(&mut a, json!({"type":"request_seat","requested":true,"seat":2})).await;
+    let reserved = next_where(&mut player, "room", |m| {
+        m["participation"].as_array().is_some_and(|q| q.len() == 1)
+    })
+    .await;
+    let reservation = reserved["participation"][0].clone();
+    assert_eq!(reserved["watching"], 1);
+    assert_eq!(reservation["id"], visitor["id"]);
+    assert_eq!(reservation["seat"], 2);
+    send(&mut player, json!({"type":"start"})).await;
+    assert_eq!(
+        next_where(&mut player, "error", |_| true).await["code"],
+        "players_not_ready"
+    );
+    a.close(None).await.unwrap();
+    // A same-connection rename gives a processing barrier without removing priority.
+    send(&mut duplicate, json!({"type":"observe","name":"수연 다시"})).await;
+    next_where(&mut duplicate, "visitor_welcome", |_| true).await;
+    let kept = next_where(&mut player, "room", |m| m["participation"][0]["name"] == "수연 다시").await;
+    assert_eq!(kept["participation"][0]["target_id"], reservation["target_id"]);
+    duplicate.close(None).await.unwrap();
+    next_where(&mut player, "room", |m| {
+        m["participation"].as_array().is_some_and(Vec::is_empty) && m["watching"] == 0
+    })
+    .await;
+    let mut incoming = connect(addr, &room).await;
+    send(
+        &mut incoming,
+        json!({"type":"observe","name":"수연","token":visitor["token"]}),
+    )
+    .await;
+    next_where(&mut incoming, "visitor_welcome", |_| true).await;
+    send(&mut incoming, json!({"type":"request_seat","requested":true,"seat":2})).await;
+    let offered = next_where(&mut incoming, "room", |m| m["participation"][0]["seat"] == 2).await;
+    send(
+        &mut incoming,
+        json!({"type":"accept_seat","seat":2,"target_id":offered["participation"][0]["target_id"]}),
+    )
+    .await;
+    assert_eq!(next_where(&mut incoming, "welcome", |_| true).await["seat"], 2);
+    let seated = next_where(&mut incoming, "room", |m| m["seats"][2]["kind"] == "human").await;
+    assert_eq!(seated["participant_ids"][2], visitor["id"]);
+    assert!(seated["participation"].as_array().unwrap().is_empty());
+    assert_eq!(seated["ready"][2], false);
+}
+
+#[tokio::test]
+async fn scoped_wire_commands_reconcile_duplicates_staleness_and_private_reconnect_queries() {
+    let addr = spawn_server().await;
+    let room = create_room(addr, "gshs").await;
+    let mut players = Vec::new();
+    let mut tokens = Vec::new();
+    for seat in 0..5 {
+        let mut player = connect(addr, &room).await;
+        let (_, token) = join(&mut player, &format!("P{seat}"), None).await;
+        send(&mut player, json!({"type":"ready", "ready":true})).await;
+        players.push(player);
+        tokens.push(token);
+    }
+    send(&mut players[0], json!({"type":"start"})).await;
+    let mut states = Vec::new();
+    for player in &mut players {
+        states.push(next_where(player, "state", |state| state["view"]["phase"].get("Bidding").is_some()).await);
+    }
+    let seat = states[0]["turn"]["Seat"].as_u64().unwrap() as usize;
+    let other = (seat + 1) % 5;
+    let expected = states[seat]["command"]["scope"].clone();
+    assert_eq!(states[seat]["command"]["next_sequence"], 1);
+    let action = states[seat]["legal"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| **action != json!("Misdeal"))
+        .unwrap()
+        .clone();
+    let submit =
+        json!({"type":"submit", "operation_id":"1:wire-test", "sequence":1, "expected":expected, "action":action});
+    send(&mut players[seat], submit.clone()).await;
+    let accepted = next_where(&mut players[seat], "operation_receipt", |_| true).await;
+    assert_eq!(accepted["outcome"]["status"], "accepted");
+    assert_eq!(
+        accepted["durability"], "memory",
+        "durable publication is a separate acceptance gate"
+    );
+    let version = accepted["outcome"]["version"].as_u64().unwrap();
+    assert_eq!(version, expected["version"].as_u64().unwrap() + 1);
+    send(&mut players[seat], submit).await;
+    assert_eq!(
+        next_where(&mut players[seat], "operation_receipt", |_| true).await,
+        accepted
+    );
+    send(
+        &mut players[other],
+        json!({"type":"query_operation", "operation_id":"1:wire-test", "sequence":1}),
+    )
+    .await;
+    let hidden = next_where(&mut players[other], "operation_receipt", |_| true).await;
+    assert_eq!(hidden["outcome"], json!({"status":"unavailable", "reason":"unknown"}));
+    assert!(hidden["scope"].is_null());
+    send(
+        &mut players[seat],
+        json!({"type":"submit", "operation_id":"2:stale", "sequence":2, "expected":expected, "action":"Pass"}),
+    )
+    .await;
+    let stale = next_where(&mut players[seat], "operation_receipt", |_| true).await;
+    assert_eq!(stale["outcome"]["reason"], "stale_scope");
+    let current = next_where(&mut players[seat], "state", |state| {
+        state["command"]["next_sequence"] == 3
+    })
+    .await;
+    assert_eq!(current["version"], version);
+    let mut returning = connect(addr, &room).await;
+    join(&mut returning, "Returning", Some(&tokens[seat])).await;
+    send(
+        &mut returning,
+        json!({"type":"query_operation", "operation_id":"1:wire-test", "sequence":1}),
+    )
+    .await;
+    assert_eq!(
+        next_where(&mut returning, "operation_receipt", |_| true).await,
+        accepted
+    );
+}
+
+#[tokio::test]
+async fn an_unread_durable_receipt_is_recovered_after_restart_without_replaying_the_move() {
+    let dir = temp_dir();
+    let state = AppState::new(Config {
+        data: Some(dir.path().to_path_buf()),
+        ..config()
+    });
+    let addr = serve(state.clone()).await;
+    let room = create_room(addr, "gshs").await;
+    let mut players = Vec::new();
+    let mut tokens = Vec::new();
+    for seat in 0..5 {
+        let mut player = connect(addr, &room).await;
+        let (_, token) = join(&mut player, &format!("P{seat}"), None).await;
+        send(&mut player, json!({"type":"ready", "ready":true})).await;
+        players.push(player);
+        tokens.push(token);
+    }
+    send(&mut players[0], json!({"type":"start"})).await;
+    let mut states = Vec::new();
+    for player in &mut players {
+        states.push(next(player, "state").await);
+    }
+    let seat = states[0]["turn"]["Seat"].as_u64().unwrap() as usize;
+    let other = (seat + 1) % 5;
+    let expected = states[seat]["command"]["scope"].clone();
+    let action = states[seat]["legal"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| **action != json!("Misdeal"))
+        .unwrap()
+        .clone();
+    let submit =
+        json!({"type":"submit", "operation_id":"1:unread", "sequence":1, "expected":expected, "action":action});
+    let version = expected["version"].as_u64().unwrap() + 1;
+    send(&mut players[seat], submit.clone()).await;
+    // Another client's publication is the barrier. The submitting client
+    // never reads its acknowledgement, just as with a dropped connection.
+    next_where(&mut players[other], "state", |state| state["version"] == version).await;
+    let checkpoint: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(format!("{room}.json"))).unwrap()).unwrap();
+    assert_eq!(
+        checkpoint["commands"]["version"], version,
+        "publication follows the saved state"
+    );
+    assert_eq!(state.shutdown(Duration::from_secs(5)).await, 1);
+    drop(players);
+
+    let restored = AppState::new(Config {
+        data: Some(dir.path().to_path_buf()),
+        ..config()
+    });
+    assert_eq!(restored.restore_rooms().unwrap(), 1);
+    let addr = serve(restored).await;
+    let mut returning = connect(addr, &room).await;
+    join(&mut returning, "Returning", Some(&tokens[seat])).await;
+    let current = next(&mut returning, "state").await;
+    assert_eq!(current["version"], version);
+    assert_eq!(current["command"]["next_sequence"], 2);
+    send(
+        &mut returning,
+        json!({"type":"query_operation", "operation_id":"1:unread", "sequence":1}),
+    )
+    .await;
+    let recovered = next(&mut returning, "operation_receipt").await;
+    assert_eq!(recovered["outcome"], json!({"status":"accepted", "version":version}));
+    assert_eq!(recovered["durability"], "persisted");
+    assert_eq!(recovered["scope"], expected);
+    send(&mut returning, submit).await;
+    assert_eq!(next(&mut returning, "operation_receipt").await, recovered);
+    // Duplicates are read-only and do not manufacture another State publication.
+    // A second private query orders recovery after duplicate processing.
+    send(
+        &mut returning,
+        json!({"type":"query_operation", "operation_id":"1:unread", "sequence":1}),
+    )
+    .await;
+    assert_eq!(next(&mut returning, "operation_receipt").await, recovered);
 }

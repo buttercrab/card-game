@@ -12,6 +12,7 @@ clap.workspace = true
 engine.workspace = true
 futures-util.workspace = true
 mighty.workspace = true
+poker.workspace = true
 mighty-ai.workspace = true
 rand.workspace = true
 serde.workspace = true

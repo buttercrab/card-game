@@ -16,6 +16,11 @@
     onrules,
     onsettings,
     onreport,
+    onreplay,
+    onreset,
+    onwatch,
+    onpeople,
+    onscores,
     onleave,
     leaving = $bindable(false),
   }: {
@@ -30,6 +35,11 @@
     onrules: () => void;
     onsettings: () => void;
     onreport: () => void;
+    onreplay: () => void;
+    onreset: () => void;
+    onwatch: () => void;
+    onpeople: () => void;
+    onscores: () => void;
     /** Leave the table for the home page. */
     onleave: () => void;
     /** Leaving mid-hand asks first (a bot plays your seat from then on): asking. */
@@ -69,6 +79,10 @@
       <span class="label">설정</span>
       <span class="aside">테이블 · 화면 · 소리</span>
     </Button>
+    <Button wide onclick={onpeople}><Icon name="invite" size="22px" /><span class="label">함께 있는 사람</span></Button>
+    <Button wide onclick={onscores}><Icon name="result" size="22px" /><span class="label">누적 점수</span></Button>
+    {#if room.showing && !room.in_hand}<Button wide onclick={onreplay}><Icon name="result" size="22px" /><span class="label">이번 판 다시 보기</span></Button>{/if}
+    {#if seated}<Button wide disabled={inHand} onclick={onwatch}><Icon name="leave" size="22px" /><span class="label">관전으로 전환</span></Button><Button wide disabled={inHand} onclick={onreset}><Icon name="shuffle" size="22px" /><span class="label">점수 초기화</span></Button>{/if}
     <Button wide onclick={onreport}>
       <Icon name="flag" size="22px" />
       <span class="label">문제 신고</span>
@@ -83,7 +97,7 @@
         <button class="btn danger" onclick={onleave}>나가기</button>
       </div>
     {:else}
-      <Button variant="ghost" class="leave" onclick={leave}><Icon name="leave" size="22px" /><span class="label">나가기</span></Button>
+      <Button variant="ghost" class="leave" onclick={leave}><Icon name="leave" size="22px" /><span class="label">테이블 나가기</span></Button>
       <Button onclick={close}>닫기</Button>
     {/if}
   {/snippet}

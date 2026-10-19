@@ -4,7 +4,7 @@
 // properties; tokens.test.ts checks the two never drift apart.
 
 import type { CardBack, TableTone } from './looks';
-import type { Suit } from './generated/protocol';
+import type { Suit } from './cardTypes';
 
 /** A colour for the light theme and one for the dark. */
 export interface Pair {

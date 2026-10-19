@@ -2,7 +2,7 @@
 // written for the game it plays today; here each game's own parts (its
 // settings, rules, view, actions, notes and finished hands) become type
 // parameters, so the room, its connection and its seats never name a game.
-import type { ClientMsg, RoomMsg, ServerMsg, SessionMsg, StateMsg } from '../generated/protocol';
+import type { ClientMsg, NativePolicyActions, RoomAction, RoomMsg, ServerMsg, SessionMsg, StateMsg } from '../generated/protocol';
 
 export type {
   BotLevel,
@@ -32,19 +32,24 @@ export interface GameTypes {
 }
 
 /** The table: who sits where, the timer and the game's settings. */
-export type RoomMsgOf<G extends GameTypes> = Omit<RoomMsg, 'settings' | 'rules'> & {
+export type RoomMsgOf<G extends GameTypes> = Omit<RoomMsg, 'settings' | 'rules' | 'observers' | 'ready' | 'participant_ids' | 'participation'> & {
+  observers?: RoomMsg['observers'];
+  ready?: boolean[];
+  participant_ids?: string[];
+  participation?: RoomMsg['participation'];
   settings: G['settings'];
   rules: G['rules'];
 };
 
 /** The session so far: the scores and every finished hand. */
-export type SessionMsgOf<G extends GameTypes> = Omit<SessionMsg, 'hands'> & { hands: G['hand'][] };
+export type SessionMsgOf<G extends GameTypes> = Omit<SessionMsg, 'hands' | 'session_id' | 'ended' | 'records' | 'standings' | 'archives' | 'current_hand'> & Partial<Pick<SessionMsg, 'session_id' | 'ended' | 'records' | 'standings' | 'archives' | 'current_hand'>> & { hands: G['hand'][] };
 
 /** The hand as this seat (or a watcher) sees it, and what it may do. */
-export type StateMsgOf<G extends GameTypes> = Omit<StateMsg, 'view' | 'legal' | 'out_of_turn' | 'notes'> & {
+export type StateMsgOf<G extends GameTypes> = Omit<StateMsg, 'view' | 'legal' | 'out_of_turn' | 'policy_actions' | 'notes'> & {
   view: G['view'];
   legal: G['action'][];
   out_of_turn: G['action'][];
+  policy_actions?:NativePolicyActions<G['action']>;
   notes: G['notes'];
 };
 
@@ -61,8 +66,13 @@ export type ServerMsgOf<G extends GameTypes> =
   | ({ type: 'state' } & StateMsgOf<G>)
   | { type: 'hint'; version: number; action: G['action'] };
 
+export type RoomActionOf<S> = Exclude<RoomAction, {type:'set_settings'}> | {type:'set_settings';settings:S};
+
 /** Everything a client may send on a table's connection. */
 export type ClientMsgOf<G extends GameTypes> =
-  | Exclude<ClientMsg, { type: 'set_settings' | 'act' }>
+  | Exclude<ClientMsg, { type: 'set_settings' | 'act' | 'submit' | 'submit_batch' | 'submit_room' }>
   | { type: 'set_settings'; settings: G['settings'] }
-  | { type: 'act'; action: G['action'] };
+  | { type: 'act'; action: G['action'] }
+  | (Omit<Extract<ClientMsg, {type:'submit'}>, 'action'> & {action:G['action']})
+  | (Omit<Extract<ClientMsg, {type:'submit_batch'}>, 'actions'> & {actions:readonly G['action'][]})
+  | (Omit<Extract<ClientMsg, {type:'submit_room'}>, 'action'> & {action:RoomActionOf<G['settings']>});

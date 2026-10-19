@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.beforeEach(async ({page}) => { await page.addInitScript(() => localStorage.setItem('name', JSON.stringify('나'))); });
+
 // A hand on the real server, as a player plays it: make a table, sit, fill
 // the other seats with bots, play a card, reload, and find the seat and
 // the hand still there. On the second server of playwright.config.ts, whose
@@ -16,7 +18,9 @@ async function playACard(page: Page, before: number) {
   const pass = page.getByRole('button', { name: '패스', exact: true });
   await expect(async () => {
     if ((await hand(page).count()) < before) return;
-    if (await pass.isEnabled({ timeout: 100 }).catch(() => false)) await pass.click({ timeout: 1000 });
+    const variant=page.locator('.variants .chip').first();
+    if(await variant.isVisible().catch(()=>false)) await variant.click({timeout:1000});
+    else if (await pass.isEnabled({ timeout: 100 }).catch(() => false)) await pass.click({ timeout: 1000 });
     // The next card in the fan covers all but a card's left edge.
     else if ((await playable(page).count()) > 0) await playable(page).first().click({ position: { x: 8, y: 24 }, timeout: 1000 });
     expect(await hand(page).count()).toBeLessThan(before);
@@ -34,12 +38,10 @@ test('a hand goes on after a reload, in the same seat', async ({ page }, info) =
   await page.getByRole('button', { name: '테이블 만들기' }).click();
   await page.waitForURL(/\/r\/[a-z0-9]+$/);
   const table = page.url();
-  await page.locator('.seat-act', { hasText: '앉기' }).first().click();
-  await page.locator('.pop-card input').fill('나');
-  await page.locator('.pop-card button[type=submit]').click();
+  await page.getByRole('button', { name: '빈자리에 앉기', exact: true }).click();
   for (let i = 0; i < 4; i++) {
-    await page.locator('.seat-act', { hasText: '+ 봇' }).first().click();
-    await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(3 - i);
+    await page.locator('.seat-act', { hasText: '봇 추가' }).first().click();
+    await expect(page.locator('.seat-act', { hasText: '봇 추가' })).toHaveCount(3 - i);
   }
   await page.getByRole('button', { name: '시작', exact: true }).click();
   await expect(hand(page)).toHaveCount(10);

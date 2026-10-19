@@ -1,6 +1,7 @@
 // Mighty, as the registry (games/registry.ts) gives it to the room page
 // and the app: its table, its rules' sheet and name, its pages.
 import type { GameEntry } from '../registry';
+import { projectMighty } from './presentation';
 import { isPreset, presetTitle } from './catalog';
 import { ruleRefusal } from './refusals';
 import { differences } from './ruleFields';
@@ -20,6 +21,7 @@ export function rulesName(room: RoomView): string {
 
 export const mighty: GameEntry<Mighty> = {
   id: 'mighty',
+  present: projectMighty,
   name: '마이티',
   Table,
   RulesSheet: TableRules,

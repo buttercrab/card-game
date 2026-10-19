@@ -66,14 +66,28 @@ pub fn typescript() -> String {
     d.visit::<Examples>();
     d.visit::<CreateRoom<Preset, Rules>>();
     d.visit::<CreatedRoom>();
+    d.visit::<crate::protocol::NativeRoomUnavailable>();
     d.visit::<ClientMsg>();
     d.visit::<Catalog>();
     // Each game's catalog, for its `<game>/catalog.ts`.
     d.visit::<MightyCatalog>();
+    // Visit Poker's unique concrete types, never a second ServerMsg whose
+    // generated name would collide with the Mighty compatibility envelope.
+    d.visit::<poker::PokerSettings>();
+    d.visit::<poker::PokerSummary>();
+    d.visit::<poker::PokerRules>();
+    d.visit::<poker::PokerView>();
+    d.visit::<poker::PokerAction>();
+    d.visit::<poker::PokerNotes>();
+    d.visit::<poker::PokerCatalog>();
     let mut ts = String::from(HEADER);
+    ts.push_str(&format!(
+        "\nexport const MAX_COMMAND_BATCH = {} as const;\n",
+        crate::command_protocol::MAX_COMMAND_BATCH
+    ));
     for decl in d.out.into_values() {
         ts.push('\n');
-        ts.push_str(&decl);
+        ts.push_str(&decl.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"));
         ts.push('\n');
     }
     ts

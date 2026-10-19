@@ -64,6 +64,15 @@ async fn a_dealt_table(addr: SocketAddr) -> (Vec<Socket>, usize) {
         join(&mut ws, name, None).await;
         players.push(ws);
     }
+    for ws in &mut players {
+        send(ws, json!({"type":"ready","ready":true})).await;
+    }
+    next_where(&mut players[0], "room", |m| {
+        m["ready"]
+            .as_array()
+            .is_some_and(|ready| ready.iter().all(|r| r == true))
+    })
+    .await;
     send(&mut players[0], json!({ "type": "start" })).await;
     let mut mover = None;
     for (i, ws) in players.iter_mut().enumerate() {
@@ -169,4 +178,23 @@ async fn the_stats_show_the_bot_worker_link() {
     assert_eq!(after["worker"]["connected"], true);
     assert!(after["worker"]["since"].is_u64() && after["worker"]["last_seen"].is_u64());
     worker.abort();
+}
+
+#[tokio::test]
+async fn shutdown_does_not_count_a_failed_checkpoint_as_saved() {
+    let dir = temp_dir();
+    let state = AppState::new(Config {
+        data: Some(dir.path().to_path_buf()),
+        ..config()
+    });
+    let addr = serve(state.clone()).await;
+    let room = create_room(addr, "gshs").await;
+    let mut ws = connect(addr, &room).await;
+    join(&mut ws, "A", None).await;
+    next(&mut ws, "room").await;
+    let path = dir.path().join(format!("{room}.json"));
+    let before = std::fs::read_to_string(&path).unwrap();
+    std::fs::create_dir(path.with_extension("tmp")).unwrap();
+    assert_eq!(state.shutdown(Duration::from_secs(5)).await, 0);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), before);
 }

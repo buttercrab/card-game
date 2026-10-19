@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({page}) => { await page.addInitScript(() => localStorage.setItem('name', JSON.stringify('나'))); });
+
 test.beforeEach(async ({ page }, info) => {
   await page.setExtraHTTPHeaders({ 'X-Forwarded-For': `192.0.2.${100 + info.workerIndex}` });
   await page.addInitScript(() => localStorage.setItem('mighty.settings', JSON.stringify({ speed: 'off', sound: false, music: false })));
@@ -42,25 +44,37 @@ test('lobby actions share edges and settings is one direct panel', async ({ page
   await expect(page.locator('.settings-btn')).toBeFocused();
 });
 
-test('joining a nonzero seat keeps every lobby seat in place', async ({ page }) => {
+test('starting from a nonzero seat preserves relative identities and production own-seat presentation', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '테이블 만들기', exact: true }).click();
   await page.waitForURL(/\/r\/[a-z0-9]+$/);
-  const positions = () => page.locator('.spot').evaluateAll(spots => spots.map(e => {
-    const r = e.getBoundingClientRect(); return { seat: e.getAttribute('data-seat'), x: r.x, y: r.y };
-  }));
-  const before = await positions();
+  await page.getByRole('button', { name: '다른 자리', exact: true }).click();
   await page.getByRole('button', { name: '4번 자리에 앉기', exact: true }).click();
-  await page.locator('.pop-card input').fill('나');
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(4);
-  await expect(page.locator('.tools-area')).toBeVisible();
-  const after = await positions();
-  expect(after).toHaveLength(5);
-  for (const old of before) {
-    const next = after.find(p => p.seat === old.seat)!;
-    expect(Math.abs(next.x - old.x)).toBeLessThan(1);
-    expect(Math.abs(next.y - old.y)).toBeLessThan(1);
+  await page.getByRole('button', { name: '이 자리에서 참여', exact: true }).click();
+  for (let i = 0; i < 4; i++) {
+    await page.locator('.seat-act', { hasText: '봇 추가' }).first().click();
+    await expect(page.locator('.seat-act', { hasText: '봇 추가' })).toHaveCount(3 - i);
+  }
+  const positions = () => page.locator('.ring > .spot').evaluateAll(spots => spots.map(e => ({
+    seat: e.getAttribute('data-seat'), place: e.className,
+  })));
+  const before = await positions();
+  expect(before).toHaveLength(4);
+  expect(before.map(s => s.seat)).not.toContain('3');
+  await page.locator('.me-seat:visible .seat-tap').click();
+  await expect(page.locator('.pop-card')).toBeVisible();
+  await page.locator('.pop-card button').first().click({ trial: true });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.pop-card')).toHaveCount(0);
+  await page.getByRole('button', { name: '시작', exact: true }).click();
+  await expect(page.locator('.hand .card')).toHaveCount(10);
+  expect(await positions()).toEqual(before);
+  if(page.viewportSize()!.width>=1024) {
+    await expect(page.locator('.me-seat:visible .stand')).toHaveCount(1);
+    expect(await page.locator('.tray').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ')[0])).toBe('170px');
+  } else {
+    await expect(page.locator('.me-seat:visible .name')).toHaveText('나');
+    await expect(page.locator('.me-seat:visible')).toHaveCount(1);
   }
 });
 

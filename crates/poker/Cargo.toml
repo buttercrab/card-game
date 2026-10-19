@@ -1,0 +1,20 @@
+[package]
+name = "poker"
+description = "Bounded independent-hand play-chip Texas Hold'em"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+engine.workspace = true
+rand.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

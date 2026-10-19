@@ -1,572 +1,76 @@
-<script lang="ts" module>
-  /** Results already counted out, so one reopened (or unfolded) shows at once. */
-  const counted = new Set<string>();
-</script>
-
 <script lang="ts">
-  // The hand's result. It rises from the foot of the table (the hand is
-  // empty by now) and stops under the seats; its buttons are its own
-  // footer. The count is played out step by step, as 맞고 and mahjong
-  // results are: the points, over or short, each ×2, then everyone's
-  // payoff. A tap anywhere skips it.
-  import { BACK_NAMES, TABLE_NAMES, type Achievement } from '../achievements';
-  import { after, later } from '../../../clock';
-  import Icon from '../../../Icon.svelte';
-  import { motion } from '../../../settings.svelte';
-  import { sound } from '../../../sound';
-  import SuitText from '../../../SuitText.svelte';
+  import { onDestroy } from 'svelte';
+  import HudResult from '../../../table/HudResult.svelte';
+  import EngineFlow from '../../../table/EngineFlow.svelte';
+  import { resultSurfacePolicy } from '../../../table/hudSurfacePolicy';
+  import { innerWidth, innerHeight } from 'svelte/reactivity/window';
+  import { tableCoordinates } from '../../../table/coordinateContext';
+  import { createFrameMeasurements } from '../../../table/frameMeasurements';
+  import HudActions from '../../../table/HudActions.svelte';
+  import { IntentGuard } from '../../../ui/intentGuard.svelte';
+  import { preparation } from '../../../room/readiness';
+  import type { Achievement } from '../achievements';
   import type { RoomView } from '../types';
-  import Badge, { type Team } from '../../../ui/Badge.svelte';
-  import { resultOf, wonHand, type Done } from './view';
-
-  let {
-    done,
-    folded = false,
-    me,
-    room,
-    seatName,
-    team,
-    points,
-    earned,
-    seated,
-    shuffleNote,
-    fit,
-    need = $bindable(0),
-    onfold,
-    onreplay,
-    onshare,
-    onstart,
-    onrun,
-  }: {
-    done: Done;
-    folded?: boolean;
-    me: number | null;
-    room: RoomView | null;
-    seatName: (seat: number) => string;
-    team: (seat: number) => Team | null;
-    points: (seat: number) => number;
-    /** Achievements this hand earned, shown at its foot once it settles. */
-    earned: Achievement[];
-    seated: boolean;
-    shuffleNote: string | null;
-    /** Where it may start, from the felt's top. */
-    fit: { top: number } | null;
-    /** How tall it would be with nothing cut off (for the table's fit). */
-    need?: number;
-    onfold: () => void;
-    onreplay: (hand: Done) => void;
-    onshare: () => void;
-    onstart: () => void;
-    /** A 런, counted out: the table settles once under the gold word. */
-    onrun: () => void;
+  import type { Team } from '../../../ui/Badge.svelte';
+  import { resultOf, type Done } from './view';
+  let { done, me, room, earned, inline = false, dock = false, onreplay, onadvance }: {
+    done: Done; me: number | null; room: RoomView | null;
+    seatName: (seat: number) => string; team: (seat: number) => Team | null; points: (seat: number) => number;
+    earned: Achievement[]; inline?:boolean; dock?:boolean; seated: boolean; shuffleNote: string | null;
+    onreplay: (done: Done) => void; onshare: () => void;
+    onadvance: () => void;
   } = $props();
-
   const result = $derived(resultOf(done));
-  const full = $derived(room?.seats.every((s) => s.kind !== 'empty') ?? false);
-  const mineWon = $derived(me !== null && wonHand(done, me));
-
-  let step = $state(99);
-  let shownPay = $state<number[]>([]);
-  /** The result has been counted out (or shown at once). */
-  let tallied = $state(false);
-  $effect(() => {
-    const key = `${room?.id}-${room?.hands_played}-${JSON.stringify(done.payoffs)}`;
-    const instant = counted.has(key) || motion.level !== 'full';
-    counted.add(key);
-    const pays = done.payoffs;
-    const lines = result.lines.length;
-    if (instant) {
-      step = 99;
-      shownPay = pays;
-      tallied = true;
-      return;
-    }
-    tallied = false;
-    step = 0;
-    shownPay = pays.map(() => 0);
-    let cancelled = false;
-    const k = motion.speed;
-    (async () => {
-      await after(450 * k);
-      for (let i = 1; i <= lines && !cancelled; i++) {
-        step = i;
-        sound.tally(i);
-        await after(380 * k);
-      }
-      if (cancelled) return;
-      step = lines + 1;
-      const t0 = performance.now();
-      const span = 520 * k;
-      const frame = (now: number) => {
-        if (cancelled) return;
-        const f = Math.min((now - t0) / span, 1);
-        const ease = 1 - (1 - f) ** 3;
-        shownPay = pays.map((p) => Math.round(p * ease));
-        // A hidden tab draws no frames: the count steps on the worker clock.
-        if (f < 1) (document.hidden ? later(() => frame(performance.now()), 50) : requestAnimationFrame(frame));
-        else {
-          tallied = true;
-          if (result.run) {
-            sound.run();
-            onrun();
-          }
-        }
-      };
-      frame(t0);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  });
-  function skip() {
-    if (step < 99) {
-      step = 99;
-      shownPay = done.payoffs;
-      tallied = true;
-    }
-  }
-
-  // An award arrives at the foot once the count settles; on a short phone
-  // the result scrolls, so it is brought into view.
-  let achieved = $state<HTMLElement>();
-  $effect(() => {
-    if (!earned.length) return;
-    const start = setTimeout(() => {
-      sound.achieve();
-      achieved?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }, 1800);
-    return () => clearTimeout(start);
-  });
-
-  let fold = $state<HTMLElement>();
-  let body = $state<HTMLElement>();
-  let foot = $state<HTMLElement>();
-  $effect(() => {
-    if (!body || !foot || !fold) return;
-    const measure = () => {
-      if (!folded) need = body!.scrollHeight + foot!.offsetHeight + fold!.offsetHeight + 2;
-    };
-    const sized = new ResizeObserver(measure);
-    sized.observe(body);
-    sized.observe(foot);
-    sized.observe(fold);
-    measure();
-    return () => sized.disconnect();
-  });
+  const policy = $derived(resultSurfacePolicy(innerWidth.current??390,innerHeight.current??844,dock));
+  const prep = $derived(preparation(room, me));
+  const participated = $derived(me !== null && (!room?.current_hand || room.current_hand.participant_ids[me] === room.participant_ids?.[me]));
+  const personal = $derived(participated && me !== null ? done.payoffs[me] : null);
+  let summaryReady = $state(false), actionsReady = $state(false), stackReady = $state(false);
+  let layer:HTMLDivElement, sheet:HTMLElement;
+  const coordinates=tableCoordinates();
+  const measurements=coordinates?.measurements??createFrameMeasurements(()=>layer);
+  let layerSize=$state({width:0,height:0}),sheetSize=$state({width:0,height:0});
+  $effect(()=>layer&&measurements.observeSize(layer,size=>{layerSize=size}));
+  $effect(()=>sheet&&measurements.observeSize(sheet,size=>{sheetSize=size}));
+  const frameReady=$derived(layerSize.width>0&&sheetSize.height>0&&Math.abs(layerSize.height-sheetSize.height)<=1&&Math.abs(layerSize.width-sheetSize.width)<=1);
+  const reportStackReady = (ready:boolean) => { stackReady=ready; };
+  let summaryHeight=$state(0),actionsHeight=$state(0);
+  const reportSummaryReady = (ready: boolean,size:{width:number;height:number}) => { summaryReady = ready;summaryHeight=size.height; };
+  const reportActionsReady = (ready: boolean,size:{width:number;height:number}) => { actionsReady = ready;actionsHeight=size.height; };
+  const entryGuard = new IntentGuard();
+  // The last card and the newly revealed continuation share a hand-region surface.
+  // A deliberate new gesture is required even when animation is disabled.
+  entryGuard.update(true);
+  const guard = new IntentGuard();
+  $effect(() => guard.update(!prep.solo && !!room?.ready && prep.allReady));
+  onDestroy(() => { entryGuard.close(); guard.close(); if(!coordinates)measurements.dispose(); });
 </script>
-
-<div
-  class="result-layer"
-  style:--fit-top={fit ? `${fit.top}px` : undefined}
->
-  <!-- A tap anywhere on the result skips the count; keys need nothing to skip. -->
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-  <div class="sheet result" class:big={result.made && result.margin >= 3} class:lost={!mineWon && me !== null} role="status" onclick={skip}>
-    <!-- Fold only the details. The completed table and action footer stay put. -->
-    <button
-      class="btn ghost fold"
-      bind:this={fold}
-      onclick={(e) => {
-        e.stopPropagation();
-        onfold();
-      }}><span>{folded ? '결과 다시 보기' : '테이블 보기'}</span><Icon name={folded ? 'result' : 'fold'} size="18px" /></button
-    >
-    <div class="body" hidden={folded} bind:this={body}>
-      <div class="head">
-        <p class="headline">
-          {#if result.run && tallied}<span class="run-word">런</span>{:else}{result.won ? '여당 승리' : '야당 승리'}{/if}
-        </p>
-        <!-- When made, the first line of the count already says the points. -->
-        <p class="sub" class:said={result.made}>여당 <strong>{done.team_points}</strong> / 공약 {done.contract.count}</p>
-        <ol class="ledger" aria-label="점수 계산">
-          {#each result.lines as line, i (i)}
-            <li class:shown={step > i} class:total={i === result.lines.length - 1}><SuitText text={line} /></li>
-          {/each}
-        </ol>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col" class="who">이름</th>
-            <th scope="col" class="role">역할</th>
-            <th scope="col" class="num">점수</th>
-            <th scope="col" class="num">이번 판</th>
-            <th scope="col" class="num">누적</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each done.payoffs as pay, s (s)}
-            {@const t = team(s)}
-            <tr class:me={s === me}>
-              <td class="who">{seatName(s)}</td>
-              <td class="role">{#if t}<Badge team={t} />{/if}</td>
-              <td class="num">{points(s)}</td>
-              <td class="num" class:neg={pay < 0}>{(shownPay[s] ?? pay) > 0 ? '+' : ''}{shownPay[s] ?? pay}</td>
-              <td class="num">{room?.scores[s] ?? ''}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      {#if earned.length}
-        <div class="achieved" role="status" bind:this={achieved}>
-          {#each earned as a (a.id)}
-            <div class="award" title={a.how}>
-              <span class="kicker">업적 달성</span>
-              <strong>{a.title}</strong>
-              {#if a.reward}
-                <span class="reward">
-                  {a.reward.kind === 'back' ? '카드 뒷면' : '테이블 색'}
-                  ‘{a.reward.kind === 'back' ? BACK_NAMES[a.reward.id] : TABLE_NAMES[a.reward.id]}’을 쓸 수 있어요 · 설정
-                </span>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-    <div class="foot" bind:this={foot}>
-      {#if seated && !full}<p class="muted wait-seats">빈 자리를 채우면 다음 판을 시작할 수 있어요</p>
-      {:else if shuffleNote}<p class="muted wait-seats" role="status">{shuffleNote}</p>{/if}
-      <div class="next">
-        {#if done.tricks.length}<button class="btn replay-button" onclick={() => onreplay(done)}>다시 보기</button>{/if}
-        {#if room}<button class="btn" onclick={onshare}>결과 카드</button>{/if}
-        {#if me !== null}<button class="btn primary" disabled={!seated || !full} onclick={onstart}>다음 판</button>{/if}
-      </div>
-    </div>
-  </div>
+<div class="result-layer" bind:this={layer} class:inline class:dock style:position={inline?'relative':undefined} style:margin-top={inline?`${policy.inlineGap}px`:undefined} style:visibility={summaryReady && actionsReady && stackReady && frameReady ? undefined : 'hidden'}>
+  <section class="result sheet" bind:this={sheet} style:max-height={policy.maxHeight===undefined?undefined:`${policy.maxHeight}px`} style:overflow-y={dock?'auto':undefined} aria-label="이번 판 결과">
+    <EngineFlow fill direction="column" onready={reportStackReady} inset={{left:policy.paddingX,right:policy.paddingX,top:policy.paddingY,bottom:policy.paddingY}} items={[{id:'summary',width:'fill',expectedHeight:summaryHeight,gapAfter:policy.summaryGap},{id:'actions',width:'fill',expectedHeight:actionsHeight,allowEmpty:me===null&&done.tricks.length===0,gapAfter:(prep.waiting||!prep.full)&&me!==null?policy.noteGap:0},...(prep.waiting&&me!==null?[{id:'waiting',width:'fill' as const,gapAfter:!prep.full?policy.noteGap:0}]:[]),...(!prep.full&&me!==null?[{id:'vacant',width:'fill' as const}]:[])]}>
+      {#snippet children(part)}{#if part==='summary'}
+    <HudResult
+      title={result.run ? '런' : result.won ? '여당 승리' : '야당 승리'}
+      description={`공약 ${done.contract.count} · 획득 ${done.team_points}${me !== null && personal === null ? ' · 다음 판부터 참여해요' : ''}`}
+      value={personal === null ? null : `이번 판 ${personal > 0 ? '+' : ''}${personal}점`}
+      negative={personal !== null && personal < 0} award={earned.map(a => a.title).join(' · ')} onready={reportSummaryReady}
+    />
+    {:else if part==='actions'}<HudActions onready={reportActionsReady}>
+      {#snippet primary()}<div class="continuation">
+        {#if me !== null}<button class="btn primary" disabled={entryGuard.blocked || !prep.full || prep.pending || (!prep.solo && prep.allReady && guard.blocked)} onclick={() => { if (entryGuard.blocked) return; onadvance(); }}>{prep.pending ? '자리 확인 중' : prep.solo || prep.allReady ? '다음 판' : prep.mineReady ? '준비 취소' : '다음 판 준비'}</button>{/if}
+      </div>{/snippet}
+      {#snippet secondary()}<div class="secondary">{#if done.tricks.length}<button class="btn ghost replay-button" aria-label="더보기" title="이번 판 자세히 보기" onclick={() => onreplay(done)}>더보기</button>{/if}</div>{/snippet}
+    </HudActions>
+    {:else if part==='waiting'}<p class="preparation-note">{prep.waiting}</p>{:else}<p class="preparation-note">빈 자리를 채우면 이어갈 수 있어요</p>{/if}{/snippet}
+    </EngineFlow>
+  </section>
 </div>
-
 <style>
-  /* The result's room: from under the seats to the table's foot, in the
-     felt's column. */
-  .result-layer {
-    position: absolute;
-    grid-column: felt;
-    grid-row: felt-start / tray-end;
-    inset: var(--fit-top, var(--seat-top)) 0 0;
-    z-index: var(--z-result);
-    display: flex;
-    justify-content: center;
-    align-items: flex-end;
-    pointer-events: none;
-  }
-  .sheet {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    width: min(100%, 520px);
-    max-height: 100%;
-    overflow: hidden;
-    border-radius: var(--r-panel);
-    background: var(--panel);
-    box-shadow: var(--lip);
-    pointer-events: auto;
-  }
-  .body[hidden] { display: none; }
-  .body {
-    min-height: 0;
-    overflow: auto;
-    padding: 14px 16px 8px;
-  }
-  .foot {
-    flex: none;
-    padding: 8px 16px 14px;
-  }
-  /* A short desktop window: the result tightens to fit. */
-  @media (min-width: 600px) and (max-height: 760px) {
-    .body {
-      padding: 8px 14px 4px;
-    }
-    /* The headline and its count side by side. */
-    .head {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 4px 16px;
-    }
-    .head .ledger {
-      text-align: left;
-    }
-    .headline {
-      font-size: var(--text-headline);
-    }
-    .sub.said {
-      display: none;
-    }
-    .ledger {
-      margin: 2px 0 4px;
-    }
-    th {
-      padding: 2px 4px;
-    }
-    td {
-      height: 26px;
-    }
-    .foot {
-      padding: 4px 14px 8px;
-    }
-    .foot .btn {
-      min-height: 40px;
-    }
-  }
-  /* The result's buttons fill its width; the primary takes what is left;
-     room at the start for your tools, which the table places there. */
-  .next {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 8px;
-    padding-left: var(--tools-room, 0px);
-  }
-  .next .primary {
-    flex: 1 1 auto;
-    min-width: 120px;
-  }
-  .next > .btn:not(.primary) {
-    flex: none;
-  }
-  /* A label never breaks; on a narrow phone the primary wraps to its own row. */
-  .next > .btn {
-    white-space: nowrap;
-  }
-  .wait-seats {
-    margin: 0 0 8px;
-    font-size: var(--text-label);
-  }
-  .result {
-    text-align: center;
-    animation: rise var(--dur-reveal) var(--ease-settle) both;
-  }
-  @keyframes rise {
-    from {
-      opacity: 0;
-      translate: 0 24px;
-      scale: 0.96;
-    }
-  }
-  .result p {
-    margin: 0;
-  }
-  /* Result rows come in one after another (Wordle's stats sheet). */
-  tbody tr {
-    animation: fade-up 260ms var(--ease-standard) both;
-  }
-  tbody tr:nth-child(2) {
-    animation-delay: 60ms;
-  }
-  tbody tr:nth-child(3) {
-    animation-delay: 120ms;
-  }
-  tbody tr:nth-child(4) {
-    animation-delay: 180ms;
-  }
-  tbody tr:nth-child(5) {
-    animation-delay: 240ms;
-  }
-  :global(:root[data-motion='reduced']) :is(.result, tbody tr, .achieved, .run-word) {
-    animation-name: fade;
-  }
-  .ledger {
-    display: grid;
-    gap: 2px;
-    margin: 8px 0 10px;
-    padding: 0;
-    list-style: none;
-    font-variant-numeric: tabular-nums;
-    font-size: var(--text-body);
-    color: var(--ink-muted);
-  }
-  .ledger li {
-    opacity: 0;
-    transform: translateY(4px);
-    transition:
-      opacity 200ms var(--ease-standard),
-      transform 200ms var(--ease-standard);
-  }
-  .ledger li.shown {
-    opacity: 1;
-    transform: none;
-  }
-  .ledger li.total {
-    color: var(--ink);
-    font-weight: 700;
-  }
-  /* Phones: the result fits under the top seats without scrolling. */
-  @media (max-width: 599px) {
-    .headline {
-      font-size: 24px;
-    }
-    .big .headline {
-      font-size: 28px;
-    }
-    .run-word {
-      font-size: 40px;
-    }
-    .sub.said {
-      display: none;
-    }
-    .ledger {
-      margin: 4px 0 6px;
-      font-size: 14px;
-    }
-    td {
-      height: 28px;
-    }
-    .body {
-      padding: 10px 12px 4px;
-    }
-    .foot {
-      padding: 6px 12px 10px;
-    }
-    .next {
-      flex-wrap: nowrap;
-      gap: 6px;
-    }
-    .next > .btn:not(.primary) {
-      padding-inline: 12px;
-    }
-    .next .primary {
-      min-width: 0;
-    }
-  }
-  /* An earned achievement slides up after the result. */
-  .achieved {
-    display: grid;
-    gap: 6px;
-    margin-top: 12px;
-    animation: achieved 420ms var(--ease-settle) 1.6s both;
-  }
-  @keyframes achieved {
-    from {
-      opacity: 0;
-      translate: 0 10px;
-    }
-  }
-  /* One line where it fits: kicker, title, then the reward. */
-  .award {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: baseline;
-    column-gap: 8px;
-    padding: 8px 14px;
-    border-radius: var(--r-control);
-    background: var(--ink);
-    color: var(--table);
-    text-align: center;
-  }
-  .award .kicker {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--gold);
-  }
-  .award strong {
-    font-family: var(--font-display);
-    font-size: 16px;
-  }
-  .award .reward {
-    font-size: var(--text-caption);
-    color: var(--gold);
-  }
-  /* A loss reads quieter, not angrier. */
-  .lost .headline {
-    color: var(--ink-muted);
-  }
-  /* 런: the headline turns into one large gold word once the count is done. */
-  .run-word {
-    display: inline-block;
-    font-size: 56px;
-    line-height: 1;
-    color: var(--gold);
-    animation: run-word 520ms var(--ease-settle) both;
-  }
-  @keyframes run-word {
-    from {
-      opacity: 0;
-      scale: 0.7;
-    }
-  }
-  .big .headline {
-    font-size: 36px;
-  }
-  .headline {
-    position: relative;
-    font-family: var(--font-display);
-    font-size: 30px;
-    font-weight: 800;
-    line-height: 1.15;
-    color: var(--ink);
-  }
-  .sub {
-    margin: 2px 0 0;
-    color: var(--ink-muted);
-  }
-  .sub strong {
-    color: var(--ink);
-    font-variant-numeric: tabular-nums;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-  }
-  th {
-    padding: 4px;
-    font-size: var(--text-caption);
-    font-weight: 600;
-    color: var(--ink-muted);
-  }
-  td {
-    height: 34px;
-    padding: 0 4px;
-    border-top: 1px solid var(--line);
-  }
-  /* Headers sit over their columns: names left, roles centred, numbers right. */
-  .role {
-    text-align: center;
-  }
-  tr.me td {
-    font-weight: 700;
-  }
-  .who {
-    max-width: 90px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: left;
-  }
-  .num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-  .neg {
-    color: var(--danger);
-  }
-  /* Folds the result down to show the table. */
-  .fold {
-    flex: none;
-    align-self: center;
-    gap: 4px;
-    margin-top: 2px;
-    padding: 4px 14px;
-    color: var(--ink-muted);
-    font-size: var(--text-label);
-  }
-  /* Short landscape: use the table area instead of a tiny box beneath
-     the single row of seats. Keep actions visible while the body scrolls. */
-  @media (orientation: landscape) and (max-height: 500px) {
-    .result-layer { grid-column: 1 / -1; grid-row: 1 / -1; inset: 0; align-items: flex-end; }
-    .fold { min-height: 28px; padding-block: 2px; }
-    .body { padding: 4px 12px; }
-    .head { display: flex; align-items: center; justify-content: center; gap: 12px; }
-    .headline, .big .headline { font-size: 22px; }
-    .sub { display: none; }
-    .ledger { margin: 0 0 4px; font-size: 12px; }
-    table { font-size: 12px; }
-    th { padding: 2px 4px; }
-    td { height: 22px; }
-    .foot { padding: 4px 12px 8px; }
-    .foot .btn { min-height: 36px; }
-  }
+  .result-layer { min-width:0; min-height:0; z-index:var(--z-result); pointer-events:none; }
+  .sheet { pointer-events:auto; background:var(--panel); border-radius:var(--r-panel); box-shadow:var(--lip); text-align:center; }
+  p { margin:0; font-size:12px; line-height:16px; color:var(--ink-muted); text-wrap:balance; }
+  .continuation .btn { width:100%; min-height:44px; font-size:16px; padding-block:8px; }
+  .secondary { width:max-content; }
+  .secondary button { font-size:12px; min-height:44px; padding:6px 10px; }
+
 </style>

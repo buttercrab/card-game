@@ -5,23 +5,37 @@
   // your tray) so nothing moves from the deal to the result; whatever
   // comes and goes lies over them. The parts are in table/: what to show
   // (view.ts, narration.ts, seats.ts), when (the animator), and each region.
-  import { tick, untrack } from 'svelte';
-  import { checkHand, type Achievement } from './achievements';
+  import { tick, untrack, onDestroy } from 'svelte';
+  import {readActionPolicy} from '../../room/actionPolicy';
+  import {innerWidth, innerHeight} from 'svelte/reactivity/window';
+  import { resultUsesDock, observerFeedbackPolicy } from '../../table/frameLayout';
+  const observerPolicy=$derived(observerFeedbackPolicy({width:innerWidth.current??390,height:innerHeight.current??844}));
+  const inlineResult = $derived(resultUsesDock({width: innerWidth.current ?? Infinity, height: innerHeight.current ?? Infinity}));
+  import { ACHIEVEMENTS, type Achievement } from './achievements';
+  import {recordMightyCompletion} from './completion';
   import BidPanel from './BidPanel.svelte';
   import { actionLabel, cardLabel, kittyCount, sameCard, sealOf } from './cards';
   import { MIGHTY, presetRules } from './catalog';
-  import { savedName } from '../../room/client.svelte';
   import { later } from '../../clock';
   import ExchangePanel from './ExchangePanel.svelte';
   import HandReplay from './HandReplay.svelte';
+  import FinishedHands from './FinishedHands.svelte';
+  import TurnCue from './table/TurnCue.svelte';
+  import ParticipationLane from '../../room/ParticipationLane.svelte';
+  import Bubble from '../../ui/Bubble.svelte';
+  import TableFrame from '../../ui/TableFrame.svelte';
   import { refusalText } from './ledger';
   import { EASE_STANDARD, juice } from '../../motion';
+  import { SceneMotion, sampleVisualBounds, type MotionPose } from '../../table/sceneMotion';
+  import { provideTableCoordinates } from '../../table/coordinateContext';
+  import { coordinateId } from '../../table/sceneCoordinates';
+  import type { IdentityPosition } from '../../table/movement';
   import { setMood } from '../../music.svelte';
-  import SeatMenu from '../../room/SeatMenu.svelte';
+  import SeatMenuHost from '../../room/SeatMenuHost.svelte';
+  import { TableSession } from '../../room/TableSession.svelte';
   import { motion, settings } from '../../settings.svelte';
   import ShareCard from './ShareCard.svelte';
   import { sound } from '../../sound';
-  import { loadStats, recordHand } from './stats';
   import SuitText from '../../SuitText.svelte';
   import { Animator } from './table/animator.svelte';
   import Felt, { type SeatView, type TrickNote } from './table/Felt.svelte';
@@ -35,23 +49,33 @@
   import Strip from './table/Strip.svelte';
   import ThrownIn from './table/ThrownIn.svelte';
   import Tools from './table/Tools.svelte';
+  import DecisionRegion from '../../table/DecisionRegion.svelte';
+  import EngineFlow from '../../table/EngineFlow.svelte';
   import Tray from './table/Tray.svelte';
   import { bidNote, callLabel as callLabelOf, handView, moodOf, tagsOf, trickNotes, trickNumber, waitingFor } from './table/view';
   import { TableUi } from '../../room/ui.svelte';
   import type { TableProps } from '../../room/game';
   import type { Action, Card as CardT, Mighty, PlayAction, StateMsg } from './types';
   import Button from '../../ui/Button.svelte';
-  import Chip from '../../ui/Chip.svelte';
+  import ActionPanel from '../../table/ActionPanel.svelte';
+  import { cardActionSpecs, projectMighty, selectPlayActions } from './presentation';
+  import { commandForPayload, resolveCommand, type ActionOffer } from '../../table/presentation';
+  import { resolveCommandBatch } from '../../table/commandBatch';
 
   let {
     client,
+    present: givenPresenter,
     ui: givenUi,
+    session: givenSession,
     rulesName = '',
     onsettings,
     onrules,
     oninvite,
+    onpeople,
   }: TableProps<Mighty> = $props();
+  const presenter = untrack(() => givenPresenter) ?? projectMighty;
   const ui = untrack(() => givenUi) ?? new TableUi();
+  const session = untrack(() => givenSession) ?? new TableSession(untrack(() => client), ui, () => client.room);
 
   // Between hands, with no hand on the table (the first one, or once the
   // seats moved), the table shows its seats on an empty state of its own.
@@ -88,12 +112,58 @@
   const spots = new Registry<number>();
   const handCards = new Registry<string>();
   let section = $state<HTMLElement>();
+  const coordinates = provideTableCoordinates(() => section);
+  let observerEntry = $state<HTMLElement>();
+  let admissionHeight = $state(0);
+  $effect(() => observerEntry && coordinates.measurements.observeSize(observerEntry, size => { admissionHeight = size.height; }));
+  $effect(() => { section; coordinates.measurements.invalidate(); });
+  onDestroy(() => coordinates.measurements.dispose());
   let felt = $state<HTMLElement>();
   let ringEl = $state<HTMLElement>();
+  let mobileSeat = $state<HTMLElement>();
   let tray = $state<HTMLElement>();
   /** Until when (performance.now()) the seats are sliding to new places;
    * a deal that comes with a shuffle waits for them to arrive. */
   let slidingUntil = 0;
+  const centered = $derived(session.centered);
+  const ownMovement = new SceneMotion();
+  const seatMovement = new SceneMotion();
+  $effect(() => () => { ownMovement.interrupt(); seatMovement.interrupt(); });
+  $effect(() => {
+    const stop = () => {
+      ownMovement.interrupt();
+      seatMovement.interrupt();
+      slidingUntil = 0;
+    };
+    addEventListener('resize', stop);
+    return () => removeEventListener('resize', stop);
+  });
+  $effect(() => {
+    if (motion.level !== 'full') {
+      ownMovement.interrupt();
+      seatMovement.interrupt();
+      slidingUntil = 0;
+    }
+  });
+  let wasCentered = untrack(() => centered);
+  $effect.pre(() => {
+    const next = centered;
+    if (next === wasCentered) return;
+    wasCentered = next;
+    const own = seatEls.get(bottomSeat);
+    const oldBounds=coordinates.bounds.get(coordinateId('player',`seat:${bottomSeat}`));
+    const old=oldBounds?ownMovement.capture('local-player',own,oldBounds):null;
+    const revision = ownMovement.interrupt();
+    if (!old?.bounds.width || motion.level !== 'full' || flip) return;
+    const duration = 300 * motion.speed;
+    slidingUntil = Math.max(slidingUntil, performance.now() + duration + 50);
+    void tick().then(() => {
+      const currentBounds=coordinates.bounds.get(coordinateId('player',`seat:${bottomSeat}`));
+      const current=currentBounds?{id:'local-player',bounds:currentBounds}:null;
+      if (!own || !current) return;
+      void ownMovement.retarget('local-player',own,old,current.bounds,{enabled:motion.level==='full',duration,animationId:'own-seat-transition',easing:EASE_STANDARD,revision});
+    });
+  });
 
   const animator: Animator = new Animator(
     {
@@ -103,15 +173,18 @@
       twoJokers: (): boolean => hand.twoJokers,
       trickCard: (seat) => trickCards.get(seat),
       anchor: (seat, card) => {
-        if (seat === me) return (card && handCards.rect(cardKey(card))) || tray?.getBoundingClientRect() || null;
-        return spots.rect(seat);
+        if(seat===me&&card){const key=cardKey(card);const bound=coordinates.bounds.get(coordinateId('card',key));if(bound)return sampleVisualBounds(handCards.get(key),bound,section);}
+        const bound=coordinates.bounds.get(coordinateId('player',`seat:${seat}`));
+        return bound?sampleVisualBounds(movementTarget(seat),bound,section):null;
       },
-      seatElement: (seat) => (seat === me ? (tray ?? null) : seatEls.get(seat)),
+      trickBounds: seat => {const played=onTable.find(card=>card.seat===seat);const bound=played?coordinates.bounds.get(coordinateId('card',cardKey(played.card))):null;return bound?sampleVisualBounds(trickCards.get(seat),bound,section):null;},
+      frameOrigin:()=>{const frame=section?.getBoundingClientRect();return{x:frame?.x??0,y:frame?.y??0};},
       felt: () => felt ?? null,
       slidingUntil: () => slidingUntil,
     },
     untrack(() => client.game ?? blank),
   );
+  onDestroy(() => animator.dispose());
   $effect(() => {
     const next = client.game;
     untrack(() => (next ? animator.push(next) : animator.reset(blank)));
@@ -134,8 +207,10 @@
   const myTurn = $derived(me !== null && turn === me);
   const hand = $derived(handView(view, me));
   const { bidding, exchange, play, done, contract } = $derived(hand);
-  const ring = $derived.by(() => new Ring(n, between ? 0 : (me ?? 0)));
+  const ring = $derived.by(() => new Ring(n, session.bottom));
+  const bottomSeat = $derived(me ?? ring.bottom);
   const resolving = $derived(animator.resolving);
+  $effect.pre(() => { session.settling = resolving !== null || (!idle && done === null && !(room?.in_hand ?? false)); });
   const winner = $derived(animator.winner);
 
   /** Who last sat at each seat, so a hand still on the table (its result,
@@ -191,14 +266,23 @@
   // The hand answers to the latest server state, not the one still being
   // animated: once it is your turn you can play, and playing skips ahead.
   const live = $derived(client.game ?? msg);
+  const livePolicy=$derived(readActionPolicy(live));
   const liveTurn = $derived(me !== null && typeof live.turn === 'object' && live.turn.Seat === me);
-  const handLegal = $derived(liveTurn ? live.legal : msg.legal);
+  const handLegal = $derived(livePolicy.legal);
+  const presentation = $derived(presenter({ ...msg, legal: live.legal, out_of_turn: live.out_of_turn, policy_actions:live.policy_actions,version: live.version, turn: live.turn, notes: live.notes }, {
+    viewer: me,
+    active: liveTurn && client.seat !== null,
+    players: Array.from({ length: n }, (_, seat) => ({
+      id: room?.participant_ids?.[seat] || `seat:${seat}`, seat, label: seatName(seat),
+      kind: room?.seats[seat]?.kind === 'bot' ? 'bot' : 'human',
+    })),
+  }));
   /** 딜미스 outside your turn: from the moment the cards land, while your
    * hand qualifies and the rules still allow it. */
-  const misdealNow = $derived(!liveTurn && live.out_of_turn.includes('Misdeal'));
+  const misdealNow = $derived(!liveTurn && livePolicy.out_of_turn.includes('Misdeal'));
   /** How long the first bid still waits after the deal, as last sent. */
   const bidWait = $derived(liveTurn ? live.grace_ms : 0);
-  const plays = $derived(handLegal.flatMap((a) => (typeof a === 'object' && 'Play' in a ? [a.Play] : [])));
+  const plays = $derived(selectPlayActions(handLegal).map(action => action.Play));
   const discardable = $derived(handLegal.flatMap((a) => (typeof a === 'object' && 'Discard' in a ? [a.Discard] : [])));
   const handMode = $derived(
     !(myTurn || liveTurn) ? 'view' : discardable.length > 0 ? 'choose' : plays.length > 0 ? 'play' : 'view',
@@ -207,16 +291,28 @@
   const tip = $derived(settings.tips ? tipFor(hand, rules, myTurn, misdealNow, toDiscard) : null);
 
   let chosen = $state<CardT[]>([]);
+  let chosenRevision = $state<string | null>(null);
   /** The card lifted by a first tap, waiting for the second. */
   let raisedCard = $state<CardT | null>(null);
   let variants = $state<PlayAction[] | null>(null);
+  const variantOffer = $derived<ActionOffer<Action>>({
+    id: presentation.offer.id,
+    actions: presentation.offer.actions.flatMap(spec => {
+      if (spec.kind !== 'command' || typeof spec.action !== 'object' || !('Play' in spec.action)) return [];
+      const played = spec.action.Play;
+      return variants?.some(variant => JSON.stringify(variant) === JSON.stringify(played))
+        ? [{ ...spec, label: variantLabel(played) }] : [];
+    }),
+  });
 
   // Forget choices that no longer apply once the server moves on.
   $effect(() => {
     void msg;
     const stillLegal = discardable;
+    const offerId = presentation.offer.id;
     untrack(() => {
-      chosen = chosen.filter((c) => stillLegal.some((d) => sameCard(d, c)));
+      if (chosenRevision !== offerId) { chosen = []; chosenRevision = null; }
+      else chosen = chosen.filter((c) => stillLegal.some((d) => sameCard(d, c)));
       variants = null;
     });
   });
@@ -232,14 +328,9 @@
   );
 
   /** Controls that rise over the felt's foot: bids, the exchange, a joker's choices. */
+  const turnAction = $derived(bidding ? '공약 고르기' : exchange ? (msg.legal.some(a => typeof a === 'object' && 'CallFriend' in a) ? '프렌드 정하기' : '키티 정리') : play ? '카드 내기' : null);
   const controls = $derived(!!variants || (myTurn && (bidding !== null || exchange !== null)));
   let controlsHeight = $state(0);
-  /** How wide your tools are, for the tray to keep clear on a desktop. */
-  let toolsWidth = $state(0);
-  // Three rows of controls (the exchange with 공약 올리기) would lift your
-  // tools into the seats; they step aside until then.
-  const crowded = $derived(controls && controlsHeight > 130);
-
   /** Why a tapped card cannot be played, as the server explains it. Said
    * where the turn is said, in place of the caption or the pill, so it
    * never lands on the hand or on the line it replaces. */
@@ -250,31 +341,43 @@
   }
 
   function playable(card: CardT): boolean {
-    return discardable.some((d) => sameCard(d, card)) || plays.some((p) => sameCard(p.card, card));
+    return presentation.cards.some(spec => spec.zoneId === 'own-hand' && spec.id === cardKey(card) && spec.enabled);
   }
 
-  function act(action: Action) {
+  function act(action: Action, expectedOfferId = presentation.offer.id) {
+    const spec = commandForPayload(presentation.offer, action);
+    if (!spec) { client.notice('선택지가 바뀌었어요. 다시 확인해주세요.'); return; }
+    const current = resolveCommand(presentation.offer, expectedOfferId, spec.id);
+    if (!current.ok) { client.notice(current.reason); return; }
     variants = null;
     animator.skip();
-    client.act(action);
+    client.act(current.action);
   }
 
   function playCard(card: CardT) {
-    const options = plays.filter((p) => sameCard(p.card, card));
-    if (options.length === 1) act({ Play: options[0] });
-    else if (options.length > 1) variants = options;
+    const options = cardActionSpecs(presentation, cardKey(card)).filter(spec => spec.enabled && typeof spec.action === 'object' && 'Play' in spec.action);
+    if (options.length === 1) act(options[0].action);
+    else if (options.length > 1) variants = options.flatMap(spec => typeof spec.action === 'object' && 'Play' in spec.action ? [spec.action.Play] : []);
   }
 
   function toggle(card: CardT) {
+    if (chosenRevision !== presentation.offer.id) { chosen = []; chosenRevision = presentation.offer.id; }
     const i = chosen.findIndex((c) => sameCard(c, card));
     if (i >= 0) chosen = chosen.filter((_, j) => j !== i);
     else if (chosen.length < toDiscard) chosen = [...chosen, card];
   }
 
-  function discardChosen() {
+  function discardChosen(expectedOfferId: string) {
+    if (chosenRevision !== expectedOfferId || chosen.length !== toDiscard || !chosen.length) {
+      client.notice('버릴 카드를 다시 확인해주세요.'); return;
+    }
+    const ids = chosen.map(card => commandForPayload(presentation.offer, { Discard: card })?.id ?? '');
+    const prepared = resolveCommandBatch(presentation.offer, expectedOfferId, ids);
+    if (!prepared.ok) { client.notice(prepared.reason); return; }
     animator.skip();
-    for (const card of chosen) client.act({ Discard: card });
+    for (const action of prepared.action) client.act(action);
     chosen = [];
+    chosenRevision = null;
   }
 
   // Waiting on you for a while: the cards you can play give a small wiggle,
@@ -348,53 +451,44 @@
   /** Each finished hand goes into this browser's record (내 기록); newly
    * earned achievements appear at the foot of the result. */
   let earned = $state<Achievement[]>([]);
+  let completionNoticeKey='';
   $effect(() => {
-    if (!done || me === null || !room || !client.keepsRecord) return;
-    const role = me === done.declarer ? 'declarer' : me === done.friend ? 'friend' : 'defense';
-    const declarerWon = done.team_points >= done.contract.count;
-    const fresh = recordHand({
-      key: `${room.id}-${room.hands_played}`,
-      at: Date.now(),
-      role,
-      won: role === 'defense' ? !declarerWon : declarerWon,
-      payoff: done.payoffs[me],
-      contract: done.contract,
-      teamPoints: done.team_points,
-    });
-    if (fresh) earned = [...untrack(() => earned), ...checkHand(done, me, loadStats())];
+    if (!done || !room || !client.keepsRecord) return;
+    const result=recordMightyCompletion({room:$state.snapshot(room),scope:$state.snapshot(client.roomCommandWindow?.scope??client.game?.command?.scope??null),actorId:client.viewerId,seat:me,keepsRecord:client.keepsRecord},Date.now());
+    if(result.status==='stored'&&result.earnedIds.length)earned=[...untrack(()=>earned),...ACHIEVEMENTS.filter(item=>result.earnedIds.includes(item.id))];
+    if('message'in result&&result.message){
+      const key=JSON.stringify([room.id,room.session_id,room.current_hand?.number,client.viewerId,result.status]);
+      if(untrack(()=>completionNoticeKey)!==key){completionNoticeKey=key;client.notice(result.message);}
+    }
   });
   // They go with the next hand.
   $effect(() => {
     if (!done && untrack(() => earned.length)) earned = [];
   });
 
-  /** The result folded away, to look at the table. */
-  const folded = $derived(ui.folded);
-  $effect(() => {
-    if (!done) ui.folded = false;
-  });
   type ReplaySnapshot = {
     done: NonNullable<ReturnType<typeof handView>['done']>;
     names: string[];
     rules: StateMsg['view']['rules'];
     twoJokers: boolean;
     hiddenDiscards: boolean;
+    context?: string;
   };
   // Transport copies and Svelte proxies need not share object identity.
   // The complete immutable deal identifies the replay across both views.
   const replayFrames = new Map<string, ReplaySnapshot>();
-  const replayKey = (finished: ReplaySnapshot['done']) => JSON.stringify(finished);
+  const replayKey = (finished: ReplaySnapshot['done']) => `${room?.id}:${room?.session_id ?? 1}:${JSON.stringify(finished)}`;
   let replay = $state.raw<ReplaySnapshot | null>(null);
   let replayOpener: HTMLElement | null = null;
   function rememberReplay(source: StateMsg['view']) {
-    if (typeof source.phase !== 'object' || !('Done' in source.phase)) return;
+    if (typeof source.phase !== 'object' || source.phase === null || !('Done' in source.phase)) return;
     const finished = source.phase.Done;
     const key = replayKey(finished);
     if (replayFrames.has(key)) return;
     const viewer = source.viewer === 'Spectator' ? null : source.viewer.Seat;
     replayFrames.set(key, {
       done: finished,
-      names: Array.from({ length: source.hand_sizes.length }, (_, s) => nameOf(s, viewer, room?.seats, known, true)),
+      names: room?.current_hand?.names ?? Array.from({ length: source.hand_sizes.length }, (_, s) => nameOf(s, viewer, room?.seats, known, true)),
       rules: source.rules, twoJokers: handView(source, viewer).twoJokers,
       hiddenDiscards: source.rules.reveal_discards === false && finished.declarer !== viewer,
     });
@@ -411,9 +505,21 @@
   function openReplay(finished: ReplaySnapshot['done']) {
     const key = replayKey(finished);
     if (!replayFrames.has(key)) rememberReplay({ ...view, phase: { Done: finished } });
-    replayOpener = document.querySelector<HTMLElement>('.replay-button');
-    replay = replayFrames.get(key)!;
+    replayOpener = document.querySelector<HTMLElement>('.replay-button') ?? document.querySelector<HTMLElement>('.menu-btn');
+    const saved = room?.current_hand;
+    const source = saved?.view as StateMsg['view'] | undefined;
+    replay = saved && source?.rules && typeof source.phase === 'object' && source.phase !== null && 'Done' in source.phase ? {done: source.phase.Done, names: saved.names, rules: source.rules, twoJokers: source.rules.deck === 'TwoJokers', hiddenDiscards: source.rules.reveal_discards === false, context: '이번 판 다시 보기'} : replayFrames.get(key)!;
   }
+  $effect(() => {
+    if (!ui.replay) return;
+    ui.replay = false;
+    // A reconnect receives the immutable completed record before the live
+    // state. Replay follows that record, not the hand animator's readiness.
+    const recorded = room?.current_hand?.view as StateMsg['view'] | undefined;
+    const finished = done ?? (recorded && typeof recorded.phase === 'object' && recorded.phase !== null && 'Done' in recorded.phase ? recorded.phase.Done : null);
+    if (finished) openReplay(finished);
+    else client.notice('현재 판이 끝나면 다시 볼 수 있어요');
+  });
   function closeReplay() {
     replay = null;
     void tick().then(() => {
@@ -422,154 +528,105 @@
     });
   }
   let sharing = $state(false);
-  /** 런, counted out: the table settles once under the gold word. */
-  let nudge = $state(false);
-
-  /** Where the result sits, from the felt's top: on wider screens under
-   * the side seats when it fits there; else (and always on phones) under
-   * the top seats. The panel keeps a bounded, content-sized width. */
-  let resultNeed = $state(0);
-  let resultFit = $state<{ top: number } | null>(null);
-  $effect(() => {
-    if (!done || folded || resolving || !felt || !section) return;
-    void resultNeed;
-    const measure = () => {
-      if (!felt || !section) return;
-      const f = felt.getBoundingClientRect();
-      const side = seatEls.rect(ring.seatAt(1)) ?? seatEls.rect(ring.seatAt(n - 1));
-      const top = seatEls.rect(ring.seatAt(2)) ?? seatEls.rect(ring.seatAt(3));
-      if (!side || !top) return (resultFit = null);
-      if (innerWidth < 600) return (resultFit = { top: Math.max(0, top.bottom - f.top + 8) });
-      const floor = section.getBoundingClientRect().bottom;
-      const under = side.bottom - f.top + 8;
-      resultFit =
-        floor - (f.top + under) >= resultNeed ? { top: under } : { top: top.bottom - f.top + 8 };
-    };
-    void tick().then(measure);
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  });
 
   // ---- Between hands -------------------------------------------------------
-  // The table stays: the seats keep their places, the result folds away,
+  // The table stays: the seats keep their places, the completed hands show,
   // and the middle offers the next hand. A tap on a seat opens its choices.
   const seated = $derived(client.seat !== null);
-  const between = $derived(!(room?.in_hand ?? false) && idle);
-  const arranging = $derived(!(room?.in_hand ?? false) && (idle || done !== null));
-  /** What everyone at the table (watchers too) is told about the next shuffle. */
-  const shuffleNote = $derived(
-    room?.table.shuffle ? '매 판 시작할 때 자리를 섞어요' : room?.table.shuffle_next ? '다음 판 시작할 때 자리를 섞어요' : null,
-  );
-  const menuSeat = $derived(ui.seatMenu);
-  const swapFrom = $derived(ui.swapFrom);
-  /** The name a watcher sits down with. */
-  let sitName = $state(savedName());
-  $effect(() => {
-    if (!arranging) {
-      ui.closeSeat();
-      ui.swapFrom = null;
-    }
+  const observerReaction = $derived.by(() => {
+    const reactions = Object.entries(client.observerReactions ?? {}).sort((a, b) => b[1].id - a[1].id);
+    const latest = reactions[0];
+    if (!latest) return null;
+    const observer = room?.observers?.find(o => o.id === latest[0]);
+    return observer ? { name: observer.name, ...latest[1] } : null;
   });
-
-  function openSeat(seat: number) {
-    if (swapFrom !== null) {
-      if (seat !== swapFrom) client.swapSeats(swapFrom, seat);
-      ui.swapFrom = null;
-      return;
-    }
-    const info = room?.seats[seat];
-    // A watcher has nothing to choose at someone else's seat.
-    if (!info || (me === null && info.kind === 'human')) return;
-    ui.seatMenu = seat;
-  }
-  /** One tap to sit for someone whose name is known; else the name first. */
-  function sitAt(seat: number) {
-    const name = sitName.trim();
-    if (name) client.join(name, seat);
-    else openSeat(seat);
-  }
+  const between = $derived(!(room?.in_hand ?? false) && idle);
+  const arranging = $derived(session.arranging);
+  const shuffleNote = $derived(session.shuffleNote);
+  const swapFrom = $derived(ui.swapFrom);
+  const choosing = $derived(session.choosing);
+  const previewSeat = $derived(session.previewSeat);
 
   // Seats slide to their new places when they move (a swap or a shuffle):
   // the client says so while the old places are still on screen.
-  let flip: { rects: Map<number, DOMRect>; order: number[] | null } | null = null;
-  function seatBoxes(): Map<number, DOMRect> {
-    const boxes = new Map<number, DOMRect>();
-    for (const [seat] of spots.entries()) {
-      const r = seatEls.rect(seat);
-      if (r && r.width > 0) boxes.set(seat, r);
-    }
-    return boxes;
+  let flip: { positions: MotionPose[]; order: number[] | null; revision: number } | null = null;
+  function positionId(seat: number): string {
+    return room?.participant_ids?.[seat] || `seat:${seat}`;
   }
+  function movementTarget(seat:number):HTMLElement|null {
+    const spot=spots.get(seat);
+    return spot?.querySelector<HTMLElement>('.seat-box')??seatEls.get(seat);
+  }
+  function seatPositions(): MotionPose[] {
+    return [...spots.entries()].flatMap(([seat]) => {
+      const bounds=coordinates.bounds.get(coordinateId('player',`seat:${seat}`));
+      const position=bounds?seatMovement.capture(positionId(seat),movementTarget(seat),bounds):null;
+      return position?.bounds.width ? [position] : [];
+    });
+  }
+
   /** How long seats take to slide to their new places. */
   const slideMs = () => (settings.speed === 'fast' ? 260 : 460);
   $effect(() => {
     client.onmove = (order) => {
       // A move arriving while the last one still slides starts from where
-      // the seats are drawn now: finish that one first.
-      for (const a of section?.getAnimations({ subtree: true }) ?? []) if (a.id === 'seat-slide') a.finish();
-      flip = { rects: seatBoxes(), order };
+      // the seats are drawn now: measure that frame before cancelling it.
+      const positions = seatPositions();
+      const revision = seatMovement.interrupt();
+      flip = { positions, order, revision };
       if (motion.level === 'full') slidingUntil = performance.now() + slideMs() + 80;
-      ui.closeSeat();
-      ui.swapFrom = null;
+      session.seatsMoved();
       if (order) known = moveNames(known, order);
     };
     return () => {
       client.onmove = null;
     };
   });
-  let kinds: string[] | null = null;
   $effect(() => {
-    const now = (room?.seats ?? []).map((s) => s.kind);
-    const was = kinds;
-    kinds = now;
+    void room?.seats;
     const f = flip;
     flip = null;
     const still = motion.level !== 'full';
     if (f) {
       if (still) return;
       void tick().then(() => {
+        const after: IdentityPosition[] = [];
+        const targets = new Map<string, Element[]>();
         for (const [seat, spot] of spots.entries()) {
-          // Who sits here now came from `from`: slide from there.
           const from = f.order ? f.order.indexOf(seat) : seat;
-          const old = f.rects.get(from);
-          const box = seatEls.rect(seat);
-          if (!old || !box || box.width === 0) continue;
-          const dx = old.left + old.width / 2 - (box.left + box.width / 2);
-          const dy = old.top + old.height / 2 - (box.top + box.height / 2);
-          if (Math.hypot(dx, dy) < 2) continue;
-          // The seat and what hangs under it (an empty seat's buttons) go together.
-          for (const part of spot.children) {
-            part.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
-              id: 'seat-slide',
-              duration: slideMs(),
-              easing: EASE_STANDARD,
-            });
-          }
+          const id = room?.participant_ids?.[seat] || `seat:${from}`;
+          const bounds=coordinates.bounds.get(coordinateId('player',`seat:${seat}`));
+          const current=bounds?{id,bounds}:null;
+          if (!current) continue;
+          after.push(current);
+          const target=movementTarget(seat);if(target)targets.set(id,[target]);
+        }
+        for(const pose of f.positions){
+          const current=after.find(position=>position.id===pose.id);const target=targets.get(pose.id)?.[0];
+          if(current&&target)void seatMovement.retarget(pose.id,target,pose,current.bounds,{enabled:motion.level==='full',duration:slideMs(),animationId:'seat-slide',easing:EASE_STANDARD,revision:f.revision});
         }
       });
       return;
     }
-    // Someone sits down, or a bot is seated: that seat gives a small hop.
-    if (!was || was.length !== now.length || still) return;
-    now.forEach((kind, i) => {
-      if (kind === was[i] || kind === 'empty') return;
-      void tick().then(() => juice(seatEls.get(i), 0.4));
-    });
+    // Occupants fill the existing anchor without hopping the character.
   });
 
+  function finishedSeatMatches(seat: number) { return !done || !room?.current_hand || room.current_hand.participant_ids[seat] === room.participant_ids?.[seat]; }
   // ---- Each seat, as drawn ----------------------------------------------------
   const seatViews = $derived(
     Array.from({ length: n }, (_, s): SeatView => {
       const info = room?.seats[s];
       return {
         empty: info?.kind === 'empty',
-        score: between && (room?.hands_played ?? 0) > 0 ? (room?.scores[s] ?? null) : null,
+        score: null,
         name: info?.kind === 'empty' ? '빈 자리' : seatName(s),
         bot: info?.kind === 'bot',
         offline: info?.kind === 'human' && !info.connected,
-        team: hand.team(s),
-        points: hand.points(s),
+        team: finishedSeatMatches(s) ? hand.team(s) : null,
+        points: finishedSeatMatches(s) ? hand.points(s) : 0,
         collecting: resolving !== null,
+        ready: between || done ? (room?.ready?.[s] ?? null) : null,
+        reviewing: done !== null,
         turn: turn === s,
         bubble: bidNote(bidding, s),
         reaction: client.reactions?.[s] ?? null,
@@ -603,6 +660,9 @@
   );
 </script>
 
+{#snippet participation()}
+  {#if room}<ParticipationLane {room} {client} {session} preview={previewSeat} {choosing} onchoose={() => session.choose()} onselect={(seat) => session.sitAt(seat)} onconfirm={() => session.confirmChoice()} oncancel={() => session.cancelChoice()} />{/if}
+{/snippet}
 {#snippet seatTap(seat: number)}
   <!-- Between hands a seat is one button: its choices, or the other half of a swap. -->
   {@const label = seatLabel(seat, me, room?.seats[seat])}
@@ -612,36 +672,36 @@
     aria-label={swapFrom === null ? `${label} 자리 메뉴` : swapFrom === seat ? `${label} 그만 고르기` : `${label}: 여기와 바꾸기`}
     aria-pressed={swapFrom === seat ? true : undefined}
     aria-haspopup={swapFrom === null ? 'dialog' : undefined}
-    onclick={() => openSeat(seat)}
+    onclick={() => session.openSeat(seat)}
   ></button>
 {/snippet}
 {#snippet mySeatTap()}
-  {#if me !== null}{@render seatTap(me)}{/if}
+  {@render seatTap(bottomSeat)}
 {/snippet}
-{#snippet seatActs(seat: number)}
+{#snippet seatActs(seat: number, onheight:(height:number)=>void)}
   <!-- An empty seat says how to fill it, right there. -->
-  <span class="seat-acts">
-    {#if me !== null}
-      <button class="chip sm seat-act" onclick={() => client.addBot(seat)} aria-label="{seat + 1}번 자리에 봇 앉히기">+ 봇</button>
-      <button class="chip sm seat-act" onclick={oninvite} aria-label="친구 초대하기">초대</button>
+  <DecisionRegion class="seat-acts" mode="flow" align="center" gap={4} {onheight}>
+    {#if swapFrom !== null}
+      <Button class="seat-act" onclick={() => session.openSeat(seat)} aria-label="{seat + 1}번 자리: 여기와 바꾸기">여기로 옮기기</Button>
+    {:else if me !== null}
+      <Button class="seat-act bot-action" onclick={() => session.addBot(seat)} aria-label="{seat + 1}번 자리에 봇 앉히기">봇 추가</Button>
     {:else}
-      <button class="chip sm seat-act" onclick={() => sitAt(seat)} aria-label="{seat + 1}번 자리에 앉기">앉기</button>
+      <Button class="seat-act" onclick={() => session.sitAt(seat)} aria-label="{seat + 1}번 자리에 앉기">자리 선택</Button>
     {/if}
-  </span>
+  </DecisionRegion>
 {/snippet}
 {#snippet controlPanel()}
   {#if variants}
-    <div class="variants">
-      {#each variants as v, i (i)}
-        <Chip onclick={() => act({ Play: v })}><SuitText text={variantLabel(v)} /></Chip>
-      {/each}
+    <DecisionRegion class="variants" mode="flow" align="center" gap={8}>
+      <ActionPanel offer={variantOffer} selection label="카드 내기 선택" onaction={act} />
       <Button variant="ghost" onclick={() => (variants = null)}>취소</Button>
-    </div>
+    </DecisionRegion>
   {:else if bidding}
-    <BidPanel legal={msg.legal} lastChance={hand.lastChance} wait={bidWait} onact={act} />
+    <BidPanel offer={presentation.offer} lastChance={hand.lastChance} wait={bidWait} onact={act} />
   {:else if exchange}
     <ExchangePanel
-      legal={msg.legal}
+      offer={presentation.offer}
+      {chosenRevision}
       contract={exchange.contract}
       contracts={live.notes.contracts}
       {rules}
@@ -655,7 +715,7 @@
   {/if}
 {/snippet}
 {#snippet strip()}
-  <div class="strip-area">
+  <div class="strip-area" data-frame-region="strip">
     <Strip
       controls={controls ? controlPanel : undefined}
       {pill}
@@ -667,41 +727,57 @@
   </div>
 {/snippet}
 
-<section
-  class="table"
-  bind:this={section}
-  class:seated={me !== null}
-  class:nudge
-  class:tips={settings.tips}
-  class:swapping={swapFrom !== null}
-  class:completed={done !== null && !resolving}
-  class:controls-out={controls}
-  class:between
-  style:--over="{controls ? controlsHeight : 0}px"
-  style:--tools-w="{toolsWidth}px"
+{#snippet resultPanel()}
+  {#if done && !resolving}
+    <ResultSheet dock={inlineResult}
+      {done}
+      {me}
+      {room}
+      {seatName}
+      team={hand.team}
+      points={hand.points}
+      {earned}
+      {seated}
+      {shuffleNote}
+      onreplay={openReplay}
+      onshare={() => (sharing = true)}
+      onadvance={() => session.advance()}
+    />
+  {/if}
+{/snippet}
+
+<TableFrame
+  bind:element={section}
+  class={`table ${me !== null ? 'seated' : 'observing'} ${settings.tips ? 'tips' : ''} ${swapFrom !== null ? 'swapping' : ''} ${done !== null && !resolving ? 'completed' : ''} ${controls ? 'controls-out' : ''} ${between ? 'between' : ''}`}
+  {controls} {controlsHeight} {between} completed={done !== null && !resolving}
 >
-  <div class="status-area">
+  <div class="status-area" data-frame-region="status">
     <StatusBar {hand} {rules} {trickNo} {tags} {callLabel} {seatName} {room} {idle} {rulesName} {onrules} />
   </div>
   <!-- Always there, at a fixed height, so the felt below never moves. -->
-  <div class="event">
-    {#if turn !== null && !between}
-      <p class="turn-heading"><span aria-hidden="true">●</span> <strong>{myTurn ? '내 차례' : seatName(turn)}</strong>{myTurn ? '' : ' 차례'}</p>
-    {:else if animator.event && !done}
-      {#key animator.event}<p class="fade-up" aria-live="polite"><SuitText text={animator.event} /></p>{/key}
-    {/if}
-    {#if tip}{#key tip}<p class="tip fade-up" aria-live="polite"><SuitText text={tip} /></p>{/key}{/if}
+  <div class="event" data-frame-region="event">
+    <EngineFlow fill direction="column" align="center" items={[...(turn!==null&&!between||resolving||animator.event&&!done?[{id:'turn'}]:[]),...(tip?[{id:'tip',width:'fill' as const}]:[])]}>
+      {#snippet children(id)}
+        {#if id==='turn'}
+          {#if turn!==null&&!between}<TurnCue name={seatName(turn)} mine={myTurn} action={turnAction} compact />
+          {:else if resolving}<TurnCue collecting compact />
+          {:else if animator.event&&!done}{#key animator.event}<p class="fade-up" aria-live="polite"><SuitText text={animator.event} /></p>{/key}{/if}
+        {:else if tip}{#key tip}<p class="tip fade-up" aria-live="polite"><SuitText text={tip} /></p>{/key}{/if}
+      {/snippet}
+    </EngineFlow>
   </div>
 
-  <div class="side-area">
-    <SidePanel {hand} {rules} {trickNo} {tags} {callLabel} {seatName} {myName} {seal} {room} {me} {turn} {ring} {idle} {rulesName} {shuffleNote} {onrules} />
+  <div class="side-area" data-frame-region="side">
+    <SidePanel observerReactions={client.observerReactions} {onpeople} collecting={resolving !== null} {turnAction} {hand} {rules} {trickNo} {tags} {callLabel} {seatName} {myName} {seal} {room} {me} {turn} {ring} {idle} {rulesName} {shuffleNote} {onrules} />
   </div>
 
-  <div class="felt-area">
+  <div class="felt-area" data-frame-region="felt">
     <Felt
+      seatIds={Array.from({length:n},(_,seat)=>positionId(seat))}
       {ring}
+      {admissionHeight}
       seats={seatViews}
-      watching={between || me === null}
+      watching={false}
       {onTable}
       trickKey={resolving ? `r${resolving.key}` : `p${play?.tricks.length ?? 0}`}
       {trickNo}
@@ -715,8 +791,7 @@
       attachSpot={(s) => spots.at(s)}
       attachCard={(s) => trickCards.at(s)}
       {between}
-      interactive={arranging}
-      controlsOut={controls}
+      interactive={arranging || choosing}
       {swapFrom}
       {seatTap}
       {seatActs}
@@ -726,15 +801,29 @@
       {#if animator.thrownIn && bidding}
         <ThrownIn who={seatName(animator.thrownIn.seat)} hand={animator.thrownIn.hand} twoJokers={hand.twoJokers} onclose={() => animator.dismissThrownIn()} />
       {/if}
+      {#if done && !resolving && done.tricks.length}
+        <section class="finished-hands" data-engine-layout="arena-review" aria-label="전체 라운드">
+          <FinishedHands compact tricks={done.tricks} declarer={done.declarer} friend={done.friend}
+            seatName={(s) => room?.current_hand?.names[s] ?? seatName(s)} {seal} twoJokers={hand.twoJokers} />
+        </section>
+      {/if}
       {#if between && room}
+        {#if me === null}
+          <div class="participation-area observer-entry" data-engine-layout="arena-admission" bind:this={observerEntry}>
+            <EngineFlow fill direction="column" gap={8} items={[{id:'participation',width:'fill'},...(shuffleNote?[{id:'note',width:'fill' as const}]:[])]}>
+              {#snippet children(id)}{#if id==='participation'}{@render participation()}{:else}<p class="observer-note" role="status">{shuffleNote}</p>{/if}{/snippet}
+            </EngineFlow>
+          </div>
+        {/if}
         <Lobby
           {room}
           seated={me !== null}
+          {me}
           swapping={swapFrom !== null}
-          {sitName}
-          {shuffleNote}
-          onstart={() => client.start()}
-          onshuffle={(on) => client.shuffleNext(on)}
+          sitName={session.sitName}
+          shuffleNote={me === null ? null : shuffleNote}
+          onadvance={() => session.advance()}
+          onshuffle={(on) => session.setShuffle(on)}
           {onsettings}
           oncancelswap={() => (ui.swapFrom = null)}
         />
@@ -742,63 +831,43 @@
     </Felt>
   </div>
 
-  {#if done && !resolving}
-    <ResultSheet
-      {done}
-      {folded}
-      {me}
-      {room}
-      {seatName}
-      team={hand.team}
-      points={hand.points}
-      {earned}
-      {seated}
-      {shuffleNote}
-      fit={resultFit}
-      bind:need={resultNeed}
-      onfold={() => (ui.folded = !ui.folded)}
-      onreplay={openReplay}
-      onshare={() => (sharing = true)}
-      onstart={() => client.start()}
-      onrun={() => {
-        nudge = true;
-        setTimeout(() => (nudge = false), 320);
-      }}
-    />
-  {/if}
+  {@render strip()}
+  {@render resultPanel()}
 
-  {#if me !== null}
-    {@render strip()}
-    {#if !between}
-    <div class="tray-area">
+    <div class="tray-area" data-frame-region="tray">
       <Tray
+        coordinatePlayerId={`seat:${bottomSeat}`}
+        reserveHand={me !== null && !!room?.in_hand}
         seat={{
-          name: myName,
-          score: between && (room?.hands_played ?? 0) > 0 ? (room?.scores[me] ?? null) : null,
-          team: hand.team(me),
+          name: me === null ? seatName(bottomSeat) : myName,
+          empty: room?.seats[bottomSeat]?.kind === 'empty',
+          bot: room?.seats[bottomSeat]?.kind === 'bot',
+          ready: between || done ? (room?.ready?.[bottomSeat] ?? null) : null,
+          reviewing: done !== null,
+          score: null,
+          team: finishedSeatMatches(bottomSeat) ? hand.team(bottomSeat) : null,
           secretFriend: hand.secretFriend,
-          points: hand.points(me),
+          points: finishedSeatMatches(bottomSeat) ? hand.points(bottomSeat) : 0,
           collecting: resolving !== null,
-          turn: myTurn,
+          turn: turn === bottomSeat,
           trumpSuit: contract?.trump ?? null,
           lookAt: lookAt(0),
-          mood: mood(me),
-          away: isAway(me),
+          mood: mood(bottomSeat),
+          away: isAway(bottomSeat),
         }}
-        team={hand.team(me)}
-        secretFriend={hand.secretFriend}
-        points={hand.points(me)}
         mine={liveTurn}
         {between}
-        interactive={arranging}
-        picked={swapFrom === me}
-        reaction={client.reactions?.[me] ?? null}
-        cue={animator.cues[me] ?? null}
+        {centered}
+        interactive={arranging || choosing}
+        picked={swapFrom === bottomSeat}
+        reaction={client.reactions?.[bottomSeat] ?? null}
+        cue={animator.cues[bottomSeat] ?? null}
         {secsLeft}
         seatTap={mySeatTap}
-        attachSeat={seatEls.at(me)}
-        attachSpot={spots.at(me)}
+        attachSeat={seatEls.at(bottomSeat)}
+        attachSpot={spots.at(bottomSeat)}
         bind:tray
+        bind:mobileSeat
         bind:raised={raisedCard}
         hand={{
           cards: view.hand,
@@ -817,75 +886,31 @@
           attachCard: (key) => handCards.at(key),
         }}
       />
+
+
+
     </div>
-    {/if}
     <!-- Your tools, once, where the layout puts them: the felt's foot on a
          phone, the result's foot while it shows, the top line on a phone
          held sideways, the tray's right end on a desktop. -->
-    <div class="tools-area" class:crowded bind:clientWidth={toolsWidth}>
+    <div class="tools-area" data-frame-region="tools">
       <Tools {hint} canHint={settings.hints && liveTurn} onhint={() => client.askHint()} onreact={(text) => client.react(text)} />
     </div>
-  {:else if !done && !between}
-    <!-- Watching: no hand, no strip; one line says whose turn it is. -->
-    <p class="spectating">구경하는 중{waiting ? ` · ${waiting.pre}${waiting.name}${waiting.post}` : ''}</p>
-  {/if}
-
   {#if sharing && room}
     <ShareCard {room} onclose={() => (sharing = false)} />
   {/if}
-  {#if menuSeat !== null && room?.seats[menuSeat]}
-    {@const seat = menuSeat}
-    {@const close = () => ui.closeSeat()}
-    <SeatMenu
-      {seat}
-      info={room.seats[seat]}
-      {me}
-      anchor={() => (seatEls.get(seat) ?? section ?? document.body).getBoundingClientRect()}
-      bind:name={sitName}
-      bind:kicking={ui.kicking}
-      onclose={close}
-      onlevel={(level) => {
-        client.addBot(seat, level);
-        if (room?.seats[seat]?.kind !== 'bot') close();
-      }}
-      onswap={() => {
-        ui.swapFrom = seat;
-        close();
-      }}
-      onmovehere={() => {
-        if (me !== null) client.swapSeats(me, seat);
-        close();
-      }}
-      onclearbot={() => {
-        client.removeBot(seat);
-        close();
-      }}
-      onkick={() => {
-        client.clearSeat(seat);
-        close();
-      }}
-      onrelieve={() => {
-        client.addBot(seat);
-        close();
-      }}
-      onstand={() => {
-        client.leave();
-        close();
-      }}
-      onsit={(name) => {
-        client.join(name, seat);
-        close();
-      }}
-      oninvite={() => {
-        oninvite?.();
-        close();
-      }}
-    />
+  {#if room}
+    <SeatMenuHost {session} {room} {oninvite}
+      anchor={(seat) => {const frame=section?.getBoundingClientRect();const bound=coordinates.bounds.get(coordinateId('player',`seat:${seat}`));return frame&&bound?DOMRect.fromRect({...bound,x:bound.x+frame.x,y:bound.y+frame.y}):frame??new DOMRect();}} />
   {/if}
   {#if replay}
     {@const snapshot = replay}
     <HandReplay
+      context={snapshot.context ?? ''}
       tricks={snapshot.done.tricks}
+      payoffs={snapshot.done.payoffs}
+      teamPoints={snapshot.done.team_points}
+      contractCount={snapshot.done.contract.count}
       discards={snapshot.done.discards}
       hiddenDiscards={snapshot.hiddenDiscards}
       declarer={snapshot.done.declarer}
@@ -896,268 +921,31 @@
       onclose={closeReplay}
     />
   {/if}
-</section>
+  {#if (room?.observers?.length ?? 0) > 0}<div class="observer-feedback" data-frame-region="feedback" aria-live="polite" aria-atomic="true">
+    {#if observerReaction}{#key observerReaction.id}
+      <EngineFlow items={[...(observerPolicy.compact?[]:[{id:'name'}]),{id:'reaction',width:'fill'}]} fill direction="column" align="center" gap={2}>
+        {#snippet children(id)}{#if id==='name'}<span class="observer-name">{observerReaction.name}</span>{:else}<Bubble text={observerReaction.text} compact={observerPolicy.compact} mobile={observerPolicy.mobile} announce={false} />{/if}{/snippet}
+      </EngineFlow>
+    {/key}{/if}
+  </div>{/if}
+  {#if room && me === null && !between}
+    <div class="social-area participation-area" data-frame-region="social">{@render participation()}</div>
+  {/if}
+</TableFrame>
 
 <style>
-  /* The lobby has five fixed seats and no empty hand tray. During a hand,
-     portrait decisions reserve a measured row above the cards; landscape
-     decisions sit beside the felt. Breakpoints match lib/tokens.ts. */
-  .table {
-    --status-h: 48px;
-    --event-h: 18px;
-    --strip-h: 16px;
-    /* The top seats' height: the result stops under them. */
-    --seat-top: 84px;
-    /* Room your tools take in the result's footer. */
-    --tools-room: 0px;
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: var(--status-h) var(--event-h) minmax(0, 1fr) var(--strip-h) auto;
-    grid-template-areas: 'status' 'event' 'felt' 'strip' 'tray';
-    gap: 4px;
-    height: calc(100dvh - var(--chrome, 80px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  }
-  /* Decision panels have a reserved row: they cannot paint over seats. */
-  @media (orientation: portrait) {
-    .table.controls-out { --strip-h: var(--over); }
-  }
-  @media (max-width: 599px) and (max-height: 620px) and (orientation: portrait) {
-    .table { --status-h: 36px; --event-h: 12px; }
-    .event { font-size: 11px; }
-    .event p { line-height: 12px; }
-  }
-  .table.seated {
-    --tools-room: 52px;
-  }
-  @media (min-width: 600px) {
-    .table {
-      --status-h: 34px;
-      --seat-top: 116px;
-    }
-  }
-  .table.tips {
-    --event-h: 54px;
-  }
-  .status-area {
-    grid-area: status;
-    /* Above the felt, so what opens from the top line lies over the seats. */
-    position: relative;
-    z-index: var(--z-status);
-    min-width: 0;
-  }
-  .event {
-    grid-area: event;
-    min-width: 0;
-    text-align: center;
-    font-size: var(--text-label);
-    color: var(--ink-muted);
-  }
-  .turn-heading { color: var(--ink-muted); }
-  .turn-heading strong { color: var(--ink); font-weight: 700; }
-  .turn-heading > span { color: var(--accent); font-size: 9px; }
-  .event p {
-    margin: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    line-height: 18px;
-  }
-  .event .tip {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    white-space: normal;
-    font-weight: 600;
-    color: var(--ink);
-  }
-  .felt-area {
-    grid-area: felt;
-    display: grid;
-    min-height: 0;
-  }
-  .strip-area,
-  .spectating {
-    grid-area: strip;
-    min-width: 0;
-  }
-  .spectating {
-    margin: 0;
-    padding: 16px;
-    text-align: center;
-    font-size: var(--text-body);
-    color: var(--ink-muted);
-  }
-  .tray-area {
-    grid-area: tray;
-    min-width: 0;
-  }
-  .side-area {
-    display: none;
-  }
+  /* The shared frame owns placement, visibility and responsive budgets. */
+  .event { text-align:center; font-size:var(--text-label); color:var(--ink-muted); }
+  .event p { margin:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:18px; }
+  .event .tip { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; white-space:normal; font-weight:600; color:var(--ink); }
   /* A joker's ways to be played, in a row over the felt's foot. */
-  .variants {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 8px;
-  }
 
-  /* Your tools: at the felt's foot, at the right; they step up over the
-     bid or exchange controls while those are out, and aside when those
-     are three rows tall. */
-  .tools-area {
-    --lift: max(0px, var(--over, 0px) - var(--strip-h) - 4px);
-    grid-area: felt;
-    align-self: end;
-    justify-self: end;
-    z-index: 6;
-    margin: 0 4px calc(4px + var(--lift)) 0;
-  }
-  .tools-area.crowded {
-    display: none;
-  }
-  /* Phones, while bids or the exchange are out: the felt's foot is theirs,
-     so your tools sit at the end of the top line, which keeps room. */
-  @media (max-width: 599px) {
-    .controls-out .tools-area,
-    .controls-out .tools-area.crowded,
-    .between .tools-area {
-      display: block;
-      grid-area: status;
-      align-self: center;
-      justify-self: end;
-      z-index: calc(var(--z-status) + 1);
-      margin: 0;
-    }
-    .controls-out .status-area,
-    .between .status-area {
-      padding-inline-end: calc(var(--tools-w) + 4px);
-    }
-  }
-  /* Completed hands keep tools in place when the result folds away. */
-  .completed .tools-area {
-    grid-area: tray;
-    justify-self: start;
-    z-index: calc(var(--z-result) + 1);
-    margin: 0 0 10px 12px;
-  }
-  @media (min-width: 600px) {
-    .completed .tools-area {
-      margin: 0 0 14px 16px;
-    }
-  }
-  /* 런: the table settles once under the gold word. */
-  .table.nudge {
-    animation: nudge 300ms var(--ease-standard);
-  }
-  @keyframes nudge {
-    30% {
-      translate: 0 2px;
-    }
-    60% {
-      translate: 0 -1px;
-    }
-  }
-  :global(:root[data-motion='reduced']) .table.nudge {
-    animation: none;
-  }
 
-  /* Desktop: your seat at the tray's left, your tools at its right. */
-  @media (min-width: 1024px) and (min-height: 640px) {
-    .table {
-      --seat-top: 112px;
-    }
-    .table.seated {
-      --tools-room: 0px;
-    }
-    .tools-area,
-    .completed .tools-area {
-      grid-area: tray;
-      align-self: center;
-      justify-self: end;
-      z-index: 1;
-      margin: 4px 10px 0 0;
-    }
-    .tools-area.crowded {
-      display: block;
-    }
-  }
-
-  /* Wide desktop: a column of stacked paper beside the felt takes the
-     상황판 and the scores; the top line goes. */
-  @media (min-width: 1100px) and (orientation: landscape) and (min-height: 600px) {
-    .table {
-      --event-h: 0px;
-      grid-template-columns: minmax(0, 1fr) clamp(260px, 21vw, 300px);
-      grid-template-rows: var(--event-h) minmax(0, 1fr) var(--strip-h) auto;
-      grid-template-areas: 'event side' 'felt side' 'strip side' 'tray side';
-      column-gap: 16px;
-    }
-    .table.tips {
-      --event-h: 36px;
-    }
-    .status-area { display: none; }
-    .event .turn-heading { display: none; }
-    .side-area {
-      grid-area: side;
-      display: grid;
-      min-height: 0;
-    }
-  }
-
-  /* Phones on their side: the strip moves beside the felt, seats go down
-     both sides, the note moves into the strip, and your tools sit at the
-     end of the wide top line. */
-  @media (orientation: landscape) and (max-height: 520px) {
-    .table {
-      grid-template-columns: minmax(0, 1fr) minmax(240px, 36%);
-      grid-template-rows: auto minmax(0, 1fr) auto;
-      grid-template-areas: 'status status' 'felt strip' 'tray tray';
-      gap: 4px 8px;
-    }
-    .table.seated {
-      --tools-room: 0px;
-    }
-    /* The five lobby seats share one row; actions have their own row below. */
-    .table.between {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr) 64px;
-      grid-template-areas: 'status' 'felt' 'strip';
-    }
-    .event {
-      display: none;
-    }
-    .strip-area { align-self: stretch; min-height: 0; }
-    .status-area { padding-inline-end: calc(var(--tools-w) + 4px); }
-    .table:not(.between):not(.controls-out) .strip-area { padding-top: 56px; }
-    .tools-area,
-    .completed .tools-area,
-    .tools-area.crowded {
-      display: block;
-      grid-area: status;
-      align-self: center;
-      justify-self: end;
-      z-index: calc(var(--z-status) + 1);
-      margin: 0;
-    }
-  }
-
-  @media (min-width: 600px) and (min-height: 521px) {
-    .between .tools-area {
-      grid-area: felt;
-      align-self: start;
-      justify-self: end;
-      margin: 0;
-    }
-  }
   /* ---- Between hands -------------------------------------------------------
      Every seat is one tap from its choices: a transparent button over it. */
   .seat-tap {
     position: absolute;
-    inset: -4px;
+    left:0; top:0; width:100%; height:100%;
     z-index: 3;
     border-radius: var(--r-panel);
   }
@@ -1171,24 +959,32 @@
   }
   /* Swapping: every seat shows it can be tapped; the first one chosen
      stands up a little, inside an ink frame. */
-  .swapping .seat-tap {
+  :global(.swapping) .seat-tap {
     box-shadow: inset 0 0 0 2px var(--line);
   }
   .seat-tap.picked {
     box-shadow: inset 0 0 0 2px var(--ink);
   }
   /* What an empty seat offers, right under its outline. */
-  .seat-acts {
-    position: relative;
-    z-index: 4;
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-    margin-top: 4px;
+
+  /* Functional additions retain the production table geometry. */
+
+  .observer-feedback { font-size:11px; color:var(--ink-muted); pointer-events:none; }
+  .observer-name { max-width:8em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .finished-hands {
+    position:absolute; left:var(--arena-review-x); top:var(--arena-review-y);
+    width:var(--arena-review-w); height:var(--arena-review-h);
+    min-height:0; overflow-y:auto; overscroll-behavior:contain; pointer-events:auto;
   }
-  .seat-act {
-    padding-inline: 10px;
-    font-size: var(--text-label);
-    white-space: nowrap;
+  .finished-hands :global(.hands) { width:100%; }
+  .observer-entry {
+    position:absolute; left:var(--arena-admission-x); top:var(--arena-admission-y);
+    width:var(--arena-admission-w); z-index:var(--z-controls); padding:0; pointer-events:none;
   }
+  .observer-note { margin:0; text-align:center; color:var(--ink-muted); font-size:var(--text-caption); text-wrap:balance; }
+  :global(.between) :global(.tray) { pointer-events:none; }
+  :global(.between) :global(.me-seat) { pointer-events:auto; }
+  :global(.between) .strip-area { pointer-events:none; }
+
 </style>

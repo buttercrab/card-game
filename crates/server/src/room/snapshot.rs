@@ -12,7 +12,7 @@
 //! Writing is a [`Persister`]'s job: a task of the room's own that writes
 //! the latest snapshot it was handed, off the room's loop.
 
-use super::hand::{LogEntry, replay};
+use super::hand::{LogEntry, ReplayContext, replay};
 use super::seating::Occupant;
 use super::{Room, RoomEnv, TableSettings};
 use crate::game::ServerGame;
@@ -45,11 +45,26 @@ pub struct SnapshotV2<G: ServerGame> {
     table: TableSettings,
     rotation: usize,
     hand: Option<SavedHand<G::Action>>,
+    #[serde(default)]
+    lifecycle: super::lifecycle::Lifecycle,
+    #[serde(default)]
+    commands: super::commands::CommandState,
+}
+
+pub(super) struct SessionSnapshotRef<'a, G: ServerGame> {
+    pub room_version: u64,
+    pub scores: &'a [i64],
+    pub hands_played: u32,
+    pub history: &'a [Vec<i64>],
+    pub hands: &'a [G::Summary],
+    pub rotation: usize,
 }
 
 /// The hand on the table, as saved.
 #[derive(Serialize, Deserialize)]
 struct SavedHand<A> {
+    #[serde(default)]
+    context: Option<ReplayContext>,
     number: u32,
     log: Vec<LogEntry<A>>,
     /// When it was dealt, in Unix seconds.
@@ -118,6 +133,7 @@ pub fn migrate_v1<G: ServerGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
                 log.push(entry);
             }
             Some(SavedHand {
+                context: None,
                 number: hand.number,
                 log,
                 started: hand.started,
@@ -137,10 +153,81 @@ pub fn migrate_v1<G: ServerGame>(v1: Value) -> Result<SnapshotV2<G>, String> {
         table: v1.table,
         rotation: v1.rotation,
         hand,
+        lifecycle: super::lifecycle::Lifecycle::default(),
+        commands: super::commands::CommandState::default(),
     })
 }
 
 impl<G: ServerGame> Room<G> {
+    /// Borrow the authoritative persisted schema without cloning retained records.
+    pub(super) fn snapshot_ref(&self) -> impl Serialize + '_ {
+        self.snapshot_projection(
+            SessionSnapshotRef {
+                room_version: self.commands.room_version,
+                scores: &self.session.scores,
+                hands_played: self.session.hands_played,
+                history: &self.session.history,
+                hands: &self.session.hands,
+                rotation: self.session.rotation,
+            },
+            &self.lifecycle,
+            Some(&self.hand),
+        )
+    }
+
+    pub(super) fn snapshot_projection<'a, L: Serialize + 'a>(
+        &'a self,
+        session: SessionSnapshotRef<'a, G>,
+        lifecycle: L,
+        hand: Option<&'a super::hand::Hand<G>>,
+    ) -> impl Serialize + 'a {
+        #[derive(Serialize)]
+        struct SavedHandRef<'a, A> {
+            context: &'a Option<ReplayContext>,
+            number: u32,
+            log: &'a [LogEntry<A>],
+            started: Option<u64>,
+        }
+        #[derive(Serialize)]
+        struct SnapshotRef<'a, S, H, A, C, L> {
+            format: u32,
+            id: &'a str,
+            game: &'static str,
+            settings: &'a S,
+            seats: &'a [Occupant],
+            scores: &'a [i64],
+            hands_played: u32,
+            history: &'a [Vec<i64>],
+            hands: &'a [H],
+            table: &'a TableSettings,
+            rotation: usize,
+            hand: Option<SavedHandRef<'a, A>>,
+            lifecycle: L,
+            commands: C,
+        }
+        SnapshotRef {
+            format: FORMAT,
+            id: &self.id,
+            game: G::ID,
+            settings: &self.settings,
+            seats: &self.seating.seats,
+            scores: session.scores,
+            hands_played: session.hands_played,
+            history: session.history,
+            hands: session.hands,
+            table: &self.table,
+            rotation: session.rotation,
+            hand: hand.filter(|hand| hand.game.is_some()).map(|hand| SavedHandRef {
+                context: &hand.replay_context,
+                number: hand.number,
+                log: &hand.log,
+                started: hand.started,
+            }),
+            lifecycle,
+            commands: self.commands.snapshot_ref_at(self.hand.version, session.room_version),
+        }
+    }
+
     /// The room as saved; see [`SnapshotV2`].
     pub fn snapshot(&self) -> SnapshotV2<G> {
         let session = &self.session;
@@ -156,7 +243,14 @@ impl<G: ServerGame> Room<G> {
             hands: session.hands.clone(),
             table: self.table.clone(),
             rotation: session.rotation,
+            lifecycle: self.lifecycle.clone(),
+            commands: {
+                let mut commands = self.commands.clone();
+                commands.version = self.hand.version;
+                commands
+            },
             hand: self.hand.game.as_ref().map(|_| SavedHand {
+                context: self.hand.replay_context.clone(),
                 number: self.hand.number,
                 log: self.hand.log.clone(),
                 started: self.hand.started,
@@ -178,6 +272,13 @@ impl<G: ServerGame> Room<G> {
                 Occupant::Bot { level, name } => json!({ "bot": level, "name": name }),
             })
             .collect();
+        // Operation digests and private sequence/receipt history are not reports.
+        report
+            .as_object_mut()
+            .expect("snapshot is an object")
+            .remove("commands");
+        // Guest credentials and seat links are private, like reclaim tokens.
+        report["lifecycle"]["guests"] = json!([]);
         report
     }
 
@@ -204,8 +305,33 @@ impl<G: ServerGame> Room<G> {
         room.session.hands = s.hands;
         room.session.rotation = s.rotation;
         room.table = s.table;
+        room.lifecycle = s.lifecycle;
+        s.commands.validate_room(&room.id, n)?;
+        room.hand.version = s.commands.version;
+        room.commands = s.commands;
+        room.clear_pending_admissions();
+        room.seed_standings();
         if let Some(hand) = s.hand {
-            let options = room.session.options(&room.settings, hand.number);
+            if room.lifecycle.hand_members.len() != n {
+                room.lifecycle.hand_members = (0..n).map(|s| room.member(s)).collect();
+            }
+            let context = hand.context.unwrap_or(ReplayContext {
+                settings: serde_json::to_value(&room.settings).map_err(|e| e.to_string())?,
+                previous: room
+                    .session
+                    .last_hand(hand.number)
+                    .map(|h| serde_json::to_value(h).expect("summary serializes")),
+                rotation: room.session.rotation,
+            });
+            let settings: G::Settings = serde_json::from_value(context.settings.clone()).map_err(|e| e.to_string())?;
+            let previous: Option<G::Summary> = context
+                .previous
+                .clone()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|e| e.to_string())?;
+            let options = G::hand_options(&settings, hand.number, previous.as_ref(), context.rotation);
+            room.hand.replay_context = Some(context);
             let mut game = G::new_game(&options).map_err(|e| e.to_string())?;
             replay::<G>(&mut game, &hand.log)?;
             // A hand saved over was booked before it was saved.
@@ -215,38 +341,44 @@ impl<G: ServerGame> Room<G> {
             room.hand.number = hand.number;
             room.hand.started = hand.started;
         }
+        room.restore_current_replay();
         Ok(room)
     }
 }
 
 /// Writes through a temporary file so a crash never leaves half a snapshot.
 fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, contents)?;
-    std::fs::rename(tmp, path)
+    let mut file = std::fs::File::create(&tmp)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    std::fs::rename(tmp, path)?;
+    std::fs::File::open(path.parent().unwrap_or_else(|| Path::new(".")))?.sync_all()
 }
 
 enum Persist {
     Write(String),
     /// Answers once every write before it is on disk.
-    Flush(oneshot::Sender<()>),
+    Flush(oneshot::Sender<Result<(), String>>),
     /// The room closed for good: its file goes, and the task ends.
-    Remove,
+    Remove(oneshot::Sender<Result<(), String>>),
 }
 
 /// A room's writer: a task that writes the latest snapshot it was handed
 /// to the room's file, on a blocking thread. Snapshots handed over faster
 /// than they are written are skipped but for the last.
 pub(super) struct Persister {
-    tx: mpsc::UnboundedSender<Persist>,
+    tx: mpsc::Sender<Persist>,
     task: tokio::task::JoinHandle<()>,
 }
 
 impl Persister {
     /// Starts the writer for `path`, the file of room `room`.
     pub fn start(room: String, path: PathBuf) -> Persister {
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(2);
         let task = tokio::spawn(async move {
+            let mut last_error = None;
             while let Some(first) = rx.recv().await {
                 let mut latest = None;
                 let mut acks = Vec::new();
@@ -256,24 +388,40 @@ impl Persister {
                     match message {
                         Persist::Write(text) => latest = Some(text),
                         Persist::Flush(ack) => acks.push(ack),
-                        Persist::Remove => remove = true,
+                        Persist::Remove(ack) => {
+                            remove = true;
+                            acks.push(ack);
+                        }
                     }
                     next = rx.try_recv().ok();
                 }
                 let path = path.clone();
-                let room = room.clone();
-                let _ = tokio::task::spawn_blocking(move || {
+                let had_write = latest.is_some();
+                let result = tokio::task::spawn_blocking(move || {
                     if remove {
-                        let _ = std::fs::remove_file(&path);
-                    } else if let Some(text) = latest
-                        && let Err(e) = write_atomic(&path, &text)
-                    {
-                        tracing::error!(room, "could not save the room: {e}");
+                        match std::fs::remove_file(&path) {
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                            Ok(()) => std::fs::File::open(path.parent().unwrap_or_else(|| Path::new(".")))?.sync_all(),
+                            Err(error) => Err(error),
+                        }
+                    } else if let Some(text) = latest {
+                        write_atomic(&path, &text)
+                    } else {
+                        Ok(())
                     }
                 })
                 .await;
+                match result {
+                    Ok(Ok(())) if had_write || remove => last_error = None,
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        tracing::error!(room, "could not save the room: {error}");
+                        last_error = Some(error.to_string());
+                    }
+                    Err(error) => last_error = Some(error.to_string()),
+                }
                 for ack in acks {
-                    let _ = ack.send(());
+                    let _ = ack.send(last_error.clone().map_or(Ok(()), Err));
                 }
                 if remove {
                     break;
@@ -284,22 +432,35 @@ impl Persister {
     }
 
     /// Hands over the room as it is now.
-    pub fn save(&self, snapshot: String) {
-        let _ = self.tx.send(Persist::Write(snapshot));
+    pub async fn save(&self, snapshot: String) -> Result<(), String> {
+        self.tx
+            .send(Persist::Write(snapshot))
+            .await
+            .map_err(|_| "room writer closed".to_owned())
     }
 
     /// Waits until everything handed over is on disk.
-    pub async fn flush(&self) {
+    pub async fn flush(&self) -> Result<(), String> {
         let (ack, done) = oneshot::channel();
-        if self.tx.send(Persist::Flush(ack)).is_ok() {
-            let _ = done.await;
-        }
+        self.tx
+            .send(Persist::Flush(ack))
+            .await
+            .map_err(|_| "room writer closed".to_owned())?;
+        done.await.map_err(|_| "room writer stopped before flush".to_owned())?
     }
 
     /// Removes the room's file once the writes before are done, and stops.
-    pub async fn remove(self) {
-        let _ = self.tx.send(Persist::Remove);
-        let _ = self.task.await;
+    pub async fn remove(self) -> Result<(), String> {
+        let (ack, done) = oneshot::channel();
+        self.tx
+            .send(Persist::Remove(ack))
+            .await
+            .map_err(|_| "room writer closed".to_owned())?;
+        let result = done
+            .await
+            .map_err(|_| "room writer stopped before removal".to_owned())?;
+        self.task.await.map_err(|error| error.to_string())?;
+        result
     }
 }
 
@@ -467,12 +628,43 @@ mod tests {
         let path = dir.path().join("abc.json");
         let persister = Persister::start("abc".into(), path.clone());
         for i in 0..50 {
-            persister.save(format!("{{\"n\":{i}}}"));
+            persister.save(format!("{{\"n\":{i}}}")).await.unwrap();
         }
-        persister.flush().await;
+        persister.flush().await.unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"n\":49}");
-        persister.save("{\"n\":50}".into());
-        persister.remove().await;
+        persister.save("{\"n\":50}".into()).await.unwrap();
+        persister.remove().await.unwrap();
         assert!(!path.exists(), "a closed room leaves no file");
+    }
+
+    #[tokio::test]
+    async fn failed_writes_stay_failed_until_a_new_checkpoint_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("not-created");
+        let path = parent.join("room.json");
+        let writer = Persister::start("failure-test".into(), path.clone());
+        writer.save("first".into()).await.unwrap();
+        assert!(writer.flush().await.is_err());
+        assert!(
+            writer.flush().await.is_err(),
+            "an empty flush cannot erase a failed write"
+        );
+        std::fs::create_dir(&parent).unwrap();
+        writer.save("second".into()).await.unwrap();
+        writer.flush().await.unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "second");
+        writer.remove().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_rename_never_reports_a_successful_flush() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("room.json");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("keep"), "existing").unwrap();
+        let writer = Persister::start("rename-test".into(), path.clone());
+        writer.save("replacement".into()).await.unwrap();
+        assert!(writer.flush().await.is_err());
+        assert_eq!(std::fs::read_to_string(path.join("keep")).unwrap(), "existing");
     }
 }

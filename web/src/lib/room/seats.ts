@@ -35,17 +35,6 @@ export class Ring {
     return { x: Math.cos(this.angle(r)), y: Math.sin(this.angle(r)) };
   }
 
-  /** Where the card played from place `r` lands, in multiples of the
-   * card's spacing. Five players sit in fixed bands (me, right, top right,
-   * top left, left), so their cards land on matching, mirror-image spots
-   * rather than on a pentagon, which bunched the trick off-centre on
-   * narrow screens. */
-  slot(r: number): [number, number] {
-    if (this.n === 5) return BANDS[r];
-    const d = this.direction(r);
-    return [d.x, d.y];
-  }
-
   /** The places drawn round the felt: all but yours when seated. */
   around(seated: boolean): number[] {
     return Array.from({ length: this.n }, (_, r) => r).filter((r) => !seated || r > 0);
@@ -65,14 +54,6 @@ export class Ring {
     return toward(t.x, t.y);
   }
 }
-
-const BANDS: [number, number][] = [
-  [0, 1],
-  [1.15, 0.05],
-  [0.6, -0.9],
-  [-0.6, -0.9],
-  [-1.15, 0.05],
-];
 
 /** The name a seat is shown by: 나 for yours; the one sitting there; else,
  * while a hand that player was in is still on the table, the name they

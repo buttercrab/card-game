@@ -1,40 +1,50 @@
 <script lang="ts">
   // The declarer's strip during the exchange: put cards back, maybe change
   // trump or raise the contract, then name the friend.
+  import DecisionRegion from '../../table/DecisionRegion.svelte';
+  import { tick, untrack } from 'svelte';
+  import Sheet from '../../ui/Sheet.svelte';
+  import Button from '../../ui/Button.svelte';
   import Card from './Card.svelte';
+  import CommandButton from '../../table/CommandButton.svelte';
+  import { commandForPayload, commandSpecs, type ActionOffer } from '../../table/presentation';
   import { cardLabel, contractLabel, friendCallLabel, mightyCard, sameCard, sealOf, SUITS, trumpLabel } from './cards';
-  import { scrollFade } from '../../scrollFade';
   import SuitText from '../../SuitText.svelte';
   import Chip from '../../ui/Chip.svelte';
   import type { Action, Card as CardT, Contract, ContractChange, FriendCall, Rules, Suit } from './types';
 
   let {
-    legal,
+    offer,
     contract,
     contracts,
     rules,
     toDiscard,
     chosen,
+    chosenRevision,
     hand,
     seatName,
     onact,
     ondiscard,
   }: {
-    legal: Action[];
+    offer: ActionOffer<Action>;
     contract: Contract;
     /** What each trump change or raise sets, as the server works it out. */
     contracts: ContractChange[];
     rules: Rules;
     toDiscard: number;
     chosen: number;
+    chosenRevision?: string | null;
     /** Calling a card you hold is allowed but rarely meant, so it is not offered first. */
     hand: CardT[];
     seatName: (seat: number) => string;
-    onact: (a: Action) => void;
-    ondiscard: () => void;
+    onact: (a: Action, expectedOfferId: string) => void;
+    ondiscard: (expectedOfferId: string) => void;
   } = $props();
 
   const twoJokers = $derived(rules.deck === 'TwoJokers');
+  const legal = $derived(commandSpecs(offer).filter(spec => spec.enabled).map(spec => spec.action));
+  const discardCommand = $derived(commandSpecs(offer).find(spec => spec.enabled && typeof spec.action === 'object' && 'Discard' in spec.action) ?? null);
+  const batchCurrent = $derived(chosenRevision === undefined || chosenRevision === offer.id);
   const trumpChanges = $derived(
     legal.flatMap((a) => (typeof a === 'object' && 'ChangeTrump' in a ? [a.ChangeTrump] : [])),
   );
@@ -80,10 +90,26 @@
 
   let call = $state<FriendCall | null>(null);
   let picking = $state(false);
+  let draftCall = $state<FriendCall | null>(null);
+  let draftRevision = $state<string | null>(null);
+  let pickerOpener: HTMLElement | null = null;
+  function openPicker(opener: HTMLElement) { pickerOpener = opener; draftCall = chosenCall; draftRevision = offer.id; picking = true; }
+  function closePicker() { picking = false; void tick().then(() => { if (pickerOpener?.isConnected) pickerOpener.focus(); }); }
+  function confirmPicker(action: Action, expectedOfferId: string) {
+    if (!draftCall || draftRevision !== offer.id || expectedOfferId !== draftRevision) return;
+    call = draftCall; onact(action, expectedOfferId); closePicker();
+  }
+  const draftMine = $derived(draftCall !== null && typeof draftCall === 'object' && 'Card' in draftCall && isMine(draftCall.Card));
   const chosenCall = $derived(call && calls.some((c) => sameCall(c, call!)) ? call : (shortcuts[0]?.call ?? calls[0] ?? null));
   const callsMine = $derived(
     chosenCall !== null && typeof chosenCall === 'object' && 'Card' in chosenCall && isMine(chosenCall.Card),
   );
+  const chosenCallCommand = $derived(chosenCall ? commandForPayload(offer, {CallFriend:chosenCall}) : null);
+  const draftCallCommand = $derived(draftCall ? commandForPayload(offer, {CallFriend:draftCall}) : null);
+  const chosenCallLabel = $derived(chosenCall && typeof chosenCall === 'object' && 'Card' in chosenCall && sameCard(chosenCall.Card, mighty)
+    ? `프렌드 마이티 (${cardLabel(mighty)})${callsMine ? ' (내 카드)' : ''}`
+    : `프렌드 ${chosenCall ? friendCallLabel(chosenCall, seatName, twoJokers) : ''}${callsMine ? ' (내 카드)' : ''}`);
+  const draftCallLabel = $derived(`프렌드 ${draftCall ? friendCallLabel(draftCall, seatName, twoJokers) : ''}${draftMine ? ' (내 카드)' : ''}`);
 
   /** The contract's number after the least change to `t`, as the server
    * says it would be. */
@@ -117,6 +143,19 @@
   function select(action: Action) {
     selected = choice && same(choice, action) ? null : action;
   }
+  const choiceCommand = $derived(choice ? commandForPayload(offer, choice) : null);
+  const discardOffer = $derived<ActionOffer<Action>>({id:`${offer.id}:discard:${choice ? JSON.stringify(choice) : 'plain'}`,actions:offer.actions.map(spec => spec.id === discardCommand?.id ? {...spec,intent:choice ? 'secondary' : 'primary'} : spec)});
+  let observedRevision = $state(untrack(() => offer.id));
+  $effect(() => {
+    if (observedRevision === offer.id) return;
+    observedRevision = offer.id;
+    call = null;
+    selected = null;
+    target = undefined;
+    draftCall = null;
+    draftRevision = null;
+    if (picking) closePicker();
+  });
 
   /** 으로 or 로 after a number, as it is read: 16으로, 17로. */
   function ro(count: number): string {
@@ -138,8 +177,8 @@
 </script>
 
 {#if calls.length > 0}
-  <div class="panel">
-    <div class="chips" role="radiogroup" aria-label="프렌드">
+  <DecisionRegion class="panel" mode="stack" gap={8}>
+    <DecisionRegion class="chips" mode="row" scroll role="radiogroup" label="프렌드" gap={6}>
       {#each shortcuts as s (JSON.stringify(s.call))}
         <Chip
           checked={chosenCall !== null && sameCall(chosenCall, s.call)}
@@ -149,75 +188,32 @@
           }}>{s.label}</Chip
         >
       {/each}
-      <Chip pressed={picking} onclick={() => (picking = !picking)}>다른 카드…</Chip>
-    </div>
-    {#if picking}
-      <div class="picker">
-        <div class="grid">
-          {#each cardCalls as card (JSON.stringify(card))}
-            <Card
-              {card}
-              size="mini"
-              {twoJokers}
-              seal={sealOf(card, rules, contract.trump)}
-              raised={chosenCall !== null && sameCall(chosenCall, { Card: card })}
-              onclick={() => (call = { Card: card })}
-            />
-          {/each}
-        </div>
-        {#if ownCalls.length > 0}
-          <p class="own-head muted">내 카드 · 부르면 혼자 하지만, 아무도 몰라요</p>
-          <div class="grid">
-            {#each ownCalls as card (JSON.stringify(card))}
-              <Card
-                {card}
-                size="mini"
-                {twoJokers}
-                seal={sealOf(card, rules, contract.trump)}
-                raised={chosenCall !== null && sameCall(chosenCall, { Card: card })}
-                onclick={() => (call = { Card: card })}
-              />
-            {/each}
-          </div>
-        {/if}
-        {#if otherCalls.length > 0}
-          <div class="chips">
-            {#each otherCalls as c (JSON.stringify(c))}
-              <Chip checked={chosenCall !== null && sameCall(chosenCall, c)} onclick={() => (call = c)}>
-                <SuitText text={friendCallLabel(c, seatName, twoJokers)} />
-              </Chip>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-    <div class="actions">
-      <button class="btn primary" disabled={!chosenCall} onclick={() => chosenCall && onact({ CallFriend: chosenCall })}>
+      <Chip pressed={picking} aria-haspopup="dialog" onclick={(event) => openPicker(event.currentTarget)}>다른 카드…</Chip>
+    </DecisionRegion>
+    <DecisionRegion class="actions" mode="actions" align="end" gap={8}>
+      <CommandButton {offer} actionId={chosenCallCommand?.id ?? null} label={chosenCallLabel} onaction={onact}>
         {#if chosenCall && typeof chosenCall === 'object' && 'Card' in chosenCall && sameCard(chosenCall.Card, mighty)}
           프렌드 마이티 <span class="sub">(<SuitText text={cardLabel(mighty)} />)</span>
         {:else}
           프렌드 <SuitText text={chosenCall ? friendCallLabel(chosenCall, seatName, twoJokers) : ''} />
         {/if}
         {#if callsMine}<span class="sub">(내 카드)</span>{/if}
-      </button>
-    </div>
-  </div>
+      </CommandButton>
+    </DecisionRegion>
+  </DecisionRegion>
 {:else}
-  <div class="panel">
-    <div class="discard">
+  {@const baseOfferId = offer.id}
+  <DecisionRegion class="panel exchange" mode="exchange" gap={8}>
+    <DecisionRegion class="discard" mode="discard" gap={10}>
       <span class="count">{#key chosen}<strong class="bump">{chosen}</strong>{/key}/{toDiscard}</span>
       <span class="muted">버릴 카드를 고르세요</span>
+      {#if confirm && choice}<DecisionRegion class="desktop-confirm" mode="actions"><CommandButton {offer} actionId={choiceCommand?.id ?? null} label={confirm} onaction={onact}><SuitText text={confirm} /></CommandButton></DecisionRegion>{/if}
       <!-- While a contract change is chosen, its button is the one to press. -->
-      <button
-        class:primary={!confirm}
-        class="btn discard-btn"
-        class:ready={chosen === toDiscard && !confirm}
-        disabled={chosen !== toDiscard}
-        onclick={ondiscard}>버리기</button
-      >
-    </div>
+      <DecisionRegion class="discard-btn" mode="actions"><CommandButton offer={discardOffer} actionId={discardCommand?.id ?? null} label="버리기" blocked={chosen !== toDiscard || !batchCurrent} onaction={(_action, expectedOfferId) => { if (expectedOfferId === discardOffer.id) ondiscard(baseOfferId); }} /></DecisionRegion>
+    </DecisionRegion>
+    <DecisionRegion class="contract-controls" mode="stack" gap={8}>
     {#if trumpChanges.length > 0 && raises.length > 0}
-      <div class="chips change" use:scrollFade role="radiogroup" aria-label="기루다 변경">
+      <DecisionRegion class="chips change" mode="row" scroll fade role="radiogroup" label="기루다 변경" gap={6}>
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
           <Chip
@@ -230,9 +226,9 @@
             <SuitText text="{trumpLabel(t)} {changedCount(t)}" />
           </Chip>
         {/each}
-      </div>
+      </DecisionRegion>
     {:else if trumpChanges.length > 0}
-      <div class="chips change" use:scrollFade role="radiogroup" aria-label="기루다 변경">
+      <DecisionRegion class="chips change" mode="row" scroll fade role="radiogroup" label="기루다 변경" gap={6}>
         <span class="muted">기루다 변경</span>
         {#each trumpChanges as t (t ?? 'nt')}
           {@const action = { ChangeTrump: t }}
@@ -240,124 +236,86 @@
             <SuitText text="{trumpLabel(t)} {changedCount(t)}" />
           </Chip>
         {/each}
-      </div>
+      </DecisionRegion>
     {/if}
     {#if offers.length > 0}
-      <div class="chips change" use:scrollFade role="radiogroup" aria-label={picked === contract.trump ? '공약 올리기' : '바꿀 공약'}>
+      <DecisionRegion class="chips change" mode="row" scroll fade role="radiogroup" label={picked === contract.trump ? '공약 올리기' : '바꿀 공약'} gap={6}>
         <span class="muted">{picked === contract.trump ? '공약 올리기' : `${trumpLabel(picked)}로 바꾸기`}</span>
         {#each offers as o (JSON.stringify(o.action))}
-          <button class="chip num" role="radio" aria-checked={!!choice && same(choice, o.action)} onclick={() => select(o.action)}>
+          <Chip checked={!!choice && same(choice, o.action)} onclick={() => select(o.action)}>
             <SuitText text={contractLabel(o.contract)} />
-          </button>
+          </Chip>
         {/each}
-      </div>
+      </DecisionRegion>
     {/if}
+    </DecisionRegion>
     {#if confirm && choice}
-      <div class="actions">
-        <button class="btn primary confirm" onclick={() => onact(choice)}><SuitText text={confirm} /></button>
-      </div>
+      <DecisionRegion class="actions contract-confirm" mode="actions" align="end">
+        <CommandButton {offer} actionId={choiceCommand?.id ?? null} label={confirm} onaction={onact}><SuitText text={confirm} /></CommandButton>
+      </DecisionRegion>
     {/if}
-  </div>
+  </DecisionRegion>
+{/if}
+
+{#if picking}
+<Sheet size="large" title="프렌드 카드 선택" focus="title" onclose={closePicker}>
+      <DecisionRegion class="picker" mode="stack" gap={8}>
+        <DecisionRegion class="grid" mode="flow" gap={10}>
+          {#each cardCalls as card (JSON.stringify(card))}
+            <Card
+              {card}
+              size="mini"
+              width={44}
+              {twoJokers}
+              seal={sealOf(card, rules, contract.trump)}
+              selected={draftCall !== null && sameCall(draftCall, { Card: card })}
+              stationary
+              onclick={() => (draftCall = { Card: card })}
+            />
+          {/each}
+        </DecisionRegion>
+        {#if ownCalls.length > 0}
+          <p class="own-head muted">내 카드 · 부르면 혼자 하지만, 아무도 몰라요</p>
+          <DecisionRegion class="grid" mode="flow" gap={10}>
+            {#each ownCalls as card (JSON.stringify(card))}
+              <Card
+                {card}
+                size="mini"
+              width={44}
+                {twoJokers}
+                seal={sealOf(card, rules, contract.trump)}
+                selected={draftCall !== null && sameCall(draftCall, { Card: card })}
+                stationary
+                onclick={() => (draftCall = { Card: card })}
+              />
+            {/each}
+          </DecisionRegion>
+        {/if}
+        {#if otherCalls.length > 0}
+          <DecisionRegion class="chips" mode="flow" gap={6}>
+            {#each otherCalls as c (JSON.stringify(c))}
+              <Chip checked={draftCall !== null && sameCall(draftCall, c)} onclick={() => (draftCall = c)}>
+                <SuitText text={friendCallLabel(c, seatName, twoJokers)} />
+              </Chip>
+            {/each}
+          </DecisionRegion>
+        {/if}
+      </DecisionRegion>
+      <p class="own-warning" class:inactive={!draftMine} aria-hidden={!draftMine}>내 카드를 프렌드로 부르면 혼자 플레이해요.</p>
+      {#snippet footer()}
+        <DecisionRegion mode="actions" gap={8} align="end">
+        <Button onclick={closePicker}>취소</Button>
+        <CommandButton {offer} actionId={draftCallCommand?.id ?? null} label={draftCallLabel} blocked={draftRevision !== offer.id} onaction={confirmPicker}>프렌드 <SuitText text={draftCall ? friendCallLabel(draftCall, seatName, twoJokers) : ''} />{#if draftMine}<span class="sub">(내 카드)</span>{/if}</CommandButton>
+        </DecisionRegion>
+      {/snippet}
+    </Sheet>
 {/if}
 
 <style>
-  .panel {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-  }
-  .chips {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    overflow-x: auto;
-    padding: 2px 2px 4px;
-    scrollbar-width: none;
-  }
-  .picker {
-    display: grid;
-    /* Rows keep their full height and the picker scrolls; a scrolling chip
-       row would otherwise be squeezed to half a chip. */
-    grid-auto-rows: max-content;
-    gap: 8px;
-    /* What the window can spare above the tray and below the contract line;
-       on a short window the picker scrolls rather than covering it. */
-    max-height: min(40vh, max(120px, 100dvh - 560px));
-    overflow-y: auto;
-    padding: 12px 2px 2px;
-  }
-  .grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-  .actions .primary {
-    flex: 1;
-    max-width: 280px;
-  }
-  /* Inside the picker every choice shows, wrapped, rather than scrolling
-     sideways in a box of its own. */
-  .picker .chips {
-    flex-wrap: wrap;
-    overflow: visible;
-  }
-  .own-head {
-    margin: 4px 0 0;
-    font-size: var(--text-label);
-  }
-  .sub {
-    font-weight: 400;
-    opacity: 0.8;
-  }
-  .discard {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .discard .muted {
-    flex: 1;
-    font-size: 14px;
-  }
-  /* Not enough cards chosen yet: a plain, quiet button, not a faded plum. */
-  .discard .primary:disabled {
-    opacity: 1;
-    background: var(--panel);
-    color: var(--ink-muted);
-    box-shadow: 0 3px 0 var(--line);
-  }
-  @media (min-width: 600px) {
-    .panel {
-      max-width: 760px;
-      width: 100%;
-      margin: 0 auto;
-    }
-  }
-  .count {
-    font-family: var(--font-display);
-    font-size: 20px;
-    font-variant-numeric: tabular-nums;
-  }
-  /* When the row runs past the screen, its right edge fades to say so. */
-  .chips.change:global(.more) {
-    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  }
-  .change .muted {
-    flex: none;
-    font-size: var(--text-label);
-  }
-  .num {
-    font-variant-numeric: tabular-nums;
-  }
-  /* Enough cards chosen: the button wakes up once. */
-  .ready {
-    --pulse: 1.07;
-    animation: pulse 360ms var(--ease-settle);
-  }
-  :global(:root[data-motion='reduced']) .ready {
-    animation: none;
-  }
+  .own-warning { color:var(--gold);font-size:13px; }
+  .own-warning.inactive { visibility:hidden; }
+  .own-head { margin:0; font-size:var(--text-label); }
+  .sub { font-weight:400;opacity:.8; }
+  .count { font-family:var(--font-display); font-size:20px; font-variant-numeric:tabular-nums; }
+  .muted { font-size:var(--text-label); }
 </style>

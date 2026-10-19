@@ -231,7 +231,7 @@ impl Examples {
     pub fn new(rules: &Rules) -> Examples {
         let f = &rules.friend;
         let alone = !(f.by_card || f.by_seat || f.first_trick || f.last_trick);
-        let count = (rules.bidding.min + 1).min(20);
+        let count = u8::try_from((u16::from(rules.bidding.min) + 1).min(20)).expect("example count is at most20");
         let contract = Contract {
             trump: Some(crate::card::Suit::Spade),
             count,
@@ -307,5 +307,19 @@ mod tests {
         let mut alone = Preset::Default.rules().for_players(3).unwrap();
         alone.friend.alone = true;
         assert!(Examples::new(&alone).alone);
+    }
+    #[test]
+    fn maximum_custom_minimum_keeps_rulebook_examples_bounded() {
+        let mut rules = Rules::web_mighty();
+        rules.bidding.min = 255;
+        rules.bidding.max = 255;
+        rules.bidding.no_trump_bonus = 254;
+        rules.validate().unwrap();
+        let examples = Examples::new(&rules);
+        assert_eq!(
+            examples.contract.count, 20,
+            "existing illustrative count cap is preserved"
+        );
+        assert_eq!(examples.made.payoffs.iter().sum::<i64>(), 0);
     }
 }

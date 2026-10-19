@@ -1,0 +1,8 @@
+import {expect,test} from 'vitest';
+import {allocateCompactPublicPair} from './compactPublicAllocation';
+const input={width:208,capacity:5,cardWidth:32,exposed:28,auxiliaryCaptionWidth:38,auxiliaryArtWidth:24,gap:8};
+test('the full five-seat trick gets its own width beside the bounded auxiliary source',()=>{const result=allocateCompactPublicPair(input);expect(result.primaryMinimum).toBe(144);expect(result.auxiliaryWidth).toBe(38);expect(result.primaryWidth).toBe(162);expect(result.primaryWidth!+result.auxiliaryWidth+input.gap).toBe(input.width);expect(result.primaryWidth).toBeGreaterThanOrEqual(result.primaryMinimum);});
+test('never declares a one-pixel-short row a complete primary fit',()=>{const result=allocateCompactPublicPair(input);expect(allocateCompactPublicPair({...input,width:result.minimumWidth-1}).primaryWidth).toBeUndefined();expect(allocateCompactPublicPair({...input,width:result.minimumWidth}).primaryWidth).toBe(144);});
+test('uses participant capacity instead of a fixed five-card or game-specific rule',()=>{expect(allocateCompactPublicPair({...input,capacity:7,width:300}).primaryMinimum).toBe(200);expect(allocateCompactPublicPair({...input,capacity:3}).primaryMinimum).toBe(88);});
+test('keeps at least the actual auxiliary artwork footprint even for short count captions',()=>{expect(allocateCompactPublicPair({...input,auxiliaryCaptionWidth:8}).auxiliaryWidth).toBe(24);});
+test('rejects invalid capacity and dimensions before frame composition',()=>{for(const change of [{capacity:1.5},{capacity:-1},{width:NaN},{auxiliaryCaptionWidth:Infinity}])expect(()=>allocateCompactPublicPair({...input,...change})).toThrow(RangeError);});

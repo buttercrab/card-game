@@ -1,11 +1,12 @@
 <script lang="ts">
   // A small button that opens the table's quick reactions: the server's
   // list (it refuses anything else), emoji in a row, words as chips.
+  // The playing-screen engine places this measured trigger in its tools
+  // region. The focus-managed popover remains a native menu surface.
   import { tableShortcut } from '../ui/shortcuts';
   import { CATALOG } from '../catalog';
   import Icon from '../Icon.svelte';
   import Button from '../ui/Button.svelte';
-  import Chip from '../ui/Chip.svelte';
   import Popover from '../ui/Popover.svelte';
   /** `below` opens the menu downward, for a button near the top of the screen. */
   let { onreact, below = false }: { onreact: (text: string) => void; below?: boolean } = $props();
@@ -13,6 +14,10 @@
   const emoji = (r: string) => /\p{Extended_Pictographic}/u.test(r);
   const EMOJI = CATALOG.reactions.filter(emoji);
   const PHRASES = CATALOG.reactions.filter((r) => !emoji(r));
+  const descriptions: Record<string, string> = {
+    '👏': '박수', '😂': '크게 웃기', '😮': '놀라기', '😭': '울기', '🔥': '불타오르기', '🙏': '부탁과 감사',
+    '👍': '좋아요', '😎': '멋져요', '🤔': '생각 중', '😅': '머쓱해요', '🎉': '축하해요', '💪': '힘내요',
+  };
 
   let open = $state(false);
   let trigger = $state<HTMLButtonElement>();
@@ -54,10 +59,10 @@
   >
     <div class="picker" bind:this={palette} onkeydown={navigate} role="presentation">
     <div class="emoji">
-      {#each EMOJI as e (e)}<button role="menuitem" onclick={() => pick(e)}>{e}</button>{/each}
+      {#each EMOJI as e (e)}<Button variant="icon" role="menuitem" title={descriptions[e]} onclick={() => pick(e)}>{e}</Button>{/each}
     </div>
     <div class="phrases">
-      {#each PHRASES as p (p)}<Chip role="menuitem" onclick={() => pick(p)}>{p}</Chip>{/each}
+      {#each PHRASES as p (p)}<Button size="sm" role="menuitem" onclick={() => pick(p)}>{p}</Button>{/each}
     </div>
     <p class="shortcut">R 열기/닫기 · 방향키 선택 · Enter 보내기</p>
     </div>
@@ -71,19 +76,14 @@
     grid-template-columns: repeat(6, 44px);
     gap: 2px;
   }
-  .emoji button {
-    min-height: 44px;
-    border-radius: var(--r-control);
+  .emoji :global(button) {
     font-size: 24px;
     text-align: center;
-  }
-  .emoji button:active {
-    scale: 0.92;
   }
   .phrases {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 6px;
+    gap: 8px;
     max-width: 280px;
   }
 </style>

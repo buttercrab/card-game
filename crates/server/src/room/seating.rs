@@ -9,7 +9,6 @@ use engine::Level;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::sync::mpsc::UnboundedSender;
 
 /// The longest name a seat takes, in characters; longer ones are cut.
 pub const NAME_MAX: usize = 24;
@@ -49,13 +48,18 @@ pub(super) enum Occupant {
 /// at, if any. How fast it may send is the connection's own business (see
 /// [`crate::limit`]).
 pub(super) struct Conn {
-    pub tx: UnboundedSender<String>,
+    pub tx: crate::outbound::Sender,
     pub seat: Option<usize>,
+    pub visitor: Option<String>,
 }
 
 impl Conn {
-    pub fn new(tx: UnboundedSender<String>) -> Conn {
-        Conn { tx, seat: None }
+    pub fn new(tx: crate::outbound::Sender) -> Conn {
+        Conn {
+            tx,
+            seat: None,
+            visitor: None,
+        }
     }
 }
 
@@ -69,6 +73,26 @@ pub(super) struct Seating {
 }
 
 impl Seating {
+    /// Prepare a shuffle without changing seats; callers may use a cloned RNG.
+    pub(super) fn shuffle_order(&self, rng: &mut impl Rng) -> Vec<usize> {
+        use rand::seq::SliceRandom;
+        let n = self.len();
+        let mut order: Vec<usize> = (0..n).collect();
+        let occupied: Vec<bool> = self.seats.iter().map(|s| !matches!(s, Occupant::Empty)).collect();
+        let everyone_moves = |order: &[usize]| (0..n).all(|s| !occupied[s] || order[s] != s);
+        // About a third of shuffles move everyone, so this rarely runs out;
+        // if it does, everyone moves the same random number of seats round.
+        let found = (0..64).any(|_| {
+            order.shuffle(rng);
+            everyone_moves(&order)
+        });
+        if !found && n > 1 {
+            let k = rng.random_range(1..n);
+            order = (0..n).map(|s| (s + k) % n).collect();
+        }
+        order
+    }
+
     pub fn new(n: usize) -> Seating {
         Seating {
             seats: vec![Occupant::Empty; n],
@@ -236,11 +260,27 @@ impl<G: ServerGame> Room<G> {
         if self.seating.seat_of(conn).is_some() {
             return Err(ErrorCode::AlreadySeated.into());
         }
+        if let Some(held) = self
+            .seating
+            .conns
+            .get(&conn)
+            .and_then(|c| c.visitor.as_ref())
+            .and_then(|key| self.lifecycle.guests.get(key))
+            .and_then(|g| g.seat_token.as_ref())
+            && self.seating.seat_with_token(held).is_some()
+            && token.as_ref() != Some(held)
+        {
+            return Err(ErrorCode::AlreadySeated.into());
+        }
         let reclaimed = token.as_deref().and_then(|t| self.seating.seat_with_token(t));
         if reclaim && reclaimed.is_none() {
             // The seat was given away while this tab was gone: it watches.
             self.send(conn, &Msg::<G>::Unseated);
             return Ok(());
+        }
+        self.reconcile_admissions();
+        if reclaimed.is_none() && self.hand.in_hand() {
+            return Err(ErrorCode::SeatsBetweenHands.into());
         }
         // Between hands a newcomer may also take a bot's seat.
         let in_hand = self.hand.in_hand();
@@ -257,13 +297,32 @@ impl<G: ServerGame> Room<G> {
                 .or_else(|| seats.iter().position(|s| matches!(s, Occupant::Empty)))
                 .ok_or(ErrorCode::TableFull)?,
         };
+        if reclaimed.is_none() && self.participation().iter().any(|q| q.seat == Some(seat)) {
+            return Err(ErrorCode::SeatTaken.into());
+        }
         if reclaimed.is_none() {
             // Scores belong to players: whoever sat here before (a player
             // who left, a bot) took theirs with them.
             self.session.reset_score(seat);
         }
         // A newer connection for the same seat wins; the old tab becomes a spectator.
+        let displaced: Vec<_> = self
+            .seating
+            .conns
+            .iter()
+            .filter(|(_, c)| c.seat == Some(seat))
+            .filter_map(|(id, c)| c.visitor.clone().map(|v| (*id, v)))
+            .collect();
         self.seating.detach(seat);
+        for (id, key) in displaced {
+            self.visitor_welcome(id, &key);
+        }
+        // A reconnect reclaims identity; only an explicit Observe name edit
+        // renames it. Another open tab may still carry the old saved name.
+        let name = match (&self.seating.seats[seat], reclaimed) {
+            (Occupant::Human { name, .. }, Some(_)) => name.clone(),
+            _ => name,
+        };
         let (token, player) = match (&self.seating.seats[seat], reclaimed) {
             (Occupant::Human { token, player, .. }, Some(_)) => (token.clone(), player.clone()),
             _ => (format!("{:032x}", self.rng.random::<u128>()), None),
@@ -297,7 +356,21 @@ impl<G: ServerGame> Room<G> {
         if let Some(c) = self.seating.conns.get_mut(&conn) {
             c.seat = Some(seat);
         }
+        self.bind_visitor(conn, seat);
+        if reclaimed.is_none() {
+            let score = self
+                .lifecycle
+                .standings
+                .get(&self.member(seat).id)
+                .map_or(0, |p| p.score);
+            if self.session.scores[seat] != score {
+                self.session.scores[seat] = score;
+                self.session.revision += 1;
+            }
+        }
+        self.lifecycle.ready.remove(&self.member(seat).id);
         self.send(conn, &Msg::<G>::Welcome { seat, token });
+        self.reconcile_admissions();
         Ok(())
     }
 
@@ -318,8 +391,26 @@ impl<G: ServerGame> Room<G> {
         } else {
             Occupant::Empty
         };
+        if let Occupant::Bot { name, .. } = &occupant {
+            self.lifecycle
+                .bot_ids
+                .insert(name.clone(), format!("{:032x}", self.rng.random::<u128>()));
+        }
+        let outgoing = self.member(seat).id;
+        self.lifecycle.ready.remove(&outgoing);
+        let connections: Vec<_> = self
+            .seating
+            .conns
+            .iter()
+            .filter(|(_, c)| c.seat == Some(seat))
+            .map(|(id, _)| *id)
+            .collect();
         self.seating.put(seat, occupant);
         self.seating.detach(seat);
+        for conn in connections {
+            self.send(conn, &Msg::<G>::Unseated);
+        }
+        self.reconcile_admissions();
     }
 
     /// Between hands: the player at `seat` goes back to watching.
@@ -343,6 +434,7 @@ impl<G: ServerGame> Room<G> {
             self.send(id, &Msg::<G>::Unseated);
         }
         self.seating.detach(seat);
+        self.reconcile_admissions();
         Ok(())
     }
 
@@ -375,7 +467,13 @@ impl<G: ServerGame> Room<G> {
                 self.seating.new_bot_name(seat)
             }
         };
+        if !matches!(self.seating.seats[seat], Occupant::Bot { .. }) {
+            self.lifecycle
+                .bot_ids
+                .insert(name.clone(), format!("{:032x}", self.rng.random::<u128>()));
+        }
         self.seating.put(seat, Occupant::Bot { level, name });
+        self.reconcile_admissions();
         Ok(())
     }
 
@@ -386,6 +484,7 @@ impl<G: ServerGame> Room<G> {
         match self.seating.seats.get(seat) {
             Some(Occupant::Bot { .. }) => {
                 self.seating.put(seat, Occupant::Empty);
+                self.reconcile_admissions();
                 Ok(())
             }
             _ => Err(ErrorCode::NoBotInSeat.into()),
@@ -403,6 +502,7 @@ impl<G: ServerGame> Room<G> {
         if matches!(seats[a], Occupant::Empty) && matches!(seats[b], Occupant::Empty) {
             return Err(ErrorCode::NobodyToMove.into());
         }
+        self.require_game_edit_revision()?;
         let new_seat: Vec<usize> = (0..n)
             .map(|s| match s {
                 s if s == a => b,
@@ -430,32 +530,15 @@ impl<G: ServerGame> Room<G> {
                 self.send(id, &Msg::<G>::Welcome { seat, token });
             }
         }
+        self.reconcile_admissions();
     }
 
     /// Deals everyone into random seats, and everyone at the table into a
     /// seat other than their own: a shuffle that leaves someone where they
     /// were (or only trades empty seats) looks like it did not happen.
+    #[cfg(test)]
     pub(super) fn shuffle_seats(&mut self) {
-        use rand::seq::SliceRandom;
-        let n = self.seating.len();
-        let mut order: Vec<usize> = (0..n).collect();
-        let occupied: Vec<bool> = self
-            .seating
-            .seats
-            .iter()
-            .map(|s| !matches!(s, Occupant::Empty))
-            .collect();
-        let everyone_moves = |order: &[usize]| (0..n).all(|s| !occupied[s] || order[s] != s);
-        // About a third of shuffles move everyone, so this rarely runs out;
-        // if it does, everyone moves the same random number of seats round.
-        let found = (0..64).any(|_| {
-            order.shuffle(&mut self.rng);
-            everyone_moves(&order)
-        });
-        if !found && n > 1 {
-            let k = self.rng.random_range(1..n);
-            order = (0..n).map(|s| (s + k) % n).collect();
-        }
+        let order = self.seating.shuffle_order(&mut self.rng);
         // `order[s]`: where the seat `s` went, so tables can slide each one there.
         let news = SeatsMoved::Shuffle { order: order.clone() };
         self.reseat(&order, news);
@@ -528,7 +611,7 @@ mod tests {
     #[test]
     fn a_newcomer_does_not_inherit_the_last_occupants_score() {
         let mut room = room();
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = crate::outbound::test_channel();
         let join = |name: &str, seat| ClientMsg::Join {
             name: name.into(),
             token: None,

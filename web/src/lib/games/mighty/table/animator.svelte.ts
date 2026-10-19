@@ -12,7 +12,9 @@
 import { tick } from 'svelte';
 import { isPoint } from '../cards';
 import { later } from '../../../clock';
-import { flyFrom, flyTo, hold, juice, pop, ring, settle } from '../../../motion';
+import { hold, juice, pop, ring, settle } from '../../../motion';
+import { SceneMotion } from '../../../table/sceneMotion';
+import type { Bounds } from '../../../table/movement';
 import { motion, settings } from '../../../settings.svelte';
 import { sound } from '../../../sound';
 import type { Card, Lead, PhaseView, Played, StateMsg, Suit } from '../types';
@@ -35,13 +37,15 @@ export interface Stage {
   twoJokers(): boolean;
   /** Suppress a turn cue if the queued turn is no longer actionable. */
   liveTurn(): boolean;
+  /** The shared coordinate plane origin in viewport pixels, for audio panning. */
+  frameOrigin?(): { x: number; y: number };
   /** The card on the trick that `seat` played, as drawn. */
   trickCard(seat: number): Element | null;
   /** Where a card played by `seat` comes from, or a finished trick goes to:
    * the card in your hand (or your tray), or the seat. */
-  anchor(seat: number, card?: Card): DOMRect | null;
+  anchor(seat: number, card?: Card): Bounds | null;
+  trickBounds(seat: number): Bounds | null;
   /** The element that wiggles for a seat: its figure, or your tray. */
-  seatElement(seat: number): Element | null;
   /** Everything on the table that moves (to finish it all at once). */
   felt(): Element | null;
   /** Until when (performance.now()) the seats are sliding to new places. */
@@ -66,8 +70,10 @@ export class Animator {
   cues = $state<Record<number, Cue>>({});
 
   #stage: Stage;
+  #travel = new SceneMotion();
   #queue: StateMsg[] = [];
   #running = false;
+  #disposed = false;
   #hurry = false;
   #pauses = new Set<() => void>();
   #cueId = 0;
@@ -85,20 +91,32 @@ export class Animator {
 
   /** The next state from the server. */
   push(next: StateMsg) {
-    if (next === this.shown) return;
+    if (this.#disposed || next === this.shown) return;
     this.#queue.push(next);
     void this.#pump();
   }
 
   /** The hand was put away (the seats moved): start again from `blank`. */
   reset(blank: StateMsg) {
+    if (this.#disposed) return;
     this.#queue.length = 0;
     this.#finishAll();
+    this.#travel.interrupt();
     this.resolving = null;
     this.winner = null;
     this.event = null;
     this.thrownIn = null;
     this.shown = blank;
+  }
+
+  /** Release native travel effects when the table is removed. */
+  dispose() {
+    this.#disposed = true;
+    this.#queue.length = 0;
+    this.#hurry = true;
+    this.#travel.dispose();
+    for (const done of [...this.#pauses]) done();
+    clearTimeout(this.#thrownInTimer);
   }
 
   /** The player acted: finish what is animating and show the latest state. */
@@ -124,12 +142,11 @@ export class Animator {
     };
   }
 
-  /** A big moment at `seat`: it wiggles, with `text` under it for 1.5 s. */
+  /** Label a seat event for 1.5 s without moving the identity. */
   cueAt(seat: number, text: string | null, kind: CueKind) {
     const id = ++this.#cueId;
     this.cues[seat] = { text, id };
     sound.cue(kind);
-    if (seat === this.#stage.me()) void juice(this.#stage.seatElement(seat), 0.25);
     later(() => {
       if (this.cues[seat]?.id === id) delete this.cues[seat];
     }, 1500);
@@ -141,7 +158,7 @@ export class Animator {
 
   /** A pause that ends early when the player acts. */
   #pause(ms: number): Promise<void> {
-    if (this.#hurry || ms <= 0) return Promise.resolve();
+    if (this.#disposed || this.#hurry || ms <= 0) return Promise.resolve();
     return new Promise((resolve) => {
       const done = () => {
         this.#pauses.delete(done);
@@ -156,6 +173,7 @@ export class Animator {
   /** Ends every motion on the table at once, except the endless ones (a
    * figure's blink), which have no end to jump to. */
   #finishAll() {
+    this.#travel.finish();
     for (const a of this.#stage.felt()?.getAnimations({ subtree: true }) ?? []) {
       if (a.effect?.getComputedTiming().endTime !== Infinity) a.finish();
     }
@@ -173,7 +191,7 @@ export class Animator {
   }
 
   async #pump() {
-    if (this.#running) return;
+    if (this.#disposed || this.#running) return;
     this.#running = true;
     const release = hold();
     try {
@@ -181,7 +199,7 @@ export class Animator {
       // their places first, then the cards are dealt.
       const slide = this.#stage.slidingUntil() - performance.now();
       if (slide > 0) await new Promise((done) => setTimeout(done, slide));
-      while (this.#queue.length > 0) {
+      while (!this.#disposed && this.#queue.length > 0) {
         const next = this.#queue.shift()!;
         const k = this.#pace();
         const previous = this.shown;
@@ -198,6 +216,7 @@ export class Animator {
           continue;
         }
         await this.#transition(previous, next, k);
+        if (this.#disposed) return;
         this.#settled(previous, next);
       }
     } finally {
@@ -289,6 +308,7 @@ export class Animator {
     const from = fresh.map((p) => stage.anchor(p.seat, p.card));
     apply();
     await tick();
+    if (this.#disposed) return fresh.map(() => false);
     const twoJokers = stage.twoJokers();
     const heavy = fresh.map((p) =>
       context ? weight(p, context.all[0]?.seat === p.seat, context.lead, context.trump, context.taker, twoJokers) : null,
@@ -297,17 +317,20 @@ export class Animator {
       await Promise.all(
         fresh.map((p, i) => {
           const origin = from[i];
-          const duration = (p.seat === me ? 220 : 320) * k;
+          const duration = (p.seat === me ? 160 : 220) * k;
           // A card landing on others gets an extra edge tick.
           const onTop = (context?.all.findIndex((q) => q.seat === p.seat) ?? 0) > 0;
           if (!heavy[i]) sound.card((i * 60 * k + duration * 0.8) / 1000, onTop);
-          return origin && !this.#hurry ? flyFrom(stage.trickCard(p.seat), origin, duration, i * 60 * k) : undefined;
+          const target = stage.trickBounds(p.seat);
+          return origin && target && !this.#hurry ? this.#travel.arrive(`trick:${p.seat}`, stage.trickCard(p.seat), origin, target, { duration, delay: i * 60 * k, composite: 'add' }) : undefined;
         }),
       );
     }
+    if (this.#disposed) return heavy.map(Boolean);
     // Heavy cards land with a thump and a beat's hold; the 마이티 and jokers
     // are called out at the seat that played them.
     for (const [i, p] of fresh.entries()) {
+      if (this.#disposed) return heavy.map(Boolean);
       const kind = heavy[i];
       if (!kind) continue;
       sound.heavy();
@@ -353,6 +376,7 @@ export class Animator {
         trump,
         taker: after.leading ?? null,
       });
+      if (this.#disposed) return;
       // A card that takes the lead gives a small bounce once it has landed;
       // heavy cards have already made their own entrance.
       const was = before.leading ?? null;
@@ -372,24 +396,28 @@ export class Animator {
         k,
         { all: trick.plays, lead: trick.lead, trump, taker: trick.winner },
       );
-      // The hero moment: a beat, the winning card pops, the whole trick
-      // stays a moment to be read, then sweeps to its winner. The hold is
-      // not hurried by your turn: everyone gets to see how the round ended.
+      if (this.#disposed) return;
+      // Let the winner read clearly, then collect promptly. The last trick
+      // uses the same sequence; score credit still follows the sweep. A
+      // turn arriving never changes the selected motion speed.
       const kh = this.#paceUnhurried();
-      await this.#pause(150 * kh);
+      await this.#pause(80 * kh);
+      if (this.#disposed) return;
       this.winner = trick.winner;
-      await pop(stage.trickCard(trick.winner), reduced || this.#hurry ? 0 : 360 * kh);
-      await this.#pause((reduced ? 1100 : 1050) * kh);
+      await pop(stage.trickCard(trick.winner), reduced || this.#hurry ? 0 : 220 * kh);
+      if (this.#disposed) return;
+      await this.#pause((reduced ? 550 : 450) * kh);
+      if (this.#disposed) return;
       const to = stage.anchor(trick.winner);
       // The sweep is heard from the winner's side of the table.
-      const pan = to ? ((to.left + to.width / 2) / innerWidth - 0.5) * 1.2 : 0;
+      const pan = to ? ((to.x + (stage.frameOrigin?.().x ?? 0) + to.width / 2) / innerWidth - 0.5) * 1.2 : 0;
       sound.sweep(0, pan);
       if (!reduced && !this.#hurry && to) {
-        await Promise.all(trick.plays.map((p, i) => flyTo(stage.trickCard(p.seat), to, 400 * k, i * 40 * k)));
+        await Promise.all(trick.plays.map((p, i) => { const from = stage.trickBounds(p.seat); return from ? this.#travel.depart(`trick:${p.seat}`, stage.trickCard(p.seat), from, to, { duration: 240 * k, delay: i * 25 * k, composite: 'add' }) : undefined; }));
       }
+      if (this.#disposed) return;
       sound.score(trick.plays.filter((p) => isPoint(p.card)).length);
-      // The winner's plate takes the cards with a small bounce.
-      void juice(stage.seatElement(trick.winner), trick.winner === stage.me() ? 0.15 : 0.35);
+      // Credit follows the sweep; player identities keep their anchors.
       await this.#land(
         after.plays as Played[],
         () => {
@@ -407,7 +435,7 @@ export class Animator {
       // The 주공's seat answers, linking the two.
       const partner = play?.declarer ?? null;
       if (partner !== null) later(() => this.cueAt(partner, null, 'answer'), 260 * k);
-      await this.#pause(700 * k);
+      await this.#pause(350 * k);
       this.revealed = null;
     }
   }

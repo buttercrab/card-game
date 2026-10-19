@@ -4,9 +4,10 @@
   import Card from './Card.svelte';
   import SuitIcon from '../../SuitIcon.svelte';
   import SuitText from '../../SuitText.svelte';
-  import { cardLabel, jokers, kittyCount, rankLabel } from './cards';
-  import { MIGHTY, isPreset, presetRules, presetTitle } from './catalog';
-  import type { Card as CardT, CardPolicy, Contract, Examples, Rules, TrickPolicy } from './types';
+  import { cardLabel, jokers } from './cards';
+  import { isPreset, presetRules, presetTitle } from './catalog';
+  import type { Examples, Rules } from './types';
+  import {normalCard as n,kitty,signed,deckText,winFormula,scoringLines,josa,fromNoTrumpCost,toNoTrumpCost,roundLimits,friendWays,misdealText} from './rulebookMeaning';
 
   /** `rules` overrides the preset's: a table's own, or the preset's as the
    * table pinned them. `changed`: the table's players changed them (by
@@ -39,195 +40,6 @@
     };
   });
 
-  const n = (suit: 'Spade' | 'Diamond' | 'Heart' | 'Club', rank: number): CardT => ({ Normal: [suit, rank] });
-
-  const kitty = kittyCount;
-
-  const signed = (v: number) => (v > 0 ? `+${v}` : String(v));
-
-  /** The deck in words: 52장, or 7부터 A까지 28장과 ♣3, ♠3. */
-  function deckText(r: Rules): string {
-    const lowest = r.lowest_rank;
-    const extras = r.extra_cards.map(cardLabel);
-    const base = lowest === 2 ? '52장' : `네 무늬의 ${rankLabel(lowest)}부터 A까지 ${4 * (15 - lowest)}장`;
-    return extras.length ? `${base}과 ${extras.join(', ')}` : base;
-  }
-
-  /** A made contract's worth: the formula, and a note after it. */
-  function winFormula(r: Rules): [string, string] {
-    const min = r.bidding.min;
-    const w = r.scoring.win;
-    if (typeof w === 'object') {
-      const n = w.BothOver;
-      return [`(가져온 점수 − ${n}) + (공약 − ${n})`, '(적어도 1)'];
-    }
-    return {
-      OverTen: ['가져온 점수 − 10', '(적어도 1)'],
-      OverMin: [`가져온 점수 − ${min}`, `(최소 공약 ${min}을 넘긴 만큼이라, 공약을 지켜도 0이나 그 아래일 수 있어요)`],
-      OverBid: ['가져온 점수 − 공약', ''],
-      BidBonus: [`가져온 점수 − 공약 + (공약 − ${min}) × 2`, '(높게 부를수록 더 얻어요)'],
-    }[w] as [string, string];
-  }
-
-  /** The rest of the scoring rules as sentences. */
-  function scoringLines(r: Rules): string[] {
-    const s = r.scoring;
-    const noTrump = r.bidding.allow_no_trump;
-    const alone = r.friend.alone;
-    const winDoubles = [
-      noTrump && s.no_trump !== 'Never' && '노기루다면',
-      alone && s.alone !== 'Never' && '노프렌드면',
-      s.run && '20점을 모두 가져오면(런)',
-    ].filter((x): x is string => typeof x === 'string');
-    const lines: string[] = [];
-    if (winDoubles.length) lines.push(`이긴 점수는 ${winDoubles.join(', ')} 두 배씩이에요.`);
-    const b = s.back_run;
-    const backRun =
-      b === 'Never'
-        ? ''
-        : b === 'DefenceReachesBid'
-          ? ' 야당이 공약만큼 이상 가져갔다면(백런) 두 배로 잃어요.'
-          : 'TeamAtMost' in b
-            ? ` ${b.TeamAtMost}점 이하로 가져왔다면(백런) 두 배로 잃어요.`
-            : ` ${b.ShortBy}점 이상 모자라면(백런) 두 배로 잃어요.`;
-    const lose = s.lose;
-    if (lose === 'Shortfall') lines.push(`공약을 못 채우면 모자란 만큼 잃어요.${backRun}`);
-    else {
-      const n = lose.PaysBack;
-      // Under points − 10, (contract − 10) is what making it exactly pays.
-      const why = s.win === 'OverTen' && n === 10 ? ' 딱 이겼을 때 받았을 점수를 물어 주는 셈이에요.' : '';
-      lines.push(`공약을 못 채우면 (공약 − ${n})에 모자란 만큼을 더해 잃어요.${why}${backRun}`);
-    }
-    const lossDoubles = [
-      noTrump && s.no_trump === 'Always' && '노기루다',
-      alone && s.alone === 'Always' && '노프렌드',
-    ].filter((x): x is string => typeof x === 'string');
-    if (lossDoubles.length) lines.push(`${lossDoubles.join('와 ')}는 져도 두 배예요.`);
-    const full = s.full_contract;
-    if (full !== 'Never') lines.push(`공약이 20이면 ${full === 'Always' ? '이기든 지든' : '이겼을 때'} 또 두 배예요.`);
-    if (r.next_dealer === 'FriendOrDeclarer')
-      lines.push('다음 판은 이번 판의 프렌드가, 프렌드가 없었으면 주공이 나누고 먼저 불러요.');
-    return lines;
-  }
-
-  /** How much the contract's number rises to change to 노기루다 from a suit. */
-  /** 은/는 or 과/와 after a number, by how it is read: 13 (십삼) takes 은. */
-  function josa(n: number, closed: string, open: string): string {
-    return `${n}${[0, 1, 3, 6, 7, 8].includes(n % 10) ? closed : open}`;
-  }
-
-  /** How much the number rises from 노기루다 to a suit: the cost, plus
-   * what 노기루다 counted extra. */
-  function fromNoTrumpCost(r: Rules): number {
-    return r.bidding.change_trump_cost + r.bidding.no_trump_bonus;
-  }
-
-  function toNoTrumpCost(r: Rules): number {
-    const b = r.bidding;
-    return b.change_to_no_trump_cost ?? Math.max(b.change_trump_cost - b.no_trump_bonus, 0);
-  }
-
-  /** What a card policy means on one round, or null when nothing changes. */
-  function policyText(p: CardPolicy): string | null {
-    switch (p) {
-      case 'NoEffect':
-        return '낼 수는 있지만 힘이 없어요';
-      case 'Invalid':
-        return '낼 수 없어요 (따라 내야 하거나 그것밖에 없을 때만 예외)';
-      case 'NoLead':
-        return '먼저 낼 수 없어요';
-      default:
-        return null;
-    }
-  }
-
-  /** The first- and last-round limits, one line per card that has any. */
-  function roundLimits(r: Rules): { who: string; round: string; text: string }[] {
-    if (!r.policy) return [];
-    const rows: [string, TrickPolicy][] = [
-      ['마이티', r.policy.mighty],
-      ['조커', r.policy.joker],
-      ['기루다', r.policy.trump],
-      ['조커콜', r.policy.joker_call],
-    ];
-    const out: { who: string; round: string; text: string }[] = [];
-    const say = (who: string, p: CardPolicy) =>
-      who === '조커콜' ? (p === 'Valid' ? null : '할 수 없어요') : policyText(p);
-    for (const [who, p] of rows) {
-      // Trump that may not lead the first trick gets its own line below.
-      const trumpLead = who === '기루다' && p.first === 'NoLead';
-      const [first, last] = [trumpLead ? null : say(who, p.first), say(who, p.last)];
-      if (first && first === last) out.push({ who, round: '첫 라운드와 마지막 라운드', text: first });
-      else {
-        if (first) out.push({ who, round: '첫 라운드', text: first });
-        if (last) out.push({ who, round: '마지막 라운드', text: last });
-      }
-    }
-    if (r.joker_lead.not_first_trick) out.push({ who: '조커', round: '첫 라운드', text: '먼저 낼 수 없어요' });
-    if (r.policy.trump.first === 'NoLead')
-      out.push({
-        who: '기루다',
-        round: '첫 라운드',
-        text:
-          r.policy.release_with_mighty === false
-            ? '먼저 낼 수 있는 경우가 손패가 기루다뿐이거나 기루다와 조커뿐일 때뿐이에요 (기루다와 마이티뿐이면 마이티를 내요)'
-            : '먼저 낼 수 있는 경우가 손패가 기루다와 마이티, 조커뿐일 때뿐이에요',
-      });
-    return out;
-  }
-
-  function friendWays(r: Rules): string[] {
-    const f = r.friend;
-    if (!f) return [];
-    return [
-      f.by_card && '카드로 부르기: 그 카드를 가진 사람이 프렌드예요. 카드가 나올 때 밝혀져요.',
-      f.by_seat && '자리로 부르기: 그 자리에 앉은 사람이 프렌드예요.',
-      f.first_trick && '첫 라운드: 첫 라운드를 이긴 사람이 프렌드예요.',
-      f.last_trick && '마지막 라운드: 마지막 라운드를 이긴 사람이 프렌드예요.',
-      f.alone &&
-        {
-          Never: '노프렌드: 혼자 해요. 야당 모두와 혼자 주고받아요.',
-          Win: '노프렌드: 혼자 해요. 이기면 점수가 두 배예요.',
-          Always: '노프렌드: 혼자 해요. 이기든 지든 점수가 두 배예요.',
-        }[r.scoring.alone],
-      f.fake && '자기가 가진 카드를 불러서 몰래 혼자 할 수도 있어요.',
-    ].filter((x): x is string => typeof x === 'string');
-  }
-
-  function misdealText(r: Rules): string[] {
-    const m = r.misdeal;
-    if (!m) return [];
-    // Values kept whole by doubling (a point card 2, a ten 1) read better
-    // halved, as players count them: 1 and ½.
-    const halve = m.point_value === 2 && m.joker_value % 2 === 0;
-    const num = (v: number) => {
-      if (!halve) return String(v);
-      const whole = Math.trunc(v / 2);
-      return v % 2 === 0 ? String(whole) : `${v < 0 ? '-' : ''}${whole !== 0 ? Math.abs(whole) : ''}½`;
-    };
-    const value = (v: number) => (v > 0 ? `+${num(v)}` : num(v));
-    const parts = [`점수 카드 ${value(m.point_value)}`];
-    if (m.joker_value !== 0) parts.push(`조커 ${value(m.joker_value)}`);
-    for (const [card, v] of m.card_values) parts.push(`${cardLabel(card)} ${value(v)}`);
-    const when =
-      m.window === 'BeforeFirstBid'
-        ? '패를 받자마자, 누가 첫 공약을 하기 전까지'
-        : m.window === 'AllBidding'
-          ? '패를 받자마자, 공약이 끝나기 전까지 (이미 공약했더라도)'
-          : '패를 받자마자, 자기가 공약하기 전까지';
-    const lines = [
-      `받은 패가 약하면 ${when} 다시 나눠 달라고 할 수 있어요 (딜미스). ${parts.join(', ')}점으로 세어 ${num(m.threshold)}점 이하일 때예요.`,
-    ];
-    lines.push('자기 차례가 아니어도 되고, 패스한 뒤에는 못 해요. 먼저 부른 사람의 딜미스예요. 그 사람은 패를 보여 줘요.');
-    if (m.window === 'BeforeFirstBid')
-      lines.push(
-        `첫 공약은 패를 받고 ${MIGHTY.first_bid_grace_ms / 1000}초쯤 기다렸다가 할 수 있어요. 그사이 딜미스할 사람이 있는지 봐요.`,
-      );
-    if (m.caller_deals) lines.push('딜미스를 한 사람이 새로 나눈 판에서 먼저 불러요.');
-    if (m.all_points) lines.push('받은 카드가 모두 점수 카드여도 딜미스를 할 수 있어요.');
-    if (m.declarer) lines.push('주공도 키티를 가져온 뒤 버리기 전에, 가진 카드 전부로 세어 딜미스를 할 수 있어요.');
-    return lines;
-  }
 </script>
 
 <article class="book">
@@ -420,7 +232,7 @@
       <ul>
         {#each r.joker_call.calls as [call, fallback], i (i)}
           <li>
-            <SuitText text={cardLabel(call)} />{#if JSON.stringify(call) !== JSON.stringify(fallback)}(기루다가 <SuitText
+            <SuitText text={cardLabel(call)} />{#if 'Normal' in call && JSON.stringify(call) !== JSON.stringify(fallback)}(기루다가 <SuitText
                 text={cardLabel(call).slice(0, 1)}
               />이면 <SuitText text={cardLabel(fallback)} />){/if} 카드로 라운드를 시작하면서 조커콜을 하면, {twoJokers
               ? cardLabel(jokers(r)[i])

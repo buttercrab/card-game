@@ -38,9 +38,18 @@ pub(super) fn replay<G: ServerGame>(game: &mut G::State, log: &[LogEntry<G::Acti
     Ok(())
 }
 
+/// Frozen reconstruction inputs, independent of mutable table/session settings.
+#[derive(Clone, Serialize, Deserialize)]
+pub(super) struct ReplayContext {
+    pub settings: Value,
+    pub previous: Option<Value>,
+    pub rotation: usize,
+}
+
 pub(super) struct Hand<G: ServerGame> {
     /// The current hand, or the last one once it is over.
     pub game: Option<G::State>,
+    pub replay_context: Option<ReplayContext>,
     /// Every step of `game` so far, deals included, so it can be replayed.
     pub log: Vec<LogEntry<G::Action>>,
     /// The session hand number `game` was dealt as.
@@ -59,10 +68,27 @@ pub(super) struct Hand<G: ServerGame> {
     pub booked: bool,
 }
 
+impl<G: ServerGame> Clone for Hand<G> {
+    fn clone(&self) -> Self {
+        Self {
+            game: self.game.clone(),
+            replay_context: self.replay_context.clone(),
+            log: self.log.clone(),
+            number: self.number,
+            started: self.started,
+            version: self.version,
+            deals: self.deals,
+            dealt_at: self.dealt_at,
+            booked: self.booked,
+        }
+    }
+}
+
 impl<G: ServerGame> Default for Hand<G> {
     fn default() -> Hand<G> {
         Hand {
             game: None,
+            replay_context: None,
             log: Vec::new(),
             number: 0,
             started: None,
@@ -78,6 +104,8 @@ impl<G: ServerGame> Default for Hand<G> {
 pub(super) struct Advanced<G: ServerGame> {
     /// Cards landed.
     pub dealt: bool,
+    /// Index of this prepared chance batch; only committed batches are logged.
+    pub(super) chance_start: usize,
     /// The hand is over, and not yet booked.
     pub finished: Option<Finished<G>>,
 }
@@ -133,15 +161,15 @@ impl<G: ServerGame> Hand<G> {
 
     /// Plays the chance actions due (the deal), and says when the hand is
     /// over and not yet booked.
-    pub fn advance(&mut self, room: &str, rng: &mut impl Rng) -> Advanced<G> {
+    pub fn advance(&mut self, _room: &str, rng: &mut impl Rng) -> Advanced<G> {
         let mut done = Advanced {
             dealt: false,
+            chance_start: self.log.len(),
             finished: None,
         };
         let Some(game) = self.game.as_mut() else { return done };
         while G::turn(game) == Turn::Chance {
             let deal = G::sample_chance(game, rng);
-            tracing::info!(room, action = %log_action(&deal), "deal");
             G::apply_chance(game, deal.clone()).expect("a sampled chance action is legal");
             self.log.push(LogEntry::Chance { action: deal });
             done.dealt = true;
@@ -181,17 +209,72 @@ impl<G: ServerGame> Room<G> {
         if self.hand.in_hand() {
             return Err(ErrorCode::HandInProgress.into());
         }
+        if self.admissions_pending() {
+            return Err(ErrorCode::PlayersNotReady.into());
+        }
         if self.seating.any_empty() {
             return Err(ErrorCode::EmptySeats.into());
         }
-        // 매 판 자리 섞기, or 섞기 pressed since the last hand.
-        if std::mem::take(&mut self.table.shuffle_next) | self.table.shuffle {
-            self.shuffle_seats();
+        if self.lifecycle.ended {
+            return Err(ErrorCode::SessionEnded.into());
         }
+        if !self.readiness().iter().all(|r| *r) {
+            return Err(ErrorCode::PlayersNotReady.into());
+        }
+        let baseline = self
+            .native_start_baseline()
+            .map_err(|error| ServerError::with_detail(ErrorCode::ResourceCapacity, format!("{error:?}")))?;
+        // Prepare the complete fallible game before changing seats, score
+        // projections or shuffle flags. Rejection must leave business state intact.
+        let mut rng = self.rng.clone();
+        let order = (self.table.shuffle_next || self.table.shuffle).then(|| self.seating.shuffle_order(&mut rng));
         let number = self.session.hands_played;
-        let options = self.session.options(&self.settings, number);
+        let options = match &order {
+            Some(order) => self.session.options_after_reseat(&self.settings, number, order),
+            None => self.session.options(&self.settings, number),
+        };
         let state = G::new_game(&options).map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
-        self.hand.start(state, number);
+        let mut prepared = Hand {
+            version: self.hand.version,
+            deals: self.hand.deals,
+            ..Hand::default()
+        };
+        prepared.start(state, number);
+        let advanced = prepared.advance(&self.id, &mut rng);
+        let (profile, reservation) = self.reserve_native_start(baseline, &prepared, &advanced)?;
+        self.rng = rng;
+        self.table.shuffle_next = false;
+        if let Some(order) = order {
+            let news = crate::protocol::SeatsMoved::Shuffle { order: order.clone() };
+            self.reseat(&order, news);
+        }
+        if self.session.hands_played > 0 {
+            let before = self.session.scores.clone();
+            for s in 0..self.seating.len() {
+                if let Some(p) = self.lifecycle.standings.get(&self.member(s).id) {
+                    self.session.scores[s] = p.score;
+                } else {
+                    self.session.scores[s] = 0;
+                }
+            }
+            if before != self.session.scores {
+                self.session.revision += 1;
+            }
+        }
+        self.clear_current_replay();
+        self.lifecycle.hand_members = (0..self.seating.len()).map(|s| self.member(s)).collect();
+        self.lifecycle.ready.clear();
+        self.hand = prepared;
+        self.resources = super::resources::NativeResources::admitted(profile, reservation);
+        self.prepared_advance = Some(advanced);
+        self.hand.replay_context = Some(ReplayContext {
+            settings: serde_json::to_value(&self.settings).expect("settings serialize"),
+            previous: self
+                .session
+                .last_hand(number)
+                .map(|h| serde_json::to_value(h).expect("summary serializes")),
+            rotation: self.session.rotation,
+        });
         self.record(Event::HandStarted {
             hand: self.hand_stats(),
             players: self.seating.players(),
@@ -220,12 +303,80 @@ impl<G: ServerGame> Room<G> {
         self.apply_move(seat, action, what)
     }
 
+    /// Stage a bounded same-seat transaction. Rules, turn and grace are checked
+    /// at every step; a failure publishes neither a prefix nor a changed RNG.
+    pub(super) fn act_batch(&mut self, seat: usize, actions: Vec<Value>) -> Result<(), ServerError> {
+        if actions.is_empty() || actions.len() > crate::command_protocol::MAX_COMMAND_BATCH {
+            return Err(ServerError::with_detail(
+                ErrorCode::BadMessage,
+                "invalid command batch length",
+            ));
+        }
+        let actions: Vec<G::Action> = actions
+            .into_iter()
+            .map(serde_json::from_value)
+            .collect::<Result<_, _>>()
+            .map_err(|e| ServerError::with_detail(ErrorCode::BadMessage, e))?;
+        let mut prepared = self.hand.clone();
+        for action in actions {
+            if !prepared.waits_on(seat) {
+                return Err(ErrorCode::NotYourTurn.into());
+            }
+            let game = prepared.game.as_ref().ok_or(ErrorCode::NoHand)?;
+            if prepared.dealt_at.is_some_and(|t| t.elapsed() < G::grace(game, &action)) {
+                return Err(ErrorCode::WaitAfterDeal.into());
+            }
+            prepared
+                .apply(seat, action)
+                .map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
+        }
+        // A revision denotes one committed transaction, not a log entry count.
+        // The ordinary replay log retains every native rule action unchanged.
+        prepared.version = self.hand.version + 1;
+        self.commit_prepared_move(prepared, self.rng.clone(), seat, "batch", "atomic move")
+    }
+
     /// Applies `seat`'s `action` and logs it as `what`.
     pub(super) fn apply_move(&mut self, seat: usize, action: G::Action, what: &str) -> Result<(), ServerError> {
+        self.apply_move_with_rng(seat, action, what, self.rng.clone())
+    }
+
+    pub(super) fn apply_move_with_rng(
+        &mut self,
+        seat: usize,
+        action: G::Action,
+        what: &str,
+        rng: rand::rngs::StdRng,
+    ) -> Result<(), ServerError> {
         let logged = log_action(&action);
-        self.hand
+        let mut prepared = self.hand.clone();
+        prepared
             .apply(seat, action)
             .map_err(|e| ServerError::with_detail(ErrorCode::IllegalAction, e))?;
+        self.commit_prepared_move(prepared, rng, seat, &logged, what)
+    }
+
+    fn commit_prepared_move(
+        &mut self,
+        mut prepared: Hand<G>,
+        mut rng: rand::rngs::StdRng,
+        seat: usize,
+        logged: &str,
+        what: &str,
+    ) -> Result<(), ServerError> {
+        if prepared.turn() == Some(Turn::Chance)
+            && std::any::TypeId::of::<G>() == std::any::TypeId::of::<mighty::Mighty>()
+        {
+            self.ensure_native_reservation()?;
+            self.require_restart_policy()
+                .map_err(|error| ServerError::with_detail(ErrorCode::ResourceCapacity, format!("{error:?}")))?;
+        }
+        let advanced = prepared.advance(&self.id, &mut rng);
+        let reservation = self.reserve_native_action(&prepared, &advanced)?;
+        self.hand = prepared;
+        self.resources.reservation = Some(reservation);
+        self.rng = rng;
+        self.prepared_advance = Some(advanced);
         tracing::info!(room = %self.id, seat, action = %logged, "{what}");
         Ok(())
     }
@@ -234,9 +385,19 @@ impl<G: ServerGame> Room<G> {
     /// bots decide whether to act off their turn on a new deal. Returns
     /// whether anything changed.
     pub(super) fn advance(&mut self) -> bool {
-        let advanced = self.hand.advance(&self.id, &mut self.rng);
+        if self.hand.in_hand() && self.prepared_advance.is_none() && self.ensure_native_reservation().is_err() {
+            return self.refresh_resource_policy();
+        }
+        let advanced = self
+            .prepared_advance
+            .take()
+            .unwrap_or_else(|| self.hand.advance(&self.id, &mut self.rng));
         if advanced.dealt {
-            self.plan_off_turn();
+            for entry in &self.hand.log[advanced.chance_start..] {
+                if let LogEntry::Chance { action } = entry {
+                    tracing::info!(room = %self.id, action = %log_action(action), "deal");
+                }
+            }
         }
         let finished = advanced.finished.is_some();
         if let Some(Finished {
@@ -245,6 +406,8 @@ impl<G: ServerGame> Room<G> {
             outcome,
         }) = advanced.finished
         {
+            self.book_record(&payoffs);
+            self.lifecycle.ready.clear();
             self.session.book(payoffs, summary);
             self.record(Event::HandFinished {
                 hand: self.hand_stats(),
@@ -252,7 +415,8 @@ impl<G: ServerGame> Room<G> {
                 secs: self.hand_secs(),
             });
         }
-        advanced.dealt || finished
+        let policy_changed = self.refresh_resource_policy();
+        advanced.dealt || finished || policy_changed
     }
 
     /// How long the hand has been played, in seconds, if known.

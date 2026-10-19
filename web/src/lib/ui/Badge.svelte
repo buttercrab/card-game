@@ -47,7 +47,7 @@
 </script>
 
 <span
-  class={[kind, side, kind === 'tag' && tone, size === 'sm' && 'sm', ringed && 'ringed', negative && 'neg', className]}
+  class={[kind, side, kind === 'tag' && tone, team === 'friend' && 'partner', size === 'sm' && 'sm', ringed && 'ringed', negative && 'neg', className]}
   {title}
   aria-label={label}
 >

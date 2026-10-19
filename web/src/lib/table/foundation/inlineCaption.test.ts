@@ -1,0 +1,13 @@
+import {expect,it,vi} from 'vitest';
+import {measureInlineCaption,type InlineCaptionAtom} from './inlineCaption';
+const text=vi.fn((value:string)=>({width:value.length*8,height:22}));
+it.each([1,2])('typed choice suit retains the original18px icon at scale%s',textScale=>{const plan=measureInlineCaption([{kind:'suit',suit:'Heart',label:'하트'}],{mode:'choice',fontSize:16*textScale,textScale,text});expect(plan.width).toBe(18*textScale);expect(plan.height).toBe(18*textScale);expect(plan.parts[0].atom).toEqual({kind:'suit',suit:'Heart',label:'하트'});expect(Object.isFrozen(plan.parts[0].atom)).toBe(true);});
+it('mixed command atoms measure the original inline suit margins and exact inter-atom spaces',()=>{const plan=measureInlineCaption([{kind:'text',text:'공약'},{kind:'suit',suit:'Spade',label:'스페이드'},{kind:'number',value:255}],{mode:'inline',fontSize:16,textScale:1,text});expect(plan.width).toBe(16+8+16+8+24);expect(plan.height).toBe(22);expect(plan.parts[1].width).toBe(16*.92);expect(plan.parts[1].x).toBe(24+16*.04);expect(plan.parts[2].x).toBe(48);});
+it('caption atoms are copied and no text spelling is interpreted as suit artwork',()=>{const atom:InlineCaptionAtom={kind:'text',text:'♥'},plan=measureInlineCaption([atom],{mode:'choice',fontSize:16,textScale:1,text});expect(plan.parts[0].atom.kind).toBe('text');expect(plan.parts[0].atom).not.toBe(atom);expect(plan.width).toBe(8);});
+it('invalid dimensions/atoms/host metrics fail before a partial caption can paint',()=>{for(const size of [NaN,Infinity,-1])expect(()=>measureInlineCaption([{kind:'text',text:'Count'}],{mode:'inline',fontSize:16,textScale:1,text:()=>({width:size,height:22})})).toThrow();for(const atoms of [[],[{kind:'number',value:Infinity}],[{kind:'suit',suit:'Unknown',label:'Unknown'}]])expect(()=>measureInlineCaption(atoms as never,{mode:'inline',fontSize:16,textScale:1,text})).toThrow();});
+it('paint materializes exactly the typed text/suit parts without parsing or duplicate labels',async()=>{
+ const {paintInlineCaption}=await import('./inlineCaption'),plan=measureInlineCaption([{kind:'text',text:'공약'},{kind:'suit',suit:'Diamond',label:'다이아몬드'},{kind:'number',value:17}],{mode:'inline',fontSize:16,textScale:1,text});
+ type Paint={width:number;height:number;parts:readonly string[]};let xs:readonly number[]=[];
+ const result=paintInlineCaption<Paint>('caption',plan,{text:(_id,text,width,height)=>({width,height,parts:[`text:${text}`]}),suit:(_id,suit,_label,width,height)=>({width,height,parts:[`suit:${suit}`]}),group:(_id,width,height,parts)=>{xs=parts.map(part=>part.x);return {width,height,parts:parts.flatMap(part=>part.fragment.parts)};}});
+ expect(result.parts).toEqual(['text:공약','suit:Diamond','text:17']);expect(xs).toEqual(plan.parts.map(part=>part.x));
+});

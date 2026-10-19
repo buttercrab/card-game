@@ -20,6 +20,7 @@
     "typescript": "^6.0.3",
     "vite": "^8.3.2",
     "vitest": "5.0.3",
-    "wanted-sans": "^1.0.3"
+    "wanted-sans": "^1.0.3",
+    "yoga-layout": "3.2.1"
   }
 }

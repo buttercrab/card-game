@@ -2,7 +2,7 @@
   // A sheet of every card face, size and state in both themes, for design review.
   import { BACK_NAMES, type CardBack } from './achievements';
   import Card from './Card.svelte';
-  import BackArt from './CardBack.svelte';
+  import BackArt from '../../ui/cards/CardBack.svelte';
   import LeadTag from './LeadTag.svelte';
   import SuitText from '../../SuitText.svelte';
   import { sealOf, SUITS } from './cards';

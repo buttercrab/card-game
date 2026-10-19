@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.beforeEach(async ({page}) => { await page.addInitScript(() => localStorage.setItem('name', JSON.stringify('나'))); });
+
 // Every page and every /preview state (TablePreview.svelte), at the four
 // sizes and both themes of playwright.config.ts. Each must:
 // - not scroll sideways;
@@ -216,11 +218,11 @@ test('replay', async ({ page }, info) => {
   const known = KNOWN[`replay@${sizeOf(info.project.name)}`];
   test.fail(!!known, known);
   await page.goto('/preview?state=done');
-  await page.getByRole('button', { name: '다시 보기' }).click();
+  await page.getByRole('button', { name: '더보기' }).click();
   const dialog = page.locator('dialog[open]');
   await dialog.waitFor();
   const problems: string[] = [];
-  for (const tab of ['라운드별', '각자 패']) {
+  for (const tab of ['라운드별', '전체 라운드']) {
     await dialog.getByRole('radio', { name: tab }).click();
     await page.waitForTimeout(100);
     const over = await dialog.evaluate((d) => {
@@ -268,10 +270,8 @@ test('back stays at the table; 나가기 leaves', async ({ page }, info) => {
   await page.getByRole('button', { name: '테이블 만들기' }).click();
   await page.waitForURL(/\/r\/[a-z0-9]+$/);
   const table = page.url();
-  await page.locator('.seat-act', { hasText: '앉기' }).first().click();
-  await page.locator('.pop-card input').fill('테스트');
-  await page.locator('.pop-card button[type=submit]').click();
-  await expect(page.locator('.seat-act', { hasText: '+ 봇' }).first()).toBeVisible();
+  await page.getByRole('button', { name: '빈자리에 앉기', exact: true }).click();
+  await expect(page.locator('.seat-act', { hasText: '봇 추가' }).first()).toBeVisible();
 
   await page.goBack();
   await expect(page.locator('dialog[open]')).toBeVisible();
@@ -345,31 +345,29 @@ test('popover stays above the keyboard', async ({ page }, info) => {
   });
   await page.goto('/preview?state=seatsit');
   await page.locator('html[data-ready]').waitFor({ state: 'attached' });
-  await page.locator('.pop-card input').waitFor();
+  await page.getByRole('textbox', { name: '이름', exact: true }).waitFor();
   const { height } = page.viewportSize()!;
   const keyboard = Math.round(height * 0.45);
   await page.evaluate((h) => (window as unknown as { keyboard: (h: number) => void }).keyboard(h), keyboard);
   await page.waitForTimeout(100);
   expect(await popoverOverflow(page, { top: 0, height: height - keyboard })).toEqual([]);
-  await page.locator('.pop-card input').fill('테스트');
+  await page.getByRole('textbox', { name: '이름', exact: true }).fill('테스트');
   const submit = await page.locator('.pop-card button[type=submit]').boundingBox();
   expect(submit && submit.y + submit.height).toBeLessThanOrEqual(height - keyboard);
 });
 
-// Two tabs at one table: 섞기 marks the next hand for everyone, 시작
-// shuffles the seats, and every name (bots' too) moves with its seat.
-test('섞기 waits for the next hand and names follow their seats', async ({ browser, page }, info) => {
+// Two tabs at one table: 섞기 enables shuffling every hand for everyone,
+// 시작 shuffles the seats, and every name (bots' too) moves with its seat.
+test('섞기 stays enabled and names follow their seats', async ({ browser, page }, info) => {
   test.skip(sizeOf(info.project.name) !== '390x844', 'one size is enough');
   await page.addInitScript(() => localStorage.setItem('mighty.settings', JSON.stringify({ sound: false, music: false, speed: 'off' })));
   await page.goto('/');
   await page.getByRole('button', { name: '테이블 만들기' }).click();
   await page.waitForURL(/\/r\/[a-z0-9]+$/);
-  await page.locator('.seat-act', { hasText: '앉기' }).first().click();
-  await page.locator('.pop-card input').fill('나');
-  await page.locator('.pop-card button[type=submit]').click();
+  await page.getByRole('button', { name: '빈자리에 앉기', exact: true }).click();
   for (let i = 0; i < 4; i++) {
-    await page.locator('.seat-act', { hasText: '+ 봇' }).first().click();
-    await expect(page.locator('.seat-act', { hasText: '+ 봇' })).toHaveCount(3 - i);
+    await page.locator('.seat-act', { hasText: '봇 추가' }).first().click();
+    await expect(page.locator('.seat-act', { hasText: '봇 추가' })).toHaveCount(3 - i);
   }
   // Everyone at the table, by name, from this tab's seat round.
   const names = () => page.locator('.ring .spot .seat .name').allTextContents();
@@ -378,24 +376,25 @@ test('섞기 waits for the next hand and names follow their seats', async ({ bro
 
   const watcher = await browser.newPage();
   await watcher.goto(page.url());
+
   await page.getByRole('button', { name: /^섞기/ }).click();
-  await expect(page.getByRole('button', { name: /섞기 취소/ })).toHaveAttribute('aria-pressed', 'true');
-  await expect(watcher.locator('.shuffle-note', { hasText: '다음 판 시작할 때 자리를 섞어요' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /섞기 끄기/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(watcher.locator('.shuffle-note', { hasText: '매 판 시작할 때 자리를 섞어요' })).toBeVisible();
   expect((await names()).filter((name) => name !== '나')).toEqual(before);
   // Pressed again it is off, and on once more.
-  await page.getByRole('button', { name: /섞기 취소/ }).click();
+  await page.getByRole('button', { name: /섞기 끄기/ }).click();
   await expect(watcher.locator('.shuffle-note')).toHaveCount(0);
   await page.getByRole('button', { name: /^섞기/ }).click();
-  await expect(page.locator('.shuffle-note', { hasText: '다음 판 시작할 때 자리를 섞어요' })).toBeVisible();
+  await expect(page.locator('.shuffle-note', { hasText: '매 판 시작할 때 자리를 섞어요' })).toBeVisible();
 
-  const watcherNames = await watcher.locator('.ring .spot .seat .name').allTextContents();
+  const watcherNames = await watcher.locator('.ring .spot .seat .name, .me-row:visible .my-name, .me-seat:visible .name').allTextContents();
   await page.getByRole('button', { name: '시작', exact: true }).click();
   await expect(page.locator('.shuffle-note')).toHaveCount(0);
   await expect(page.locator('.hand .card').first()).toBeVisible();
   // The same four, bots keeping their names, and the watcher's table agrees.
   const after = await names();
   expect([...after].sort()).toEqual([...before].sort());
-  const watcherAfter = await watcher.locator('.ring .spot .seat .name').allTextContents();
+  const watcherAfter = await watcher.locator('.ring .spot .seat .name, .me-row:visible .my-name, .me-seat:visible .name').allTextContents();
   expect([...watcherAfter].sort()).toEqual([...watcherNames].sort());
   expect(watcherAfter).toContain('나');
   await watcher.close();

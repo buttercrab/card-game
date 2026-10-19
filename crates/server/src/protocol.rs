@@ -8,6 +8,7 @@
 //! only where the TypeScript is made concrete (`#[ts(concrete)]`,
 //! `#[ts(as)]`), which is what the client is built against.
 
+pub use crate::command_protocol::{CommandDomain, CommandReceipt, CommandScope, CommandWindow};
 use crate::room::TableSettings;
 use axum::Json;
 use axum::http::StatusCode;
@@ -33,7 +34,7 @@ pub fn version() -> &'static str {
 
 /// Why the server refused something, as a code: the client words each in
 /// Korean, and the compiler makes it word every one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
     /// Only a seated player may do that, and this connection is not seated.
@@ -63,6 +64,9 @@ pub enum ErrorCode {
     HandInProgress,
     /// Starting with an empty seat.
     EmptySeats,
+    PlayersNotReady,
+    SessionEnded,
+    SessionNotEnded,
     NoHand,
     NotYourTurn,
     /// The game refused the action.
@@ -77,6 +81,10 @@ pub enum ErrorCode {
     UnknownReaction,
     /// Too many hints are being worked out across the server.
     HintsBusy,
+    /// Storage is unavailable; the table holds play until its checkpoint succeeds.
+    StorageUnavailable,
+    /// Native retained-data or completion runway is exhausted; no action was applied.
+    ResourceCapacity,
     /// This connection asks for hints too fast.
     HintsTooOften,
     /// Not a message the server understands; `detail` says what was wrong.
@@ -219,6 +227,63 @@ pub enum SeatInfo {
     },
 }
 
+/// A named observer. IDs identify people, never a seat credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ObserverInfo {
+    pub id: String,
+    pub name: String,
+    pub requested: bool,
+}
+
+/// Ordered next-hand admission. Public identities are never credentials.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ParticipationRequest {
+    pub id: String,
+    pub name: String,
+    pub order: u32,
+    pub seat: Option<usize>,
+    pub target_id: Option<String>,
+    pub offered_by: Option<String>,
+}
+
+/// Immutable participant identity and cumulative score at a session boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ParticipantResult {
+    pub id: String,
+    pub name: String,
+    pub bot: bool,
+    pub score: i64,
+}
+
+/// A completed hand's public view and names, frozen before seats change.
+/// Game adapters decode `view` and `rules` using their own generated types.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct RecordedHand {
+    /// The score period in which this record was booked. Missing legacy origins
+    /// remain unknown; a preserved current_hand must never inherit a new period.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub session_id: Option<u32>,
+    pub number: u32,
+    pub names: Vec<String>,
+    pub participant_ids: Vec<String>,
+    pub payoffs: Vec<i64>,
+    #[ts(type = "unknown")]
+    pub rules: Value,
+    #[ts(type = "unknown")]
+    pub view: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct SessionArchive {
+    pub id: u32,
+    pub standings: Vec<ParticipantResult>,
+    pub records: Vec<RecordedHand>,
+    /// Preserves summaries from older snapshots which have no full replay.
+    #[ts(type = "unknown")]
+    pub summary: Value,
+}
+
 /// The running turn timer, as of the message that carries it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 pub struct ClockInfo {
@@ -229,12 +294,60 @@ pub struct ClockInfo {
     pub total_ms: u64,
 }
 
+/// Resource eligibility, separate from room/game legality and authorization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum NativeCapacityReason {
+    Capacity {
+        resource: crate::resource_budget::Resource,
+        limit: usize,
+    },
+    UnsupportedProfile,
+    UnreservableLegacy,
+    Serialization,
+    Invariant,
+}
+impl NativeCapacityReason {
+    pub fn from_budget(error: &crate::resource_budget::BudgetError, legacy: bool) -> Self {
+        use crate::resource_budget::BudgetError;
+        match error {
+            BudgetError::Capacity { resource, limit } => Self::Capacity {
+                resource: *resource,
+                limit: *limit,
+            },
+            BudgetError::Serialization => Self::Serialization,
+            BudgetError::InvalidProfile => Self::UnsupportedProfile,
+            _ if legacy => Self::UnreservableLegacy,
+            _ => Self::Invariant,
+        }
+    }
+}
+
+/// Bounded HTTP 507 response for a preserved room that cannot safely reopen.
+/// It is not a normal room snapshot and carries no invented empty history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "code", rename_all = "snake_case")]
+pub enum NativeRoomUnavailable {
+    ResourceCapacity { reason: NativeCapacityReason },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct NativeCapacityStatus {
+    pub can_start: bool,
+    pub can_archive: bool,
+    pub can_play: bool,
+    pub reason: Option<NativeCapacityReason>,
+}
+
 /// The table: who sits where, the turn timer and the table's settings.
 /// Sent to everyone after every change, and after a [`SessionMsg`] that
 /// changed with it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(concrete(S = MightySettings, R = Rules))]
 pub struct RoomMsg<S, R> {
+    /// Shared committed snapshot marker for room, state and room command window.
+    #[ts(as = "Option<u64>", optional)]
+    pub room_version: u64,
     /// The server's [`version`] of the protocol.
     pub protocol: String,
     pub id: String,
@@ -253,8 +366,15 @@ pub struct RoomMsg<S, R> {
     pub clock: Option<ClockInfo>,
     /// Connections without a seat: people watching.
     pub watching: usize,
+    pub observers: Vec<ObserverInfo>,
+    pub ready: Vec<bool>,
+    pub participant_ids: Vec<String>,
+    pub participation: Vec<ParticipationRequest>,
     /// Whether a hand, running or just finished, is on the table.
     pub showing: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub capacity: Option<NativeCapacityStatus>,
 }
 
 /// The session so far: the scores and every finished hand, by seat. Sent
@@ -264,21 +384,47 @@ pub struct RoomMsg<S, R> {
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[ts(concrete(H = HandSummary))]
 pub struct SessionMsg<H> {
+    /// Publication marker; an unchanged session may accompany newer room versions.
+    #[ts(as = "Option<u64>", optional)]
+    pub room_version: u64,
     pub scores: Vec<i64>,
     pub hands_played: u32,
     /// Each finished hand's payoffs, in order.
     pub history: Vec<Vec<i64>>,
     /// Each finished hand in brief, in order.
     pub hands: Vec<H>,
+    pub session_id: u32,
+    pub ended: bool,
+    pub records: Vec<RecordedHand>,
+    pub current_hand: Option<RecordedHand>,
+    pub standings: Vec<ParticipantResult>,
+    pub archives: Vec<SessionArchive>,
+}
+
+/// Infrastructure admission, separate from the game's genuine legal action set.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct NativePolicyActions<A> {
+    pub legal: Vec<A>,
+    pub out_of_turn: Vec<A>,
 }
 
 /// The hand as one seat (or a spectator) may see it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(concrete(V = View, A = Action, N = MightyNotes))]
 pub struct StateMsg<V, A, N> {
+    #[ts(as = "Option<u64>", optional)]
+    pub room_version: u64,
+    /// Private scoped-command capability; absent for observers and old peers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub command: Option<CommandWindow>,
     pub view: V,
     /// What the seat may do, on its turn.
     pub legal: Vec<A>,
+    /// Present in native bounded rooms; missing only for older peers/fixtures.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub policy_actions: Option<NativePolicyActions<A>>,
     pub turn: Turn,
     /// What the seat may do although it is not its turn: a 딜미스 from the
     /// moment the cards land, for a hand that qualifies.
@@ -313,10 +459,25 @@ pub enum ServerMsg<S, H, R, V, A, N> {
     Room(RoomMsg<S, R>),
     Session(SessionMsg<H>),
     State(StateMsg<V, A, N>),
+    OperationReceipt(CommandReceipt),
+    RoomCommandWindow {
+        command: CommandWindow,
+    },
     /// This connection sits at `seat`; `token` reclaims it after a reconnect.
     Welcome {
         seat: usize,
         token: String,
+    },
+    /// Private observer credential, independent of a seat's reclaim token.
+    VisitorWelcome {
+        seat: Option<usize>,
+        id: String,
+        token: String,
+        name: String,
+    },
+    ObserverReaction {
+        id: String,
+        text: String,
     },
     /// This connection's seat was given away: it watches now.
     Unseated,
@@ -333,10 +494,101 @@ pub enum ServerMsg<S, H, R, V, A, N> {
     Error(ServerError),
 }
 
+/// Closed semantic room operations; credentials and ephemeral requests stay native.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RoomAction {
+    /// Change only the already-authenticated actor's display name.
+    Rename {
+        name: String,
+    },
+    Join {
+        name: String,
+        #[serde(default)]
+        seat: Option<usize>,
+        #[serde(default)]
+        device: Option<String>,
+    },
+    Leave,
+    RequestSeat {
+        requested: bool,
+        #[serde(default)]
+        seat: Option<usize>,
+    },
+    OfferSeat {
+        requester_id: Option<String>,
+    },
+    AcceptSeat {
+        seat: usize,
+        target_id: String,
+    },
+    ResetScores,
+    Ready {
+        ready: bool,
+    },
+    EndSession,
+    Rematch,
+    SetTable {
+        #[serde(default)]
+        turn_secs: Option<u32>,
+        #[serde(default)]
+        shuffle: Option<bool>,
+        #[serde(default)]
+        shuffle_next: Option<bool>,
+    },
+    SwapSeats {
+        a: usize,
+        b: usize,
+    },
+    ClearSeat {
+        seat: usize,
+    },
+    AddBot {
+        seat: usize,
+        #[serde(default)]
+        level: Level,
+    },
+    RemoveBot {
+        seat: usize,
+    },
+    SetSettings {
+        #[ts(as = "MightySettings")]
+        settings: Value,
+    },
+    Start,
+}
+
 /// Everything a client may send on a table's connection.
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMsg {
+    /// Register/reconnect a named observer; a seat still requires Join.
+    Observe {
+        name: String,
+        #[serde(default)]
+        token: Option<String>,
+    },
+    RequestSeat {
+        requested: bool,
+        #[serde(default)]
+        #[ts(optional = nullable)]
+        seat: Option<usize>,
+    },
+    /// A seated human offers their own seat; null withdraws only their offer.
+    OfferSeat {
+        requester_id: Option<String>,
+    },
+    /// Confirm a frozen reservation between hands; mismatched target refuses.
+    AcceptSeat {
+        seat: usize,
+        target_id: String,
+    },
+    ResetScores,
+    Ready {
+        ready: bool,
+    },
+    EndSession,
+    Rematch,
     /// Take a seat, or reclaim one with the token from an earlier `welcome`.
     Join {
         name: String,
@@ -407,6 +659,39 @@ pub enum ClientMsg {
     },
     /// Deal the next hand once every seat is filled.
     Start,
+    /// Version-fenced action with an actor-scoped operation identity.
+    Submit {
+        operation_id: String,
+        sequence: u64,
+        expected: CommandScope,
+        #[ts(as = "Action")]
+        action: Value,
+    },
+    /// One atomic, same-seat sequence. No intermediate state is published.
+    SubmitBatch {
+        operation_id: String,
+        sequence: u64,
+        expected: CommandScope,
+        #[ts(as = "Vec<Action>")]
+        actions: Vec<Value>,
+    },
+    SubmitRoom {
+        operation_id: String,
+        sequence: u64,
+        expected: CommandScope,
+        action: RoomAction,
+    },
+    /// Resolve an uncertain operation by fencing its next sequence without executing an action.
+    CancelOperation {
+        operation_id: String,
+        sequence: u64,
+        expected: CommandScope,
+    },
+    /// Read only: discloses receipts for the authenticated actor alone.
+    QueryOperation {
+        operation_id: String,
+        sequence: u64,
+    },
     Act {
         #[ts(as = "Action")]
         action: Value,

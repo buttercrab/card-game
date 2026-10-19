@@ -4,15 +4,20 @@
 pub mod bots;
 pub mod catalog;
 pub mod codegen;
+pub mod command_protocol;
 pub mod config;
 pub mod dashboard;
 pub mod errors;
 pub mod game;
+pub mod ingress;
 pub mod limit;
+pub mod outbound;
 pub mod protocol;
+pub mod resource_budget;
 pub mod room;
 pub mod site;
 pub mod stats;
+pub mod work_budget;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
@@ -22,7 +27,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 pub use config::{Config, IDLE_MINUTES};
 use engine::TableBots;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use game::{GameCatalog, ServerGame};
 use limit::{ClientIp, Limits, too_many};
 use protocol::ClientMsg;
@@ -36,26 +41,49 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::mpsc::{self, UnboundedSender};
 
 /// An open table: where its commands go, and the game it plays.
 #[derive(Clone)]
 struct OpenRoom {
-    tx: UnboundedSender<Command>,
+    tx: ingress::Sender,
     game: &'static str,
+    entry_refusal: Arc<Mutex<Option<protocol::NativeCapacityReason>>>,
 }
 
 /// The open tables, by id.
 #[derive(Default)]
 struct Rooms {
     open: Mutex<HashMap<String, OpenRoom>>,
+    /// Preserved files that cannot safely be opened under current limits.
+    unavailable: Mutex<HashMap<String, PreservedRoom>>,
+    restoring: Mutex<()>,
     /// The next table connection's id.
     next_conn: AtomicU64,
+}
+
+struct PreservedRoom {
+    reason: protocol::NativeCapacityReason,
+    // Retained for operator recovery, never included in HTTP responses.
+    _path: std::path::PathBuf,
 }
 
 impl Rooms {
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, OpenRoom>> {
         self.open.lock().expect("room registry poisoned")
+    }
+
+    fn connection_id(&self) -> Option<u64> {
+        let mut current = self.next_conn.load(Ordering::Relaxed);
+        loop {
+            let next = current.checked_add(1)?;
+            match self
+                .next_conn
+                .compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => return Some(current),
+                Err(actual) => current = actual,
+            }
+        }
     }
 }
 
@@ -70,12 +98,25 @@ pub struct AppState {
     env: Arc<RoomEnv>,
     limits: Arc<Limits>,
     stats: Arc<Stats>,
+    outbound: outbound::Pool,
+    ingress: ingress::Pool,
 }
 
 impl AppState {
     /// A server as `config` sets it up. With a data directory, the stats
     /// log is kept there (see [`AppState::restore_rooms`] for the tables).
     pub fn new(config: Config) -> AppState {
+        assert!(
+            config.max_rooms as u128 <= crate::command_protocol::MAX_COMMAND_SEQUENCE as u128,
+            "room limit exceeds exact public integer range"
+        );
+        let resources = config
+            .resource_limits()
+            .validate()
+            .expect("valid native resource limits");
+        let outbound = outbound::Pool::new(config.outbound_policy()).expect("valid outbound limits");
+        let ingress = ingress::Pool::new(config.ingress_policy()).expect("valid ingress limits");
+        let cognition = crate::work_budget::Budget::new(config.cognition_jobs);
         let stats = match &config.data {
             Some(dir) => Stats::open(dir, config.stats_salt.clone()).unwrap_or_else(|e| {
                 tracing::error!(dir = %dir.display(), "could not open the stats log, keeping it in memory: {e}");
@@ -99,6 +140,8 @@ impl AppState {
             stats: stats.clone(),
             data: config.data.clone(),
             hints: limit::HintPool::default(),
+            resources,
+            cognition,
         };
         AppState {
             config: Arc::new(config),
@@ -107,6 +150,8 @@ impl AppState {
             env: Arc::new(env),
             limits: Arc::default(),
             stats,
+            outbound,
+            ingress,
         }
     }
 
@@ -144,6 +189,7 @@ impl AppState {
     /// is set aside as `.bad` rather than deleted.
     pub fn restore_rooms(&self) -> std::io::Result<usize> {
         let Some(dir) = &self.config.data else { return Ok(0) };
+        let _restore = self.rooms.restoring.lock().expect("restore registry poisoned");
         std::fs::create_dir_all(dir)?;
         let mut restored = 0;
         for entry in std::fs::read_dir(dir)? {
@@ -151,18 +197,77 @@ impl AppState {
             if path.extension().is_none_or(|e| e != "json") {
                 continue;
             }
-            let loaded = std::fs::read_to_string(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|text| serde_json::from_str::<Value>(&text).map_err(|e| e.to_string()))
-                .and_then(|snapshot| {
-                    // Every saved table names its game.
-                    let id = snapshot.get("game").and_then(Value::as_str).unwrap_or_default();
-                    let game = self.games.get(id).ok_or_else(|| format!("no game {id:?} here"))?;
-                    game.restore(self, snapshot)
-                });
+            let Some(id) = path.file_stem().and_then(|id| id.to_str()).filter(|id| {
+                !id.is_empty()
+                    && id.len() <= 128
+                    && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            }) else {
+                continue;
+            };
+            // A preserved unavailable entry reserves its identity just like an
+            // open room. Repeated restore calls never spawn a duplicate actor.
+            if self.rooms.lock().contains_key(id)
+                || self
+                    .rooms
+                    .unavailable
+                    .lock()
+                    .expect("room registry poisoned")
+                    .contains_key(id)
+            {
+                continue;
+            }
+            // Excess files remain a lazy preserved registry. Do not parse or
+            // allocate one actor/metadata entry per arbitrary directory file.
+            if self.open_rooms() >= self.config.max_rooms {
+                continue;
+            }
+            let loaded = (|| {
+                use game::RestoreError;
+                use std::io::Read;
+                let cap = self.config.resource_snapshot_bytes;
+                let capacity = || {
+                    RestoreError::Capacity(protocol::NativeCapacityReason::Capacity {
+                        resource: resource_budget::Resource::Snapshot,
+                        limit: cap,
+                    })
+                };
+                let file = std::fs::File::open(&path).map_err(|e| RestoreError::Invalid(e.to_string()))?;
+                if file.metadata().map_err(|e| RestoreError::Invalid(e.to_string()))?.len() > cap as u64 {
+                    return Err(capacity());
+                }
+                // Bound the read too: metadata is not a defense against a file
+                // growing between inspection and read.
+                let mut text = Vec::new();
+                file.take((cap as u64).saturating_add(1))
+                    .read_to_end(&mut text)
+                    .map_err(|e| RestoreError::Invalid(e.to_string()))?;
+                if text.len() > cap {
+                    return Err(capacity());
+                }
+                let snapshot: Value =
+                    serde_json::from_slice(&text).map_err(|e| RestoreError::Invalid(e.to_string()))?;
+                if snapshot.get("id").and_then(Value::as_str) != Some(id) {
+                    return Err(RestoreError::Invalid(
+                        "snapshot identity does not match its file".into(),
+                    ));
+                }
+                let game_id = snapshot.get("game").and_then(Value::as_str).unwrap_or_default();
+                let game = self.games.get(game_id).ok_or(RestoreError::Capacity(
+                    protocol::NativeCapacityReason::UnsupportedProfile,
+                ))?;
+                game.restore(self, snapshot)
+            })();
             match loaded {
                 Ok(_) => restored += 1,
-                Err(e) => {
+                Err(game::RestoreError::Capacity(reason)) => {
+                    tracing::warn!(file = %path.display(), ?reason, "preserving resource-unavailable room");
+                    self.rooms
+                        .unavailable
+                        .lock()
+                        .expect("room registry poisoned")
+                        .insert(id.to_owned(), PreservedRoom { reason, _path: path });
+                }
+                Err(game::RestoreError::Invalid(e)) => {
                     tracing::warn!(file = %path.display(), "could not restore room: {e}");
                     let _ = std::fs::rename(&path, path.with_extension("bad"));
                 }
@@ -186,7 +291,10 @@ impl AppState {
         }
         let all = futures_util::future::join_all(pending);
         let saved = match tokio::time::timeout(wait, all).await {
-            Ok(results) => results.into_iter().filter(Result::is_ok).count(),
+            Ok(results) => results
+                .into_iter()
+                .filter(|result| matches!(result, Ok(Ok(()))))
+                .count(),
             Err(_) => 0,
         };
         let stats = self.stats.clone();
@@ -196,7 +304,7 @@ impl AppState {
 
     /// How many rooms are open now.
     pub fn open_rooms(&self) -> usize {
-        self.rooms.lock().len()
+        self.rooms.lock().len() + self.rooms.unavailable.lock().expect("room registry poisoned").len()
     }
 
     /// The server's live state, for `/stats`.
@@ -211,29 +319,57 @@ impl AppState {
     /// Opens a room of game `G` with `bots`, and returns its id, which is
     /// also its share link, or `None` when the server already has as many
     /// rooms as it allows.
-    pub fn create_room<G: ServerGame>(&self, mut settings: G::Settings, bots: Arc<dyn TableBots<G>>) -> Option<String> {
+    pub fn create_room<G: ServerGame>(&self, settings: G::Settings, bots: Arc<dyn TableBots<G>>) -> Option<String> {
+        self.try_create_room::<G>(settings, bots).ok()
+    }
+
+    pub(crate) fn try_create_room<G: ServerGame>(
+        &self,
+        mut settings: G::Settings,
+        bots: Arc<dyn TableBots<G>>,
+    ) -> Result<String, game::CreateError> {
         const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
         G::freeze(&mut settings);
+        let capacity = |error| game::CreateError::Capacity(protocol::NativeCapacityReason::from_budget(&error, false));
+        resource_budget::ResourceProfile::table::<G>(&settings).map_err(capacity)?;
+        G::validate(&G::table_rules(&settings))
+            .map_err(|error| game::CreateError::Rejected(StatusCode::BAD_REQUEST, ServerError::rules(&error)))?;
+        // Serialize capacity admission with restoration's check/load/spawn.
+        let _restore = self.rooms.restoring.lock().expect("restore registry poisoned");
         let mut rooms = self.rooms.lock();
-        if rooms.len() >= self.config.max_rooms {
-            return None;
+        let unavailable = self.rooms.unavailable.lock().expect("room registry poisoned");
+        if rooms.len() + unavailable.len() >= self.config.max_rooms {
+            return Err(game::CreateError::Rejected(
+                StatusCode::SERVICE_UNAVAILABLE,
+                ServerError::new(ErrorCode::TooManyTables),
+            ));
         }
         let mut rng = rand::rng();
         let id = loop {
             let id: String = (0..6)
                 .map(|_| char::from(ALPHABET[rng.random_range(0..ALPHABET.len())]))
                 .collect();
-            if !rooms.contains_key(&id) {
+            if !rooms.contains_key(&id)
+                && !unavailable.contains_key(&id)
+                && self
+                    .config
+                    .data
+                    .as_ref()
+                    .is_none_or(|dir| !dir.join(format!("{id}.json")).exists())
+            {
                 break id;
             }
         };
+        let preset = G::preset_id(&settings).to_string();
+        let mut room = Room::<G>::new(id.clone(), settings, self.env.clone(), bots);
+        room.admit_restore(self.config.outbound_message_bytes)
+            .map_err(capacity)?;
         self.stats.record(Event::TableCreated {
             table: id.clone(),
-            preset: G::preset_id(&settings).to_string(),
+            preset,
         });
-        let room = Room::<G>::new(id.clone(), settings, self.env.clone(), bots);
         self.spawn_room(&mut rooms, id.clone(), room);
-        Some(id)
+        Ok(id)
     }
 
     /// Runs a room restored from its file, returning its id.
@@ -245,23 +381,81 @@ impl AppState {
     }
 
     fn spawn_room<G: ServerGame>(&self, rooms: &mut HashMap<String, OpenRoom>, id: String, room: Room<G>) {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = self.ingress.channel();
         let (registry, key) = (self.rooms.clone(), id.clone());
+        let entry_refusal = room.entry_status();
+        let retired_status = entry_refusal.clone();
+        let preserved_path = self.config.data.as_ref().map(|dir| dir.join(format!("{id}.json")));
         tokio::spawn(async move {
             room.run(rx).await;
+            let reason = retired_status.lock().expect("entry status lock").clone();
+            // Keep unavailable metadata before retiring the open identity; a
+            // concurrent creation can never reuse the preserved room ID.
+            if let (Some(reason), Some(path)) = (reason, preserved_path) {
+                registry
+                    .unavailable
+                    .lock()
+                    .expect("room registry poisoned")
+                    .insert(key.clone(), PreservedRoom { reason, _path: path });
+            }
             registry.lock().remove(&key);
             tracing::info!(room = key, "room closed");
         });
-        rooms.insert(id, OpenRoom { tx, game: G::ID });
+        rooms.insert(
+            id,
+            OpenRoom {
+                tx,
+                game: G::ID,
+                entry_refusal,
+            },
+        );
     }
 
     /// The open room `id`; one closing (it stopped taking commands) is gone.
-    fn room(&self, id: &str) -> Option<UnboundedSender<Command>> {
+    fn room(&self, id: &str) -> Option<ingress::Sender> {
         self.open_room(id).map(|r| r.tx)
     }
 
     fn open_room(&self, id: &str) -> Option<OpenRoom> {
         self.rooms.lock().get(id).filter(|r| !r.tx.is_closed()).cloned()
+    }
+
+    fn unavailable_reason(&self, id: &str) -> Option<protocol::NativeCapacityReason> {
+        let status = self.rooms.lock().get(id).map(|room| room.entry_refusal.clone());
+        if let Some(reason) = status.and_then(|status| status.lock().expect("entry status lock").clone()) {
+            return Some(reason);
+        }
+        if let Some(room) = self.rooms.unavailable.lock().expect("room registry poisoned").get(id) {
+            return Some(room.reason.clone());
+        }
+        // A capacity-deferred file keeps its identity without an unbounded
+        // in-memory registry. Only bounded safe path components are admitted.
+        if !id.is_empty()
+            && id.len() <= 128
+            && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            && !self.rooms.lock().contains_key(id)
+            && self
+                .config
+                .data
+                .as_ref()
+                .is_some_and(|dir| dir.join(format!("{id}.json")).is_file())
+        {
+            return Some(protocol::NativeCapacityReason::Capacity {
+                resource: resource_budget::Resource::Rooms,
+                limit: self.config.max_rooms,
+            });
+        }
+        None
+    }
+
+    fn unavailable_response(&self, id: &str) -> Option<Response> {
+        self.unavailable_reason(id).map(|reason| {
+            (
+                StatusCode::INSUFFICIENT_STORAGE,
+                Json(protocol::NativeRoomUnavailable::ResourceCapacity { reason }),
+            )
+                .into_response()
+        })
     }
 
     /// The game `id`, as a route names it.
@@ -463,7 +657,12 @@ fn respond_create(app: &AppState, ip: std::net::IpAddr, game: &dyn game::GameEnt
     }
     match game.create(app, body) {
         Ok(id) => Json(CreatedRoom { id }).into_response(),
-        Err((status, e)) => e.respond(status),
+        Err(game::CreateError::Rejected(status, e)) => e.respond(status),
+        Err(game::CreateError::Capacity(reason)) => (
+            StatusCode::INSUFFICIENT_STORAGE,
+            Json(protocol::NativeRoomUnavailable::ResourceCapacity { reason }),
+        )
+            .into_response(),
     }
 }
 
@@ -549,6 +748,9 @@ pub(crate) fn prune_reports(dir: &std::path::Path, now: u64) {
 
 /// A table's id and the game it plays.
 async fn room_info(State(app): State<AppState>, Path(id): Path<String>) -> Response {
+    if let Some(response) = app.unavailable_response(&id) {
+        return response;
+    }
     match app.open_room(&id) {
         Some(room) => Json(json!({ "id": id, "game": room.game })).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
@@ -564,13 +766,21 @@ async fn connect(
     if !app.limits.sockets.allow(ip) {
         return too_many();
     }
+    if let Some(response) = app.unavailable_response(&id) {
+        return response;
+    }
     let Some(room) = app.room(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let conn = app.rooms.next_conn.fetch_add(1, Ordering::Relaxed);
+    let Some(conn) = app.rooms.connection_id() else {
+        return too_many();
+    };
+    let Some(guard) = room.connection(conn) else {
+        return too_many();
+    };
     ws.max_message_size(limit::WS_MAX_MESSAGE)
         .max_frame_size(limit::WS_MAX_MESSAGE)
-        .on_upgrade(move |socket| serve_connection(socket, room, conn))
+        .on_upgrade(move |socket| serve_connection(socket, room, conn, app.outbound, guard))
 }
 
 /// A table connection's message limits; see [`limit::ws_messages`]. Every
@@ -642,33 +852,34 @@ impl ConnLimits {
     }
 }
 
-async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, conn: ConnId) {
-    let (mut sink, mut stream) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+async fn serve_connection(
+    socket: WebSocket,
+    room: ingress::Sender,
+    conn: ConnId,
+    pool: outbound::Pool,
+    mut guard: ingress::ConnectionGuard,
+) {
+    let (sink, mut stream) = socket.split();
+    let (tx, rx) = pool.channel();
     // Weak, so the connection ends once the room lets go of it (the room
     // closed, or stopped for a restart).
     let errors = tx.downgrade();
-    if room.send(Command::Connect { conn, tx }).is_err() {
-        // The table closed between finding it and getting here.
-        let gone = ServerError::new(ErrorCode::TableGone).message();
-        let _ = sink.send(Message::Text(gone.into())).await;
-        let _ = sink.close().await;
+    if let Err(error) = guard.connect(tx).await {
+        // Even this final error uses the same byte accounting and abortable writer.
+        if let Command::Connect { tx, .. } = *error.0 {
+            let _ = tx.send(ServerError::new(ErrorCode::TableGone).message());
+        }
+        outbound::write(sink, rx).await;
         return;
     }
-    let mut writer = tokio::spawn(async move {
-        while let Some(text) = rx.recv().await {
-            if sink.send(Message::Text(text.into())).await.is_err() {
-                return;
-            }
-        }
-        let _ = sink.close().await;
-    });
+    let mut writer = tokio::spawn(outbound::write(sink, rx));
     let error = |error: ServerError| {
         if let Some(errors) = errors.upgrade() {
             let _ = errors.send(error.message());
         }
     };
     let mut limits = ConnLimits::new();
+    let mut pressured = false;
     loop {
         tokio::select! {
             incoming = stream.next() => match incoming {
@@ -683,10 +894,21 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
                         }
                     }
                     let Message::Text(text) = message else { continue };
+                    // Charge the native source before constructing parsed values.
+                    let Some(source) = room.reserve_source(text.len()) else {
+                        if let Some(sender) = errors.upgrade() {sender.abort(outbound::AbortCause::Backpressure);}
+                        pressured = true;
+                        break;
+                    };
                     match serde_json::from_str::<ClientMsg>(&text) {
                         Ok(msg) => match limits.verdict(&msg) {
                             Verdict::Send => {
-                                let _ = room.send(Command::Message { conn, msg });
+                                tokio::select! {
+                                    result = room.send_native(Command::Message {conn,msg},source) => {
+                                        if result.is_err() {break;}
+                                    }
+                                    _ = &mut writer => break,
+                                }
                             }
                             Verdict::Drop => {}
                             Verdict::Refuse(e) => error(e),
@@ -700,13 +922,223 @@ async fn serve_connection(socket: WebSocket, room: UnboundedSender<Command>, con
             _ = &mut writer => break,
         }
     }
-    let _ = room.send(Command::Disconnect { conn });
+    // Reserved synchronous cleanup also runs on task cancellation or panic.
+    drop(guard);
+    if pressured {
+        let _ = tokio::time::timeout(Duration::from_millis(200), &mut writer).await;
+    }
     writer.abort();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn committed_entry_revision_exhaustion_is_507_and_idle_preserves_the_checkpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("numeric.json");
+        let mut snapshot = saved_lobby("numeric");
+        snapshot["commands"]["room_version"] = json!(command_protocol::MAX_COMMAND_SEQUENCE - 4);
+        std::fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+        let app = AppState::new(Config {
+            data: Some(dir.path().into()),
+            idle_minutes: 0.1 / 60.0,
+            ..Default::default()
+        });
+        assert_eq!(app.restore_rooms().unwrap(), 1);
+        let room = app.room("numeric").unwrap();
+        let (tx, mut rx) = app.outbound.channel();
+        room.send(Command::Connect { conn: 7, tx }).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let message: Value = serde_json::from_str(&rx.recv().await.unwrap()).unwrap();
+                if message["type"] == "room" {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        let response = room_info(State(app.clone()), Path("numeric".into())).await;
+        assert_eq!(response.status(), StatusCode::INSUFFICIENT_STORAGE);
+        let body = axum::body::to_bytes(response.into_body(), 2048).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"code":"resource_capacity","reason":{"code":"capacity","resource":"room_version","limit":command_protocol::MAX_COMMAND_SEQUENCE}})
+        );
+        room.send(Command::Disconnect { conn: 7 }).unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if app.rooms.lock().is_empty() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            app.open_rooms(),
+            1,
+            "preserved unavailable identity still owns its slot"
+        );
+        assert_eq!(
+            room_info(State(app.clone()), Path("numeric".into())).await.status(),
+            StatusCode::INSUFFICIENT_STORAGE
+        );
+        let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            saved["commands"]["room_version"],
+            command_protocol::MAX_COMMAND_SEQUENCE - 2
+        );
+        assert!(!path.with_extension("bad").exists());
+    }
+
+    #[test]
+    fn exhausted_connection_ids_never_reuse_an_existing_connection_identity() {
+        let rooms = Rooms::default();
+        rooms.next_conn.store(u64::MAX - 1, Ordering::Relaxed);
+        assert_eq!(rooms.connection_id(), Some(u64::MAX - 1));
+        assert_eq!(rooms.connection_id(), None);
+        assert_eq!(rooms.next_conn.load(Ordering::Relaxed), u64::MAX);
+    }
+
+    fn saved_lobby(id: &str) -> Value {
+        let room = Room::<mighty::Mighty>::new(
+            id.into(),
+            mighty::table::MightySettings::default(),
+            Arc::new(RoomEnv::new(Duration::ZERO)),
+            room::mighty_bots(),
+        );
+        serde_json::to_value(room.snapshot()).unwrap()
+    }
+
+    async fn assert_preserved_507(app: &AppState, id: &str, path: &std::path::Path, original: &[u8], reason: Value) {
+        assert_eq!(app.restore_rooms().unwrap(), 0);
+        assert_eq!(app.restore_rooms().unwrap(), 0);
+        assert!(app.rooms.lock().is_empty(), "no phantom actor");
+        let response = room_info(State(app.clone()), Path(id.to_owned())).await;
+        assert_eq!(response.status(), StatusCode::INSUFFICIENT_STORAGE);
+        let bytes = axum::body::to_bytes(response.into_body(), 2048).await.unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap(),
+            json!({"code":"resource_capacity","reason":reason})
+        );
+        assert_eq!(std::fs::read(path).unwrap(), original);
+        assert!(!path.with_extension("bad").exists());
+        assert!(app.unavailable_response(id).is_some()); // same branch precedes WS upgrade
+    }
+
+    #[tokio::test]
+    async fn oversized_restore_is_bounded_preserved_and_reserves_its_room_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("saved.json");
+        let original = vec![b'!'; 129]; // cannot parse: metadata admission must win
+        std::fs::write(&path, &original).unwrap();
+        let app = AppState::new(Config {
+            data: Some(dir.path().into()),
+            resource_snapshot_bytes: 128,
+            max_rooms: 1,
+            ..Config::default()
+        });
+        assert_preserved_507(
+            &app,
+            "saved",
+            &path,
+            &original,
+            json!({"code":"capacity","resource":"snapshot","limit":128}),
+        )
+        .await;
+        assert_eq!(app.open_rooms(), 1);
+        assert!(
+            app.create_room::<mighty::Mighty>(Default::default(), room::mighty_bots())
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn tiny_malformed_seat_profile_is_refused_before_allocating_seats() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("saved.json");
+        let mut snapshot = saved_lobby("saved");
+        snapshot["settings"]["rules"] = serde_json::to_value(mighty::rules::Rules::web_mighty()).unwrap();
+        snapshot["settings"]["rules"]["players"] = json!(usize::MAX);
+        let original = serde_json::to_vec(&snapshot).unwrap();
+        let app = AppState::new(Config {
+            data: Some(dir.path().into()),
+            ..Config::default()
+        });
+        std::fs::write(&path, &original).unwrap();
+        assert_preserved_507(&app, "saved", &path, &original, json!({"code":"unsupported_profile"})).await;
+    }
+
+    #[tokio::test]
+    async fn unknown_native_schema_and_unsafe_rotation_remain_preserved_unavailable() {
+        for (field, value, reason) in [
+            ("game", json!("future_game"), json!({"code":"unsupported_profile"})),
+            ("format", json!(999), json!({"code":"unsupported_profile"})),
+            ("rotation", json!(usize::MAX), json!({"code":"unreservable_legacy"})),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("saved.json");
+            let mut snapshot = saved_lobby("saved");
+            snapshot[field] = value;
+            let original = serde_json::to_vec(&snapshot).unwrap();
+            std::fs::write(&path, &original).unwrap();
+            let app = AppState::new(Config {
+                data: Some(dir.path().into()),
+                ..Config::default()
+            });
+            assert_preserved_507(&app, "saved", &path, &original, reason).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_legacy_session_without_delivery_recovery_headroom_is_preserved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("saved.json");
+        let original = serde_json::to_vec(&saved_lobby("saved")).unwrap();
+        std::fs::write(&path, &original).unwrap();
+        let app = AppState::new(Config {
+            data: Some(dir.path().into()),
+            outbound_message_bytes: 1024,
+            outbound_connection_bytes: 4096,
+            outbound_global_bytes: 8192,
+            ..Config::default()
+        });
+        assert_preserved_507(
+            &app,
+            "saved",
+            &path,
+            &original,
+            json!({"code":"capacity","resource":"session","limit":1024}),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn restore_capacity_defers_files_without_parsing_or_an_unbounded_registry() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("saved.json");
+        let original = b"preserve even without parsing at actor capacity";
+        std::fs::write(&path, original).unwrap();
+        let app = AppState::new(Config {
+            data: Some(dir.path().into()),
+            max_rooms: 0,
+            ..Config::default()
+        });
+        assert_preserved_507(
+            &app,
+            "saved",
+            &path,
+            original,
+            json!({"code":"capacity","resource":"rooms","limit":0}),
+        )
+        .await;
+        assert!(app.rooms.unavailable.lock().unwrap().is_empty());
+        assert!(app.unavailable_reason("../saved").is_none());
+    }
 
     #[test]
     fn a_flooding_connection_is_dropped_then_closed() {

@@ -1,42 +1,15 @@
 // Per-player preferences, kept in this browser only.
 
 import { prefersReducedMotion } from 'svelte/motion';
-import type { CardBack, TableTone } from './looks';
-
-export type Speed = 'normal' | 'fast' | 'off';
-
-interface Settings {
-  /** ♦ orange and ♣ blue instead of red and ink. */
-  fourColor: boolean;
-  /** Play a card with one tap instead of raise-then-play. */
-  singleTap: boolean;
-  sound: boolean;
-  /** Quiet background jazz. */
-  music: boolean;
-  /** 0 to 1. */
-  musicVolume: number;
-  /** A short vibration when your turn starts (Android only). */
-  haptics: boolean;
-  /** 0 to 1. */
-  volume: number;
-  speed: Speed;
-  /** A button that shows what the bot would do on your turn. */
-  hints: boolean;
-  /** A line of advice on your turn, for people learning the game. */
-  tips: boolean;
-  /** Looks earned through 업적. */
-  cardBack: CardBack;
-  tableTone: TableTone;
-}
-
+import {normalizeSettings,type Settings} from './settingsValues';
+export type {Speed} from './settingsValues';
 const KEY = 'mighty.settings';
-const DEFAULTS: Settings = { fourColor: true, singleTap: false, sound: true, music: false, musicVolume: 0.5, haptics: true, volume: 0.7, speed: 'normal', hints: true, tips: false, cardBack: 'charcoal', tableTone: 'hanji' };
 
 function load(): Settings {
   try {
-    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
+    return normalizeSettings(JSON.parse(localStorage.getItem(KEY) ?? '{}'));
   } catch {
-    return { ...DEFAULTS };
+    return normalizeSettings(null);
   }
 }
 

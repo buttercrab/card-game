@@ -35,36 +35,6 @@ function run(el: Element | null, keyframes: Keyframe[], options: KeyframeAnimati
   return finished(el.animate(keyframes, options), Number(options.duration) + (options.delay ?? 0));
 }
 
-/** Plays `el` in from where `from` was, so it looks like it travelled. */
-export function flyFrom(el: Element | null, from: DOMRect, duration: number, delay = 0): Promise<void> {
-  if (!el) return Promise.resolve();
-  const to = el.getBoundingClientRect();
-  const a = centre(from);
-  const b = centre(to);
-  const scale = to.width > 0 ? Math.min(1.6, Math.max(0.4, from.width / to.width)) : 1;
-  return run(
-    el,
-    [
-      { transform: `translate(${a.x - b.x}px, ${a.y - b.y}px) scale(${scale})`, opacity: 0.6 },
-      { opacity: 1, offset: 0.4 },
-      { transform: 'none', opacity: 1 },
-    ],
-    { duration, delay, easing: EASE_SETTLE, fill: 'backwards' },
-  );
-}
-
-/** Sends `el` to `to`, shrinking and fading on the way, and leaves it there. */
-export function flyTo(el: Element | null, to: DOMRect, duration: number, delay = 0): Promise<void> {
-  if (!el) return Promise.resolve();
-  const a = centre(el.getBoundingClientRect());
-  const b = centre(to);
-  return run(
-    el,
-    [{ transform: 'none', opacity: 1 }, { transform: `translate(${b.x - a.x}px, ${b.y - a.y}px) scale(0.4)`, opacity: 0 }],
-    { duration, delay, easing: EASE_STANDARD, fill: 'forwards' },
-  );
-}
-
 /** A short squash-and-settle that marks a card as the important one. */
 export function pop(el: Element | null, duration: number): Promise<void> {
   return run(

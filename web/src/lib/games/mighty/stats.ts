@@ -1,49 +1,13 @@
-// A record of the hands this browser has played, kept in local storage.
-// There are no accounts, so stats belong to the device.
-
-import type { Contract } from './types';
-
-export type Role = 'declarer' | 'friend' | 'defense';
-
+// Device-local summaries. The atomic completion owner also stores awards and
+// the bounded completion ledger, so readers never observe a partial commit.
+import type {Contract} from './types';
+import {readDeviceRecords,deleteDeviceStats} from './completionStore';
+export type Role='declarer'|'friend'|'defense';
 export interface HandRecord {
-  /** Room id and hand number, so a hand is counted once. */
-  key: string;
-  at: number;
-  role: Role;
-  won: boolean;
-  payoff: number;
-  contract: Contract;
-  teamPoints: number;
+ key:string;at:number;role:Role;won:boolean;payoff:number;contract:Contract;teamPoints:number;
 }
-
-const KEY = 'mighty.stats';
-const LIMIT = 1000;
-
-export function loadStats(): HandRecord[] {
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? '[]');
-  } catch {
-    return [];
-  }
+export function loadStats():HandRecord[] {
+ const result=readDeviceRecords();return result.status==='ready'?result.records.hands.map(hand=>({...hand,contract:{...hand.contract}})):[];
 }
-
-/** Records a finished hand once; returns whether it was new. */
-export function recordHand(hand: HandRecord): boolean {
-  const all = loadStats();
-  if (all.some((h) => h.key === hand.key)) return false;
-  all.push(hand);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(all.slice(-LIMIT)));
-  } catch {
-    // Storage full or refused: this hand goes unrecorded.
-  }
-  return true;
-}
-
-export function clearStats() {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    // Nothing to clear.
-  }
-}
+/** Caller must confirm first; failure leaves the displayed and stored data intact. */
+export function clearStats(){return deleteDeviceStats();}

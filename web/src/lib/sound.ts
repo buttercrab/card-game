@@ -1,6 +1,6 @@
 // Table sounds, synthesised with Web Audio so there are no files to load
 // or license. Browsers only allow audio after a user gesture, so the
-// context starts on the first tap and every cue is silent until then.
+// context starts on a gesture when audio is enabled; cues are silent until then.
 
 import { settings } from './settings.svelte';
 
@@ -34,14 +34,20 @@ function pinkNoise(ctx: AudioContext): AudioBuffer {
 }
 
 function unlock() {
+  const audibleSound = settings.sound && settings.volume > 0;
+  const audibleMusic = settings.music && settings.musicVolume > 0;
   if (!ctx) {
+    // Keep muted interactions free of Web Audio startup work. The listeners
+    // stay installed so a later gesture can unlock newly enabled audio.
+    if (!audibleSound && !audibleMusic) return;
     try {
       ctx = new AudioContext();
     } catch {
       return;
     }
-    noise = pinkNoise(ctx);
   }
+  // Music shares the context but does not use the synthesized cue buffer.
+  if (audibleSound && !noise) noise = pinkNoise(ctx);
   if (ctx.state === 'suspended') void ctx.resume();
   onUnlock?.(ctx);
 }
@@ -87,13 +93,31 @@ const dB = (db: number) => Math.pow(10, db / 20);
 /** A level nudged by up to ±2 dB. */
 const vary = (level: number) => level * dB(between(-2, 2));
 
+interface SoundOwner { readonly nodes:Set<AudioNode>; readonly sources:Set<AudioScheduledSourceNode>; building:boolean; cancelled:boolean; }
+let activeOwner:SoundOwner|null=null;
+function disconnectOwner(owner:SoundOwner){for(const node of owner.nodes){try{node.disconnect();}catch{/* Already disconnected. */}}owner.nodes.clear();}
+function ownedNode<T extends AudioNode>(node:T):T {activeOwner?.nodes.add(node);return node;}
+function ownedSource<T extends AudioScheduledSourceNode>(source:T):T {
+ const owner=activeOwner;if(!owner)return source;owner.nodes.add(source);owner.sources.add(source);
+ source.onended=()=>{owner.sources.delete(source);if(!owner.building&&owner.sources.size===0)disconnectOwner(owner);};
+ return source;
+}
+/** Capture one synchronous motif, including all Web Audio work scheduled for later. */
+export function cancellableSound(play:(motifs:typeof sound)=>void):()=>void {
+ const owner:SoundOwner={nodes:new Set(),sources:new Set(),building:true,cancelled:false};
+ const cancel=()=>{if(owner.cancelled)return;owner.cancelled=true;for(const source of owner.sources){source.onended=null;try{source.stop();}catch{/* Already ended or stopped. */}}owner.sources.clear();disconnectOwner(owner);};
+ const previous=activeOwner;activeOwner=owner;
+ try{play(sound);}catch(error){cancel();throw error;}finally{activeOwner=previous;owner.building=false;if(owner.sources.size===0)disconnectOwner(owner);}
+ return cancel;
+}
+
 /** The output for one cue, or null when sound is off or not yet allowed. */
 function out(at: number, level: number, pan = 0): { ctx: AudioContext; gain: GainNode; t: number } | null {
   if (!ctx || !settings.sound || settings.volume <= 0 || ctx.state !== 'running') return null;
-  const gain = ctx.createGain();
+  const gain = ownedNode(ctx.createGain());
   gain.gain.value = level * settings.volume;
   if (pan !== 0 && typeof ctx.createStereoPanner === 'function') {
-    const panner = ctx.createStereoPanner();
+    const panner = ownedNode(ctx.createStereoPanner());
     panner.pan.value = Math.max(-1, Math.min(1, pan));
     gain.connect(panner).connect(ctx.destination);
   } else {
@@ -119,29 +143,29 @@ function burst(
   const o = out(at, level, pan);
   if (!o || !noise) return;
   const end = o.t + attack + decay;
-  const src = o.ctx.createBufferSource();
+  const src = ownedSource(o.ctx.createBufferSource());
   src.buffer = noise;
   let node: AudioNode = src;
   for (const f of filters) {
-    const filter = o.ctx.createBiquadFilter();
+    const filter = ownedNode(o.ctx.createBiquadFilter());
     filter.type = f.type;
     filter.frequency.setValueAtTime(f.freq, o.t);
     if (f.to) filter.frequency.exponentialRampToValueAtTime(f.to, end);
     if (f.q !== undefined) filter.Q.value = f.q;
     node = node.connect(filter);
   }
-  const env = o.ctx.createGain();
+  const env = ownedNode(o.ctx.createGain());
   env.gain.setValueAtTime(0, o.t);
   env.gain.linearRampToValueAtTime(1, o.t + attack);
   env.gain.exponentialRampToValueAtTime(0.001, end);
   node = node.connect(env);
   if (flutter) {
     // Amplitude wobble: the gain swings between 1 − depth and 1.
-    const wobble = o.ctx.createGain();
+    const wobble = ownedNode(o.ctx.createGain());
     wobble.gain.value = 1 - flutter.depth / 2;
-    const lfo = o.ctx.createOscillator();
+    const lfo = ownedSource(o.ctx.createOscillator());
     lfo.frequency.value = flutter.rate;
-    const depth = o.ctx.createGain();
+    const depth = ownedNode(o.ctx.createGain());
     depth.gain.value = flutter.depth / 2;
     lfo.connect(depth).connect(wobble.gain);
     lfo.start(o.t);
@@ -163,10 +187,10 @@ function snap(at: number, { freq = 2400, length = 0.06, level = 0.5, pan = 0 } =
 function note(at: number, freq: number, { length = 0.35, level = 0.18, type = 'triangle' as OscillatorType } = {}) {
   const o = out(at, level);
   if (!o) return;
-  const osc = o.ctx.createOscillator();
+  const osc = ownedSource(o.ctx.createOscillator());
   osc.type = type;
   osc.frequency.value = freq * transpose;
-  const env = o.ctx.createGain();
+  const env = ownedNode(o.ctx.createGain());
   env.gain.setValueAtTime(0, o.t);
   env.gain.linearRampToValueAtTime(1, o.t + 0.01);
   env.gain.exponentialRampToValueAtTime(0.001, o.t + length);

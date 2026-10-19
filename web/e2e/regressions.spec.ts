@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.beforeEach(async ({page}) => { await page.addInitScript(() => localStorage.setItem('name', JSON.stringify('나'))); });
+
 // Behaviour that once broke (docs/REFACTOR.md, Phase 0), at one size.
 test.beforeEach(({}, info) => {
   test.skip(!info.project.name.startsWith('390x844'), 'one size is enough');
@@ -95,10 +97,8 @@ test('leaving while reconnecting does not take the seat back', async ({ page }) 
   await page.getByRole('button', { name: '테이블 만들기' }).click();
   await page.waitForURL(/\/r\/[a-z0-9]+$/);
   const id = new URL(page.url()).pathname.split('/').pop()!;
-  await page.locator('.seat-act', { hasText: '앉기' }).first().click();
-  await page.locator('.pop-card input').fill('나');
-  await page.locator('.pop-card button[type=submit]').click();
-  await expect(page.locator('.seat-act', { hasText: '+ 봇' }).first()).toBeVisible();
+  await page.getByRole('button', { name: '빈자리에 앉기', exact: true }).click();
+  await expect(page.locator('.seat-act', { hasText: '봇 추가' }).first()).toBeVisible();
   expect(await page.evaluate((id) => localStorage.getItem(`room:${id}`), id)).toContain('token');
 
   // The link drops, and stays down for a reconnect or two.

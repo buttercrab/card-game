@@ -1,7 +1,8 @@
 //! One table. A room runs as its own task ([`actor`]) and handles one
 //! command at a time, so its state needs no locks. After every command,
-//! timer or bot move it settles: the hand advances, the turn clock is set,
-//! a bot starts thinking, and what changed is saved and sent.
+//! timer or bot move it settles: the hand advances, persistent state is
+//! checkpointed, then buffered effects and snapshots are published. Only
+//! committed turns start clocks and bot work.
 //!
 //! - [`seating`]: who sits where, their connections and seat tokens;
 //! - [`session`]: the scores and the hands played so far;
@@ -14,7 +15,11 @@
 mod actor;
 mod bots;
 mod clock;
+mod commands;
 mod hand;
+mod lifecycle;
+mod publication;
+mod resources;
 mod seating;
 mod session;
 mod snapshot;
@@ -39,7 +44,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::{Semaphore, mpsc};
 
 pub type ConnId = u64;
 
@@ -111,6 +116,8 @@ pub struct RoomEnv {
     pub data: Option<PathBuf>,
     /// The places for hint searches, shared across the server.
     pub hints: crate::limit::HintPool,
+    pub resources: crate::resource_budget::ResourceLimits,
+    pub cognition: crate::work_budget::Budget,
 }
 
 impl RoomEnv {
@@ -124,6 +131,8 @@ impl RoomEnv {
             stats: Arc::new(Stats::in_memory()),
             data: None,
             hints: crate::limit::HintPool::default(),
+            resources: crate::resource_budget::ResourceLimits::default(),
+            cognition: crate::work_budget::Budget::default(),
         }
     }
 }
@@ -155,24 +164,36 @@ pub struct Room<G: ServerGame> {
     table: TableSettings,
     seating: seating::Seating,
     session: session::Session<G>,
+    lifecycle: lifecycle::Lifecycle,
     hand: hand::Hand<G>,
+    /// A fully chance-settled candidate, whose booking/effects settle publishes once.
+    prepared_advance: Option<hand::Advanced<G>>,
+    resources: resources::NativeResources,
+    /// Bounded entry status derived only from the last committed checkpoint.
+    committed_entry_refusal: Arc<std::sync::Mutex<Option<crate::protocol::NativeCapacityReason>>>,
+    commands: commands::CommandState,
     clock: clock::TurnClock,
     /// The hand version a bot is thinking about, if any: the hand moving on
     /// (a 딜미스, say) starts a new think without waiting for the stale one.
     thinking: Option<u64>,
+    jobs: Arc<Semaphore>,
+    job_tasks: Vec<crate::work_budget::TaskGuard>,
+    work_waiter: Option<(u64, crate::work_budget::TaskGuard)>,
+    work_waiter_epoch: u64,
     rng: StdRng,
     /// What every room on the server shares.
     env: Arc<RoomEnv>,
     /// The game's bots, which fill empty seats and give hints.
     bots: Arc<dyn TableBots<G>>,
     /// Where the room's bot tasks send their moves.
-    internal: UnboundedSender<bots::Internal<G::Action>>,
+    internal: mpsc::Sender<bots::Internal<G::Action>>,
     /// The other end, until [`Room::run`] takes it.
-    inbox: Option<UnboundedReceiver<bots::Internal<G::Action>>>,
+    inbox: Option<mpsc::Receiver<bots::Internal<G::Action>>>,
     /// The room's writer, while it runs with a data directory.
     persister: Option<snapshot::Persister>,
-    /// Whether the room changed since it was last handed to the persister.
+    /// Whether the candidate differs from its last successful checkpoint.
     dirty: bool,
+    publication: publication::Publication,
     /// The session's revision everyone was last sent.
     session_sent: u64,
 }
@@ -180,25 +201,39 @@ pub struct Room<G: ServerGame> {
 impl<G: ServerGame> Room<G> {
     pub fn new(id: String, settings: G::Settings, env: Arc<RoomEnv>, bots: Arc<dyn TableBots<G>>) -> Room<G> {
         let n = crate::game::seats::<G>(&settings);
-        let (internal, inbox) = tokio::sync::mpsc::unbounded_channel();
+        let (internal, inbox) = mpsc::channel(crate::work_budget::INTERNAL_MESSAGES);
         Room {
             internal,
             inbox: Some(inbox),
             persister: None,
             dirty: true,
+            publication: publication::Publication::default(),
             session_sent: 0,
             id,
             settings,
             table: TableSettings::default(),
             seating: seating::Seating::new(n),
             session: session::Session::new(n),
+            lifecycle: lifecycle::Lifecycle::default(),
             hand: hand::Hand::default(),
+            prepared_advance: None,
+            resources: resources::NativeResources::default(),
+            committed_entry_refusal: Arc::default(),
+            commands: commands::CommandState::default(),
             clock: clock::TurnClock::default(),
             thinking: None,
+            jobs: Arc::new(Semaphore::new(crate::work_budget::ROOM_JOBS)),
+            job_tasks: Vec::new(),
+            work_waiter: None,
+            work_waiter_epoch: 0,
             rng: StdRng::from_os_rng(),
             env,
             bots,
         }
+    }
+
+    pub(crate) fn entry_status(&self) -> Arc<std::sync::Mutex<Option<crate::protocol::NativeCapacityReason>>> {
+        self.committed_entry_refusal.clone()
     }
 
     pub fn id(&self) -> &str {
@@ -207,7 +242,9 @@ impl<G: ServerGame> Room<G> {
 
     /// Notes what happens here in the stats log; see [`crate::stats`].
     fn record(&self, event: crate::stats::Event) {
-        self.env.stats.record(event);
+        if let Some(effect) = self.publication.push(publication::Effect::Stat(event)) {
+            self.publish_effect(effect);
+        }
     }
 
     /// The current hand's table and seats, for the stats.

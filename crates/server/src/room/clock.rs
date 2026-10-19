@@ -79,7 +79,12 @@ impl<G: ServerGame> Room<G> {
         let limit = self.table.turn_secs;
         // Nobody to keep waiting: the table pauses until someone is back.
         let key = match self.hand.turn() {
-            Some(Turn::Seat(seat)) if limit > 0 && !self.seating.conns.is_empty() && self.seating.is_human(seat) => {
+            Some(Turn::Seat(seat))
+                if self.resources.held.is_none()
+                    && limit > 0
+                    && !self.seating.conns.is_empty()
+                    && self.seating.is_human(seat) =>
+            {
                 Some(ClockKey {
                     version: self.hand.version,
                     seat,

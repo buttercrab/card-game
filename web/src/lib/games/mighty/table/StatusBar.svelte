@@ -7,9 +7,13 @@
   import SuitText from '../../../SuitText.svelte';
   import type { RoomView, Rules } from '../types';
   import Badge from '../../../ui/Badge.svelte';
-  import RulesChip from './RulesChip.svelte';
+  import RulesChip from '../../../ui/RulesChip.svelte';
   import Tally from './Tally.svelte';
   import type { HandView, Tag } from './view';
+  import { innerWidth, innerHeight } from 'svelte/reactivity/window';
+  import HudFlow from '../../../table/HudFlow.svelte';
+  import EngineRow from '../../../table/EngineRow.svelte';
+  import { statusHudPolicy } from '../../../table/hudLayout';
 
   let {
     hand,
@@ -37,50 +41,53 @@
   } = $props();
 
   const { bidding, contract, play, done } = $derived(hand);
+  const policy = $derived({...statusHudPolicy(innerWidth.current ?? 390, innerHeight.current ?? 844), short: (innerWidth.current ?? 390) > (innerHeight.current ?? 844) && (innerHeight.current ?? 844) <= 520});
+  const items = $derived.by(() => {
+    if (bidding) return [{ id: bidding.best ? 'best' : 'none' }, { id: bidding.best ? 'bidder' : 'minimum' }];
+    if (contract) return [{ id: 'contract' }, ...(callLabel ? [{ id: 'friend' }] : []), ...(play ? [{ id: 'round' }] : []),
+      ...(play || done ? [{ id: 'progress', full: policy.progressFull }] : [])];
+    if (idle && room) return [{ id: 'rules' }, ...(room.table.turn_secs ? [{ id: 'timer' }] : []), ...(room.hands_played > 0 ? [{ id: 'hands' }] : [])];
+    return [];
+  });
 </script>
 
 <div class="status" aria-live="polite">
-  {#if bidding}
-    {#if bidding.best}
+  <HudFlow {items} fill gapX={policy.gapX}>
+  {#snippet children(id)}
+    {#if id === 'best' && bidding?.best}
       <span class="item">최고 공약 <strong class="contract"><SuitText text={contractLabel(bidding.best[1])} /></strong></span>
+    {:else if id === 'bidder' && bidding?.best}
       <span class="item">{seatName(bidding.best[0])}</span>
-    {:else}
+    {:else if id === 'none'}
       <span class="item">공약 없음</span>
+    {:else if id === 'minimum'}
       <span class="item">최소 {hand.lastChance ?? rules.bidding.min}</span>
-    {/if}
-  {:else if contract}
-    <span class="item">
-      공약
-      <strong class="contract">
-        {#if contract.trump}<SuitIcon suit={contract.trump} size="16px" label={SUIT_NAME[contract.trump]} />{:else}노기루다{/if}
-        {contract.count}
-      </strong>
-    </span>
-    {#if callLabel}<span class="item">프렌드 <strong><SuitText text={callLabel} /></strong></span>{/if}
-    {#if play}<span class="item">라운드 <strong>{trickNo}/{rules.hand_size}</strong></span>{/if}
-    {#if play || done}
-      <span class="item meter">
-        <span class="meter-label">여당 {#key hand.teamPoints}<strong class="bump">{hand.teamPoints}/{contract.count}</strong>{/key}</span>
-        <Tally tally={hand.tally} goal={contract.count} />
-        {#each tags as t (t.text)}<Badge kind="tag" tone={t.tone} class="pop">{t.text}</Badge>{/each}
-      </span>
-    {/if}
-  {:else if idle && room}
-    <!-- No hand yet: the rules this table plays, a tap opens them. -->
+    {:else if id === 'contract' && contract}
+      <div class="item"><EngineRow items={[{id:'label'},{id:'contract'}]} gap={4}>
+        {#snippet children(part)}{#if part==='label'}<span>공약</span>{:else}<div class="contract"><EngineRow items={[{id:'glyph'},{id:'count'}]} gap={3}>
+          {#snippet children(piece)}{#if piece==='glyph'}{#if contract.trump}<SuitIcon suit={contract.trump} size="16px" label={SUIT_NAME[contract.trump]} />{:else}<span>노기루다</span>{/if}{:else}<span>{contract.count}</span>{/if}{/snippet}
+        </EngineRow></div>{/if}{/snippet}
+      </EngineRow></div>
+    {:else if id === 'friend'}<span class="item">프렌드 <strong><SuitText text={callLabel ?? ''} /></strong></span>
+    {:else if id === 'round'}<span class="item">라운드 <strong>{trickNo}/{rules.hand_size}</strong></span>
+    {:else if id === 'progress' && contract}
+      <div class="item meter"><EngineRow fill={policy.progressFull} nowrap={!policy.progressFull} gap={8} rowGap={2} justify={policy.progressFull?'center':'start'}
+        items={[{id:'label'}, ...(policy.short ? [] : [{id:'tally', ...(policy.progressFull ? {width:'fill' as const,minWidth:160,maxWidth:320}: {})}]), ...tags.map(t=>({id:`tag:${t.text}`}))]}>
+        {#snippet children(part)}{#if part==='label'}<span class="meter-label">여당 {#key hand.teamPoints}<strong class="bump">{hand.teamPoints}/{contract.count}</strong>{/key}</span>
+        {:else if part==='tally'}<Tally tally={hand.tally} goal={contract.count} wide={policy.progressFull} />
+        {:else}{@const tag=tags.find(t=>`tag:${t.text}`===part)}{#if tag}<Badge kind="tag" tone={tag.tone} class="pop">{tag.text}</Badge>{/if}{/if}{/snippet}
+      </EngineRow></div>
+    {:else if id === 'rules'}
     <RulesChip name={rulesName} onclick={onrules} />
-    {#if room.table.turn_secs}<span class="item">턴 <strong>{room.table.turn_secs}</strong>초</span>{/if}
-    {#if room.hands_played > 0}<span class="item"><strong>{room.hands_played}</strong>판 끝</span>{/if}
-  {/if}
+    {:else if id === 'timer' && room}<span class="item">턴 <strong>{room.table.turn_secs}</strong>초</span>
+    {:else if id === 'hands' && room}<span class="item"><strong>{room.hands_played}</strong>판 끝</span>
+    {/if}
+  {/snippet}
+  </HudFlow>
 </div>
 
 <style>
   .status {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    align-content: center;
-    gap: 2px 14px;
     min-width: 0;
     height: 100%;
     font-size: clamp(14px, 1.7vw, 16px);
@@ -92,34 +99,12 @@
     font-weight: 800;
     font-variant-numeric: tabular-nums;
   }
-  .contract {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    font-size: var(--text-title);
-  }
-  /* The point cards as twenty ticks, the contract marked between them. */
-  .meter {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }
+  .contract { font-size: var(--text-title); color:var(--ink); font-family:var(--font-display);font-weight:800; }
   .meter-label {
     white-space: nowrap;
   }
-  /* On phones the tally takes its own row, as wide as the row allows. */
-  @media (max-width: 599px) {
-    .meter {
-      flex: 1 1 100%;
-      flex-wrap: wrap;
-      justify-content: center;
-      row-gap: 2px;
-    }
-  }
   @media (orientation: landscape) and (max-height: 520px) {
-    .status { font-size: 12px; gap: 2px 8px; }
+    .status { font-size: 12px; }
     .contract { font-size: 16px; }
-    .meter { flex: 0 1 auto; }
-    .meter :global(.tally) { display: none; }
   }
 </style>

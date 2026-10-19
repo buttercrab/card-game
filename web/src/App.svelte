@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Component } from 'svelte';
+  import { isFoundationRoute } from './rootRoute';
+  import { rendering } from './lib/table/renderMode.svelte';
   import About from './lib/About.svelte';
   import Home from './lib/Home.svelte';
   import NotFound from './lib/NotFound.svelte';
@@ -8,10 +10,18 @@
   import { gameFor, MAIN_GAME, TOOLS } from './lib/games/registry';
 
   let path = $state(location.pathname);
+  let search = $state(location.search);
 
   function navigate(to: string, state: Record<string, unknown> | null = null) {
     history.pushState(state, '', to);
+    if(isFoundationRoute(location.pathname,location.search)){location.reload();return;}
     path = location.pathname;
+    search = location.search;
+  }
+
+  function restoreRoute() {
+    if(isFoundationRoute(location.pathname,location.search)){location.reload();return;}
+    path=location.pathname;search=location.search;
   }
 
   /** Off a table to the home page. Opened from home, the table steps back to
@@ -29,6 +39,17 @@
   const roomId = $derived(path.match(/^\/r\/([a-z0-9]+)\/?$/)?.[1] ?? null);
   /** The page by name; a trailing slash is the same page. */
   const page = $derived(path.replace(/(.)\/$/, '$1'));
+  const layoutDemo = $derived(page === '/preview' ? new URLSearchParams(search).get('layout') : null);
+  // Previous Canvas preview bookmarks now open the canonical DOM engine.
+  const enginePreview = $derived(page === '/preview' && ['engine', 'canvas', 'surfaceDemo'].some(key => new URLSearchParams(search).get(key) === '1'));
+  $effect(() => rendering.select('dom'));
+  // Native dialogs are portalled to body; they share the table's paint mode.
+  $effect(()=>{
+    const mode=rendering.mode,previous=document.body.getAttribute('data-renderer');
+    document.body.setAttribute('data-renderer',mode);
+    return()=>{if(previous===null)document.body.removeAttribute('data-renderer');else document.body.setAttribute('data-renderer',previous);};
+  });
+  const contractDemo = $derived(page === '/preview' && new URLSearchParams(search).get('contract') === '1');
 
   // The games' tool pages (Mighty's deck, the table's states, the share
   // image) load on their own, so players never download them.
@@ -61,6 +82,8 @@
     if (!a || a.target || a.hasAttribute('download')) return;
     const url = new URL(a.href, location.href);
     if (url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
+    // Let the browser cross the root boundary and release resident legacy CSS.
+    if (isFoundationRoute(url.pathname, url.search)) return;
     event.preventDefault();
     if (url.href === location.href) return;
     navigate(url.pathname + url.search + url.hash);
@@ -68,10 +91,20 @@
   }
 </script>
 
-<svelte:window onpopstate={() => (path = location.pathname)} />
+<svelte:window onpopstate={restoreRoute} />
 <svelte:document onclick={follow} />
 
-{#if tools[page]}
+{#if enginePreview}
+  {#await import('./lib/table/RendererPreview.svelte') then {default:Demo}}<Demo />{/await}
+{:else if contractDemo}
+  {#await import('./lib/table/ContractDemo.svelte') then { default: Demo }}
+    <Demo />
+  {/await}
+{:else if layoutDemo === '3' || layoutDemo === '6'}
+  {#await import('./lib/table/LayoutDemo.svelte') then { default: Demo }}
+    <Demo seatCount={layoutDemo === '3' ? 3 : 6} />
+  {/await}
+{:else if tools[page]}
   {#await tools[page]() then { default: Tool }}
     <Tool />
   {/await}

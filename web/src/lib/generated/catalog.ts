@@ -4,11 +4,15 @@
 import type { Catalog } from './protocol';
 
 export const CATALOG: Catalog = {
-  "protocol": "96488eb9347b",
+  "protocol": "26e8a2781e9d",
   "games": [
     {
       "id": "mighty",
       "name": "마이티"
+    },
+    {
+      "id": "poker",
+      "name": "텍사스 홀덤"
     }
   ],
   "bot_levels": [

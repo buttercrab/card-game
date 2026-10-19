@@ -749,38 +749,35 @@ impl Rules {
     }
 
     /// The contract after changing trump to `trump` once the kitty is seen.
-    pub(crate) fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Contract {
-        if trump.is_none()
-            && let Some(cost) = self.bidding.change_to_no_trump_cost
-        {
-            return Contract {
-                trump,
-                count: contract.count + cost,
-            };
-        }
-        // What the bid is worth rises by the cost, whatever it says.
-        let value = self.bid_value(contract) + self.bidding.change_trump_cost;
-        let bonus = self.bid_value(Contract { trump, count: 0 });
-        Contract {
+    pub(crate) fn changed_contract(&self, contract: Contract, trump: Option<Suit>) -> Option<Contract> {
+        let count = if let (None, Some(cost)) = (trump, self.bidding.change_to_no_trump_cost) {
+            u16::from(contract.count) + u16::from(cost)
+        } else {
+            // Rank arithmetic may exceed the u8 wire count. An unrepresentable
+            // trump change is unavailable, never wrapped or clamped to 255.
+            let value = self.bid_value(contract) + u16::from(self.bidding.change_trump_cost);
+            let bonus = self.bid_value(Contract { trump, count: 0 });
+            value.saturating_sub(bonus)
+        };
+        Some(Contract {
             trump,
-            count: value.saturating_sub(bonus),
-        }
+            count: u8::try_from(count).ok()?,
+        })
     }
 
-    /// Bids are compared by this key; higher wins.
-    /// What a bid is worth against the minimum: no-trump counts
-    /// `no_trump_bonus` more than it says.
-    pub fn bid_value(&self, contract: Contract) -> u8 {
+    /// Bids are compared by this key; higher wins. The rank can reach 510
+    /// although the printed/wire contract count remains a u8.
+    pub fn bid_value(&self, contract: Contract) -> u16 {
         let bonus = if contract.trump.is_none() {
             self.bidding.no_trump_bonus
         } else {
             0
         };
-        contract.count + bonus
+        u16::from(contract.count) + u16::from(bonus)
     }
 
     /// Orders bids: a later bid must rank strictly higher.
-    pub(crate) fn bid_rank(&self, contract: Contract) -> (u8, bool) {
+    pub(crate) fn bid_rank(&self, contract: Contract) -> (u16, bool) {
         let tie_break = contract.trump.is_none() && self.bidding.no_trump_wins_ties;
         (self.bid_value(contract), tie_break)
     }
@@ -1386,14 +1383,48 @@ mod tests {
         let r = Preset::Gshs.rules();
         let c = |trump, count| Contract { trump, count };
         // 노기루다 counts one more: to it costs 1, from it 3 (나무위키, 서울과고 5마).
-        assert_eq!(r.changed_contract(c(Some(Suit::Heart), 15), None), c(None, 16));
+        assert_eq!(r.changed_contract(c(Some(Suit::Heart), 15), None), Some(c(None, 16)));
         assert_eq!(
             r.changed_contract(c(None, 15), Some(Suit::Heart)),
-            c(Some(Suit::Heart), 18)
+            Some(c(Some(Suit::Heart), 18))
         );
         assert_eq!(
             r.changed_contract(c(Some(Suit::Heart), 15), Some(Suit::Club)),
-            c(Some(Suit::Club), 17)
+            Some(c(Some(Suit::Club), 17))
         );
+    }
+    #[test]
+    fn maximum_contract_rank_and_trump_costs_use_checked_wire_boundaries() {
+        let mut rules = Rules::web_mighty();
+        rules.bidding.min = 2;
+        rules.bidding.max = 255;
+        rules.bidding.no_trump_bonus = 1;
+        rules.validate().unwrap();
+        let suit = Contract {
+            trump: Some(Suit::Heart),
+            count: 255,
+        };
+        let no_trump = Contract {
+            trump: None,
+            count: 255,
+        };
+        assert_eq!(rules.bid_value(no_trump), 256);
+        assert!(rules.bid_rank(no_trump) > rules.bid_rank(suit));
+        rules.bidding.change_trump_cost = 1;
+        assert_eq!(
+            rules.changed_contract(suit, None),
+            Some(no_trump),
+            "intermediate rank256 may still yield printed count255"
+        );
+        assert_eq!(rules.changed_contract(no_trump, Some(Suit::Club)), None);
+        rules.bidding.change_to_no_trump_cost = Some(255);
+        assert_eq!(rules.changed_contract(suit, None), None);
+        rules.bidding.change_to_no_trump_cost = Some(1);
+        assert_eq!(
+            rules.changed_contract(Contract { count: 254, ..suit }, None),
+            Some(no_trump)
+        );
+        assert_eq!(rules.changed_contract(suit, None), None);
+        assert_eq!(serde_json::to_value(no_trump).unwrap()["count"], 255);
     }
 }

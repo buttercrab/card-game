@@ -1,0 +1,40 @@
+import {writeFile} from 'node:fs/promises';
+import {expect,test} from '@playwright/test';
+import {presetRules} from '../src/lib/games/mighty/catalog';
+import {foundationBotButton,joinFoundation} from './foundationHelpers';
+const port=Number(process.env.PORT??4317);
+test.use({baseURL:`http://127.0.0.1:${port+1}`});
+test('the real connected host retains all 1276 bids and its exact draft across a doubled-text information modal',async({page,request},info)=>{
+ test.skip(info.project.name!=='390x844-light','one real native maximum-domain host');test.setTimeout(60000);
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.addInitScript(()=>{
+  localStorage.setItem('name',JSON.stringify('최대 공약'));localStorage.setItem('mighty.settings',JSON.stringify({textScale:2,sound:false,music:false,haptics:false,speed:'off'}));
+  const scope=window as typeof window&{connectedBidMax:{state:any;sent:any[]}};scope.connectedBidMax={state:null,sent:[]};const Native=WebSocket;const metricProbe={batches:0,maxBatch:0};(window as typeof window&{connectedMetricProbe:typeof metricProbe}).connectedMetricProbe=metricProbe;new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node instanceof HTMLElement&&node.hasAttribute('data-foundation-probe')){metricProbe.batches++;metricProbe.maxBatch=Math.max(metricProbe.maxBatch,node.children.length);}}).observe(document,{subtree:true,childList:true});
+  window.WebSocket=class extends Native{constructor(url:string|URL,protocols?:string|string[]){super(url,protocols);this.addEventListener('message',event=>{const message=JSON.parse(String(event.data));if(message.type==='state')scope.connectedBidMax.state=message;});}send(data:string|ArrayBufferLike|Blob|ArrayBufferView){if(typeof data==='string'){const message=JSON.parse(data);if(message.type==='submit')scope.connectedBidMax.sent.push(message);}super.send(data);}};
+ });
+ const rules=presetRules('default');rules.bidding.min=1;rules.bidding.max=255;rules.bidding.no_trump_bonus=0;rules.misdeal.threshold=-128;rules.misdeal.all_points=false;
+ const response=await request.post('/api/games/mighty/rooms',{data:{preset:'default',rules}});expect(response.ok(),await response.text()).toBe(true);const{id}=await response.json();await page.goto(`/r/${id}?foundation=1`);await joinFoundation(page);
+ const host=page.locator('.live-surface'),ready=()=>expect(host).toHaveAttribute('data-foundation-status','ready');
+ await page.getByRole('button',{name:'설정',exact:true}).click();await page.getByRole('dialog',{name:'설정',exact:true}).getByRole('button',{name:'테이블 설정',exact:true}).click();const table=page.getByRole('dialog',{name:'테이블 설정',exact:true});await table.getByRole('combobox',{name:'턴 시간',exact:true}).selectOption({label:'끔'});await table.getByRole('button',{name:'적용하기',exact:true}).click();await expect(table).toContainText('적용했어요');await table.getByRole('button',{name:'닫기',exact:true}).click();if(await page.getByRole('dialog').count())await page.keyboard.press('Escape');await ready();
+ for(let index=0;index<4;index++){await foundationBotButton(page).click();if(index<3)await expect(foundationBotButton(page)).toBeEnabled();}
+ await page.getByRole('button',{name:'시작',exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as typeof window&{connectedBidMax:{state:any}}).connectedBidMax.state?.legal?.length)).toBe(1276);await ready();
+ const initial=await host.evaluate(element=>({height:innerHeight,hostStatus:(element as HTMLElement).dataset.foundationStatus,ownCards:[...element.querySelectorAll('[data-foundation-kind="card"][data-foundation-zone="hand"]')].map(card=>{const box=card.getBoundingClientRect();return{y:box.y,height:box.height,bottom:box.bottom};})}));const initialPath=info.outputPath('connected-1276-initial.json');await writeFile(initialPath,JSON.stringify(initial,null,2));await info.attach('connected-1276-initial',{path:initialPath,contentType:'application/json'});await page.screenshot({path:info.outputPath('connected-1276-initial.png'),fullPage:true});for(const card of initial.ownCards)expect.soft(card.bottom,'real doubled-text bidding keeps the hand in the initial viewport').toBeLessThanOrEqual(initial.height+.5);
+ const count=page.getByRole('combobox',{name:'공약 수',exact:true});await expect(count.locator('option')).toHaveCount(255);await count.selectOption('255');
+ const trump=page.getByRole('combobox',{name:'기루다',exact:true});if(await trump.count())await trump.selectOption('no-trump');else await page.getByRole('radio',{name:'노기루다',exact:true}).click();await ready();
+ const submit=page.getByRole('button',{name:'공약 노기루다 255',exact:true});await expect(submit).toBeEnabled();expect(await page.evaluate(()=>(window as typeof window&{connectedBidMax:{sent:any[]}}).connectedBidMax.sent)).toEqual([]);
+ await page.getByRole('button',{name:'테이블 정보',exact:true}).click();const information=page.getByRole('dialog',{name:'테이블 정보',exact:true});await expect(information).toBeVisible();await ready();await information.getByRole('button',{name:'닫기',exact:true}).click();await ready();await expect(count).toHaveValue('255');await expect(submit).toBeEnabled();
+ const metrics=()=>page.evaluate(()=>({...((window as typeof window&{connectedMetricProbe:{batches:number;maxBatch:number}}).connectedMetricProbe),liveProbes:document.querySelectorAll('[data-foundation-probe]').length}));const before=await metrics();
+ await count.selectOption('254');await ready();await count.selectOption('255');await ready();expect((await metrics()).batches).toBe(before.batches);expect((await metrics()).liveProbes).toBe(0);expect(before.maxBatch).toBeGreaterThan(0);expect(before.maxBatch).toBeLessThanOrEqual(512);
+ await page.screenshot({path:info.outputPath('connected-1276-bids-200.png'),fullPage:true});await submit.click();
+ await expect.poll(()=>page.evaluate(()=>(window as typeof window&{connectedBidMax:{sent:any[]}}).connectedBidMax.sent.map(message=>message.action))).toEqual([{Bid:{trump:null,count:255}}]);
+ await expect.poll(()=>page.evaluate(()=>(window as typeof window&{connectedBidMax:{state:any}}).connectedBidMax.state?.view?.phase?.Exchange?.contract)).toEqual({trump:null,count:255});
+ await ready();await expect(page.locator('.live-surface [data-foundation-kind="card"][data-foundation-zone="hand"]')).toHaveCount(13);
+ const receipt=await page.evaluate(()=>{const probe=(window as typeof window&{connectedBidMax:{state:any;sent:any[]}}).connectedBidMax;return{acceptedContract:probe.state.view.phase.Exchange.contract,submissions:probe.sent.map(message=>({operationId:message.operation_id,expected:message.expected,action:message.action}))};});
+ const path=info.outputPath('connected-1276-bids.json');await writeFile(path,JSON.stringify({domain:{actions:1276,counts:255,textScale:2,players:5},before,...receipt,errors,boundary:'Real server/native host functional convergence and exact admission; no isolated CPU timing claim'},null,2));await info.attach('connected-1276-bids',{path,contentType:'application/json'});expect(errors).toEqual([]);
+});
+
+test.afterEach(async({page},info)=>{
+ if(info.status===info.expectedStatus)return;
+ const diagnostic=await page.evaluate(()=>{const host=document.querySelector<HTMLElement>('.live-surface'),probe=(window as typeof window&{connectedBidMax?:{state:any;sent:any[]}}).connectedBidMax;return{host:host?{status:host.dataset.foundationStatus,failure:host.dataset.foundationFailure,performance:host.dataset.foundationPerformance}:null,native:probe?{version:probe.state?.version,legalCount:probe.state?.legal?.length,phase:typeof probe.state?.view?.phase==='object'?Object.keys(probe.state.view.phase):probe.state?.view?.phase,submissions:probe.sent.map(message=>({operationId:message.operation_id,expected:message.expected,action:message.action}))}:null};});
+ const path=info.outputPath('connected-1276-failure.json');await writeFile(path,JSON.stringify(diagnostic,null,2));await info.attach('connected-1276-failure',{path,contentType:'application/json'});await page.screenshot({path:info.outputPath('connected-1276-failure.png'),fullPage:true});
+});

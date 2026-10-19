@@ -13,6 +13,7 @@ engine = { path = "crates/engine" }
 engine-ml = { path = "crates/engine-ml" }
 harness = { path = "crates/harness" }
 mighty = { path = "crates/mighty" }
+poker = { path = "crates/poker" }
 mighty-ai = { path = "crates/mighty-ai" }
 env = { path = "crates/env" }
 infer = { path = "crates/infer" }
