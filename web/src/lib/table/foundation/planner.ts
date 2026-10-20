@@ -1589,6 +1589,23 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         return choiceDialog(id,width,heading,footer,bodyAt,'카드 내기 방법',picker.leaseId,metrics);
     }
 
+    /** Separate readonly score surface. Never trade typography or the hand for fit. */
+    function scoreboardDialog<A>(document:TableDocument<A>,metrics:Measurements,choices:ChoiceView):Fragment|null{
+        if(!choices.scoreboardOpen)return null;
+        const width=Math.min(metrics.environment.width-32,560*metrics.environment.textScale),available=width-PADDING*2;
+        const close=iconButton('table-scoreboard-close','닫기','close',metrics,{localIntent:'toggle-information',enabled:true,intent:'quiet'});
+        const title=textNode('table-scoreboard-title',document.scoreboard?.title??'점수판','name',Math.max(1,available-close.width-SMALL_GAP),metrics);
+        const headingHeight=Math.max(title.height,close.height);
+        const heading=group('table-scoreboard-heading',available,headingHeight,[{fragment:title,x:0,y:(headingHeight-title.height)/2},{fragment:close,x:available-close.width,y:0}]);
+        const back=choices.scoreboardReturnToInformation?button('table-scoreboard-back','테이블 정보로 돌아가기',available,metrics,{localIntent:'toggle-scoreboard',enabled:true,intent:'quiet'}):null;
+        const fixed=PADDING*2+headingHeight+GAP+(back?back.height+GAP:0),maximum=metrics.environment.height-32;
+        const score=document.scoreboard?namespace(scoreboard(document,available,metrics),'current-scoreboard'):null;
+        const body=score&&score.height+fixed<=maximum?score:textNode('table-scoreboard-refusal',document.scoreboard?'이 화면에는 점수판 전체를 표시할 공간이 부족해요. 창을 넓히거나 화면을 회전해 주세요.':'현재 표시할 점수판이 없어요.','body',available,metrics);
+        // Await complete native measurements before making a fit decision.
+        if(!metrics.missing.size&&body.height+fixed>maximum)throw Error('Viewport cannot contain readable scoreboard navigation');
+        return group('table-scoreboard-dialog',width,fixed+body.height,[{fragment:heading,x:PADDING,y:PADDING},{fragment:body,x:PADDING,y:PADDING+headingHeight+GAP},...(back?[{fragment:back,x:PADDING,y:PADDING+headingHeight+GAP+body.height+GAP}]:[])],{semanticRole:'dialog',label:document.scoreboard?.title??'점수판',decoration:'dialog'});
+    }
+
     function informationDialog<A>(document:TableDocument<A>,metrics:Measurements,choices:ChoiceView):Fragment|null{
         if(!choices.informationOpen)return null;
         const id='table-information-dialog',width=Math.min(metrics.environment.width-32,560*metrics.environment.textScale),available=width-PADDING*2;
@@ -1599,7 +1616,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             const observers=observerSignals(document,allocation,metrics,choices),outcomePanel=document.outcome?document.information?.find(panel=>panel.id===document.outcome!.informationId):undefined;
             const detailsId=document.outcome?.detailsCatalogId;
             const details=detailsId&&document.disclosures?.some(catalog=>catalog.id===detailsId)?button('outcome-details','자세히 보기',allocation,metrics,{enabled:true,intent:'quiet',disclosureCatalogId:detailsId}):null;
-            const parts=[...(outcomePanel?[informationPanel(document,outcomePanel,allocation,metrics)]:[]),...(details?[details]:[]),...(document.information?.length||document.scoreboard||document.facts.length?[factsPanel(document,allocation,metrics,false,choices)]:[]),...(choices.assistance?.projection.guidance?[textNode('current-information-guidance',choices.assistance.projection.guidance,'small',allocation,metrics)]:[]),...(observers?[observers]:[])];
+            const parts=[...(outcomePanel?[informationPanel(document,outcomePanel,allocation,metrics)]:[]),...(details?[details]:[]),...(document.scoreboard?[button('table-information-scoreboard',`${document.scoreboard.title} 보기`,allocation,metrics,{localIntent:'toggle-scoreboard',enabled:true,intent:'quiet'})]:[]),...(document.information?.length||document.scoreboard||document.facts.length?[factsPanel({...document,scoreboard:undefined},allocation,metrics,false,choices)]:[]),...(choices.assistance?.projection.guidance?[textNode('current-information-guidance',choices.assistance.projection.guidance,'small',allocation,metrics)]:[]),...(observers?[observers]:[])];
             return namespace(column('current-information-content',allocation,parts.length?parts:[textNode('current-information-empty','표시할 테이블 정보가 없어요.','body',allocation,metrics)],GAP),'current-information');
         };
         const maximum=metrics.environment.height-32,fixed=headingHeight+GAP+PADDING*2;
@@ -1788,7 +1805,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         return finishTable(document,environment,choices,metrics,shell,'side-by-side',['dock',...(controls.height&&!result?['decisions']:[]),...(instruction?['native-play-instruction']:[])],sceneHeight>bodyHeight);
     }
     function finishTable<A>(document:TableDocument<A>,environment:Environment,choices:ChoiceView,metrics:Measurements,shell:Fragment,recipe:CandidateLayout['recipe'],primaryRegionIds?:readonly string[],primaryOverflow=false):LayoutResult{
-            const height = Math.max(environment.height, shell.height),dialog=choices.disclosure?disclosureDialog(choices.disclosure,metrics):choices.form?formDialog(document,choices.form,metrics):shellDialog(document,metrics,choices)??cardActionDialog(metrics,choices)??catalogueDialog(metrics,choices)??informationDialog(document,metrics,choices)??assistanceDialog(document,metrics,choices);
+            const height = Math.max(environment.height, shell.height),dialog=choices.disclosure?disclosureDialog(choices.disclosure,metrics):choices.form?formDialog(document,choices.form,metrics):shellDialog(document,metrics,choices)??cardActionDialog(metrics,choices)??catalogueDialog(metrics,choices)??scoreboardDialog(document,metrics,choices)??informationDialog(document,metrics,choices)??assistanceDialog(document,metrics,choices);
             if(metrics.missing.size)return {kind:'needs',requests:[...metrics.missing.values()].slice(0,MEASUREMENT_BATCH_LIMIT)};
             const publicDisclosure=dialog?null:publicDisclosureOverlay(shell,environment,choices,metrics);
             if(metrics.missing.size)return {kind:'needs',requests:[...metrics.missing.values()].slice(0,MEASUREMENT_BATCH_LIMIT)};
@@ -2217,7 +2234,7 @@ export function validateLayout(layout: CandidateLayout,environment?:HandGeometry
         if(node.kind==='command'&&node.localIntent==='toggle-information'&&node.paintChildren){
             if(node.paintChildren!==true||node.arrangement!==undefined&&node.arrangement!=='ordinary'||Object.keys(node).some(field=>!['id','parent','kind','label','box','role','enabled','intent','localIntent','paintChildren','arrangement'].includes(field)&&node[field as keyof PlannedNode]!==undefined))errors.push(`Foreign painted information control field: ${node.id}`);
             const content=layout.nodes.filter(child=>child.parent===node.id);
-            if(node.id==='table-information-close'){
+            if(node.id==='table-information-close'||node.id==='table-scoreboard-close'){
                 const icon=content[0];
                 if(content.length!==1||icon.id!==key(node.id,'icon')||icon.parent!==node.id||icon.kind!=='icon'||icon.shellIcon!=='close'||icon.label!==''||Object.keys(icon).some(field=>!['id','parent','kind','label','box','shellIcon'].includes(field)&&icon[field as keyof PlannedNode]!==undefined))errors.push(`Invalid information close control: ${node.id}`);
             }else if(node.id==='active-information'){

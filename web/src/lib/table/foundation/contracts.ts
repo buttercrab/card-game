@@ -229,6 +229,8 @@ export interface ChoiceView {
     readonly effectsAvailable?: boolean;
     readonly preferencesAvailable?: boolean;
     readonly scoreboardExpanded?: boolean;
+    readonly scoreboardOpen?: boolean;
+    readonly scoreboardReturnToInformation?: boolean;
     readonly informationOpen?:boolean;
     readonly recyclePresentation?:{readonly source:string;readonly totalCount:number};
     /** Internal complete submit-label envelope; draft changes do not resize controls. */

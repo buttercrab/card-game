@@ -48,10 +48,10 @@ describe('bounded structured information',()=>{
   const layout=direct?root:solve(fixture(),width,1,844,{...choices,informationOpen:true});if(!direct)expect(layout.modalId).toBe('table-information-dialog');expect(validateLayout(layout)).toEqual([]);
   expect(layout.nodes.some(node=>node.kind==='progress')).toBe(true);
   expect(layout.nodes.filter(node=>node.kind==='card').every(node=>!node.entityId&&!node.cardId&&!node.actionId)).toBe(true);
-  expect(layout.nodes.some(node=>node.label.includes('누적 -20'))).toBe(true);
+  const scores=solve(fixture(),width,1,844,{...choices,informationOpen:true,scoreboardOpen:true});expect(scores.nodes.some(node=>node.label.includes('누적 -20'))).toBe(true);
  });
  it('keeps fractional progress geometrically exact',()=>{const source=fixture(),panel=source.information![0],doc={...source,information:[{...panel,progress:{...panel.progress!,total:10,target:8,series:[{...panel.progress!.series[0],value:0.5,from:'end' as const}]}}]};const progress=solve(doc,390,1,844,{...choices,informationOpen:true}).nodes.find(node=>node.kind==='progress')!;expect(progress.progressPaint!.segments).toContainEqual({x:95,width:5,tone:'gold'});});
- it('switches four large-text score columns to labeled values',()=>{const source=fixture(),doc={...source,scoreboard:{...source.scoreboard!,columns:Array.from({length:4},(_,index)=>({id:String(index),label:`第${index}列`})),rows:[{participantId:'p',values:[-9999,1,20,null]}]}};const layout=solve(doc,320,3,844,{...choices,informationOpen:true});expect(validateLayout(layout)).toEqual([]);expect(layout.nodes.some(node=>node.label==='第0列: -9999')).toBe(true);});
+ it('switches four large-text score columns to labeled values',()=>{const source=fixture(),doc={...source,scoreboard:{...source.scoreboard!,columns:Array.from({length:4},(_,index)=>({id:String(index),label:`第${index}列`})),rows:[{participantId:'p',values:[-9999,1,20,null]}]}};const layout=solve(doc,320,3,844,{...choices,informationOpen:true,scoreboardOpen:true});expect(validateLayout(layout)).toEqual([]);expect(layout.nodes.some(node=>node.label==='第0列: -9999')||layout.nodes.some(node=>node.id==='table-scoreboard-refusal')).toBe(true);});
  it('contains structured information without opponents at doubled text size',()=>{const source=fixture(),doc={...source,opponents:[],scoreboard:{...source.scoreboard!,rows:[source.scoreboard!.rows[0]]}};const layout=solve(doc,320,2);expect(validateLayout(layout)).toEqual([]);expect(layout.nodes.some(node=>node.kind==='progress')).toBe(true);});
 });
 

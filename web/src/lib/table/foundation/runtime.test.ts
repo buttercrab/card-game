@@ -112,11 +112,11 @@ it('dispatches only the exact complete card command, never an incomplete or stal
   table.dispose();session.dispose();
 });
 
-it('owns local scoreboard disclosure without admitting a server operation',async()=>{
+it('owns separate local scoreboard state without admitting a server operation',async()=>{
  const send=vi.fn(),session=createCardSession({transport:send});
  const source={...doc(),scoreboard:{id:'scores',title:'점수판',columns:[{id:'score',label:'점수'}],rows:[{participantId:'p',values:[0]}]}};
  session.receive(source);
- const localPlanner:Planner=(_doc,_env,choices)=>({kind:'ready',layout:{...layout,nodes:[layout.nodes[0],{...layout.nodes[1],id:'disclosure',actionId:undefined,localIntent:'toggle-scoreboard',checked:!!choices.scoreboardExpanded}]}});
+ const localPlanner:Planner=(_doc,_env,choices)=>({kind:'ready',layout:{...layout,nodes:[layout.nodes[0],{...layout.nodes[1],id:'disclosure',actionId:undefined,localIntent:'toggle-scoreboard',checked:!!choices.scoreboardOpen}]}});
  const h=host(),table=createCardTable({session,planner:localPlanner});table.attach(h.surface);
  const initial=table.inspect().frame!;
  h.callbacks.intent({kind:'activate',frameId:initial.id,nodeId:'disclosure'});
