@@ -14,7 +14,15 @@ describe('measured assistance and feedback presentation',()=>{
   const layout=solve({...view,assistance:{...view.assistance!,reactionsOpen:true}},{...environment,width,height,textScale});expect(validateLayout(layout)).toEqual([]);expect(layout.modalId).toBe('assistance-reactions');
   expect(layout.nodes.filter(node=>node.assistanceIntent?.kind==='tool'&&node.assistanceIntent.optionId)).toHaveLength(32);expect(layout.nodes.find(node=>node.assistanceIntent?.kind==='tool'&&node.assistanceIntent.optionId==='r0')?.label).toBe('반응 0');if(!layout.nodes.some(node=>node.id==='table-sidebar'))expect(layout.nodes.some(node=>node.label===projection.guidance)).toBe(false);expect(layout.nodes.filter(node=>node.semanticRole==='status'&&node.label==='👏')).toHaveLength(1);expect(layout.nodes.some(node=>node.observerReactionLayer)).toBe(false);
   const advice=solve({...view,assistance:{...view.assistance!,adviceOpen:true}},{...environment,width,height,textScale});expect(validateLayout(advice)).toEqual([]);expect(advice.modalId).toBe('assistance-advice');expect(advice.nodes.some(node=>node.label===projection.advice!.label)).toBe(true);expect(advice.nodes.some(node=>node.label===projection.guidance)).toBe(true);
-  const information=solve({...view,informationOpen:true},{...environment,width,height,textScale});expect(validateLayout(information)).toEqual([]);expect(information.modalId).toBe('table-information-dialog');expect(information.nodes.some(node=>node.label===projection.guidance)).toBe(true);expect(information.nodes.some(node=>node.kind==='group'&&node.label==='관전자 반응')).toBe(true);expect(information.nodes.filter(node=>node.semanticRole==='status'&&node.label==='👏')).toHaveLength(2);
+  const information=solve({...view,informationOpen:true},{...environment,width,height,textScale});expect(validateLayout(information)).toEqual([]);expect(information.modalId).toBe('table-information-dialog');if(width===320&&height===568&&textScale===1){
+   // The new information surface explicitly refuses the full body here.
+   // This is unavailable information, not a successful small-screen display.
+   expect(information.nodes.some(node=>node.id==='table-information-refusal'&&node.role==='body')).toBe(true);
+   expect(information.nodes.some(node=>node.kind==='group'&&node.label==='관전자 반응')).toBe(false);
+   expect(information.nodes.some(node=>node.id==='table-information-close'&&node.enabled)).toBe(true);
+   const owned=new Set(['table-information-dialog']);for(const node of information.nodes)if(node.parent&&owned.has(node.parent))owned.add(node.id);
+   expect(information.nodes.filter(node=>owned.has(node.id)).every(node=>!node.scroll)).toBe(true);
+  }else{expect(information.nodes.some(node=>node.id==='table-information-refusal')).toBe(false);expect(information.nodes.some(node=>node.label===projection.guidance)).toBe(true);expect(information.nodes.some(node=>node.kind==='group'&&node.label==='관전자 반응')).toBe(true);expect(information.nodes.filter(node=>node.semanticRole==='status'&&node.label==='👏')).toHaveLength(2);}
   const dialog=layout.nodes.find(node=>node.id===layout.modalId)!;expect(dialog.box.width).toBeLessThanOrEqual(width-32);expect(dialog.box.height).toBeLessThanOrEqual(height-32);
  });
  it('uses an enabled read-only card inspection target without executable card authority',()=>{
