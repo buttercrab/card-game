@@ -74,7 +74,19 @@ export function createDisclosureDialog(view:DisclosureView,environment:Environme
   if(!section)content.push(text('empty-section','표시할 내용이 없어요'));
   else if(section.kind==='content'){
    for(const panel of section.information??[])content.push(kit.information(doc,panel,w,id(`information:${section.id}:${panel.id}`)));
-   for(const group of section.cardGroups??[]){const parts=[text(`group-label:${group.id}`,group.label,'name')];if(group.personId)parts.push(text(`group-person:${group.id}`,person(group.personId),'name'));if(group.description)parts.push(text(`group-description:${group.id}`,group.description,'small'));parts.push(kit.rows(id(`cards:${group.id}`),w,group.cardIds.map((cardId,index)=>tile({cardId},id(`card:${group.id}:${index}`),64))));content.push(kit.column(id(`group:${group.id}`),w,parts,8));}
+   const groups=(section.cardGroups??[]).map(group=>{
+    const labels=[{suffix:`group-label:${group.id}`,value:group.label,role:'name' as TextRole},...(group.personId&&person(group.personId)!==group.label?[{suffix:`group-person:${group.id}`,value:person(group.personId),role:'name' as TextRole}]:[]),...(group.description?[{suffix:`group-description:${group.id}`,value:group.description,role:'small' as TextRole}]:[])];
+    return {group,labels,art:group.cardIds.map((cardId,index)=>tile({cardId},id(`card:${group.id}:${index}`),64))};
+   });
+   const labelWidth=Math.max(0,...groups.flatMap(({labels})=>labels.map(label=>kit.text(id(label.suffix),label.value,label.role,w,true).width)));
+   const cardMinimum=Math.max(0,...groups.flatMap(({art})=>art.map(card=>card.width))),adjacent=cardMinimum>0&&labelWidth+12+cardMinimum<=w;
+   for(const {group,labels,art} of groups){
+    // A label already naming this person is one identity, not two headings.
+    // Shared measured metadata keeps every participant's cards on one column.
+    const heading=kit.column(id(`group-heading:${group.id}`),adjacent?labelWidth:w,labels.map(label=>kit.text(id(label.suffix),label.value,label.role,adjacent?labelWidth:w)),8);
+    const cardRow=kit.rows(id(`cards:${group.id}`),adjacent?w-labelWidth-12:w,art);
+    content.push(adjacent?kit.group(id(`group:${group.id}`),w,Math.max(heading.height,cardRow.height),[{fragment:heading,x:0,y:0},{fragment:cardRow,x:labelWidth+12,y:0}]):kit.column(id(`group:${group.id}`),w,[heading,cardRow],8));
+   }
   }else if(section.kind==='rounds'){
    const round=window.round,index=round?section.rounds.indexOf(round):0;
    content.push(text('round-index',`${section.rounds.length?index+1:0} / ${section.rounds.length}`,'small'),kit.rows(id('round-navigation'),w,[command('previous-round','이전 라운드',{kind:'round',leaseId:lease,entryId,sectionId:section.id,index:index-1},index>0),command('next-round','다음 라운드',{kind:'round',leaseId:lease,entryId,sectionId:section.id,index:index+1},index+1<section.rounds.length)]));

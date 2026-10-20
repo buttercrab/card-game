@@ -37,3 +37,12 @@ test('five annotated participant rows remain fully represented at native sizes',
  expect(result.nodes.filter(node=>node.kind==='card')).toHaveLength(30);expect(result.nodes.filter(node=>node.kind==='card').every(node=>node.box.width===64&&node.box.height===90)).toBe(true);expect(content.box.height).toBeLessThanOrEqual(viewport.box.height);
  for(const group of [content,result.nodes.find(node=>node.semanticRole==='tabpanel')!,result.nodes.find(node=>node.semanticRole==='table')!]){const children=result.nodes.filter(node=>node.parent===group.id);for(let index=1;index<children.length;index++)expect(children[index].box.y-children[index-1].box.y-children[index-1].box.height).toBeGreaterThanOrEqual(4);}
 });
+test.each([['first',savedRecord],['second',secondRecord]])('%s completed hand point cards fit with one identity label and every original face',(_name,saved)=>{
+ const source=saved as unknown as MightyHistoryInput;expect(projectMightyHistory(source).status).toBe('available');
+ const selected=createMightyHistoryDisclosure({entryId:'second-points',source}),section=selected.sections.find(section=>section.id==='points')!;if(section.kind!=='content')throw Error('Points section missing');
+ const view:DisclosureView={leaseId:'read',catalogId:'replay',title:selected.title,selected,sectionId:'points',roundIndex:0,matrixStart:0,page:{catalogId:'replay',revision:'1',page:0,total:1,pageSize:12,entries:[{id:selected.entryId,title:selected.title}]}};
+ const result=createDisclosureDialog(view,{...environment,scrollbarWidth:15},kit()),nodes=result.nodes,viewport=nodes.find(node=>node.scrollResetKey)!,content=nodes.find(node=>node.parent===viewport.id)!;
+ expect(content.box.height).toBeLessThanOrEqual(viewport.box.height);expect(nodes.filter(node=>node.kind==='card')).toHaveLength(section.cardGroups!.reduce((sum,group)=>sum+group.cardIds.length,0));expect(nodes.filter(node=>node.kind==='card').every(node=>node.box.width===64&&node.box.height===90)).toBe(true);
+ for(const group of section.cardGroups!){expect(nodes.filter(node=>node.kind==='text'&&node.label===group.label)).toHaveLength(1);expect(nodes.some(node=>node.kind==='text'&&node.label===group.description&&node.role==='small')).toBe(true);}
+ expect(nodes.filter(node=>node.semanticRole==='tab')).toHaveLength(5);expect(nodes.filter(node=>node.disclosureIntent?.kind==='close')).toHaveLength(1);
+});
