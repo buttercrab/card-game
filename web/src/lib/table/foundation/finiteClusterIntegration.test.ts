@@ -1,3 +1,4 @@
+import {projectRoomShell} from './roomShell';
 import {expect,test} from 'vitest';
 import {planTable,typography,validateLayout} from './planner';
 import type {CandidateLayout,ChoiceView,Environment,Size,TableDocument} from './contracts';
@@ -27,3 +28,30 @@ test('host proof refuses inherited, nonenumerable and exotic metric records whil
 test('raised native host minima are honored and old40-body grants cannot override them',()=>{const env={...environment,controls:{choice:{...environment.controls.choice,minHeight:50},command:{...environment.controls.command,minHeight:60}}},p=solve(fixture().choices,env);expect(p.nodes.filter(n=>n.kind==='choice').every(n=>n.box.height===50)).toBe(true);expect(p.nodes.filter(n=>n.actionId).every(n=>n.box.height===60)).toBe(true);expect(validateLayout(p,env)).toEqual([]);expect(canonicalFiniteClusterTargets(solve(),env).size).toBe(0);});
 
 test.each([390,1280])('actual Mighty current auxiliary subset packs original footer without future Misdeal hole at%s',width=>{const client=exchangeCompositionFixture(),game=client.game!;game.view.phase={Bidding:{to_act:0,best:null,passed:Array(5).fill(false),has_bid:Array(5).fill(false)}};game.legal=['Pass',{Bid:{trump:'Spade',count:14}}];game.policy_actions={legal:game.legal,out_of_turn:[]};const environmentNow={...environment,width},session=createCardSession({transport:()=>{}}),doc=mightyDocument(client,1,true,undefined,true)!;session.receive(doc);const table=createCardTable({session});const surface:SurfacePort={identity:{},environment:()=>environmentNow,listen:()=>()=>{},measure(requests,reply){reply(requests.map(r=>{const natural=[...r.text].length*8,width=r.width??natural;return {key:r.key,size:{width:Math.min(width,natural),height:Math.max(1,Math.ceil(natural/Math.max(1,width)))*typography(r.role,r.environment).lineHeight}};}));return()=>{};},publish(){},disarm(){},invalidate(){},fallback(reason){throw Error(reason);},clear(){}};try{table.attach(surface);const before=table.inspect().frame!,commands=before.nodes.filter(n=>n.actionId),pass=commands.find(n=>n.label==='패스')!,submit=commands.find(n=>n.intent==='primary')!,row=before.nodes.find(n=>n.id==='finite-cluster-actions')!,cluster=before.nodes.find(n=>n.id==='finite-control-cluster')!;expect(commands.map(n=>n.label)).toEqual(['패스',submit.label]);expect(pass.box.width).toBe(88);expect(pass.box.x).toBe(0);expect(submit.box.x-pass.box.x-pass.box.width).toBe(8);if(width===390){expect(submit.box.width).toBeGreaterThan(240);expect(row.box.x*2+row.box.width).toBe(cluster.box.width);}else expect(submit.box.width).toBe(180);const allocations=(frame:typeof before)=>frame.nodes.filter(n=>['dock','finite-control-cluster','decision-content'].includes(n.id)).map(n=>({id:n.id,box:n.box}));game.legal=['Misdeal',...game.legal];game.policy_actions={legal:game.legal,out_of_turn:[]};session.receive(mightyDocument(client,2,true,undefined,true)!);const withFuture=table.inspect().frame!;expect(withFuture.nodes.filter(n=>n.actionId).map(n=>n.label).slice(0,2)).toEqual(['딜미스','패스']);expect(allocations(withFuture)).toEqual(allocations(before));const withDisabled=structuredClone(mightyDocument(client,3,true,undefined,true)!);session.receive({...withDisabled,offer:{...withDisabled.offer,actions:withDisabled.offer.actions.map(action=>action.kind==='command'&&action.label==='딜미스'?{...action,enabled:false}:action)}});const disabled=table.inspect().frame!;expect(disabled.nodes.find(n=>n.label==='딜미스'&&n.actionId)).toMatchObject({enabled:false,box:withFuture.nodes.find(n=>n.label==='딜미스'&&n.actionId)!.box});expect(validateLayout(disabled)).toEqual([]);}finally{table.dispose();session.dispose();}});
+
+test('admitted full default live bidding at1304x854 keeps all12 choices and native hand without a scroll plane',()=>{
+ const client=exchangeCompositionFixture(),game=client.game!;
+ client.room.seats=[{kind:'human',name:'QA-Local-A',connected:true,away:false},...['모과','호두','보리','단추'].map(name=>({kind:'bot' as const,name,level:'normal' as const}))];
+ game.view.hand=game.view.hand.slice(0,10);game.view.hand_sizes=Array(5).fill(10);
+ game.view.phase={Bidding:{to_act:0,best:null,passed:Array(5).fill(false),has_bid:Array(5).fill(false)}};
+ game.legal=['Pass',...(['Spade','Diamond','Heart','Club',null] as const).flatMap(trump=>Array.from({length:7},(_,index)=>({Bid:{trump,count:14+index}})))];
+ game.policy_actions={legal:game.legal,out_of_turn:[]};game.notes.contracts=[];
+ const doc={...mightyDocument(client,1,true,undefined,true)!,shell:projectRoomShell({roomCode:client.room.id,client}),interaction:{cardActivation:'repeat' as const}},session=createCardSession({transport:()=>{}}),env={...environment,width:1304,height:854,scrollbarWidth:15,scrollbarHeight:15};session.receive(doc);
+ const table=createCardTable({session});const surface:SurfacePort={identity:{},environment:()=>env,listen:()=>()=>{},measure(requests,reply){reply(requests.map(r=>{const natural=r.text==='노기루다'?52:[...r.text].length*8,width=r.width??natural;return {key:r.key,size:{width:Math.min(width,natural),height:Math.max(1,Math.ceil(natural/Math.max(1,width)))*typography(r.role,r.environment).lineHeight}};}));return()=>{};},publish(){},disarm(){},invalidate(){},fallback(reason){throw Error(reason);},clear(){}};
+ try{table.attach(surface);const frame=table.inspect().frame!;expect(frame).toBeTruthy();expect(validateLayout(frame,env)).toEqual([]);
+  const chips=frame.nodes.filter(n=>n.kind==='choice');expect(chips).toHaveLength(12);expect(chips.every(n=>n.box.height===40)).toBe(true);
+  expect(frame.nodes.filter(n=>n.id.includes('finite-cluster-scroll'))).toEqual([]);
+  expect(frame.nodes.filter(n=>n.kind==='card'&&n.visual?.kind==='standard')).toHaveLength(10);expect(session.snapshot().document!.offer.actions).toHaveLength(36);
+  const rows=new Set(chips.map(n=>global(frame,n.id).y));expect(rows.size).toBe(1);
+  // Baseline a582f9b under these deterministic native measurement replies.
+  // Decision repair must not switch to the smaller-hand fallback recipe.
+  expect(global(frame,'dock')).toEqual({x:16,y:638,width:939.72,height:200});
+  expect(global(frame,'hand')).toEqual({x:136,y:646,width:811.72,height:158});
+  expect(global(frame,'regular-arena')).toEqual({x:16,y:88,width:939.72,height:486});
+  expect(global(frame,'table-sidebar')).toEqual({x:982.72,y:84,width:305.28,height:754});
+  expect(frame.nodes.filter(n=>n.kind==='figure'&&n.ownerId&&n.ownerId!=='p0').map(n=>global(frame,n.id))).toEqual([
+   {x:285.815,y:103,width:68.04,height:62.370000000000005},{x:617.865,y:103,width:68.04,height:62.370000000000005},
+   {x:195.79,y:283.9222,width:68.04,height:62.370000000000005},{x:707.8900000000001,y:283.9222,width:68.04,height:62.370000000000005}]);
+  expect(chips.every(n=>canonicalFiniteClusterTargets(frame,env).has(n.id))).toBe(true);
+ }finally{table.dispose();session.dispose();}
+});

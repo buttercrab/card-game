@@ -1798,8 +1798,12 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const columns=regularParticipantColumns({width:scene.arena.width,figure:scene.peerFigure,gap:GAP,minimumCenter:REGULAR_TRICK.minimumWidth,minimumWing:Math.max(...people.map(person=>peerMinimumWidth(person,document,metrics,scene.peerFigure)))});
         if(!columns)return null;
         const centerWidth=columns.centerWidth;
-        const controlWidth=Math.max(1,scene.arena.width-gutter);
-        const controlView=controlChoices(choices),reservation=controlView.decisionPresentation?measureDecisionDomain(controlView.decisionPresentation,controlWidth,metrics):groupDecisionReservation(controlView,controlWidth,metrics);
+        // Finite bid choices occupy the clear corridor below the complete ring,
+        // not the narrower participant-column allocation. Keep its existing
+        // dock/sidebar recipe when native controls fit the main column.
+        const controlView=controlChoices(choices),decisionWidth=controlView.decisionPresentation?mainWidth:scene.arena.width,decisionX=controlView.decisionPresentation?0:scene.arena.x;
+        const controlWidth=Math.max(1,decisionWidth-gutter);
+        const reservation=controlView.decisionPresentation?measureDecisionDomain(controlView.decisionPresentation,controlWidth,metrics):groupDecisionReservation(controlView,controlWidth,metrics);
         const hasControls=controlView.commands.length>0||!!controlView.selected||controlView.fields.length>0||!!controlView.cards||!!controlView.selectionPresentation;
         const guidance=!hasControls&&!choices.nativeCardPresentation?choices.assistance?.projection.guidance:undefined;
         const unreservedControls=reservation?null:guidance?column('decisions',controlWidth,[textNode('decision-guidance',guidance,'small',controlWidth,metrics)],SMALL_GAP):decisions(choices,controlWidth,metrics,true);
@@ -1822,7 +1826,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const controlContent={...controls,nodes:controls.nodes.map((node,index)=>index===0?{...node,id:'decision-content'}:node.parent===controls.nodes[0].id?{...node,parent:'decision-content'}:node)};
         const nativeControl=controls.nodes.some(node=>['command','choice','select','toggle','range','editor'].includes(node.kind));
         if(nativeControl&&controlHeight<TARGET)return {kind:'cannot-fit',reason:'Native decision cannot fit its required viewport'};
-        const controlViewport=!result&&controls.height?controlHeight>=TARGET?scrollColumn('decisions',scene.arena.width,controlHeight,[controlContent],gutter,'선택과 실행 · 세로 스크롤'):group('decisions',scene.arena.width,controlHeight,[{fragment:controlContent,x:0,y:0}],{semanticRole:'group',label:'현재 선택 안내'}):null;
+        const controlViewport=!result&&controls.height?controlHeight>=TARGET?scrollColumn('decisions',decisionWidth,controlHeight,[controlContent],gutter,'선택과 실행 · 세로 스크롤'):group('decisions',decisionWidth,controlHeight,[{fragment:controlContent,x:0,y:0}],{semanticRole:'group',label:'현재 선택 안내'}):null;
         const dockParts:{fragment:Fragment;x:number;y:number}[]=[];
         if(local)dockParts.push({fragment:local,x:DOCK_PADDING,y:DOCK_PADDING});
         if(!document.outcome){
@@ -1834,7 +1838,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const dockContext=group('native-dock-context',mainWidth,scene.frame.regions.tray.height,[...(instruction?[{fragment:instruction,x:0,y:0}]:[]),{fragment:tray,x:0,y:instructionHeight}]);
         const sceneHeight=scene.contentHeight;
         const arena=group('regular-arena',mainWidth,ring.height,[{fragment:ring,x:scene.arena.x,y:0}]);
-        const corridor=controlViewport?jointDecisionCorridor({...scene.frame,regions:{...scene.frame.regions,strip:{...scene.frame.regions.strip,x:scene.arena.x,width:scene.arena.width}}},{contentHeight:controlHeight,minimumHeight:Math.min(controlHeight,requiredMinimum),frameHeight:sceneHeight,protected:[]}):null;
+        const corridor=controlViewport?jointDecisionCorridor({...scene.frame,regions:{...scene.frame.regions,strip:{...scene.frame.regions.strip,x:decisionX,width:decisionWidth}}},{contentHeight:controlHeight,minimumHeight:Math.min(controlHeight,requiredMinimum),frameHeight:sceneHeight,protected:[]}):null;
         if(controlViewport&&!corridor)return {kind:'cannot-fit',reason:'Current controls exceed the public decision corridor'};
         const stripContent=result??controlViewport;
         const strip=stripContent?group('table-decision-strip',stripContent.width,stripContent.height,[{fragment:stripContent,x:0,y:0}]):null;

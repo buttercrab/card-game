@@ -41,7 +41,7 @@
 {#if node?.kind==='toggle'}
   <SwitchTrack checked={node.toggle}/>
 {:else}
-<svg class="shared-art ink-{ink}" style:color={node?.kind==='icon'?'var(--ink)':undefined} width="100%" height="100%" viewBox={node?.kind==='icon'?'0 0 24 24':node?.kind==='figure'?FIGURE_BODY.viewBox:node?.kind==='progress'?'0 0 100 16':node?.kind==='suit'?'0 0 100 100':'0 0 100 140'} preserveAspectRatio={node?.kind==='figure'?'xMidYMin meet':'none'} aria-hidden="true" data-foundation-art="shared" data-card-back={visual?.kind==='back'?'':undefined}>
+<svg class="shared-art ink-{ink}" style:color={node?.kind==='icon'?'var(--ink)':node?.kind==='suit'?'inherit':undefined} width="100%" height="100%" viewBox={node?.kind==='icon'?'0 0 24 24':node?.kind==='figure'?FIGURE_BODY.viewBox:node?.kind==='progress'?'0 0 100 16':node?.kind==='suit'?'0 0 100 100':'0 0 100 140'} preserveAspectRatio={node?.kind==='figure'?'xMidYMin meet':'none'} aria-hidden="true" data-foundation-art="shared" data-card-back={visual?.kind==='back'?'':undefined}>
   {#if node?.kind==='figure'}
     {#if node.appearance?.vacant}
       <g class="vacant"><path d="M20 108 Q22 76 60 72 Q98 76 100 108"/><circle cx="60" cy="48" r="20"/></g>

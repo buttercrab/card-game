@@ -54,3 +54,8 @@ test('unavailable cards keep opaque paper outside their muted artwork layer',()=
  expect(body.slice(paper,layer)).not.toContain('opacity=');
  expect(body.slice(layer)).toContain('opacity="0.65"');expect(body.slice(layer)).toContain('grayscale(1)');
 });
+
+test('standalone suit artwork inherits selected control ink instead of resetting to card spade ink',()=>{
+ for(const suit of ['Spade','Diamond','Heart','Club'] as const){const {body}=render(SharedArtwork,{props:{node:node({kind:'suit',suit})}});expect(body).toMatch(/style="[^"]*color: inherit/);}
+ const card=render(SharedArtwork,{props:{node:node({kind:'card',visual:{kind:'standard',suit:'Spade',rank:14}})}}).body;expect(card).not.toContain('color: inherit');
+});
