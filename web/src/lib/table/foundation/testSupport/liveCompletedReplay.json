@@ -1,0 +1,1119 @@
+{
+  "identity": {
+    "roomId": "replay-regression",
+    "roomEpoch": "completed-hand",
+    "sessionId": 1,
+    "handNumber": 1
+  },
+  "record": {
+    "session_id": 1,
+    "number": 1,
+    "names": [
+      "QA-Local-A",
+      "모과",
+      "호두",
+      "보리",
+      "단추"
+    ],
+    "participant_ids": [
+      "p0",
+      "p1",
+      "p2",
+      "p3",
+      "p4"
+    ],
+    "payoffs": [
+      -224,
+      112,
+      -112,
+      112,
+      112
+    ],
+    "rules": {
+      "players": 5,
+      "hand_size": 10,
+      "deck": "OneJoker",
+      "lowest_rank": 2,
+      "extra_cards": [],
+      "misdeal": {
+        "point_value": 2,
+        "joker_value": -2,
+        "card_values": [
+          [
+            {
+              "Normal": [
+                "Spade",
+                10
+              ]
+            },
+            1
+          ],
+          [
+            {
+              "Normal": [
+                "Diamond",
+                10
+              ]
+            },
+            1
+          ],
+          [
+            {
+              "Normal": [
+                "Heart",
+                10
+              ]
+            },
+            1
+          ],
+          [
+            {
+              "Normal": [
+                "Club",
+                10
+              ]
+            },
+            1
+          ],
+          [
+            {
+              "Normal": [
+                "Spade",
+                14
+              ]
+            },
+            0
+          ]
+        ],
+        "threshold": 1,
+        "all_points": false,
+        "window": "BeforeFirstBid",
+        "declarer": false,
+        "caller_deals": true
+      },
+      "bidding": {
+        "min": 14,
+        "max": 20,
+        "allow_no_trump": true,
+        "no_trump_bonus": 1,
+        "no_trump_wins_ties": false,
+        "first_bidder_may_pass": true,
+        "change_trump_cost": 2,
+        "change_to_no_trump_cost": null,
+        "pass_is_final": true,
+        "last_chance_min": 13,
+        "raise_on_exchange": true
+      },
+      "friend": {
+        "by_card": true,
+        "by_seat": true,
+        "first_trick": true,
+        "last_trick": false,
+        "fake": true,
+        "alone": true
+      },
+      "policy": {
+        "mighty": {
+          "first": "Valid",
+          "last": "Valid"
+        },
+        "trump": {
+          "first": "NoLead",
+          "last": "Valid"
+        },
+        "joker": {
+          "first": "NoEffect",
+          "last": "NoEffect"
+        },
+        "joker_call": {
+          "first": "NoEffect",
+          "last": "NoEffect"
+        },
+        "overrides": [],
+        "release_with_mighty": false
+      },
+      "joker_call": {
+        "calls": [
+          [
+            {
+              "Normal": [
+                "Club",
+                3
+              ]
+            },
+            {
+              "Normal": [
+                "Spade",
+                3
+              ]
+            }
+          ]
+        ],
+        "mighty_defense": true,
+        "called_joker_has_power": false
+      },
+      "joker_lead": {
+        "by_color": false,
+        "powerless_passes": false,
+        "not_first_trick": true
+      },
+      "scoring": {
+        "win": {
+          "BothOver": 13
+        },
+        "lose": "Shortfall",
+        "no_trump": "Always",
+        "alone": "Always",
+        "run": true,
+        "back_run": {
+          "TeamAtMost": 10
+        },
+        "full_contract": "Always",
+        "discards_to_declarer": true
+      },
+      "reveal_discards": false,
+      "next_dealer": "FriendOrDeclarer"
+    },
+    "view": {
+      "viewer": "Spectator",
+      "rules": {
+        "players": 5,
+        "hand_size": 10,
+        "deck": "OneJoker",
+        "lowest_rank": 2,
+        "extra_cards": [],
+        "misdeal": {
+          "point_value": 2,
+          "joker_value": -2,
+          "card_values": [
+            [
+              {
+                "Normal": [
+                  "Spade",
+                  10
+                ]
+              },
+              1
+            ],
+            [
+              {
+                "Normal": [
+                  "Diamond",
+                  10
+                ]
+              },
+              1
+            ],
+            [
+              {
+                "Normal": [
+                  "Heart",
+                  10
+                ]
+              },
+              1
+            ],
+            [
+              {
+                "Normal": [
+                  "Club",
+                  10
+                ]
+              },
+              1
+            ],
+            [
+              {
+                "Normal": [
+                  "Spade",
+                  14
+                ]
+              },
+              0
+            ]
+          ],
+          "threshold": 1,
+          "all_points": false,
+          "window": "BeforeFirstBid",
+          "declarer": false,
+          "caller_deals": true
+        },
+        "bidding": {
+          "min": 14,
+          "max": 20,
+          "allow_no_trump": true,
+          "no_trump_bonus": 1,
+          "no_trump_wins_ties": false,
+          "first_bidder_may_pass": true,
+          "change_trump_cost": 2,
+          "change_to_no_trump_cost": null,
+          "pass_is_final": true,
+          "last_chance_min": 13,
+          "raise_on_exchange": true
+        },
+        "friend": {
+          "by_card": true,
+          "by_seat": true,
+          "first_trick": true,
+          "last_trick": false,
+          "fake": true,
+          "alone": true
+        },
+        "policy": {
+          "mighty": {
+            "first": "Valid",
+            "last": "Valid"
+          },
+          "trump": {
+            "first": "NoLead",
+            "last": "Valid"
+          },
+          "joker": {
+            "first": "NoEffect",
+            "last": "NoEffect"
+          },
+          "joker_call": {
+            "first": "NoEffect",
+            "last": "NoEffect"
+          },
+          "overrides": [],
+          "release_with_mighty": false
+        },
+        "joker_call": {
+          "calls": [
+            [
+              {
+                "Normal": [
+                  "Club",
+                  3
+                ]
+              },
+              {
+                "Normal": [
+                  "Spade",
+                  3
+                ]
+              }
+            ]
+          ],
+          "mighty_defense": true,
+          "called_joker_has_power": false
+        },
+        "joker_lead": {
+          "by_color": false,
+          "powerless_passes": false,
+          "not_first_trick": true
+        },
+        "scoring": {
+          "win": {
+            "BothOver": 13
+          },
+          "lose": "Shortfall",
+          "no_trump": "Always",
+          "alone": "Always",
+          "run": true,
+          "back_run": {
+            "TeamAtMost": 10
+          },
+          "full_contract": "Always",
+          "discards_to_declarer": true
+        },
+        "reveal_discards": false,
+        "next_dealer": "FriendOrDeclarer"
+      },
+      "first_bidder": 0,
+      "hand": [],
+      "hand_sizes": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "points_taken": [
+        [
+          {
+            "Normal": [
+              "Diamond",
+              14
+            ]
+          },
+          {
+            "Normal": [
+              "Heart",
+              14
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              10
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              10
+            ]
+          }
+        ],
+        [],
+        [
+          {
+            "Normal": [
+              "Spade",
+              12
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              14
+            ]
+          }
+        ],
+        [
+          {
+            "Normal": [
+              "Diamond",
+              11
+            ]
+          },
+          {
+            "Normal": [
+              "Diamond",
+              12
+            ]
+          },
+          {
+            "Normal": [
+              "Diamond",
+              10
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              14
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              13
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              11
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              11
+            ]
+          },
+          {
+            "Normal": [
+              "Diamond",
+              13
+            ]
+          },
+          {
+            "Normal": [
+              "Heart",
+              10
+            ]
+          },
+          {
+            "Normal": [
+              "Heart",
+              11
+            ]
+          },
+          {
+            "Normal": [
+              "Club",
+              12
+            ]
+          },
+          {
+            "Normal": [
+              "Spade",
+              13
+            ]
+          },
+          {
+            "Normal": [
+              "Heart",
+              13
+            ]
+          },
+          {
+            "Normal": [
+              "Heart",
+              12
+            ]
+          }
+        ],
+        []
+      ],
+      "phase": {
+        "Done": {
+          "declarer": 0,
+          "contract": {
+            "trump": null,
+            "count": 20
+          },
+          "call": {
+            "Card": {
+              "Normal": [
+                "Spade",
+                14
+              ]
+            }
+          },
+          "friend": 2,
+          "team_points": 6,
+          "payoffs": [
+            -224,
+            112,
+            -112,
+            112,
+            112
+          ],
+          "value": {
+            "contract": {
+              "trump": null,
+              "count": 20
+            },
+            "team_points": 6,
+            "made": false,
+            "steps": [
+              {
+                "Short": {
+                  "contract": 20,
+                  "short": 14,
+                  "total": 14
+                }
+              },
+              {
+                "BackRun": {
+                  "rule": {
+                    "TeamAtMost": 10
+                  },
+                  "total": 28
+                }
+              },
+              {
+                "Doubled": {
+                  "why": "NoTrump",
+                  "total": 56
+                }
+              },
+              {
+                "Doubled": {
+                  "why": "FullContract",
+                  "total": 112
+                }
+              }
+            ],
+            "value": -112
+          },
+          "tricks": [
+            {
+              "plays": [
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      14
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      2
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      4
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      2
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      6
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Diamond"
+              },
+              "winner": 0
+            },
+            {
+              "plays": [
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      7
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      12
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      14
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      2
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      4
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Spade"
+              },
+              "winner": 2
+            },
+            {
+              "plays": [
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      3
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      6
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      8
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      14
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      7
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Heart"
+              },
+              "winner": 0
+            },
+            {
+              "plays": [
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      11
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      3
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      9
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      12
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      10
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Diamond"
+              },
+              "winner": 3
+            },
+            {
+              "plays": [
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      14
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      13
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      7
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      11
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      5
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Club"
+              },
+              "winner": 3
+            },
+            {
+              "plays": [
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      3
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      8
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      10
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      5
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      10
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Club"
+              },
+              "winner": 0
+            },
+            {
+              "plays": [
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      7
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      5
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      6
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      8
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      11
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Diamond"
+              },
+              "winner": 3
+            },
+            {
+              "plays": [
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      13
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      9
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      3
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      6
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      10
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Diamond"
+              },
+              "winner": 3
+            },
+            {
+              "plays": [
+                {
+                  "seat": 3,
+                  "card": {
+                    "Joker": "Black"
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      9
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      8
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      9
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      11
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Club"
+              },
+              "winner": 3
+            },
+            {
+              "plays": [
+                {
+                  "seat": 3,
+                  "card": {
+                    "Normal": [
+                      "Club",
+                      12
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 4,
+                  "card": {
+                    "Normal": [
+                      "Spade",
+                      13
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 0,
+                  "card": {
+                    "Normal": [
+                      "Diamond",
+                      5
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 1,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      13
+                    ]
+                  },
+                  "powered": true
+                },
+                {
+                  "seat": 2,
+                  "card": {
+                    "Normal": [
+                      "Heart",
+                      12
+                    ]
+                  },
+                  "powered": true
+                }
+              ],
+              "lead": {
+                "Suit": "Club"
+              },
+              "winner": 3
+            }
+          ],
+          "discards": []
+        }
+      },
+      "bids": [
+        {
+          "seat": 0,
+          "contract": {
+            "trump": null,
+            "count": 20
+          }
+        }
+      ],
+      "redealt": null
+    }
+  }
+}

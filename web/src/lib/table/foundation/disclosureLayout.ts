@@ -4,7 +4,7 @@ import type {DisclosureIntent,DisclosureView} from './disclosureView';
 export interface DisclosureFragment {readonly width:number;readonly height:number;readonly nodes:readonly PlannedNode[];}
 interface Placement {fragment:DisclosureFragment;x:number;y:number;}
 export interface DisclosureLayoutKit {
- text(id:string,value:string,role:TextRole,width:number):DisclosureFragment;
+ text(id:string,value:string,role:TextRole,width:number,intrinsic?:boolean):DisclosureFragment;
  button(id:string,label:string,width:number,intent:DisclosureIntent|undefined,extra?:Partial<PlannedNode>):DisclosureFragment;
  column(id:string,width:number,children:readonly DisclosureFragment[],gap?:number):DisclosureFragment;
  rows(id:string,width:number,children:readonly DisclosureFragment[],extra?:Partial<PlannedNode>):DisclosureFragment;
@@ -28,8 +28,17 @@ export function createDisclosureDialog(view:DisclosureView,environment:Environme
  const window=disclosureWindow(view,environment),{width,contentWidth:w,section}=window,lease=view.leaseId,doc=view.selected,prefix=key('disclosure',lease),panelId=key('disclosure-panel',lease);
  const id=(...parts:string[])=>key(prefix,...parts),text=(suffix:string,value:string,role:TextRole='body',allocation=w)=>kit.text(id(suffix),value,role,allocation);
  const command=(suffix:string,label:string,intent:DisclosureIntent,enabled=true,extra:Partial<PlannedNode>={})=>kit.button(id(suffix),label,w,intent,{enabled,intent:'quiet',...extra});
- const children:DisclosureFragment[]=[text('title',doc?.title??view.title,'name')];
  const close=command('close','닫기',{kind:'close',leaseId:lease});
+ // Natural measured children share a row when they fit; narrow views wrap
+ // without shrinking text, hit targets, or historical artwork.
+ const title=kit.text(id('title'),doc?.title??view.title,'name',w,true);
+ const measuredRow=(rowId:string,parts:DisclosureFragment[],end=false)=>{
+  if(parts.reduce((sum,part)=>sum+part.width,0)+8*(parts.length-1)>w)return kit.rows(rowId,w,parts);
+  const height=Math.max(...parts.map(part=>part.height));let x=0;
+  return kit.group(rowId,w,height,parts.map((fragment,index)=>{const placement={fragment,x:end&&index===parts.length-1?w-fragment.width:x,y:(height-fragment.height)/2};x+=fragment.width+8;return placement;}));
+ };
+ const children:DisclosureFragment[]=[measuredRow(id('heading'),[title,close],true)];
+ let fitMatrixSpacing:((overflow:number)=>number)|undefined;
  if(view.error)children.push(text('error',view.error));
  if(view.pending){
   if(view.pending.status==='loading')children.push(text('loading','기록을 불러오는 중이에요'));
@@ -72,22 +81,35 @@ export function createDisclosureDialog(view:DisclosureView,environment:Environme
    if(round){content.push(text(`round:${round.id}`,round.title,'name'));if(round.summary)content.push(text('round-summary',round.summary));if(round.lead)content.push(kit.value(doc,round.lead,w,id('round-lead')));const tileWidth=Math.min(w,Math.max(96,Math.min(160*environment.textScale,(w-8)/2)));content.push(kit.rows(id('round-plays'),w,round.plays.map((play,index)=>tile(play,id(`play:${index}`),tileWidth,person(play.personId)))));}else content.push(text('no-rounds','아직 라운드가 없어요'));
   }else{
    const visible=section.columns.slice(window.start,window.start+window.columnCount),colWidth=visible.length?(w-window.labelWidth-8*(visible.length))/visible.length:64;
-   content.push(text('matrix-index',`${visible.length?window.start+1:0}–${window.start+visible.length} / ${section.columns.length}`,'small'),kit.rows(id('matrix-navigation'),w,[command('previous-columns','이전 열',{kind:'matrix-page',leaseId:lease,entryId,sectionId:section.id,start:Math.max(0,window.start-window.columnCount)},window.start>0),command('next-columns','다음 열',{kind:'matrix-page',leaseId:lease,entryId,sectionId:section.id,start:window.start+visible.length},window.start+visible.length<section.columns.length)]));
+   content.push(measuredRow(id('matrix-navigation'),[kit.text(id('matrix-index'),`${visible.length?window.start+1:0}–${window.start+visible.length} / ${section.columns.length}`,'small',w,true),command('previous-columns','이전 열',{kind:'matrix-page',leaseId:lease,entryId,sectionId:section.id,start:Math.max(0,window.start-window.columnCount)},window.start>0),command('next-columns','다음 열',{kind:'matrix-page',leaseId:lease,entryId,sectionId:section.id,start:window.start+visible.length},window.start+visible.length<section.columns.length)]));
    const row=(rowId:string,cells:DisclosureFragment[],role:'row'='row')=>kit.group(rowId,w,Math.max(0,...cells.map(cell=>cell.height)),cells.map((fragment,index)=>({fragment,x:index===0?0:window.labelWidth+8+(index-1)*(colWidth+8),y:0})),{semanticRole:role});
    const semantic=(fragment:DisclosureFragment,role:'rowheader'|'columnheader'|'cell')=>({...fragment,nodes:[{...fragment.nodes[0],semanticRole:role,kind:'group' as const},...fragment.nodes.slice(1)]});
    const cellText=(cellId:string,label:string,allocation:number,role:'rowheader'|'columnheader'|'cell')=>semantic(kit.column(cellId,allocation,[kit.text(key(cellId,'text'),label,'small',allocation)],0),role);
    const blankCell=(cellId:string)=>{const blank=cellText(cellId,'—',colWidth,'cell');return {...blank,nodes:[{...blank.nodes[0],label:'카드 없음'},...blank.nodes.slice(1)]};};
    const matrixRows=[row(id('matrix-head'),[cellText(id('matrix-person-heading'),'참가자',window.labelWidth,'columnheader'),...visible.map(column=>cellText(id(`column:${column.id}`),column.label,colWidth,'columnheader'))])];
    for(const [index,item]of section.rows.entries()){matrixRows.push(row(id(`matrix-row:${index}`),[cellText(id(`row-name:${index}`),person(item.personId),window.labelWidth,'rowheader'),...visible.map((column,offset)=>{const reference=item.cells[window.start+offset];return reference?semantic(tile(reference,id(`cell:${index}:${column.id}`),colWidth),'cell'):blankCell(id(`cell:${index}:${column.id}`));})]));}
-   content.push(kit.column(id('matrix'),w,matrixRows,8));const matrix=content[content.length-1];content[content.length-1]={...matrix,nodes:[{...matrix.nodes[0],semanticRole:'table',label:section.title},...matrix.nodes.slice(1)]};
+   const matrixIndex=content.length,panelIndex=children.length;
+   const matrixAt=(gap:number)=>{const matrix=kit.column(id('matrix'),w,matrixRows,gap);return {...matrix,nodes:[{...matrix.nodes[0],semanticRole:'table' as const,label:section.title},...matrix.nodes.slice(1)]};};
+   content.push(matrixAt(8));
+   // Preserve measured card/text heights. Only inter-row breathing room yields
+   // to the viewport, down to the design system's smallest spacing token.
+   // Whole-pixel gaps round down so allocation never exceeds its height budget.
+   fitMatrixSpacing=overflow=>{
+    const rowGaps=Math.max(0,matrixRows.length-1),gap=Math.max(4,Math.floor(8-overflow/Math.max(1,rowGaps)));content[matrixIndex]=matrixAt(gap);
+    const remaining=Math.max(0,overflow-(8-gap)*rowGaps),panelGaps=Math.max(0,content.length-1),panelGap=Math.max(4,Math.floor(12-remaining/Math.max(1,panelGaps)));
+    const panel=kit.column(panelId,w,content,panelGap);children[panelIndex]={...panel,nodes:[{...panel.nodes[0],semanticRole:'tabpanel',label:section.title},...panel.nodes.slice(1)]};
+    return Math.max(0,remaining-(12-panelGap)*panelGaps);
+   };
   }
   if(!content.length)content.push(text('empty-content','표시할 내용이 없어요'));
   const panel=kit.column(panelId,w,content,12);children.push({...panel,nodes:[{...panel.nodes[0],semanticRole:'tabpanel',label:section?.title??'기록 내용'},...panel.nodes.slice(1)]});
   const formActions=(view.formActions??[]).map(action=>kit.button(id(`form-action:${action.id}`),action.label,w,undefined,{enabled:true,intent:action.intent,disclosureFormActionId:action.id}));
   if(formActions.length)children.push(kit.rows(id('form-actions'),w,formActions));
  }
- children.push(close);
- const content=kit.column(id('content'),w,children,12),height=Math.max(1,Math.min(environment.height-32,content.height+32));
+ let content=kit.column(id('content'),w,children,12);
+ const overflow=content.height-Math.max(1,environment.height-64);
+ if(overflow>0&&fitMatrixSpacing){const remaining=fitMatrixSpacing(overflow),gap=Math.max(4,Math.floor(12-remaining/Math.max(1,children.length-1)));content=kit.column(id('content'),w,children,gap);}
+ const height=Math.max(1,Math.min(environment.height-32,content.height+32));
  const viewport=kit.group(key('disclosure-viewport',lease),width-32,Math.max(1,height-32),[{fragment:content,x:0,y:0}],{scroll:true,scrollAxis:'y',semanticRole:'group',label:'기록 내용',scrollbarGutter:environment.scrollbarWidth??0,scrollResetKey:JSON.stringify([view.page?.page,section?doc!.sections.indexOf(section):-1,view.roundIndex,view.matrixStart])});
  return kit.group(key('disclosure-dialog',lease),width,height,[{fragment:viewport,x:16,y:16}],{semanticRole:'dialog',label:doc?.title??view.title,decoration:'dialog',modalLeaseId:lease});
 }

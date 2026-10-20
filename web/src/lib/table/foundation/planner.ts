@@ -1040,7 +1040,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
     }
     function disclosureDialog(view:DisclosureView,metrics:Measurements):Fragment {
         return createDisclosureDialog(view,metrics.environment,{
-            text:(id,value,role,width)=>textNode(id,value,role,width,metrics),
+            text:(id,value,role,width,intrinsic)=>textNode(id,value,role,intrinsic?Math.min(width,metrics.intrinsic(value,role).width):width,metrics),
             button:(id,label,width,disclosureIntent,extra)=>button(id,label,width,metrics,{...extra,disclosureIntent}),
             column,rows,group,
             information:(record,panel,width,prefix)=>namespace(informationPanel(historicalDocument(record),panel,width,metrics),prefix),
