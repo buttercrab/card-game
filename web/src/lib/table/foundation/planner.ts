@@ -1180,7 +1180,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
     function summaryInk(fragment:Fragment,context:HudReadContext):Fragment {
         return context.suppressSummaryInk?group(fragment.nodes[0].id,fragment.width,fragment.height,[],{inert:true}):fragment;
     }
-    function informationPanel(document:HudReadContext,panel:InformationPanel,width:number,metrics:Measurements,condensed=false):Fragment {
+    function informationPanel(document:HudReadContext,panel:InformationPanel,width:number,metrics:Measurements,condensed=false,reflow=false):Fragment {
         const available=width-PADDING*2,id=key('information',panel.id),scale=metrics.environment.textScale;
         const children:Fragment[]=condensed?[]:[textNode(key(id,'title'),panel.title,'name',available,metrics)];
         if(panel.summary){const label=textNode(key(id,'summary','text'),panel.summary.text,condensed?'body':'name',Math.max(1,available-SMALL_GAP*2),metrics);children.push(summaryInk(group(key(id,'summary'),available,label.height+SMALL_GAP*2,[{fragment:label,x:SMALL_GAP,y:SMALL_GAP}],{decoration:'callout',tone:panel.summary.tone}),document));}
@@ -1189,7 +1189,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             return atoms.reduce((sum,atom)=>sum+(atom.kind==='suit'?32*scale:atom.kind==='card'?24*scale:metrics.intrinsic(informationText(document,atom),atom.kind==='participant'?'name':'body').width),0)+SMALL_GAP*(atoms.length-1);
         };
         const fieldFragment=(field:InformationPanel['fields'][number],allocation:number):Fragment=>{
-            const fieldId=key(id,'field',field.id),labelWidth=Math.min(condensed?allocation-SMALL_GAP-1:allocation*.4,Math.max(32,metrics.intrinsic(field.label,'small').width));
+            const fieldId=key(id,'field',field.id),labelWidth=Math.min(condensed||reflow?allocation-SMALL_GAP-1:allocation*.4,Math.max(32,metrics.intrinsic(field.label,'small').width));
             const label=textNode(key(fieldId,'label'),field.label,'small',labelWidth,metrics);
             const value=valueFragment(document,field.value,key(fieldId,'value'),Math.max(1,allocation-labelWidth-SMALL_GAP),metrics);
             return group(fieldId,allocation,Math.max(label.height,value.height),[{fragment:label,x:0,y:0},{fragment:value,x:labelWidth+SMALL_GAP,y:0}]);
@@ -1202,6 +1202,13 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             }
             items.push(...panel.fields.map(field=>fieldFragment(field,Math.min(available,Math.max(32,metrics.intrinsic(field.label,'small').width)+SMALL_GAP+naturalValue(field.value)))));
             if(items.length)children.push(rows(key(id,'details'),available,items));
+        }else if(reflow){
+            if(panel.primary){
+                const label=panel.primary.label?textNode(key(id,'primary-label'),panel.primary.label,'small',Math.min(available,metrics.intrinsic(panel.primary.label,'small').width),metrics):null;
+                const value=valueFragment(document,panel.primary.value,key(id,'primary'),Math.max(1,available-(label?label.width+SMALL_GAP:0)),metrics,true);
+                children.push(rows(key(id,'contract'),available,[...(label?[label]:[]),value]));
+            }
+            if(panel.fields.length)children.push(rows(key(id,'fields'),available,panel.fields.map(field=>fieldFragment(field,Math.min(available,Math.max(32,metrics.intrinsic(field.label,'small').width)+SMALL_GAP+naturalValue(field.value))))));
         }else if(panel.primary&&panel.fields.length&&available>=240*scale){
             const primaryWidth=Math.min(120*scale,available*.4),detailsWidth=available-primaryWidth-SMALL_GAP;
             const primary=column(key(id,'contract'),primaryWidth,[...(panel.primary.label?[textNode(key(id,'primary-label'),panel.primary.label,'small',primaryWidth,metrics)]:[]),valueFragment(document,panel.primary.value,key(id,'primary'),primaryWidth,metrics,true)],SMALL_GAP);
@@ -1327,7 +1334,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const surface=group('outcome',surfaceWidth,height,[{fragment:body,x:paddingX,y:paddingY}],{decoration:'result',semanticRole:'group',label:'이번 판 결과'});
         return group('outcome-region',width,height,[{fragment:surface,x:(width-surfaceWidth)/2,y:0}]);
     }
-    function factsPanel(document:HudReadContext,width:number,metrics:Measurements,condensed=false,choices?:ChoiceView,heightBudget?:number):Fragment {
+    function factsPanel(document:HudReadContext,width:number,metrics:Measurements,condensed=false,choices?:ChoiceView,heightBudget?:number,preserveTypography=false):Fragment {
         // Read-only panels share the HUD owner's natural stack, independently
         // of the generic table-content spacing and current information height.
         const stack=(children:readonly Fragment[]):Fragment=>{
@@ -1335,8 +1342,8 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             return group('facts',width,plan.height,children.map((fragment,index)=>({fragment,x:plan.nodes[index].bounds.x,y:plan.nodes[index].bounds.y})));
         };
         if(document.information?.length||document.scoreboard){
-            const compose=(compactInformation:boolean,rosterFirst=false)=>{
-                const children=(document.information??[]).filter(panel=>panel.id!==document.outcome?.informationId).map(panel=>informationPanel(document,panel,width,metrics,compactInformation));
+            const compose=(compactInformation:boolean,rosterFirst=false,reflow=false)=>{
+                const children=(document.information??[]).filter(panel=>panel.id!==document.outcome?.informationId).map(panel=>informationPanel(document,panel,width,metrics,compactInformation,reflow));
                 if(document.scoreboard){
                     if(condensed)children.push(button('scoreboard-disclosure',choices?.scoreboardExpanded?(document.scoreboard.disclosure?.closeLabel??`${document.scoreboard.title} 접기`):(document.scoreboard.disclosure?.openLabel??`${document.scoreboard.title} 보기`),width,metrics,{kind:'command',enabled:true,checked:!!choices?.scoreboardExpanded,localIntent:'toggle-scoreboard',intent:'quiet'}));
                     if(!condensed||choices?.scoreboardExpanded){const roster=scoreboard(document,width,metrics);if(rosterFirst)children.unshift(roster);else children.push(roster);}
@@ -1350,6 +1357,9 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             // push its final participant below the initial viewport. This
             // changes presentation only; all fields, scores and rows remain.
             if(condensed||heightBudget===undefined||detailed.height<=heightBudget)return detailed;
+            // Tool-bearing rails may reflow complete information, never trade its
+            // title or native text roles for room occupied by essential controls.
+            if(preserveTypography){const reflow=compose(false,false,true);return reflow.height<detailed.height?reflow:detailed;}
             const compact=compose(true);
             // The active status already presents the declared essential facts
             // above this rail. Its detailed duplicate yields before the roster;
@@ -1754,8 +1764,9 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         // A complete roster alone cannot transfer essential status ownership.
         // Keep the existing regular scene, but admit its controls-only header
         // only when the complete detailed information also fits the rail.
-        const completeRail=factsPanel(document,Math.max(1,railWidth-gutter),metrics,false,choices,bodyHeight);
-        const recoverStatus=!document.outcome&&!!(document.statusPresentation||document.facts.some(fact=>fact.essential))&&completeRail.height>bodyHeight;
+        const tools=assistanceTools(Math.max(1,railWidth-gutter),metrics,choices),toolsHeight=tools?tools.height+GAP:0;
+        const completeRail=factsPanel(document,Math.max(1,railWidth-gutter),metrics,false,choices,bodyHeight-toolsHeight,!!tools);
+        const recoverStatus=!document.outcome&&!!(document.statusPresentation||document.facts.some(fact=>fact.essential))&&completeRail.height+toolsHeight>bodyHeight;
         if(recoverStatus){
             const slot=header?.nodes.find(node=>node.observerReactionSlot),status=slot?activeStatus(document,slot.box.width,metrics,'all'):null;
             if(slot&&status){
@@ -1829,7 +1840,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const strip=stripContent?group('table-decision-strip',stripContent.width,stripContent.height,[{fragment:stripContent,x:0,y:0}]):null;
         const stripPosition=result?{x:scene.arena.x+columns.wing+GAP,y:scene.arena.y+(measuredRing.sceneCenterY??0)+Math.max(0,(REGULAR_TRICK.height-result.height)/2)}:corridor?{x:corridor.x,y:corridor.y}:null;
         const left=group('active-table-content',mainWidth,sceneHeight,[{fragment:arena,x:0,y:scene.arena.y},{fragment:dockContext,x:0,y:scene.frame.regions.tray.y},...(strip&&stripPosition?[{fragment:strip,...stripPosition}]:[])],strip?{jointDecisionLayer:true}:{});
-        const facts=factsPanel(document,Math.max(1,railWidth-gutter),metrics,false,choices,scene.railHeight),tools=assistanceTools(Math.max(1,railWidth-gutter),metrics,choices);
+        const facts=factsPanel(document,Math.max(1,railWidth-gutter),metrics,false,choices,scene.railHeight-toolsHeight,!!tools);
         const rail=scrollColumn('table-sidebar',railWidth,scene.railHeight,[facts,...(tools?[tools]:[])],gutter,'테이블 정보 · 세로 스크롤');
         const body=group('table-body',width,sceneHeight,[{fragment:left,x:0,y:0},{fragment:rail,x:mainWidth+GAP+gutter,y:0}]);
         const shell=column('table-underlay',environment.width,[...(header?[header]:[]),body],GAP,PADDING);

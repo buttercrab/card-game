@@ -89,3 +89,13 @@ test('expanded status header keeps later room notices below its measured row',()
  const source=mightyJokerDocument(),panel=source.information![0],shell={...withRoom(source).shell!,notices:[{id:'notice',text:'참여 요청을 확인해 주세요.',tone:'plain' as const}]},document={...source,shell,information:[{...panel,fields:[...panel.fields,{id:'full-public-detail',label:'공개 설명',value:{kind:'text' as const,text:'모든 공개 설명을 유지합니다. '.repeat(25)}}]}]};
  const layout=solve(document,900),header=bounds(layout,'room-header'),notice=bounds(layout,'room-notices');expect(validateLayout(layout)).toEqual([]);expect(notice.y).toBeGreaterThanOrEqual(header.y+header.height);expect(layout.nodes.some(node=>node.label===shell.notices[0].text)).toBe(true);
 });
+
+test.each([800,846,900])('ordinary desktop information and tools fit at height%i without losing titles or native typography',height=>{
+ const document=withRoom(mightyJokerDocument()),view:ChoiceView={...choices,assistance:{projection:{scope:{context:document.context,roomId:'proof',roomEpoch:'epoch',connectionEpoch:'connection',actorId:document.participant.id,seat:0,gameVersion:7},offerId:'assistance',tools:[{id:'hint',kind:'request-advice',label:'힌트 보기',shortcut:'H',enabled:true},{id:'reaction',kind:'send-reaction',label:'반응',shortcut:'R',enabled:true,options:[{id:'clap',text:'👏',label:'박수'}]}],inspections:[],reactions:[]},adviceOpen:false,reactionsOpen:false}};
+ const layout=solve(document,height,view),ordinary=solve(document,height),rail=layout.nodes.find(node=>node.id==='table-sidebar')!;
+ expect(layout.nodes.some(node=>node.id==='regular-arena')).toBe(true);expect(validateLayout(layout)).toEqual([]);
+ const bottom=Math.max(...layout.nodes.filter(node=>node.parent===rail.id).map(node=>node.box.y+node.box.height));expect(bottom).toBeLessThanOrEqual(rail.box.height);
+ for(const node of ordinary.nodes.filter(node=>under(ordinary,node.id,'facts')&&node.kind!=='group')){const next=layout.nodes.find(candidate=>candidate.id===node.id);expect(next,node.id).toBeDefined();expect(next!.label,node.id).toBe(node.label);expect(next!.role,node.id).toBe(node.role);expect(next!.kind,node.id).toBe(node.kind);expect(next!.progressPaint,node.id).toEqual(node.progressPaint);expect(next!.visual,node.id).toEqual(node.visual);}
+ expect(layout.nodes.filter(node=>node.assistanceIntent)).toHaveLength(2);expect(solve(document,height)).toEqual(ordinary);expect(bounds(layout,'dock')).toEqual(bounds(ordinary,'dock'));
+ for(const node of ordinary.nodes.filter(node=>node.kind==='card'&&node.cardId))expect(bounds(layout,node.id)).toEqual(bounds(ordinary,node.id));
+});
