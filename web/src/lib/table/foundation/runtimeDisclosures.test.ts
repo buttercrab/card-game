@@ -56,3 +56,22 @@ test('native identity loss and default full revoke clear the retained viewer and
 });
 
 test('record navigation retires prior metric working sets instead of retaining archive text',()=>{const f=fixture(true,true);f.activate('open');expect(f.table.inspect().cacheSize).toBe(300);f.activate('row-a');expect(f.table.inspect().cacheSize).toBe(300);f.activate('back');expect(f.table.inspect().cacheSize).toBe(300);f.activate('row-b');expect(f.table.inspect().cacheSize).toBe(300);expect(f.view.disclosure?.selected?.entryId).toBe('row-b');f.dispose();});
+
+test.each(['close','dismiss','back'] as const)('disclosure %s restores the opener after detail navigation and refresh',mode=>{
+ const f=fixture();open(f);f.activate('tab-rounds');
+ f.callbacks.intent({kind:'focus',nodeId:'back',frameId:f.table.inspect().frame!.id});
+ f.callbacks.environment({...environment,revision:'refreshed'});expect(f.table.inspect().frame?.focusId).toBe('back');
+ f.session.receive(document('2'));expect(f.table.inspect().frame?.focusId).toBe('back');
+ if(mode==='close')f.activate('close');
+ else if(mode==='dismiss')f.callbacks.intent({kind:'dismiss',frameId:f.table.inspect().frame!.id});
+ else {f.table.back();expect(f.view.disclosure?.page).toBeDefined();f.table.back();}
+ expect(f.view.disclosure).toBeUndefined();expect(f.table.inspect().frame?.focusId).toBe('open');expect(f.send).not.toHaveBeenCalled();f.dispose();
+});
+test('disclosure cannot restore an opener retired by a new scope, even when its node ID is reused',()=>{
+ const f=fixture();open(f);f.session.receive(document('2','hand2'));f.activate('close');expect(f.table.inspect().frame?.focusId).toBeNull();f.dispose();
+});
+test.each(['removed','disabled','restored'] as const)('disclosure cannot restore a retired shell opener (%s)',mode=>{
+ const f=fixture();open(f);const next=document('2');f.session.receive({...next,shell:{...next.shell!,header:{...next.shell!.header,actions:mode==='disabled'?next.shell!.header.actions.map(action=>({...action,enabled:false})):[]}}});
+ if(mode==='restored')f.session.receive(document('3'));
+ f.activate('close');expect(f.table.inspect().frame?.focusId).toBeNull();f.dispose();
+});

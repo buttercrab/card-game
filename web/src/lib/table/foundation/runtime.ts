@@ -101,11 +101,33 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
     const disclosure=createDisclosureController({readCurrent(){const current=session.snapshot();return session.disclosures?{offers:current.document?.disclosures??[],port:session.disclosures}:null;}});
     function disclosureView(){const view=disclosure.snapshot(),doc=snapshot.document;if(!view)return;const receipt=view.selection;return Object.freeze({...view,...(receipt?{formActions:Object.freeze((doc?.disclosureFormActions??[]).filter(action=>action.selectionId===receipt.id&&action.catalogId===receipt.catalogId&&action.catalogRevision===receipt.revision&&action.entryId===receipt.entryId&&doc?.forms?.some(form=>form.id===action.formId&&form.instanceId===action.formInstanceId&&form.enabled)))}:{})});}
     function modalLease(){return activeForm?.leaseId??disclosureView()?.leaseId??cardActionPicker?.leaseId??catalogue?.leaseId;}
-    function closeDisclosure(){disclosure.close();surface?.preserveModal?.(null);}
-    function openDisclosure(catalogId:string){
+    let disclosureOpener:{id:string;context:TableDocument<A>['context'];catalogId:string;catalogRevision:string;scope:string;outcomeId?:string;shellActionId?:string}|null=null;
+    let disclosureFocusPending=false;
+    function disclosureOpenerScopeCurrent(doc:TableDocument<A>|null){
+        const opener=disclosureOpener,offer=doc?.disclosures?.find(offer=>offer.id===opener?.catalogId);
+        return !!opener&&!!doc&&sameScope(opener.context,doc.context)&&offer?.revision===opener.catalogRevision&&JSON.stringify(offer.scope)===opener.scope&&(!opener.outcomeId||doc.outcome?.id===opener.outcomeId);
+    }
+    function disclosureOpenerCurrent(doc:TableDocument<A>|null){
+        const opener=disclosureOpener;if(!opener||!doc||!disclosureOpenerScopeCurrent(doc))return false;
+        return opener.shellActionId?!!doc.shell&&roomShellActions(doc.shell).some(action=>action.id===opener.shellActionId&&action.enabled&&action.intent.kind==='open-disclosure'&&action.intent.catalogId===opener.catalogId):doc.outcome?.detailsCatalogId===opener.catalogId;
+    }
+    function restoreDisclosureFocus(){
+        // A connected retained-read projection temporarily hides its outcome
+        // entry point. Closing queues a fresh projection; keep only the exact
+        // record/catalog receipt until that entry point is reauthorized.
+        disclosureFocusPending=disclosureOpenerScopeCurrent(snapshot.document);
+        focusId=disclosureOpenerCurrent(snapshot.document)?disclosureOpener!.id:null;
+        if(!disclosureFocusPending)disclosureOpener=null;
+    }
+    function closeDisclosure(restoreFocus=false){disclosure.close();surface?.preserveModal?.(null);if(restoreFocus)restoreDisclosureFocus();else {disclosureOpener=null;disclosureFocusPending=false;}}
+    function openDisclosure(catalogId:string,openerId?:string){
         const doc=snapshot.document;if(!doc||session.snapshot().document!==doc||!doc.disclosures?.some(offer=>offer.id===catalogId))return false;
         discardForm();adviceOpen=false;reactionsOpen=false;inspection=undefined;
-        const opened=disclosure.open(catalogId);if(!opened)return false;
+        const opener=openerId?frame?.nodes.find(node=>node.id===openerId):undefined;
+        const opened=disclosure.open(catalogId);if(!opened)return false;disclosureFocusPending=false;
+        // Refreshing a disclosure must retain its original table opener, not a
+        // transient control inside the replaced record or form.
+        if(openerId)disclosureOpener=opener?{id:openerId,context:doc.context,catalogId,catalogRevision:doc.disclosures!.find(offer=>offer.id===catalogId)!.revision,...(opener.shellActionId?{}:{outcomeId:doc.outcome?.id}),scope:JSON.stringify(doc.disclosures!.find(offer=>offer.id===catalogId)!.scope),...(opener.shellActionId?{shellActionId:opener.shellActionId}:{})}:null;
         informationOpen=false;informationOpener=null;scoreboardOpen=false;scoreboardReturnToInformation=false;scoreboardOpener=null;shellPage=undefined;shellSubject=undefined;shellConfirmation=false;commandConfirmation=null;leaveConfirmationFingerprint=null;shellHistory=[];confirmationOpener=null;
         metrics.clear();attempts=0;surface?.preserveModal?.(disclosureView()?.leaseId??null);focusId=null;invalidate();schedule();return true;
     }
@@ -336,6 +358,10 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
         if(formFocusField&&activeForm){const target=result.layout.nodes.find(node=>node.enabled&&(node.editor?.fieldId===formFocusField||node.formField?.fieldId===formFocusField));if(target){focusId=target.id;revealFocusId=target.id;formFocusField=null;}}
         const focusable=result.layout.nodes.filter(node=>inModal(node.id,result.layout)&&(node.kind==='group'&&node.scroll||node.enabled&&(node.kind==='command'||node.kind==='choice'||node.kind==='select'||node.kind==='toggle'||node.kind==='range'||node.kind==='editor'||node.kind==='card'&&!!(node.cardId||node.inspectCardId))));
         const fallbackControl=(activeForm?focusable.find(node=>node.kind==='editor'):undefined)??focusable.find(node=>node.kind!=='group');
+        // Closing a native modal may report focus loss from its old frame
+        // while asynchronous metrics are pending. Apply the scoped return
+        // receipt only to the finished publication, not that transient blur.
+        if(disclosureFocusPending)focusId=disclosureOpenerCurrent(doc)?disclosureOpener!.id:null;
         const nextFocus=focusId&&focusable.some(node=>node.id===focusId)?focusId:result.layout.modalId?fallbackControl?.id??focusable[0]?.id??null:null;
         if((catalogue||cardActionPicker)&&nextFocus&&focusable.some(node=>node.id===nextFocus&&node.kind==='choice'))revealFocusId=nextFocus;
         if(nextFocus&&focusable.some(node=>node.id===nextFocus&&node.kind==='card'&&node.zoneId==='hand'))revealFocusId=nextFocus;
@@ -360,6 +386,7 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
             for(const id of concealNeedsBegin)if(!next.nodes.some(node=>node.id===id))concealNeedsBegin.delete(id);
             lastFrameId = next.id;
             focusId = nextFocus;
+            if(disclosureFocusPending&&(nextFocus===disclosureOpener?.id||!disclosureOpenerScopeCurrent(doc))){disclosureFocusPending=false;disclosureOpener=null;}
             status = 'ready';
             attempts = 0;feedbackController?.published(next.id);if(pendingRefusal&&current()){const refusal=pendingRefusal;pendingRefusal=null;if(inspection?.cardId===refusal.cardId&&inspection.reason===refusal.reason){surface?.refuse?.(refusal.nodeId);feedbackController?.local({id:`refusal:${++refusalSerial}`,kind:'refusal',milestone:{kind:'visible'}});}}
         }
@@ -449,7 +476,7 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
     function shellAction(action:RoomShellAction,nodeId:string,doc:TableDocument<A>):void {
         const shell=doc.shell;if(!shell)return;
         switch(action.intent.kind){
-            case 'open-disclosure':openDisclosure(action.intent.catalogId);return;
+            case 'open-disclosure':openDisclosure(action.intent.catalogId,nodeId);return;
             case 'open-form':{const offer=doc.forms?.find(form=>form.id===(action.intent.kind==='open-form'?action.intent.formId:null)&&form.enabled);if(offer)beginForm(offer);return;}
             case 'open-page':openShell(action.intent.page,nodeId);return;
             case 'inspect-subject':{
@@ -538,12 +565,14 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
             if (disposed || !surface || session.snapshot().document !== snapshot.document)
                 return;
             if (input.nodeId === null) {
+                if(disclosureFocusPending&&status==='ready'&&frame&&!frame.modalId&&input.frameId===frame.id){disclosureFocusPending=false;disclosureOpener=null;}
                 if (input.frameId === frame?.id || input.frameId === lastFrameId)
                     focusId = null;
                 return;
             }
             if (status !== 'ready' || !frame || input.frameId !== frame.id)
                 return;
+            if(disclosureFocusPending){disclosureFocusPending=false;disclosureOpener=null;}
             const focused = frame.nodes.find(node => node.id === input.nodeId);
             if (focused && !(essentialMask?.frameId===frame.id&&essentialMask.ids.has(focused.id)) && !(concealed?.frameId===frame.id&&concealed.ids.has(focused.id)) && inModal(focused.id,frame) && (focused.kind==='editor'&&focused.enabled || focused.kind==='group'&&focused.scroll || focused.enabled&&(focused.kind === 'command' || focused.kind === 'choice' || focused.kind==='select' || focused.kind==='toggle' || focused.kind==='range' || focused.kind === 'card')))
                 focusId = focused.id;
@@ -563,7 +592,7 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
         if (disposed || !surface || status !== 'ready' || !frame || input.frameId !== frame.id)
             return;
         if(input.kind==='dismiss'){
-            const doc=snapshot.document;if(doc&&session.snapshot().document===doc&&sameContext(frame.context,doc.context)&&frame.modalId){if(activeForm){formAction('close');}else if(disclosureView()){closeDisclosure();focusId=null;invalidate();schedule();}else closeShell();}
+            const doc=snapshot.document;if(doc&&session.snapshot().document===doc&&sameContext(frame.context,doc.context)&&frame.modalId){if(activeForm){formAction('close');}else if(disclosureView()){closeDisclosure(true);invalidate();schedule();}else closeShell();}
             return;
         }
         const node = frame.nodes.find(node => node.id === input.nodeId);
@@ -585,6 +614,7 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
         if (input.kind==='activate'&&input.provenance!=='direct'&&gesture && (gesture.frame !== frame.id || gesture.node !== node.id))
             return;
         gesture = null;
+        if(disclosureFocusPending){disclosureFocusPending=false;disclosureOpener=null;}
         const doc = snapshot.document;
         const authoritative = session.snapshot();
         if (authoritative.document !== doc || !authoritative.connected&&!node.localIntent&&!node.shellIntent&&!node.preference&&!node.formIntent&&!node.disclosureIntent&&!node.disclosureCatalogId&&!node.disclosureFormActionId)
@@ -629,8 +659,8 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
         if(node.formNavigation){const nav=node.formNavigation,form=activeForm;if(!form||nav.leaseId!==form.leaseId||form.draft.composing)return;if(nav.sectionId&&form.offer.sections?.some(section=>section.id===nav.sectionId))form.activeSection=nav.sectionId;if(nav.summaryPage!==undefined){const pages=Math.max(1,Math.ceil(formSummaryItems(formView()!).length/FORM_SUMMARY_PAGE_SIZE));if(Number.isSafeInteger(nav.summaryPage)&&nav.summaryPage>=0&&nav.summaryPage<pages)form.summaryPage=nav.summaryPage;}refreshFieldLeases();formFocusField=nav.fieldId??null;focusId=null;invalidate();schedule();return;}
         if(node.formField){formField(node);return;}
         if(node.disclosureFormActionId){const view=disclosureView(),receipt=view?.selection,link=doc.disclosureFormActions?.find(action=>action.id===node.disclosureFormActionId);if(!activeForm&&receipt&&link&&link.selectionId===receipt.id&&link.catalogId===receipt.catalogId&&link.catalogRevision===receipt.revision&&link.entryId===receipt.entryId&&session.disclosures?.selectionCurrent?.(receipt.id)===true){const offer=doc.forms?.find(form=>form.id===link.formId&&form.instanceId===link.formInstanceId&&form.enabled&&form.access?.selectionId===receipt.id);if(offer&&session.snapshot().document===doc)beginForm(offer);}return;}
-        if(node.disclosureIntent){if(disclosure.intent(node.disclosureIntent)){metrics.clear();attempts=0;surface?.preserveModal?.(disclosureView()?.leaseId??null);focusId=node.semanticRole==='tab'?node.id:null;invalidate();schedule();}return;}
-        if(node.disclosureCatalogId){if(doc.outcome?.detailsCatalogId===node.disclosureCatalogId)openDisclosure(node.disclosureCatalogId);return;}
+        if(node.disclosureIntent){if(disclosure.intent(node.disclosureIntent)){metrics.clear();attempts=0;surface?.preserveModal?.(disclosureView()?.leaseId??null);if(disclosureView())focusId=node.semanticRole==='tab'?node.id:null;else restoreDisclosureFocus();invalidate();schedule();}return;}
+        if(node.disclosureCatalogId){if(doc.outcome?.detailsCatalogId===node.disclosureCatalogId)openDisclosure(node.disclosureCatalogId,node.id);return;}
         if(disclosureView()&&!activeForm)return;
         if(node.formIntent){if(activeForm&&node.formLeaseId===activeForm.leaseId)formAction(node.formIntent,node.formActionId);return;}
         if(activeForm)return;
@@ -706,6 +736,11 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
         if (disposed)
             return;
         const previous = snapshot.document, doc = next.document,previousConnected=snapshot.connected;
+        if(disclosureOpener&&!disclosureOpenerCurrent(doc)){
+            const retained=disclosureView();
+            const temporarilySuppressed=!!disclosureOpener.outcomeId&&disclosureOpenerScopeCurrent(doc)&&(disclosureFocusPending||retained?.catalogId===disclosureOpener.catalogId&&!!retained.selected);
+            if(!temporarilySuppressed){disclosureOpener=null;disclosureFocusPending=false;}
+        }
         
         const pickerBefore=cardActionPicker;
         const rebasePicker=!!pickerBefore&&!!doc&&!!previous&&next.connected&&sameScope(previous.context,doc.context)&&pickerBefore.document===previous&&pickerBefore.revision===decisionDraft.revision&&pickerBefore.authority===selectionAuthority(doc)&&pickerBefore.cards===JSON.stringify(cardIds(previous));
@@ -857,7 +892,7 @@ export function createCardTable<A>({ session, planner = planTable,effects,assist
             }
         },
         back(){
-            const doc=snapshot.document;if(disposed||!surface)return false;if(activeForm){formAction('close');return true;}if(cardActionPicker){closeCardActionPicker();return true;}if(catalogue){closeCatalogue();return true;}if(informationOpen){closeShell();return true;}const viewer=disclosureView();if(viewer){const accepted=disclosure.intent({kind:'back',leaseId:viewer.leaseId});if(accepted){metrics.clear();attempts=0;surface.preserveModal?.(disclosureView()?.leaseId??null);focusId=null;invalidate();schedule();}return true;}if(!doc?.shell||session.snapshot().document!==doc)return false;
+            const doc=snapshot.document;if(disposed||!surface)return false;if(activeForm){formAction('close');return true;}if(cardActionPicker){closeCardActionPicker();return true;}if(catalogue){closeCatalogue();return true;}if(informationOpen){closeShell();return true;}const viewer=disclosureView();if(viewer){const accepted=disclosure.intent({kind:'back',leaseId:viewer.leaseId});if(accepted){metrics.clear();attempts=0;surface.preserveModal?.(disclosureView()?.leaseId??null);if(disclosureView())focusId=null;else restoreDisclosureFocus();invalidate();schedule();}return true;}if(!doc?.shell||session.snapshot().document!==doc)return false;
             if(closeShell())return true;const action=doc.shell.header.actions.find(action=>action.purpose==='menu'&&action.enabled);
             if(action?.intent.kind!=='open-page')return false;const opener=frame?.nodes.find(node=>node.shellActionId===action.id)?.id??null;openShell(action.intent.page,opener);return true;
         },
