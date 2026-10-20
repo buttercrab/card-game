@@ -1750,7 +1750,28 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         if(environment.width<1100||environment.height<640||document.outcome?.overview||document.participant.role==='observer'||people.length!==4||tricks.length!==1||!selected||selected.some(id=>id!==tricks[0].id)||!document.scoreboard||!roster.every(id=>document.scoreboard!.rows.some(row=>row.participantId===id)))return null;
         const width=environment.width-PADDING*2,gutter=environment.scrollbarWidth??0;
         const railWidth=Math.min(Math.max(360,280*environment.textScale),Math.max(280*environment.textScale,width*.24)),mainWidth=width-railWidth-GAP-gutter;
-        const header=shellHeader(document,width,metrics,choices,'none'),headerHeight=header?header.height+GAP:0,bodyHeight=environment.height-headerHeight-PADDING*2;
+        let header=shellHeader(document,width,metrics,choices,'none'),headerHeight=header?header.height+GAP:0,bodyHeight=environment.height-headerHeight-PADDING*2;
+        // A complete roster alone cannot transfer essential status ownership.
+        // Keep the existing regular scene, but admit its controls-only header
+        // only when the complete detailed information also fits the rail.
+        const completeRail=factsPanel(document,Math.max(1,railWidth-gutter),metrics,false,choices,bodyHeight);
+        const recoverStatus=!document.outcome&&!!(document.statusPresentation||document.facts.some(fact=>fact.essential))&&completeRail.height>bodyHeight;
+        if(recoverStatus){
+            const slot=header?.nodes.find(node=>node.observerReactionSlot),status=slot?activeStatus(document,slot.box.width,metrics,'all'):null;
+            if(slot&&status){
+                // Reflow the existing header row at native text size. Its
+                // measured status replaces, rather than overlaps, the passive
+                // reaction allocation. Keep the hand's own allocation intact.
+                const extra=Math.max(0,status.height-slot.box.height),ancestors=new Set<string>();
+                let parent=slot.parent;while(parent){ancestors.add(parent);parent=header!.nodes.find(node=>node.id===parent)?.parent??null;}
+                header={...header!,height:header!.height+extra,nodes:[...header!.nodes.filter(node=>node.id!==slot.id).map(node=>{
+                    if(ancestors.has(node.id))return {...node,box:{...node.box,height:node.box.height+extra}};
+                    const preceding=header!.nodes.find(candidate=>ancestors.has(candidate.id)&&candidate.parent===node.parent&&candidate.id!==node.id&&node.box.y>=candidate.box.y+candidate.box.height);
+                    return preceding?{...node,box:{...node.box,y:node.box.y+extra}}:node;
+                }),...status.nodes.map((node,index)=>index===0?{...node,parent:slot.parent,box:{...node.box,x:slot.box.x,y:slot.box.y+(slot.box.height+extra-status.height)/2}}:node)]};
+            }else header=shellHeader(document,width,metrics,choices,'all');
+            headerHeight=header?header.height+GAP:0;bodyHeight=environment.height-headerHeight-PADDING*2;
+        }
         if(!Number.isFinite(bodyHeight)||bodyHeight<=0||!Number.isFinite(mainWidth)||mainWidth<=0)return null;
         const localWidth=identityRequirements(document,metrics).preferredWidth,handWidth=mainWidth-DOCK_PADDING*2-localWidth-GAP;
         if(handWidth<=0)return {kind:'cannot-fit',reason:'Public scene cannot contain its measured local identity and hand'};
