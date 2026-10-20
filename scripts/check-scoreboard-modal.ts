@@ -54,3 +54,28 @@ test('refused score content can fit again after resize with complete values and 
  const wide=solve({...base,width:1440,height:900,textScale:1},choices);assert(!wide.nodes.some(node=>node.id==='table-scoreboard-refusal'));assert(wide.nodes.some(node=>node.label.includes('누적 -20')));assert(wide.nodes.some(node=>node.label.includes('누적 20')));
  for(const node of wide.nodes.filter(node=>node.id.includes('current-scoreboard')&&node.kind==='text'))assert(['body','name','small'].includes(node.role!));
 });
+function modalDescendants(layout:ReturnType<typeof solve>){const owned=new Set([layout.modalId]);for(const node of layout.nodes)if(node.parent&&owned.has(node.parent))owned.add(node.id);return layout.nodes.filter(node=>owned.has(node.id));}
+test('fitting information preserves every field without a scrolling viewport',()=>{
+ const layout=solve(base,{...view,informationOpen:true}),nodes=modalDescendants(layout);
+ assert(nodes.every(node=>!node.scroll),'Information modal must not create a scroll region');
+ assert(!nodes.some(node=>node.id==='table-information-refusal'));assert(nodes.some(node=>node.label==='라운드'));assert(nodes.some(node=>node.label==='1'));
+ assert(nodes.some(node=>node.localIntent==='toggle-scoreboard'));assert(nodes.some(node=>node.id==='table-information-close'));
+});
+test('overflowing information explicitly refuses and preserves navigation, then restores full content when space returns',()=>{
+ const text='현재 테이블의 모든 규칙과 안내를 생략하지 않습니다. '.repeat(15),doc={...document,information:[{id:'status',title:'현재 상태',fields:[{id:'rules',label:'규칙',value:{kind:'text' as const,text}}]}]};
+ const narrow=solve({...base,width:390,height:568},{...view,informationOpen:true},doc),nodes=modalDescendants(narrow);
+ assert(nodes.some(node=>node.id==='table-information-refusal'),'Insufficient information space must be explicitly refused, not scroll');assert(nodes.every(node=>!node.scroll));
+ assert(nodes.some(node=>node.localIntent==='toggle-scoreboard'));assert(nodes.some(node=>node.id==='table-information-close'));assert(!nodes.some(node=>node.label===text));
+ const restored=solve({...base,width:768,height:1600},{...view,informationOpen:true},doc),full=modalDescendants(restored);
+ assert(!full.some(node=>node.id==='table-information-refusal'));assert(full.some(node=>node.label===text));assert(full.every(node=>!node.scroll));
+});
+test('refused information still supports score → Back → Close with exact focus restoration',()=>{
+ const env={...base,height:568},doc={...document,information:[{id:'status',title:'현재 상태',fields:[{id:'rules',label:'규칙',value:{kind:'text' as const,text:'전체 설명과 규칙을 생략하지 않습니다. '.repeat(18)}}]}]};
+ let callbacks:SurfaceCallbacks;const failures:unknown[]=[];const session=createCardSession<string>({transport:()=>{throw Error('Readonly navigation must not send');}});session.receive(doc);
+ const surface:SurfacePort={identity:{},environment:()=>env,listen(value){callbacks=value;return()=>{};},measure(requests,reply){reply(requests.map(request=>({key:request.key,size:measured(request)})));return()=>{};},publish(){},disarm(){},invalidate(){},fallback(value){failures.push(value);},clear(){}};
+ const table=createCardTable({session});table.attach(surface);const frame=()=>{assert.deepEqual(failures,[]);assert(table.inspect().frame);return table.inspect().frame!;};
+ const activate=(id:string)=>callbacks.intent({kind:'activate',provenance:'direct',frameId:frame().id,nodeId:id});
+ const original=frame().nodes.find(node=>node.localIntent==='toggle-information'&&node.enabled)!.id;activate(original);assert(frame().nodes.some(node=>node.id==='table-information-refusal'));
+ const scores=frame().nodes.find(node=>node.localIntent==='toggle-scoreboard')!.id;activate(scores);assert.equal(frame().modalId,'table-scoreboard-dialog');assert(table.back());assert(frame().nodes.some(node=>node.id==='table-information-refusal'));assert.equal(table.inspect().focusId,scores);
+ activate('table-information-close');assert.equal(frame().modalId,undefined);assert.equal(table.inspect().focusId,original);assert.equal(session.snapshot().operations.length,0);table.dispose();session.dispose();
+});

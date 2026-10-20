@@ -1621,9 +1621,19 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         };
         const maximum=metrics.environment.height-32,fixed=headingHeight+GAP+PADDING*2;
         if(maximum-fixed<TARGET)throw Error('Viewport cannot contain readable table information');
-        let body=bodyAt(available),inner=Math.max(TARGET,Math.min(body.height,maximum-fixed)),gutter=body.height>inner?(metrics.environment.scrollbarWidth??0):0;if(gutter)body=bodyAt(available-gutter);
-        const viewport=group('table-information-viewport',available,inner,[{fragment:body,x:0,y:0}],{scroll:true,scrollAxis:'y',scrollbarGutter:gutter,semanticRole:'group',label:'테이블 정보 · 세로 스크롤'});
-        return group(id,width,fixed+inner,[{fragment:heading,x:PADDING,y:PADDING},{fragment:viewport,x:PADDING,y:PADDING+headingHeight+GAP}],{semanticRole:'dialog',label:'테이블 정보',decoration:'dialog'});
+        // NEW bounded information seam: preserve complete measured content or
+        // explicitly refuse it. Never clip, scroll, or reduce text to claim fit.
+        let body=bodyAt(available);
+        if(body.height>maximum-fixed){
+            const message=textNode('table-information-refusal','이 화면에는 테이블 정보 전체를 표시할 공간이 부족해요. 창을 넓히거나 화면을 회전해 주세요.','body',available,metrics);
+            const detailsId=document.outcome?.detailsCatalogId;
+            const navigation=[...(document.scoreboard?[button('table-information-scoreboard',`${document.scoreboard.title} 보기`,available,metrics,{localIntent:'toggle-scoreboard',enabled:true,intent:'quiet'})]:[]),...(detailsId&&document.disclosures?.some(catalog=>catalog.id===detailsId)?[button('outcome-details','자세히 보기',available,metrics,{enabled:true,intent:'quiet',disclosureCatalogId:detailsId})]:[])];
+            body=column('table-information-unavailable',available,[message,...navigation.map(fragment=>namespace(fragment,'current-information'))],GAP);
+        }
+        // Missing native measurements must settle before admitting either body.
+        if(!metrics.missing.size&&body.height>maximum-fixed)throw Error('Viewport cannot contain readable table information navigation');
+        const viewport=group('table-information-viewport',available,body.height,[{fragment:body,x:0,y:0}],{semanticRole:'group',label:'테이블 정보'});
+        return group(id,width,fixed+body.height,[{fragment:heading,x:PADDING,y:PADDING},{fragment:viewport,x:PADDING,y:PADDING+headingHeight+GAP}],{semanticRole:'dialog',label:'테이블 정보',decoration:'dialog'});
     }
     function publicDisclosureOverlay(shell:Fragment,environment:Environment,choices:ChoiceView,metrics:Measurements):Fragment|null {
         const disclosure=choices.feedback?.disclosures?.[0];if(!disclosure?.cards.length)return null;
