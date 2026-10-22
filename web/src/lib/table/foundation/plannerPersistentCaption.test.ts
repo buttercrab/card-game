@@ -94,3 +94,13 @@ test('a one-line public caption does not become a clipped two-line caption becau
         expect(caption.box.height).toBeLessThanOrEqual(signals.box.height);
     }
 });
+
+test('badged caption preview retains valid shell and decision authorities', () => {
+    const document = persistentCaptionDocument({badges: true});
+    const session = createCardSession({transport: () => {}});
+    try {
+        session.receive(document);
+        expect(session.snapshot().document?.offer.id).toBe(document.offer.id);
+        expect(document.opponents.every(person => person.status.badges?.[0]?.text === '12점')).toBe(true);
+    } finally { session.dispose(); }
+});

@@ -267,7 +267,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const role=group(key('participant-status',participantId),allocation,paint.height,[{fragment:paint,x:4,y:0}],{participantStatusFor:participantId,decoration:'pill',tone:status.tone,semanticRole:'status',label:'참가자 상태',...(team?{appearance:{team}}:{})});
         return [role,...(status.badges??[]).map((badge,index)=>{const id=key('participant-status-badge',participantId,String(index)),allocation=Math.min(width,metrics.intrinsic(badge.text,'small').width+8),paint=textNode(key('participant-status-badge-text',participantId,String(index)),badge.text,'small',Math.max(1,allocation-8),metrics);return group(id,allocation,paint.height,[{fragment:paint,x:4,y:0}],{participantStatusFor:participantId,decoration:'pill',tone:badge.tone,semanticRole:'status',label:badge.text});})];
     }
-    function participantSignals(participantId:string,width:number,metrics:Measurements,choices?:ChoiceView,reserve=!!(choices?.assistance||choices?.feedback),status?:ParticipantStatus,document?:HudReadContext,compactSignal=false,retainAllocation=false):Fragment[]{
+    function participantSignals(participantId:string,width:number,metrics:Measurements,choices?:ChoiceView,reserve=!!(choices?.assistance||choices?.feedback),status?:ParticipantStatus,document?:HudReadContext,compactSignal=false,retainAllocation=false,persistentGrowth=0):Fragment[]{
         if(status?.purpose==='standing')status=undefined;
         reserve=reserve||retainAllocation||!!status||!!document&&!document.outcome&&document.stage!=='waiting';
         // A typed announcement has one measurement/paint owner. Standing
@@ -304,7 +304,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             return children.length?[rows(key('participant-signals',participantId),width,children,{semanticRole:'group',label:'참가자 알림'},'center')]:[];
         }
         const short=!document?.outcome&&document?.stage!=='waiting'?shortLandscapePresentation(metrics.environment):null;
-        const height=Math.max(short?.feedbackHeight??28,metrics.intrinsic('Ag','small').height+SMALL_GAP);
+        let height=Math.max(short?.feedbackHeight??28,metrics.intrinsic('Ag','small').height+SMALL_GAP);
         const contentAt=(gutter:number)=>{
             const innerWidth=width-gutter;
             const children=records.map(record=>{const padding=compactSignal?4:SMALL_GAP,text=textNode(key('participant-signal-text',record.id),record.text,'small',Math.max(1,innerWidth-padding*2),metrics);return group(key('participant-signal',record.id),innerWidth,text.height+padding*2,[{fragment:text,x:padding,y:padding}],{decoration:'callout',semanticRole:'status' as const,label:record.text});});
@@ -318,12 +318,17 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         };
         // Measure the full row before reserving a native scrollbar. Reserving a
         // gutter for an otherwise fitting caption can itself cause wrapping and
-        // clipping. Keep the established height/hand allocation unchanged.
+        // clipping. Only an explicit parent budget may extend the caption slot.
         const full=contentAt(0),nativeGutter=metrics.environment.scrollbarWidth??0;
         if(!reserve)return full.children;
         // Request both widths together so choosing the overflow recipe adds no
         // serial measurement round to long feedback/resize transitions.
         const narrowed=nativeGutter>0?contentAt(nativeGutter):full;
+        // Feedback may introduce a real scrollbar later. Reserve the same
+        // persistent envelope at both widths, but only when the parent paid for
+        // the whole caption; partial growth cannot make it initially readable.
+        const persistentHeight=status?Math.max(full.children[0]?.height??0,narrowed.children[0]?.height??0):0;
+        if(persistentGrowth>0&&persistentHeight<=height+persistentGrowth)height=Math.max(height,persistentHeight);
         const gutter=full.content.height>height?nativeGutter:0,measured=gutter?narrowed:full;
         const content=measured.content;
         return [group(key('participant-signals',participantId),width,height,[{fragment:content,x:0,y:0}],{...(content.height>height?{scroll:true,scrollAxis:'y',scrollbarGutter:gutter}:{}),semanticRole:'group',label:'참가자 알림',participantFeedbackFor:participantId})];
@@ -753,7 +758,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const commandRows=commands.length?[rows('decision-commands',width,commands,{},compact?'center':'start')]:[];
         return column('decisions',width,footerBudget!==undefined?[...commandRows,...fieldRows]:[...fieldRows,...commandRows],footerBudget!==undefined?4:GAP);
     }
-    function opponents(items: readonly OpponentView[], width: number, metrics: Measurements, id: string,choices?:ChoiceView,reserveSignals=!!(choices?.assistance||choices?.feedback),compactIdentity=false,statusDocument?:HudReadContext,rowWidths?:readonly number[],arrangement:'portrait'|'adjacent'='portrait',peerFigureOverride?:number,retainFeedback=false): Fragment {
+    function opponents(items: readonly OpponentView[], width: number, metrics: Measurements, id: string,choices?:ChoiceView,reserveSignals=!!(choices?.assistance||choices?.feedback),compactIdentity=false,statusDocument?:HudReadContext,rowWidths?:readonly number[],arrangement:'portrait'|'adjacent'='portrait',peerFigureOverride?:number,retainFeedback=false,persistentGrowth=0): Fragment {
         reserveSignals=reserveSignals||!!statusDocument&&!statusDocument.outcome&&statusDocument.stage!=='waiting';
         const defaultAllocation=items.length===1?width:(width-SMALL_GAP)/2;
         const children=items.map((person,index)=>{
@@ -762,7 +767,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             const figureSize=peerFigureOverride??(!statusDocument?.outcome?shortLandscapePresentation(metrics.environment)?.peerFigure??PEER_FIGURE_SIZE:PEER_FIGURE_SIZE);
             const art=leaf({id:key(cell,'figure'),parent:null,kind:'figure',appearance:person.appearance,ownerId:person.id,...participantFigureCue(person.id,choices),...(choices?.feedback?.clock?.participantId===person.id?{clockPaint:choices.feedback.clock,clockTextScale:metrics.environment.textScale}:{}),label:person.name,box:{x:0,y:0,width:figureSize,height:figureSize*110/120}});
             const pileId=key(cell,'hand'),pile=leaf({id:pileId,parent:null,kind:'group',label:'',inert:true,recipientId:person.id,recipientCount:person.handCount,box:{x:0,y:0,width:figureSize,height:figureSize*110/120}});
-            const identity=participantIdentity({id:key(cell,'identity'),ownerId:person.id,nameId:key(cell,'name'),badgeId:key(cell,'name-badge'),figure:art,width:identityWidth,name:person.name,nameRole:PEER_NAME_ROLE,metaNatural:participantMetaWidth(person.status,[],statusDocument,metrics),markers:[],arrangement:'portrait',standing:allocation=>participantStanding(person.id,allocation,metrics,person.status,statusDocument),signals:allocation=>participantSignals(person.id,allocation,metrics,choices,reserveSignals,person.status,statusDocument,false,retainFeedback),metrics,thinking:person.appearance?.thinking,muted:person.status?.muted});
+            const identity=participantIdentity({id:key(cell,'identity'),ownerId:person.id,nameId:key(cell,'name'),badgeId:key(cell,'name-badge'),figure:art,width:identityWidth,name:person.name,nameRole:PEER_NAME_ROLE,metaNatural:participantMetaWidth(person.status,[],statusDocument,metrics),markers:[],arrangement:'portrait',standing:allocation=>participantStanding(person.id,allocation,metrics,person.status,statusDocument),signals:allocation=>participantSignals(person.id,allocation,metrics,choices,reserveSignals,person.status,statusDocument,false,retainFeedback,persistentGrowth),metrics,thinking:person.appearance?.thinking,muted:person.status?.muted});
             const figureNode=identity.nodes.find(node=>node.id===art.nodes[0].id)!;
             const anchored={...identity,nodes:[...identity.nodes,{...pile.nodes[0],parent:figureNode.parent,box:{...figureNode.box}}]};
             return group(cell,allocation,identity.height,[{fragment:anchored,x:offset,y:0}],{semanticRole:'group',label:person.name,accessibleDescription:`${person.name} · 카드 ${person.handCount}장`,deemphasized:person.status?.muted===true});
@@ -2089,7 +2094,24 @@ export function createPlanner(kernel: CompositionKernel): Planner {
                 const {allocation}=selectedStack,regionGap=allocation.gap,decisionHeight=allocation.decision;
                 const decisionViewport=!gamePanel.height?group('decisions',activeWidth,decisionHeight,[],{inert:true,label:''}):decisionHeight>=TARGET?scrollColumn('decisions',activeWidth,decisionHeight,[decisionContent],gutter,'선택과 실행 · 세로 스크롤'):group('decisions',activeWidth,decisionHeight,[{fragment:decisionContent,x:0,y:0}],{semanticRole:'group',label:'현재 선택 안내'});
                 const decisionStrip=group('table-decision-strip',activeWidth,decisionHeight,[{fragment:decisionViewport,x:0,y:0}]);
-                const board=selectedStack.candidate.arena,chosenDock=selectedStack.candidate.local;
+                let board=selectedStack.candidate.arena;
+                const chosenDock=selectedStack.candidate.local;
+                // The stack has already paid for this arena. Let persistent side
+                // captions use its empty lower space without moving any artwork,
+                // shrinking text, changing the stack, or borrowing from the hand.
+                if(allocation.kind==='fit'&&board.nodes[0].id==='arena'){
+                    for(const [id,person] of [['opponents-left',people[Math.min(3,people.length-1)]],['opponents-right',people[0]]] as const){
+                        const slot=board.nodes.find(node=>node.id===id&&node.parent==='arena');
+                        if(!slot||!person)continue;
+                        const spare=Math.max(0,allocation.arena-slot.box.y-slot.box.height);
+                        if(!spare)continue;
+                        const expanded=opponents([person],slot.box.width,metrics,id,choices,true,true,arenaDocument,undefined,'portrait',region.peerFigure,false,spare);
+                        if(expanded.height<=slot.box.height||slot.box.y+expanded.height>allocation.arena)continue;
+                        const owned=new Set<string>([id]);for(const node of board.nodes)if(node.parent&&owned.has(node.parent))owned.add(node.id);
+                        const height=Math.max(board.height,slot.box.y+expanded.height);
+                        board={...board,height,requiredVisibleHeight:Math.max(board.requiredVisibleHeight??0,slot.box.y+expanded.height),nodes:board.nodes.flatMap(node=>node.id===id?expanded.nodes.map((child,index)=>index===0?{...child,parent:'arena',box:{...child.box,x:slot.box.x,y:slot.box.y}}:child):owned.has(node.id)?[]:[node.id==='arena'?{...node,box:{...node.box,height}}:node])};
+                    }
+                }
                 const trailingHistory=!hasSidebar&&secondary.length?publicCollections({...document,collections:secondary},arenaWidth,metrics,'secondary-collections',false,false,choices):null;
                 const overflow=allocation.kind==='overflow';
                 const arenaContent=!overflow&&trailingHistory?column('active-arena-content',arenaWidth,[board,trailingHistory],SMALL_GAP):board;

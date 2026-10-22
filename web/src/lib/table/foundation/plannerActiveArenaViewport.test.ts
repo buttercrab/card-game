@@ -85,3 +85,38 @@ test.each([[1280,800],[1280,720],[1440,900]])('actual Mighty regular trick retai
   if(previous)expect(global(layout,directional!.id)).toEqual(global(previous,directional!.id));previous=layout;
  }
 });
+
+/** Announcement badges are not standing metadata. Their persistent envelope
+ * may consume spare arena allocation, never the dock or a larger root. */
+function captionBadgeDocument(playCount=5){
+ const source=latePlay(false,'비교 검증',playCount);
+ return {...source,opponents:source.opponents!.map((person,index)=>({...person,name:['모과','호두','보리','단추'][index],status:{value:{kind:'text' as const,text:index===0?'프렌드':'야당'},tone:'plain' as const,badges:[{text:'12점',tone:'plain' as const}]}}))};
+}
+// Exact pre-repair root and hand geometry captured from fc3fff7. Overflow
+// baselines at2x remain failures of broader acceptance, not enlarged budgets.
+const captionEnvelopeBaselines=[{"width": 390, "height": 844, "textScale": 1, "scrollbarWidth": 0, "root": 844, "hand": {"x": 222, "y": 631, "width": 144, "height": 125}}, {"width": 390, "height": 844, "textScale": 1, "scrollbarWidth": 15, "root": 844, "hand": {"x": 222, "y": 631, "width": 144, "height": 125}}, {"width": 390, "height": 844, "textScale": 2, "scrollbarWidth": 0, "root": 1302.56, "hand": {"x": 24, "y": 1064.56, "width": 342, "height": 130}}, {"width": 390, "height": 844, "textScale": 2, "scrollbarWidth": 15, "root": 1302.56, "hand": {"x": 24, "y": 1064.56, "width": 342, "height": 130}}, {"width": 768, "height": 1024, "textScale": 1, "scrollbarWidth": 0, "root": 1024, "hand": {"x": 24, "y": 788, "width": 720, "height": 148}}, {"width": 768, "height": 1024, "textScale": 1, "scrollbarWidth": 15, "root": 1024, "hand": {"x": 24, "y": 788, "width": 720, "height": 148}}, {"width": 768, "height": 1024, "textScale": 2, "scrollbarWidth": 0, "root": 1024, "hand": {"x": 600, "y": 756, "width": 144, "height": 125}}, {"width": 768, "height": 1024, "textScale": 2, "scrollbarWidth": 15, "root": 1024, "hand": {"x": 600, "y": 756, "width": 144, "height": 125}}, {"width": 1440, "height": 900, "textScale": 1, "scrollbarWidth": 0, "root": 900, "hand": {"x": 129, "y": 683, "width": 937.0799999999999, "height": 193}}, {"width": 1440, "height": 900, "textScale": 1, "scrollbarWidth": 15, "root": 900, "hand": {"x": 129, "y": 683, "width": 922.0799999999999, "height": 193}}, {"width": 1440, "height": 900, "textScale": 2, "scrollbarWidth": 0, "root": 983.9066666666668, "hand": {"x": 192, "y": 742.9866666666667, "width": 652, "height": 193}}, {"width": 1440, "height": 900, "textScale": 2, "scrollbarWidth": 15, "root": 983.9066666666668, "hand": {"x": 192, "y": 742.9866666666667, "width": 637, "height": 193}}, {"width": 844, "height": 390, "textScale": 1, "scrollbarWidth": 0, "root": 390, "hand": {"x": 144, "y": 259, "width": 380, "height": 106}}, {"width": 844, "height": 390, "textScale": 1, "scrollbarWidth": 15, "root": 390, "hand": {"x": 144, "y": 259, "width": 380, "height": 106}}, {"width": 844, "height": 390, "textScale": 2, "scrollbarWidth": 0, "root": 913.28, "hand": {"x": 144, "y": 586.28, "width": 680, "height": 106}}, {"width": 844, "height": 390, "textScale": 2, "scrollbarWidth": 15, "root": 913.28, "hand": {"x": 144, "y": 586.28, "width": 680, "height": 106}}] as const;
+test.each(captionEnvelopeBaselines)('persistent caption envelope retains root and hand at$width×$height text$textScale gutter$scrollbarWidth',({width,height,textScale,scrollbarWidth,root,hand})=>{
+ const layout=solve(captionBadgeDocument(),{...base,width,height,textScale,scrollbarWidth});
+ expect(validateLayout(layout)).toEqual([]);expect(layout.height).toBe(root);expect(global(layout,'hand')).toEqual(hand);
+});
+test.each([0,4,5])('normal390 complete caption badges preserve the full hand through trick count%s',playCount=>{
+ const document=captionBadgeDocument(playCount),layout=solve(document);
+ expect(validateLayout(layout)).toEqual([]);expect(layout.height).toBe(844);
+ for(const person of document.opponents){
+  const signals=layout.nodes.find(node=>node.id===JSON.stringify(['participant-signals',person.id]))!;
+  expect(signals.scroll).not.toBe(true);
+  const caption=layout.nodes.find(node=>node.id===JSON.stringify(['participant-status-caption',person.id]))!;
+  expect(global(layout,caption.id).y+caption.box.height).toBeLessThanOrEqual(global(layout,signals.id).y+signals.box.height);
+  for(const node of layout.nodes.filter(node=>node.participantStatusFor===person.id||node.id.startsWith('["participant-status-badge-text",'+JSON.stringify(person.id))))assertInsideNativeClips(layout,node);
+ }
+ for(const node of layout.nodes.filter(node=>node.zoneId==='hand'&&node.entityId))expect(global(layout,node.id).y+node.box.height).toBeLessThanOrEqual(844);
+});
+test('persistent side caption keeps its allocation when transient feedback adds a scrollbar',()=>{
+ const document=captionBadgeDocument(),idle=solve(document),during=solve(document,base,{feedback:{cues:[{id:'long-caption-reaction',participantId:'p1',label:'오래 표시되는 반응입니다. '.repeat(12),cue:'answer'}]}}),after=solve(document);
+ for(const id of ['hand','dock','arena',JSON.stringify(['participant-signals','p1']),JSON.stringify([JSON.stringify(['opponent','p1']),'figure'])]){
+  expect(global(during,id),id).toEqual(global(idle,id));expect(global(after,id),id).toEqual(global(idle,id));
+ }
+ const role=during.nodes.find(node=>node.participantStatusFor==='p1')!;assertInsideNativeClips(during,role);
+ for(const node of during.nodes.filter(node=>node.id.startsWith('["participant-status-badge-text","p1",')))assertInsideNativeClips(during,node);
+ expect(during.height).toBe(844);expect(validateLayout(during)).toEqual([]);
+});
