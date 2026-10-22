@@ -27,7 +27,7 @@ import {publicPaintResources} from './paintResources';
 import {visibleCollectionDocument} from './visibleCollections';
 import {REGULAR_TRICK} from './directionalTrickLayout';
 import {minimumHandViewport,compactIdentityWidths} from './compactDockAllocation';
-import {chooseTableStack} from './activeTableAllocation';
+import {allocateTableStack,chooseTableStack} from './activeTableAllocation';
 import {allocateCompactPeerRow} from './compactPeerRow';
 import {allocateCompactPublicPair} from './compactPublicAllocation';
 import {shortLandscapePresentation,composeShortLandscape} from './shortLandscapeLayout';
@@ -809,7 +809,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
     }
     function seatArena<A>(document:TableDocument<A>,width:number,minHeight:number,metrics:Measurements,choices?:ChoiceView,compactParticipants=false,visibleBudget?:number,peerFigureOverride?:number,scene?:{centerHeight:number;columns:{wing:number;centerWidth:number}}):Fragment {
         const people=document.opponents??[],overview=document.outcome?.overview,peerFigure=peerFigureOverride??(!document.outcome?shortLandscapePresentation(metrics.environment)?.peerFigure??PEER_FIGURE_SIZE:PEER_FIGURE_SIZE);
-        const ringGap=!document.outcome&&shortLandscapePresentation(metrics.environment)?SMALL_GAP:GAP;
+        let ringGap=!document.outcome&&shortLandscapePresentation(metrics.environment)?SMALL_GAP:GAP;
         const primaryContentHeight=(content:Fragment)=>{
             const play=(document.collections??[]).filter(zone=>zone.cards.length>0&&zone.relevance!=='auxiliary'&&(zone.purpose==='play'||zone.kind==='trick'));
             const primary=play.length?play:(document.collections??[]).filter(zone=>zone.purpose==='stock'&&(zone.hiddenCount??0)>0);
@@ -842,13 +842,30 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const shortPublic=!document.outcome?shortLandscapePresentation(metrics.environment)?.publicCard:null;
         const auxiliaryStock=(document.collections??[]).find(zone=>zone.hiddenCount!==undefined&&zone.relevance==='auxiliary');
         const captionWidth=auxiliaryStock?Math.max(...Array.from({length:105},(_,count)=>metrics.intrinsic(`${count}장`,'small').width)):0;
-        const primaryTrickMinimum=Math.max(scene?REGULAR_TRICK.minimumWidth:shortPublic?shortPublic.width:88,...(document.collections??[]).filter(zone=>zone.kind==='trick'&&zone.purpose==='play'&&zone.relevance!=='auxiliary').map(zone=>{
+        const legacyTrickMinimum=Math.max(scene?REGULAR_TRICK.minimumWidth:shortPublic?shortPublic.width:88,...(document.collections??[]).filter(zone=>zone.kind==='trick'&&zone.purpose==='play'&&zone.relevance!=='auxiliary').map(zone=>{
             const primary=!shortPublic&&directionalOwners(document)&&width>=REGULAR_TRICK.minimumWidth+peerFigure*2+ringGap*2?REGULAR_TRICK.minimumWidth:(shortPublic?.width??64)+Math.max(0,Math.max(capacity,zone.cards.length)-1)*EXPOSED;
             return shortPublic&&auxiliaryStock?primary+SMALL_GAP+Math.max(24,captionWidth):primary;
         }));
-        const preferredWing=overview?Math.min(144,Math.max(originalWing,...people.map(settledIdentityWidth))):Math.min(144,Math.max(peerPaintMinimum,...people.map(settledIdentityWidth),(width-primaryTrickMinimum-ringGap*2)/2));
+        let primaryTrickMinimum=Math.max(legacyTrickMinimum,...(document.collections??[]).filter(zone=>zone.kind!=='trick'&&zone.purpose==='play'&&zone.relevance!=='auxiliary').map(zone=>(shortPublic?.width??64)+Math.max(0,zone.cards.length-1)*EXPOSED));
+        const preferredAt=(center:number,gap:number)=>overview?Math.min(144,Math.max(originalWing,...people.map(settledIdentityWidth))):Math.min(144,Math.max(peerPaintMinimum,...people.map(settledIdentityWidth),(width-center-gap*2)/2));
+        const legacyWing=preferredAt(legacyTrickMinimum,ringGap);
+        // Spend decorative ring spacing before narrowing an already readable
+        // identity to admit a generic public fan. Never trade status for cards.
+        if(!scene&&primaryTrickMinimum>legacyTrickMinimum)ringGap=Math.min(ringGap,Math.max(0,(width-legacyWing*2-primaryTrickMinimum)/2));
         const minimumWing=Math.max(peerPaintMinimum,...people.map(person=>peerMinimumWidth(person,document,metrics,peerFigure)));
-        const allocation=scene?.columns??allocateRing({width,gap:ringGap,preferredWing,minimumWing,minimumCenter:primaryTrickMinimum});
+        let allocation=scene?.columns??allocateRing({width,gap:ringGap,preferredWing:preferredAt(primaryTrickMinimum,ringGap),minimumWing,minimumCenter:primaryTrickMinimum});
+        if(!scene&&allocation&&allocation.wing<legacyWing&&primaryTrickMinimum>legacyTrickMinimum){
+            const captionFits=(person:OpponentView,wing:number)=>{
+                // Transient cues may scroll, but cannot change public-card admission.
+                const signals=participantSignals(person.id,Math.min(144,wing),metrics,undefined,true,person.status,document)[0];
+                const caption=signals?.nodes.find(node=>node.id===key('participant-status-caption',person.id));
+                return !caption||caption.box.height<=signals.height;
+            };
+            if(people.some(person=>captionFits(person,legacyWing)&&!captionFits(person,allocation!.wing))){
+                primaryTrickMinimum=Math.max(legacyTrickMinimum,Math.min(primaryTrickMinimum,width-legacyWing*2-ringGap*2));
+                allocation=allocateRing({width,gap:ringGap,preferredWing:legacyWing,minimumWing,minimumCenter:primaryTrickMinimum});
+            }
+        }
         if(!allocation){
             const fallback=adjacentPeerArena(document,width,metrics,choices,2,peerFigure)??adjacentPeerArena(document,width,metrics,choices,1,peerFigure);
             if(!fallback)throw Error('Participant artwork and readable labels exceed the available arena width');
@@ -2107,7 +2124,24 @@ export function createPlanner(kernel: CompositionKernel): Planner {
                 const dockAlternatives=preferredStack.allocation.kind==='overflow'&&measuredDock.recipe!=='side-by-side'&&!metrics.missing.size?[measuredDock,...compactDockCandidates(document,activeWidth,metrics,choices).map(local=>withNativeInstruction(local,gameChoices,metrics)).filter(candidate=>contained(candidate.fragment))]:[measuredDock];
                 const compactStack=dockAlternatives.length===1?preferredStack:stackFor(dockAlternatives);
                 const selectedStack=compactStack.allocation.kind==='fit'?compactStack:preferredStack;
-                const {allocation}=selectedStack,regionGap=allocation.gap,decisionHeight=allocation.decision;
+                let allocation=selectedStack.allocation;
+                let tailGap:number|undefined;
+                // Compact side-by-side docks need no stacked-hand transfer reflow.
+                // These finite controls already own their focus/pulse insets.
+                // Preserve a fixed dock/tool tail, then try complete controls
+                // before decorative upstream spacing. The partial fallback keeps
+                // the same tail so a notice cannot move the hand.
+                if(allocation.kind==='fit'&&selectedStack.candidate.local.recipe==='side-by-side'&&toolbar&&controls.fields.length&&!phaseReservation){
+                    const arenaMinimum=Math.max(TARGET,selectedStack.candidate.arena.requiredVisibleHeight??selectedStack.candidate.arena.height);
+                    // Both neighboring controls include their native focus envelopes.
+                    const fixedTailGap=6;
+                    const complete=Math.max(minimumDecisionHeight,preferredDecisionHeight,gamePanel.height);
+                    for(const minimum of [complete,minimumDecisionHeight]){
+                        const attempt=allocateTableStack({height:bodyBudget,arena:{minimum:arenaMinimum,preferred:Math.max(bodyBudget,selectedStack.candidate.arena.height,arenaMinimum)},decision:{minimum,preferred:complete},dock:selectedStack.candidate.local.fragment.height+fixedTailGap+toolbar.height,status:status?.height??0,preferredGap:SMALL_GAP,minimumGap:minimum===complete?0:SMALL_GAP});
+                        if(attempt.kind==='fit'){allocation=attempt;tailGap=fixedTailGap;break;}
+                    }
+                }
+                const regionGap=allocation.gap,decisionHeight=allocation.decision;
                 const decisionViewport=!gamePanel.height?group('decisions',activeWidth,decisionHeight,[],{inert:true,label:''}):decisionHeight>=TARGET?scrollColumn('decisions',activeWidth,decisionHeight,[decisionContent],gutter,'선택과 실행 · 세로 스크롤'):group('decisions',activeWidth,decisionHeight,[{fragment:decisionContent,x:0,y:0}],{semanticRole:'group',label:'현재 선택 안내'});
                 const decisionStrip=group('table-decision-strip',activeWidth,decisionHeight,[{fragment:decisionViewport,x:0,y:0}]);
                 let board=selectedStack.candidate.arena;
@@ -2133,7 +2167,9 @@ export function createPlanner(kernel: CompositionKernel): Planner {
                 const arenaContent=!overflow&&trailingHistory?column('active-arena-content',arenaWidth,[board,trailingHistory],SMALL_GAP):board;
                 const available=overflow?Math.max(allocation.arena,board.height):allocation.arena;
                 const arena=!overflow&&arenaContent.height>available?scrollColumn('active-arena-viewport',activeWidth,available,[arenaContent],gutter,'공개 테이블과 지난 카드 · 세로 스크롤'):group('active-arena-region',activeWidth,available,[{fragment:arenaContent,x:0,y:0}],{semanticRole:'group',label:'공개 테이블'});
-                const left=column('active-table-content',activeWidth,[...(status?[status]:[]),arena,...(hasDecision?[decisionStrip]:[]),chosenDock.fragment,...(toolbar?[toolbar]:[]),...(overflow&&trailingHistory?[trailingHistory]:[])],regionGap);
+                const parts=[...(status?[status]:[]),arena,...(hasDecision?[decisionStrip]:[]),chosenDock.fragment,...(toolbar?[toolbar]:[]),...(overflow&&trailingHistory?[trailingHistory]:[])];
+                let cursor=0;
+                const left=tailGap===undefined?column('active-table-content',activeWidth,parts,regionGap):group('active-table-content',activeWidth,allocation.contentHeight,parts.map((fragment,index)=>{const placement={fragment,x:0,y:cursor};cursor+=fragment.height+(index<parts.length-1?(fragment===chosenDock.fragment?tailGap!:regionGap):0);return placement;}));
                 const historyPanel=history.length?publicCollections({...document,collections:history},Math.max(1,railWidth-gutter),metrics,'history-collections',false,false,choices):null;
                 const secondaryRail=hasSidebar&&secondary.some(zone=>!history.includes(zone))?publicCollections({...document,collections:secondary.filter(zone=>!history.includes(zone))},Math.max(1,railWidth-gutter),metrics,'secondary-collections',false,false,choices):null;
                 const railChildren=hasSidebar?[...(hasFacts?[factsPanel(document,Math.max(1,railWidth-gutter),metrics,false,choices,railOwnsStatus?undefined:left.height)]:[]),...(historyPanel?[historyPanel]:[]),...(secondaryRail?[secondaryRail]:[]),...(tools?[namespace(tools,'active-rail-tools')]:[])]:[];
