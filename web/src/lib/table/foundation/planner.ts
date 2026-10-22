@@ -68,6 +68,7 @@ const GAP = 12;
 const SMALL_GAP = 8;
 const PADDING = 16;
 const DOCK_PADDING = 8;
+const PREFERRED_COMPACT_HAND_WIDTH = 256;
 const TARGET = 44;
 const CARD_WIDTH = 88;
 const CARD_HEIGHT = 124;
@@ -457,7 +458,7 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         // depletion; current card membership must not choose a different tray.
         const slots=handAllocationSlots(document);
         const row=calculateHandRowMetrics({regionWidth:width,viewportWidth:metrics.environment.width,viewportHeight:metrics.environment.height,selectionLift:interactiveFootprint?SELECTION_LIFT:0,padding:interactiveFootprint?HAND_SELECTION_PADDING:0,scrollbarHeight:metrics.environment.scrollbarHeight??0});
-        return {minimumWidth:Math.min(256,row.cardWidth+row.padding*2+Math.max(0,slots-1)*row.minimumStep)};
+        return {minimumWidth:Math.min(PREFERRED_COMPACT_HAND_WIDTH,row.cardWidth+row.padding*2+Math.max(0,slots-1)*row.minimumStep)};
     }
     function dock<A>(document: TableDocument<A>, width: number, metrics: Measurements, choices: ChoiceView): {
         fragment: Fragment;
@@ -493,12 +494,22 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const padding=choices.cards||choices.selectionPresentation?6:0,available=width-DOCK_PADDING*2;
         const handMinimum=minimumHandViewport({cardWidth:CARD_WIDTH,feedbackPadding:padding,stride:TARGET,count:handAllocationSlots(document)});
         const glyph=(labels:readonly string[],role:TextRole)=>Math.max(1,...[...new Set(labels.flatMap(label=>Array.from(label)))].map(char=>metrics.intrinsic(char,role).width));
-        const widths=compactIdentityWidths({available,gap:GAP,handMinimum,figure:localParticipantPresentation(metrics.environment).figure,artGap:0,outerPadding:12,countArtwork:0,captionGap:0,nameGlyph:glyph([document.participant.name],'participant-name')+16,countGlyph:0});
-        return widths.map(identityWidth=>{
+        const identityWidthFor=(minimum:number)=>compactIdentityWidths({available,gap:GAP,handMinimum:minimum,figure:localParticipantPresentation(metrics.environment).figure,artGap:0,outerPadding:12,countArtwork:0,captionGap:0,nameGlyph:glyph([document.participant.name],'participant-name')+16,countGlyph:0});
+        // Give the existing readable fan its established preferred budget before
+        // falling back to a native scrolling strip. A wider hand can use fewer
+        // canonical rows; measuring only the widest identity misses that fit.
+        const nativeWidths=identityWidthFor(handMinimum);
+        const widths=[...new Set([...nativeWidths,...identityWidthFor(Math.max(handMinimum,PREFERRED_COMPACT_HAND_WIDTH))])];
+        const candidates=widths.flatMap(identityWidth=>{
             const participant=identity(document,identityWidth,metrics,true,choices),cards=hand(document,available-identityWidth-GAP,metrics,'hand',choices.cards,'hand',false,undefined,choices);
+            if(!nativeWidths.includes(identityWidth)&&cards.nodes[0].scroll)return [];
             const fragment=group('dock',width,Math.max(participant.height,cards.height)+DOCK_PADDING*2,[{fragment:participant,x:DOCK_PADDING,y:DOCK_PADDING},{fragment:cards,x:DOCK_PADDING+participant.width+GAP,y:DOCK_PADDING}],{decoration:'tray'});
-            return {fragment,recipe:'side-by-side' as const};
+            return [{fragment,recipe:'side-by-side' as const}];
         });
+        // Preserve an already readable native allocation; only scrolling hands
+        // lose priority to the additional full-fan candidate.
+        const scrolls=(candidate:typeof candidates[number])=>candidate.fragment.nodes.find(node=>node.id==='hand')?.scroll===true;
+        return [...candidates.filter(candidate=>!scrolls(candidate)),...candidates.filter(scrolls)];
     }
     // Native one-card activation owns confirmation. Keep genuine commands and
     // fields in the control lane; the hand retains the complete selection view.
@@ -944,10 +955,15 @@ export function createPlanner(kernel: CompositionKernel): Planner {
         const beside=!headerTools&&!!short&&total<=width&&sideWidth>=240*metrics.environment.textScale,toolsBeside=!!headerTools&&width-headerTools.width-GAP>=TARGET,noticeWidth=toolsBeside?width-headerTools!.width-GAP:beside?sideWidth:width;
         if(statusSection==='none'&&!shell.notices.length&&!headerTools)return group('room-shell',width,bar.height,[{fragment:bar,x:0,y:0}]);
         let status=statusSection==='none'?null:activeStatus(hud??document,noticeWidth-gutter,metrics,statusSection);
+        const noticesOnly=document.stage==='active'&&!renderOutcome&&!status&&!headerTools;
+        if(noticesOnly&&!shell.notices.length)return group('room-shell',width,bar.height,[{fragment:bar,x:0,y:0}]);
         if(headerTools&&status)status=informationStatus(status,choices);
         const content=column('room-notice-content',noticeWidth-gutter,[...(status?[status]:[]),...shell.notices.map(notice=>textNode(key('room-notice',notice.id),notice.text,'small',noticeWidth-gutter,metrics))],4);
-        const noticeHeight=beside?Math.max(TARGET,status?.height??0,content.height):document.stage==='waiting'||renderOutcome?60:Math.max(TARGET,metrics.intrinsic('Ag','small').height*2+SMALL_GAP*2,status?.height??0);
-        const notices=group('room-notices',noticeWidth,noticeHeight,[{fragment:content,x:0,y:0}],{scroll:true,scrollAxis:'y',scrollbarGutter:metrics.environment.scrollbarWidth??0,semanticRole:'status',label:''});
+        let noticeHeight=beside?Math.max(TARGET,status?.height??0,content.height):document.stage==='waiting'||renderOutcome?60:Math.max(TARGET,metrics.intrinsic('Ag','small').height*2+SMALL_GAP*2,status?.height??0);
+        // Read-only notices need their measured lines, not an empty two-line HUD
+        // reservation. Long notices retain the existing bounded scroll access.
+        if(noticesOnly)noticeHeight=Math.min(noticeHeight,content.height);
+        const notices=group('room-notices',noticeWidth,noticeHeight,[{fragment:content,x:0,y:0}],{...(!noticesOnly||content.height>noticeHeight?{scroll:true,scrollAxis:'y' as const,scrollbarGutter:metrics.environment.scrollbarWidth??0}:{}),semanticRole:'status',label:''});
         if(headerTools){const band=toolsBeside?group('room-status-tools',width,Math.max(notices.height,headerTools.height),[{fragment:notices,x:0,y:0},{fragment:headerTools,x:width-headerTools.width,y:(Math.max(notices.height,headerTools.height)-headerTools.height)/2}]):column('room-status-tools',width,[notices,headerTools],4);return column('room-shell',width,[bar,band],4);}
         if(beside){const compactBar=group('room-header',total,bar.height,fragments.map((fragment,index)=>({fragment,x:fragments.slice(0,index).reduce((sum,child)=>sum+child.width+headerGap,0),y:0})));return group('room-shell',width,Math.max(compactBar.height,notices.height),[{fragment:compactBar,x:0,y:0},{fragment:notices,x:total+GAP,y:0}]);}
         return column('room-shell',width,[bar,notices],4);

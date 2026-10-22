@@ -16,10 +16,11 @@ export function shellDocument({revision=1,longName=false,sparse=false}: {revisio
 
 /** Synthetic public caption gutter case. This checks measured captions,
  * not server gameplay or the approved composition of a complete Mighty hand. */
-export function persistentCaptionDocument({revision = 1, longName = false, badges = false} = {}) {
+export function persistentCaptionDocument({revision = 1, longName = false, badges = false, notice = false} = {}) {
     const source = shellDocument({revision, longName});
     const status = {value: {kind: 'text' as const, text: '프렌드'}, tone: 'plain' as const, ...(badges ? {badges: [{text: '12점', tone: 'plain' as const}]} : {})};
     return {...source, stage: 'active' as const, outcome: undefined,
+        ...(notice ? {shell: {...source.shell!, notices: [...source.shell!.notices, {id: 'reconnecting', text: '잠깐 다시 연결하는 중…', tone: 'plain' as const}]}} : {}),
         participant: {...source.participant, status},
         opponents: source.opponents!.map(person => ({...person, status}))};
 }
