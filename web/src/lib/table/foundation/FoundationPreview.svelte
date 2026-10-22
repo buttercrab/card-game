@@ -5,6 +5,7 @@
   import { createCardTable } from './runtime';
   import { createDomSurface } from './domSurface';
   import { proofDocument, type ProofAction } from './fixtures';
+  import {persistentCaptionDocument} from './shellFixture';
   import {shellDocument,type ShellProofAction} from './shellFixture';
   import {essentialInputDocument,type EssentialInputAction} from './essentialInputFixture';
   import {mightyBidPressureDocument} from './mightyBidPressureFixture';
@@ -22,14 +23,14 @@
   import { numericComposition, type CompositionKernel } from './composition';
   import type { SurfacePort, Planner, TableDocument } from './contracts';
 
-  type Fixture = 'essential-input' | 'mighty-bid-max' | 'mighty-joker' | 'hulla-flow' | 'one-card-flow' | 'shell' | 'large-choice' | 'information' | 'information-extreme' | 'arena' | 'mighty' | PressureKind | 'play' | 'discard' | 'flow' | 'hidden' | 'seats';
+  type Fixture = 'persistent-caption' | 'essential-input' | 'mighty-bid-max' | 'mighty-joker' | 'hulla-flow' | 'one-card-flow' | 'shell' | 'large-choice' | 'information' | 'information-extreme' | 'arena' | 'mighty' | PressureKind | 'play' | 'discard' | 'flow' | 'hidden' | 'seats';
   type Action = EssentialInputAction | MightyCommand | DomainPressureAction | ShellProofAction | LargeChoiceAction | ProofAction | PressureAction | CardProofAction | FlowAction | SeatDealAction;
   const params = new URLSearchParams(location.search);
   const stage=params.get('stage')==='1';
   const requestedOptions=Number(params.get('options')??197);
   const optionCount=Number.isSafeInteger(requestedOptions)&&requestedOptions>=1&&requestedOptions<=300?requestedOptions:197;
   const requestedKernel = params.get('kernel') ?? 'numeric';
-  let fixture = $state<Fixture>(['essential-input','mighty-bid-max','mighty-joker','hulla-flow','one-card-flow','shell','large-choice','information','information-extreme','arena','poker','melds','one-card','play','discard','flow','hidden','seats'].includes(params.get('fixture') ?? '') ? params.get('fixture') as Fixture : 'mighty');
+  let fixture = $state<Fixture>(['persistent-caption','essential-input','mighty-bid-max','mighty-joker','hulla-flow','one-card-flow','shell','large-choice','information','information-extreme','arena','poker','melds','one-card','play','discard','flow','hidden','seats'].includes(params.get('fixture') ?? '') ? params.get('fixture') as Fixture : 'mighty');
   let host: HTMLDivElement;
   let revision = 1;
   let essentialDealt=$state(false);
@@ -46,7 +47,7 @@
   let kernel:CompositionKernel & {inspect?:()=>unknown}=numericComposition;
   let solveCpuMs=0,solveCalls=0,loadMs=0,lastCommit=0;
   const session=createCardSession<Action>({transport(submission){lastAction=JSON.stringify(submission.action);if(fixture==='essential-input')host.dataset.essentialLastAction=lastAction;if(fixture==='hulla-flow'||fixture==='one-card-flow'){domainState=applyDomainPressure(domainState,{generation:Number(submission.context.generation),revision:Number(submission.context.revision)},viewer as 0|1,submission.action as DomainPressureAction);}session.resolve(submission.id,'accepted');if(fixture==='hulla-flow'||fixture==='one-card-flow'){update();}else if(fixture==='essential-input'&&typeof submission.action==='object'&&submission.action!==null&&'kind'in submission.action&&submission.action.kind==='deal'){essentialDealt=true;update();}else if(fixture==='seats'){seatState=advanceSeatDeal(seatState,submission.action as SeatDealAction);update();}else if(fixture==='flow'||fixture==='hidden'){flow=advanceFlow(flow,submission.action as FlowAction);update();}}});
-  const document=():TableDocument<Action>=>fixture==='essential-input'?essentialInputDocument({revision,dealt:essentialDealt}):fixture==='mighty-bid-max'?mightyBidPressureDocument({revision,longName}):fixture==='mighty-joker'?mightyJokerDocument({revision,longName}):fixture==='hulla-flow'||fixture==='one-card-flow'?domainPressureDocument(domainState,viewer as 0|1):fixture==='shell'?shellDocument({revision,longName,sparse}):fixture==='large-choice'?largeChoiceDocument({revision,longName,sparse,count:optionCount}):fixture==='information-extreme'?informationDocument({revision,longName:true,extremeTotals:true,cards:manyCards?40:10,sparse}):fixture==='information'?informationDocument({revision,longName,cards:manyCards?40:10,sparse}):fixture==='arena'?arenaDocument({revision,longName,cards:manyCards?40:10,sparse}):fixture==='seats'?seatDealDocument(seatState,revision,viewer):fixture==='flow'||fixture==='hidden' ? flowDocument(flow,revision,fixture==='hidden') : fixture==='mighty'
+  const document=():TableDocument<Action>=>fixture==='persistent-caption'?persistentCaptionDocument({revision,longName}):fixture==='essential-input'?essentialInputDocument({revision,dealt:essentialDealt}):fixture==='mighty-bid-max'?mightyBidPressureDocument({revision,longName}):fixture==='mighty-joker'?mightyJokerDocument({revision,longName}):fixture==='hulla-flow'||fixture==='one-card-flow'?domainPressureDocument(domainState,viewer as 0|1):fixture==='shell'?shellDocument({revision,longName,sparse}):fixture==='large-choice'?largeChoiceDocument({revision,longName,sparse,count:optionCount}):fixture==='information-extreme'?informationDocument({revision,longName:true,extremeTotals:true,cards:manyCards?40:10,sparse}):fixture==='information'?informationDocument({revision,longName,cards:manyCards?40:10,sparse}):fixture==='arena'?arenaDocument({revision,longName,cards:manyCards?40:10,sparse}):fixture==='seats'?seatDealDocument(seatState,revision,viewer):fixture==='flow'||fixture==='hidden' ? flowDocument(flow,revision,fixture==='hidden') : fixture==='mighty'
     ? proofDocument({revision,longName,cards:manyCards?40:10,sparse})
     : fixture==='play'||fixture==='discard' ? cardDocument(fixture,{revision,longName,sparse}) : pressureDocument(fixture,{revision,longName,...(manyCards?{cards:40}:{}),sparse});
   async function createLiveRoom(){

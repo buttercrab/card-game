@@ -303,20 +303,29 @@ export function createPlanner(kernel: CompositionKernel): Planner {
             for(const record of records){const allocation=Math.min(width,metrics.intrinsic(record.text,'small').width+8),text=textNode(key('participant-signal-text',record.id),record.text,'small',Math.max(1,allocation-8),metrics);children.push(group(key('participant-signal',record.id),allocation,text.height+8,[{fragment:text,x:4,y:4}],{decoration:'callout',semanticRole:'status',label:record.text}));}
             return children.length?[rows(key('participant-signals',participantId),width,children,{semanticRole:'group',label:'참가자 알림'},'center')]:[];
         }
-        const gutter=reserve?(metrics.environment.scrollbarWidth??0):0,innerWidth=width-gutter;
-        const children=records.map(record=>{const padding=compactSignal?4:SMALL_GAP,text=textNode(key('participant-signal-text',record.id),record.text,'small',Math.max(1,innerWidth-padding*2),metrics);return group(key('participant-signal',record.id),innerWidth,text.height+padding*2,[{fragment:text,x:padding,y:padding}],{decoration:'callout',semanticRole:'status' as const,label:record.text});});
-        let persistentHeight=0;
-        if(status&&document){
-            const padding=4,role=announcement(innerWidth);
-            const badgeFragments=(status.badges??[]).map((badge,index)=>{const id=key('participant-status-badge',participantId,String(index)),allocation=Math.min(innerWidth,metrics.intrinsic(badge.text,'small').width+padding*2),text=textNode(key('participant-status-badge-text',participantId,String(index)),badge.text,'small',Math.max(1,allocation-padding*2),metrics);return group(id,allocation,text.height+padding*2,[{fragment:text,x:padding,y:padding}],{decoration:'pill',tone:badge.tone,semanticRole:'status',label:badge.text});});
-            const fragments=[role,...badgeFragments],plan=kernel.rows(innerWidth,fragments,4,compactSignal?'start':'center'),caption=group(key('participant-status-caption',participantId),innerWidth,plan.height,fragments.map((fragment,index)=>({fragment,...plan.placements[index]})),{semanticRole:'group',label:'참가자 상태'});
-            persistentHeight=caption.height;children.unshift(caption);
-        }
-        if(!reserve)return children;
-        const content=compactSignal?rows(key('participant-signals-content',participantId),innerWidth,children,{},'start'):column(key('participant-signals-content',participantId),innerWidth,children,SMALL_GAP);
         const short=!document?.outcome&&document?.stage!=='waiting'?shortLandscapePresentation(metrics.environment):null;
-        const reservedHeight=Math.max(short?.feedbackHeight??28,metrics.intrinsic('Ag','small').height+SMALL_GAP);
-        const height=reservedHeight;
+        const height=Math.max(short?.feedbackHeight??28,metrics.intrinsic('Ag','small').height+SMALL_GAP);
+        const contentAt=(gutter:number)=>{
+            const innerWidth=width-gutter;
+            const children=records.map(record=>{const padding=compactSignal?4:SMALL_GAP,text=textNode(key('participant-signal-text',record.id),record.text,'small',Math.max(1,innerWidth-padding*2),metrics);return group(key('participant-signal',record.id),innerWidth,text.height+padding*2,[{fragment:text,x:padding,y:padding}],{decoration:'callout',semanticRole:'status' as const,label:record.text});});
+            if(status&&document){
+                const padding=4,role=announcement(innerWidth);
+                const badgeFragments=(status.badges??[]).map((badge,index)=>{const id=key('participant-status-badge',participantId,String(index)),allocation=Math.min(innerWidth,metrics.intrinsic(badge.text,'small').width+padding*2),text=textNode(key('participant-status-badge-text',participantId,String(index)),badge.text,'small',Math.max(1,allocation-padding*2),metrics);return group(id,allocation,text.height+padding*2,[{fragment:text,x:padding,y:padding}],{decoration:'pill',tone:badge.tone,semanticRole:'status',label:badge.text});});
+                const fragments=[role,...badgeFragments],plan=kernel.rows(innerWidth,fragments,4,compactSignal?'start':'center'),caption=group(key('participant-status-caption',participantId),innerWidth,plan.height,fragments.map((fragment,index)=>({fragment,...plan.placements[index]})),{semanticRole:'group',label:'참가자 상태'});
+                children.unshift(caption);
+            }
+            return {children,content:compactSignal?rows(key('participant-signals-content',participantId),innerWidth,children,{},'start'):column(key('participant-signals-content',participantId),innerWidth,children,SMALL_GAP)};
+        };
+        // Measure the full row before reserving a native scrollbar. Reserving a
+        // gutter for an otherwise fitting caption can itself cause wrapping and
+        // clipping. Keep the established height/hand allocation unchanged.
+        const full=contentAt(0),nativeGutter=metrics.environment.scrollbarWidth??0;
+        if(!reserve)return full.children;
+        // Request both widths together so choosing the overflow recipe adds no
+        // serial measurement round to long feedback/resize transitions.
+        const narrowed=nativeGutter>0?contentAt(nativeGutter):full;
+        const gutter=full.content.height>height?nativeGutter:0,measured=gutter?narrowed:full;
+        const content=measured.content;
         return [group(key('participant-signals',participantId),width,height,[{fragment:content,x:0,y:0}],{...(content.height>height?{scroll:true,scrollAxis:'y',scrollbarGutter:gutter}:{}),semanticRole:'group',label:'참가자 알림',participantFeedbackFor:participantId})];
     }
     function observerSignals<A>(document:TableDocument<A>,width:number,metrics:Measurements,choices:ChoiceView):Fragment|null {

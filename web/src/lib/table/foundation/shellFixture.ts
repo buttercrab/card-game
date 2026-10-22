@@ -13,3 +13,13 @@ export function shellDocument({revision=1,longName=false,sparse=false}: {revisio
  const shell=projectRoomShell({roomCode:room.id,client:{room,status:'open',seat:0,viewerId:'local'},document,ruleInformation:[{id:'rules',title:'마이티 · 이 테이블의 규칙',fields:[{id:'players',label:'인원',value:{kind:'number',value:5}},{id:'cards',label:'시작 패',value:{kind:'number',value:10}},{id:'bid',label:'최소 공약',value:{kind:'number',value:14}}]}]});
  return {...document,shell:{...shell,leaveActionId:'shell:leave'}};
 }
+
+/** Synthetic public caption gutter case. This checks measured captions,
+ * not server gameplay or the approved composition of a complete Mighty hand. */
+export function persistentCaptionDocument({revision = 1, longName = false} = {}) {
+    const source = shellDocument({revision, longName});
+    const status = {value: {kind: 'text' as const, text: '프렌드'}, tone: 'plain' as const};
+    return {...source, stage: 'active' as const, outcome: undefined,
+        participant: {...source.participant, status},
+        opponents: source.opponents!.map(person => ({...person, status}))};
+}
